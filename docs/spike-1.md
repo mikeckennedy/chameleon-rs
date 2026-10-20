@@ -1,8 +1,9 @@
 # Spike 1: the cost model
 
 Phase 1 of [plan.md](plan.md). Throwaway code in `crates/spike` (its own `pyproject.toml`, not
-in the workspace's default members, deleted at the Phase 2 exit), driven by `bench/spike1.py`;
-every number below comes from that driver. Measured on Python 3.15.0 (GIL build), macOS
+in the workspace's default members), driven by `bench/spike1.py`; every number below comes from
+that driver. Both were deleted at the Phase 2 exit (git history has them, commit `d81fef5`);
+this document is the record. Measured on Python 3.15.0 (GIL build), macOS
 arm64, `--release` build, 2026-10-20. Ranges are min to max over three full runs; each figure
 within a run is the best of seven `timeit` repeats (note that `timeit` disables the garbage
 collector, which slightly flatters Chameleon's allocation-heavy code). Reviewed by the Rust

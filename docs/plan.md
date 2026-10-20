@@ -121,6 +121,57 @@ ns); a prototype native partial frame (push, keyword arguments, fresh scope, wri
 caller's buffer) is measured against the 0.8 µs-per-item partials budget; architecture
 adjusted if the skeleton disagrees with the spike; `crates/spike` deleted.
 
+**Done (2026-10-20).** `chameleon_rs.PageTemplate(body).render(**kw)` runs through every layer:
+a minimal tokenizer and element parser, the ZPT program builder with the Interpolator's
+longest-candidate-first retry, a bytecode compiler, the resumable VM over the `Runtime` trait,
+and the Python runtime with the real `ExprCompiler` (fast path for Name, Attribute, Constant,
+Call, `not`, Subscript, Compare, IfExp, BoolOp, arithmetic and literals; exact fallback for the
+rest). Numbers from `bench/bench_skeleton.py`, release build, n=500, three runs after the
+review fixes below (min of seven repeats each; medians are 1-13 ns higher):
+
+| Scenario, per item | Chameleon | chameleon_rs | Gate |
+|---|---|---|---|
+| Cut-down listing (`listing_loop.pt`) | 2,845-2,900 ns | **481-493 ns** (5.8-6.0x) | ≤ 506 ns (within 10% of 442-460): **GO** |
+| Same listing through two partials per item (native frames vs chameleon_partials) | 6,724-6,819 ns | **618-640 ns** (10.7-10.9x, a lower bound, see below) | ≤ 800 ns: **GO** |
+
+The partial gate is the absolute figure against the budget. The ratio to Chameleon is only a
+lower bound for the real feature: the prototype skips path resolution, the loader cache
+lookup, the `Markup` round trip, and putting `__translate` and `render_partial` into each
+partial's scope, all of which Phase 9 adds.
+
+The spike, re-measured the same day before deletion, ran the listing at 428 ns, so the
+skeleton's 481-493 ns is 12-15% above it. Before the review fixes it measured 472-477 ns; the
+fixes cost about 10 ns, probably the countdown and unwind-entry matching in `LoopNext` and
+the checked text reads. None of the gap is profiled yet (see "Profile before Phase 4" below);
+likely contributors are iterating the Python iterator `repeat()` returns instead of a Rust
+queue, the attribute-dropping rule, and the general instruction set. Outputs are
+byte-identical in both scenarios. Tests: 46 Rust (toy runtime: control flow, frames, the
+unwind stack, suspension inside frames and loops, compile errors), 324 pytest plus 3 skipped
+deferred probes (byte-for-byte differential cases, an 84-case conversion grid, error parity,
+the `Scope` gc doctest, partials, 800 concurrent renders on 16 threads, the corpus), and the
+upstream suite on the reference engine (227 passed, 6 xfailed). All 229 Talk Python templates
+compile or stop with `UnsupportedError` (no panics). Deviations from the design are recorded
+in the architecture's "Phase 2 amendments".
+
+Review fixes (2026-10-20, after the Rust Architect's review): Chameleon's two-stage
+conversion for non-`str` `__html__`/`translate` results (a value kind x source x position
+grid test), user-supplied `repeat` objects (any iterable, a lazily evaluated length), the
+single unwind stack with per-frame bases, a restartable `LoopNext`, checked `resume_with`, a
+smoothed and capped capacity hint, and new tests (suspension inside callee frames and loop
+bodies, concurrent renders from many threads, the corpus compiles without panics, the
+architect's probe scripts). The table above is measured after these fixes.
+
+Carried forward:
+
+- **Profile before Phase 4 adds instructions** (in Phase 4, before the new node kinds land):
+  the listing item is about 10% above the spike's same-day 428 ns, and nothing has
+  attributed that gap yet. Use `make build-profiling` and decomposition (no sudo for
+  samplers), and record where the 40-50 ns goes so later phases do not compound it.
+- Error-message parity for unpacking (`a, b = item`) and walrus targets (Chameleon raises
+  `SyntaxError` from its generated code, we raise `TypeError`): Phase 8.
+- `rcontext` persistence across suspension and a `Mutex`-guarded awaitable: Phase 11.
+- The partial registry becomes path resolution: Phase 9.
+
 ## Phase 3: Tokenizer and element parser
 
 Port `tokenize.py` and `parser.py` exactly.

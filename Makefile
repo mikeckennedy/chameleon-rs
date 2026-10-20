@@ -65,3 +65,4 @@ bench: build-release
 	$(PY) bench/bench_render.py
 	$(PY) bench/bench_split.py
 	$(PY) bench/bench_compile.py
+	$(PY) bench/bench_skeleton.py

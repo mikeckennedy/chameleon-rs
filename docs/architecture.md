@@ -32,6 +32,82 @@ Non-goals: PyPy (Chameleon supports it; we target CPython 3.12+), Zope/Plone pac
 (`z3c.pt`, `five.pt`) that subclass Chameleon's compiler internals, and the `.source`
 attribute containing generated Python code (see D11).
 
+## Phase 2 amendments (2026-10-20)
+
+The walking skeleton followed the design; these are the places where building it changed or
+pinned down a detail. Each decision's text below still describes the intent.
+
+- **D1, the `ExprCompiler` signature:** `compile(&mut self, source, span, cx: ExprContext)`.
+  `ExprContext` replaces `ExprKind` and says whether `default` is the marker alias (lexically:
+  `tal:content`, its default body, dynamic attributes), whether the value is emitted (the only
+  place a native frame call may appear), and whether this is an Interpolator candidate. TALES
+  prefixes and pipes are parsed by the implementation, not the core. The structural pre-filter
+  runs only on candidates; when the last candidate fails, the core compiles it once more
+  without the shortcut so the error carries the parser's own message.
+- **D2, the `Runtime` trait as built:** `activate(code, scope)` (called on every frame
+  change), `eval(expr, emitted) -> Step` with `Step::{Ready, Suspend, Call}`,
+  `emit(value, esc, lone) -> Emitted` (written or nothing; `lone` marks a whole interpolation,
+  see D6), `is_default`, `truthy`, and a loop protocol that mirrors Chameleon's generated code:
+  `lookup` (the two-level backup), `repeat` (calls whatever `repeat` is bound to and returns
+  `iter()` of its first result plus a `Countdown`: an `i64`, or the runtime's own length value
+  when it is not an exact int, decremented through `countdown` so a `None` or float length
+  fails or works exactly when Chameleon's `index -= 1; if index > 0` does), `set_null`,
+  `next` (must not suspend), `assign`, `restore`. `define`, `translate` and `is_catchable`
+  arrive with the features that need them. Frames hold
+  `(Arc<Program>, pc, code: V, scope: V, on_return, unwind_base)`.
+- **D3, frames:** an emitting instruction whose expression returns `Step::Call` pushes a frame
+  that writes straight into the caller's buffer (an attribute's closing quote is written on
+  return). Depth is capped at `MAX_FRAMES = 500`, raising `RecursionError`. The single unwind
+  stack exists from the start (`Unwind::Loop` now; define backups, `on-error` and translation
+  marks join it): each frame records its `unwind_base`, popping a frame drops its entries, and
+  a frame that ends with entries left is an internal error. Every instruction either completes
+  or leaves no trace (`LoopNext` fetches the next item before it touches the countdown or
+  writes whitespace), and a resumed value replaces the expression the instruction was
+  evaluating; the toy-runtime tests suspend at every expression kind, inside callee frames and
+  inside loop bodies with frame calls. `resume_with` on a render that is not suspended, and
+  `run` on a suspended one without it, are errors. `VmState::for_each_value` visits every
+  held value, for the future awaitable's `__traverse__`.
+- **Loop order (correcting spike 1's "not validated" note):** Chameleon backs the loop names up
+  *before* evaluating the iterable but assigns `None` *after* registering it with `repeat`
+  (compiler.py:1863-1876; verified: `tal:repeat="i [i]"` raises `NameError`, and with
+  `i='outer'` the iterable sees `'outer'`). The skeleton does exactly that.
+- **The `repeat` variable** is a port of Chameleon's Python `RepeatDict`/`RepeatItem`
+  (`chameleon_rs.tal`): exact, including user-supplied `repeat` objects, at one Python call
+  per loop (not per item). A native version only if a profile asks for it.
+- **D5:** like Chameleon's (a `__slots__` class), the native `Scope` is not
+  weak-referenceable. `__traverse__` visits the root; the upstream doctest's `gc.collect() == 0`
+  and a root cycle test pass.
+- **D6, escaping contexts:** `Text` (quote NUL), `Content` (`tal:content` passes no quote, so
+  NUL is never replaced there), `Structure`, and `Attr(Double | Single | Bare)`. An unquoted
+  attribute value that triggers escaping gets `&#0;` around every character, as Chameleon's
+  `s.replace('', '&#0;')` does. Conversion has Chameleon's two stages: each `${...}` goes
+  through `__quote` (convert, escape if the result is a `str`); then a *lone* interpolation
+  (`attr="${x}"`, or a text node that is just `${x}`) is converted again with `emit_convert`
+  (no escaping) and appended, or `%s`-formatted in an attribute, while a part of a mixed
+  interpolation is `%s`-formatted. So an `__html__()` or `translate` returning `5` renders
+  `5` everywhere, `b'x'` renders `x` alone but `b'x'` (its repr) inside `a${h}b`, a list
+  renders its `str()`, and `None` writes nothing (dropping a lone attribute). Only
+  `tal:content` (text or `structure`) appends the first-stage result directly, so a non-`str`
+  there is a `TypeError`, as in Chameleon. A grid test covers value kind x source x position.
+- **Fallback names:** the rewriting (`chameleon_rs._rewrite`, a port of `NameTransform` and
+  friends) gives `econtext.get_name(x)`, `econtext.get(x, builtin)`, `econtext['x'] = ...` for
+  stores, `econtext['__translate']` for `translate`/`decode`/`on_error_handler`, and leaves
+  `__` names alone; the fast path sends `__` names to the fallback.
+- **D10, partial prototype:** `render_partial(path, **kw)` written as a whole emitted
+  expression becomes a native frame when no `render_partial` is bound in the scope (one passed
+  in, like `chameleon_partials.render_partial`, is called normally). Names resolve against a
+  registry passed to `PageTemplate(partials=...)`. The partial's scope holds only its keyword
+  arguments, plus a fresh `repeat` when the partial loops or mentions `repeat`;
+  `__translate`/`__decode`/`target_language` fall back to the template defaults. Unlike
+  chameleon_partials, `econtext` in a partial therefore lacks those keys and `render_partial`
+  itself; Phase 9 decides whether that matters. The gate is the absolute figure against the
+  0.8 µs budget; the ratio to Chameleon + chameleon_partials is only a lower bound on the real
+  feature's speedup, because the prototype skips path resolution, the loader cache lookup,
+  the `Markup` round trip, and putting `__translate` and `render_partial` into the partial's
+  scope. Deferred: `rcontext` persistence across a suspended render and a `Mutex`-guarded
+  awaitable (Phase 11); the redundancy of `Call { program, code }` (the `Arc` is reachable
+  from `code`); the partial registry (Phase 9).
+
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
 ```

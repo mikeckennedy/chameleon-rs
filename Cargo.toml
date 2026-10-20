@@ -1,9 +1,6 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-# crates/spike holds throwaway Phase 1 experiments (deleted at the Phase 2 exit). It is not
-# built by plain `cargo build`/`cargo test`, but `--workspace` (make lint/test, CI) includes it.
-default-members = ["crates/chameleon-core", "crates/chameleon-py"]
 
 [workspace.package]
 version = "0.1.0"
