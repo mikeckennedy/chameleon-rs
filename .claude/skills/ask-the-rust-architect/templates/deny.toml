@@ -1,0 +1,42 @@
+# cargo-deny starter (cargo-deny 0.20). Run: cargo deny check
+# Docs: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = true
+
+[advisories]
+# RustSec advisories. Vulnerabilities and unsound crates fail; ignore a specific id only with a reason.
+unmaintained = "workspace"
+ignore = [
+    # { id = "RUSTSEC-0000-0000", reason = "not reachable: we never call the affected API" },
+]
+
+[licenses]
+# Permissive licenses only. Add to this list deliberately, never to silence a failure.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.9
+
+[licenses.private]
+# Our own crates are `publish = false`; only third-party licenses matter.
+ignore = true
+
+[bans]
+# Duplicate versions of one crate slow builds and bloat binaries; warn so they get noticed.
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

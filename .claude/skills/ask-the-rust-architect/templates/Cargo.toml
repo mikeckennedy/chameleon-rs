@@ -1,0 +1,50 @@
+# Workspace root Cargo.toml starter. Rename <app> and trim dependencies you don't need.
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.90"
+license = "MIT"
+# An application, not a library: nothing goes to crates.io. Members inherit these with
+# `edition.workspace = true`, `rust-version.workspace = true`, `license.workspace = true`, `publish.workspace = true`.
+publish = false
+
+# One version per dependency, declared once. Crates opt in with `foo.workspace = true`.
+[workspace.dependencies]
+# <app>-core = { path = "crates/<app>-core" }
+anyhow = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio-util = "0.7"
+tracing = "0.1"
+rusqlite = { version = "0.40", features = ["bundled"] }
+uniffi = "0.32"
+ratatui = "0.30"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Every crate opts in with:
+#   [lints]
+#   workspace = true
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+dbg_macro = "deny"
+todo = "warn"
+# Pedantic lints that cost more than they give in an application workspace.
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+# Keep the default panic = "unwind": UniFFI catches panics at the boundary, and abort would kill the host app.
