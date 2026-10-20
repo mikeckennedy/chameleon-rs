@@ -1,0 +1,19 @@
+[package]
+name = "chameleon-core"
+description = "Pure-Rust core of chameleon-rs: tokenizer, parser, program builder and renderer."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+memchr.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

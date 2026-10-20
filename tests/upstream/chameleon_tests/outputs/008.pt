@@ -1,0 +1,15 @@
+<html>
+  <body>
+    {}
+
+    <div class="dynamic">
+      static
+    </div>
+    <div class="static">static</div>
+    static
+    <div class="static">static</div>
+    <div>
+      nothing
+    </div>
+  </body>
+</html>

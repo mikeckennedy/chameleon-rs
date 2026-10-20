@@ -1,0 +1,3 @@
+# Stable rustfmt options only. Wider than the default 100 columns, and lets short items stay on one line.
+max_width = 120
+use_small_heuristics = "Max"

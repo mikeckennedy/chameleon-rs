@@ -111,7 +111,7 @@ def bench_listing() -> None:
         for n in (50, 500):
             videos = make_videos(n)
             for tpl, label in (('home/listing.pt', 'partials'), ('home/listing_inline.pt', 'inline')):
-                med, _ = time_it(lambda: render(loader, tpl, videos=videos))
+                med, _ = time_it(lambda loader=loader, tpl=tpl, videos=videos: render(loader, tpl, videos=videos))
                 name = f'{label:<9} n={n:<4} auto_reload={auto_reload}'
                 print(f'{name:<44}{fmt(med):>12}{fmt(med / n):>12}')
 
@@ -121,7 +121,7 @@ def bench_output_check() -> None:
     videos = make_videos(3)
     a = render(loader, 'home/listing.pt', videos=videos)
     b = render(loader, 'home/listing_inline.pt', videos=videos)
-    norm = lambda s: ''.join(s.split())  # noqa: E731
+    norm = lambda s: ''.join(s.split())
     print(f'\n(sanity) partial vs inline output identical ignoring whitespace: {norm(a) == norm(b)}')
 
 
@@ -130,7 +130,7 @@ def bench_dashboard() -> None:
     ensure_assets()
     loader = setup(False)
     videos = make_videos(20)
-    model = dict(videos=videos, build_cache_id=build_cache_id, fetch_stat=fetch_stat)
+    model = {'videos': videos, 'build_cache_id': build_cache_id, 'fetch_stat': fetch_stat}
     med, _ = time_it(lambda: render(loader, 'home/dashboard_slow.pt', **model), min_time=2.0)
     print(f'{"full render, sequential (Chameleon today)":<52}{fmt(med):>12}')
 
@@ -173,7 +173,7 @@ def bench_event_loop() -> None:
     loader = setup(False)
     v500 = make_videos(500)
     v20 = make_videos(20)
-    slow_model = dict(videos=v20, build_cache_id=build_cache_id, fetch_stat=fetch_stat)
+    slow_model = {'videos': v20, 'build_cache_id': build_cache_id, 'fetch_stat': fetch_stat}
 
     async def listing_sync():
         render(loader, 'home/listing.pt', videos=v500)

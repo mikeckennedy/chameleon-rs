@@ -1,0 +1,7 @@
+# Upstream tests that chameleon_rs is known not to pass, one per line:
+#
+#   test_file.py::TestClass::test_name[param]  # why, and the plan/D11 reference
+#
+# Applied as strict xfails under CHAMELEON_ENGINE=rust: an entry that starts passing fails the
+# run and must be removed. The compatibility score is 227 minus the entries here (target: at
+# most 11 entries). Empty until the Rust engine runs the suite (Phase 7).

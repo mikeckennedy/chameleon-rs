@@ -1,0 +1,49 @@
+[build-system]
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
+
+[project]
+name = "chameleon-rs"
+description = "A Rust implementation of the Chameleon page template engine, compatible with Chameleon's syntax and API."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "LicenseRef-Chameleon"
+license-files = ["LICENSE.txt", "COPYRIGHT.txt"]
+authors = [{ name = "Michael Kennedy", email = "michael@talkpython.fm" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Rust",
+    "Topic :: Text Processing :: Markup :: HTML",
+]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/mikeckennedy/chameleon-rust"
+
+[dependency-groups]
+# What the compatibility, differential and benchmark code needs. The reference Chameleon and
+# chameleon_partials are installed editable from pinned clones in temp/ by `make dev`.
+dev = ["maturin>=1.15,<2", "pytest>=9", "hypothesis>=6", "pydantic>=2", "setuptools", "ruff"]
+
+[tool.maturin]
+manifest-path = "crates/chameleon-py/Cargo.toml"
+python-source = "python"
+module-name = "chameleon_rs._native"
+# No `pyo3/extension-module` feature: it is deprecated in PyO3 0.30, and maturin sets
+# PYO3_BUILD_EXTENSION_MODULE itself. Plain `cargo test` keeps linking libpython.
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
+addopts = "-p no:cacheprovider"
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["tests/upstream/chameleon_tests", "temp"]
+
+[tool.ruff.format]
+quote-style = "single"

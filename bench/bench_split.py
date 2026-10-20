@@ -20,7 +20,7 @@ def expressions_only():
     for video in videos:
         video.id; video.id; video.title; video.title; video.id; video.author  # noqa: B018
         ' '.join([])
-        '{:,}'.format(video.views)
+        '{:,}'.format(video.views)  # noqa: UP032 - the exact call the template makes
 
 
 _esc = str.maketrans({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})
@@ -36,7 +36,7 @@ def handwritten():
           f'<img src="https://img.youtube.com/vi/{vid}/maxresdefault.jpg" class="img img-responsive {" ".join([])}" '
           f'alt="{title}" title="{title}">\n</a>\n'
           f'<a href="https://www.youtube.com/watch?v={vid}" target="_blank" class="author">{v.author.translate(_esc)}</a>\n'
-          f'<div class="views">{"{:,}".format(v.views)} views</div>\n</div>\n</span>')
+          f'<div class="views">{"{:,}".format(v.views)} views</div>\n</div>\n</span>')  # noqa: UP032 - as in the template
     return ''.join(out)
 
 
@@ -48,7 +48,7 @@ def chameleon():
 
 
 def per_item(fn) -> float:
-    n, total = timeit.Timer(fn).autorange()
+    n, _ = timeit.Timer(fn).autorange()
     best = min(timeit.repeat(fn, number=n, repeat=5)) / n
     return best / N
 

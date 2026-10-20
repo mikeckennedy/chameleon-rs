@@ -1,0 +1,5 @@
+# Pinned so new clippy lints don't break `-D warnings` for whoever updated last, and so
+# wheel builds are reproducible. MSRV (rust-version in Cargo.toml) is checked separately.
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]

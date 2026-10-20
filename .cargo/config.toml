@@ -1,0 +1,4 @@
+# Build and test against the project venv's Python, so cargo, clippy, rust-analyzer and
+# maturin all link the same libpython (and pyo3 isn't rebuilt when switching between them).
+[env]
+PYO3_PYTHON = { value = "venv/bin/python", relative = true }

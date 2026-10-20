@@ -1,0 +1,54 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license-file = "LICENSE.txt"
+# Shipped to users as a Python wheel, not as crates on crates.io.
+publish = false
+
+# One version per dependency, declared once. Crates opt in with `foo.workspace = true`.
+[workspace.dependencies]
+chameleon-core = { path = "crates/chameleon-core" }
+thiserror = "2"
+memchr = "2"
+pyo3 = "0.30"
+insta = "1"
+proptest = "1"
+
+# Every crate opts in with:
+#   [lints]
+#   workspace = true
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+dbg_macro = "deny"
+todo = "warn"
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+# Keep the default panic = "unwind": PyO3 turns a panic into a Python exception, and
+# abort would take down the host web server.
+
+# Optimized but quick to rebuild: what `make build` installs for the Python test loop.
+[profile.dev-opt]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+
+# Release code generation with symbols, for py-spy / Instruments (`make build-profiling`).
+[profile.profiling]
+inherits = "release"
+debug = true
