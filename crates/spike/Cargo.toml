@@ -1,0 +1,18 @@
+[package]
+name = "chameleon-spike"
+description = "Phase 1 cost-model experiments (docs/spike-1.md). Throwaway; never shipped."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[lib]
+name = "chameleon_spike"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3.workspace = true
+
+[lints]
+workspace = true

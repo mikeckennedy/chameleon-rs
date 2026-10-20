@@ -1,3 +1,5 @@
 # Tests may unwrap and expect freely; production code may not (see [workspace.lints.clippy]).
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
+# Proper names that appear in prose, not code identifiers needing backticks.
+doc-valid-idents = ["CPython", "PyO3", ".."]

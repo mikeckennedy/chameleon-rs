@@ -98,6 +98,11 @@ Go/no-go thresholds:
 
 Exit gate: `docs/spike-1.md` with the numbers and decisions, reviewed by the architect.
 
+**Done (2026-10-20):** see [spike-1.md](spike-1.md). Threshold 1 GO (442-460 ns per item, 6.5-8x
+faster than Chameleon, byte-identical output); threshold 2 NO-GO (1.7-1.8x), D4 revisited and
+kept with a new absolute criterion; threshold 3 GO. Its "not validated" list is carried into
+the phases below.
+
 ## Phase 2: Walking skeleton
 
 One thin path through every layer, so design mistakes surface early: tokenizer (minimal),
@@ -105,9 +110,16 @@ program builder, compiler, VM, Python runtime and `PageTemplate(body).render(**k
 static text, `${...}` in text and attributes, `tal:content`, `tal:condition` and `tal:repeat`,
 with the real `ExprCompiler` (D1) and exact conversion and escaping (D6).
 
+Also from spike 1's "not validated" list: Chameleon's escaping gate and quote entities, strict
+`bytes` decoding, `__html__` results used as is, the loop's backup-then-assign-`None` order and
+the `repeat` variable, and `__traverse__` on `Scope` and `Program` (the upstream `Scope`
+doctest's `gc.collect() == 0` must pass).
+
 Exit gate: the skeleton renders a cut-down listing template identically to Chameleon and its
-per-item time is measured with the real benchmark; architecture adjusted if the skeleton
-disagrees with the spike.
+per-item time is measured with the real benchmark (target: within 10% of the spike's 442-460
+ns); a prototype native partial frame (push, keyword arguments, fresh scope, writing into the
+caller's buffer) is measured against the 0.8 µs-per-item partials budget; architecture
+adjusted if the skeleton disagrees with the spike; `crates/spike` deleted.
 
 ## Phase 3: Tokenizer and element parser
 
@@ -129,8 +141,13 @@ Port `tokenize.py` and `parser.py` exactly.
 - `_native._testing` exposes tokens and trees for pytest.
 
 Tests: differential pytest against Chameleon's `iter_xml` and `ElementParser` over every
-fixture and every Talk Python template (corpus added here), plus Hypothesis-generated
-markup; proptest invariants and `cargo-fuzz` for panics.
+fixture and the real-template corpus, plus Hypothesis-generated markup; proptest invariants
+and `cargo-fuzz` for panics.
+
+Real-template corpus: Talk Python to Me (106 templates) and Talk Python Training (123),
+229 in all, read in place and never copied into this repository (private code). Tests take
+the directories from `CHAMELEON_RS_CORPUS` (paths separated by `:`), default to the two
+local checkouts, and skip when none exist, so CI stays green without them.
 
 Exit gate: all fixtures, the Talk Python corpus and 100,000 generated inputs tokenize and parse
 identically.

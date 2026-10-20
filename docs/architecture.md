@@ -4,8 +4,8 @@ This is the decision record. Each decision says what we chose, why, and what wou
 revisit it. The phased build plan lives in [plan.md](plan.md).
 
 Status legend: **Proposed** (drafted), **Reviewed** (Rust Architect reviewed, changes folded
-in, awaiting Michael's sign-off), **Accepted**. As of 2026-10-20 every decision below is
-**Reviewed**. Behaviors described as "verified" were checked by running the reference
+in, awaiting Michael's sign-off), **Accepted**. Every decision below was **Accepted** on
+2026-10-20; later changes are recorded as amendments with their date. Behaviors described as "verified" were checked by running the reference
 Chameleon, not just by reading it.
 
 ## Context
@@ -187,8 +187,20 @@ Semantics the fast path must reproduce (from the reference):
   `template` and `macros` are passed per render. Every pyclass holding `Py` fields implements
   `__traverse__` / `__clear__`.
 
-Revisit after the Phase 1 spike if the fast path is not at least 3x faster than calling one
-Python function per expression.
+The whitelist is built in the order the Talk Python census ranks node types (`Name`,
+`Attribute`, `Constant`, `Call`, `not`, `Subscript`, `Compare`, `IfExp`, `BoolOp`, ...); 99.9% of
+the 4,693 real expressions qualify. Attributes of an original `ast.Constant` of an exact
+immutable type are resolved once at compile time (one level, a separate `Folded` node; a failed
+lookup stays a runtime lookup). Calls with few positional arguments use vectorcall without a
+temporary tuple. The `ExprCompiler` rejects impossible Interpolator candidates structurally
+before calling `ast.parse` (1,150 of the census's parse attempts were such candidates).
+
+*Amended 2026-10-20 after [spike 1](spike-1.md):* the spike's 3x threshold failed (1.7-1.8x),
+because much of each expression's cost is CPython's own work on either path. D4 was revisited
+and kept: a fallback-only VM (722-759 ns per listing item) misses the 0.6 µs target, the fast
+path (442-460 ns) meets it. **Revisit D4 if a fallback-only build meets both the inline (0.6 µs)
+and partial (0.8 µs) targets, or if the fast path saves less than 20 ns per expression on the
+benchmark mix** (measured: 27-53 ns).
 
 ## D5. The scope is a native dict subclass
 
@@ -200,7 +212,10 @@ on interned keys; no `getattr("_root")`.
 
 Why it stays a dict: user code can see `econtext`, fallback expressions and foreign macros
 need a real mapping, and `define`'s backup/restore is defined in terms of it. The upstream
-`Scope` doctest checks `gc.collect() == 0`, so no cycles. Every macro call and slot body pays
+`Scope` doctest checks `gc.collect() == 0`, so `Scope` implements `__traverse__` (visiting
+`root`; the inherited dict `tp_clear` breaks cycles, since a frozen class has no `__clear__`),
+and is constructed through `dict.__init__`. Spike 1: 3-6 ns per lookup vs 64-89 ns for
+Chameleon's `getname()`; 30 ns to build a fresh scope from Rust. Every macro call and slot body pays
 an O(n) `copy()`, as in Chameleon; partials don't, because they start from a small new scope.
 
 Revisit if scope traffic dominates profiles; next step would be compile-time slots for loop
@@ -214,16 +229,23 @@ and define variables, with a dict view materialized on demand.
   final `str` is built once: a plain UTF-8 decode normally, a `surrogatepass` decode when the
   flag is set. The common path costs nothing.
 - **Memory:** `PyUnicode_AsUTF8AndSize` caches a UTF-8 copy inside every non-ASCII `str` for
-  its lifetime. The spike measures whether a non-caching encode is better for long-lived
-  non-ASCII values.
+  its lifetime (spike 1: a 10,000-character Latin-1 string grows 3x). Use `to_str()` for now;
+  in Phase 10 try `encode_utf8()` above a length threshold, and only if that isn't enough add
+  the `chameleon-capi` crate (D12) with a kind-aware view.
 - **Conversion uses exact types, like `__convert`/`__quote` (verified):** exact `str` is
-  escaped; exact `int`/`float` use `str()` (never Rust formatting: Python prints `1e16` as
-  `1e+16`; an exact `int` that fits `i64` may use a fast integer formatter); `None` drops;
-  the `default` marker means the static default; `bytes` are decoded; anything else, including
+  escaped; exact `float` uses `str()` (never Rust formatting: Python prints `1e16` as
+  `1e+16`); an exact `int` that fits `i64` uses Rust's `Display`, which matches `str(int)`,
+  else `str()`; `None` drops; the `default` marker means the static default; `bytes` are
+  decoded strictly with the template's decoder (`__decode`); the result of `__html__()` is
+  used as is; anything else, including
   `str` subclasses and `bool`, goes `__html__` -> translate -> `str()`. That is why a
   `(str, Enum)` member renders as `E.A` and `True` renders as `True`.
-- **Escaping:** `&`, `<`, `>` are always replaced, plus the quote character when one is given;
-  no entity lookahead. `memchr3` plus a quote check; no special characters means one copy.
+- **Escaping (verified, amended after spike 1):** Chameleon escapes only if the string
+  contains one of `& < > " '` (its gate regex); then `&`, `<`, `>` and the context's quote
+  character are replaced, with the quote's entity supplied by the compiler (`char2entity`):
+  NUL -> `&#0;` in text, `"` -> `&quot;`, `'` -> `&#39;`. So `'a\0b'` stays raw in text while
+  `'a&\0b'` becomes `a&amp;&#0;b`. No entity lookahead. A gate scan, then one table-driven
+  pass; no gate character means one copy.
 - **Capacity hint:** each `Program` keeps the last render's size in an `AtomicUsize`
   (lock-free, fine under free-threading).
 

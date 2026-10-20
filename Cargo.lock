@@ -105,6 +105,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "chameleon-spike"
+version = "0.1.0"
+dependencies = [
+ "pyo3",
+]
+
+[[package]]
 name = "console"
 version = "0.16.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
