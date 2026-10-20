@@ -1,0 +1,22 @@
+<div metal:use-macro="load: ../shared/_layout.pt">
+    <div metal:fill-slot="content">
+
+        <link rel="stylesheet" href="/static/css/site.css?v=${ build_cache_id('site.css') }"/>
+        <script src="/static/js/app.js?v=${ build_cache_id('app.js') }"></script>
+
+        <h1>Dashboard</h1>
+
+        <div class="stats">
+            <div class="stat">Subscribers: ${ fetch_stat('subscribers') }</div>
+            <div class="stat">Downloads: ${ fetch_stat('downloads') }</div>
+            <div class="stat">Revenue: ${ fetch_stat('revenue') }</div>
+        </div>
+
+        <div class="container videos listing">
+            <span class="video" tal:repeat="v videos">
+                ${ render_partial('shared/partials/video_square.pt', video=v) }
+            </span>
+        </div>
+
+    </div>
+</div>

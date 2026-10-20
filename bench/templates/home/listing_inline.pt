@@ -1,0 +1,28 @@
+<div metal:use-macro="load: ../shared/_layout.pt">
+    <div metal:fill-slot="content">
+
+        <h1>All video listing</h1>
+
+
+        <div class="container">
+            <div class="container videos listing">
+
+                <span class="video" tal:repeat="video videos">
+                    <div>
+                        <a href="https://www.youtube.com/watch?v=${ video.id }" target="_blank">
+                            <img src="https://img.youtube.com/vi/${ video.id }/maxresdefault.jpg"
+                                 class="img img-responsive ${ ' '.join([]) }"
+                                 alt="${ video.title }"
+                                 title="${ video.title }">
+                        </a>
+                        <a href="https://www.youtube.com/watch?v=${ video.id }" target="_blank"
+                           class="author">${ video.author }</a>
+                        <div class="views">${ "{:,}".format(video.views) } views</div>
+                    </div>
+                </span>
+
+            </div>
+        </div>
+
+    </div>
+</div>
