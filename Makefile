@@ -24,7 +24,7 @@ INTEGRATION_PYTHON ?= 3.14
 INTEGRATION_VENV := $(CURDIR)/temp/venv-integration
 INTEGRATION_SUITES := fastapi-chameleon chameleon-flask chameleon-robyn chameleon_partials
 
-.PHONY: dev reference build build-release build-profiling test test-rust test-python \
+.PHONY: dev reference build build-release build-profiling build-pgo test test-rust test-python \
 	test-upstream test-upstream-rust integration test-integration lint fmt bench
 
 dev: reference
@@ -68,6 +68,20 @@ build-release:
 
 build-profiling:
 	$(MATURIN) develop --profile profiling
+
+# Profile-guided release build (Phase 10): an instrumented build runs the deterministic
+# training workload (bench/pgo_train.py), llvm-profdata merges the counts, and the release
+# build uses them. Separate target directories keep the plain release build's cache intact.
+PGO_DIR := $(CURDIR)/target/pgo
+LLVM_PROFDATA = $(shell rustc --print sysroot)/lib/rustlib/$(shell rustc -vV | sed -n 's/^host: //p')/bin/llvm-profdata
+
+build-pgo:
+	rustup component add llvm-tools
+	rm -rf $(PGO_DIR)/data
+	RUSTFLAGS="-Cprofile-generate=$(PGO_DIR)/data" CARGO_TARGET_DIR=$(PGO_DIR)/generate $(MATURIN) develop --release
+	$(PY) bench/pgo_train.py
+	$(LLVM_PROFDATA) merge -o $(PGO_DIR)/merged.profdata $(PGO_DIR)/data
+	RUSTFLAGS="-Cprofile-use=$(PGO_DIR)/merged.profdata" CARGO_TARGET_DIR=$(PGO_DIR)/use $(MATURIN) develop --release
 
 test: test-rust test-python test-upstream test-upstream-rust
 

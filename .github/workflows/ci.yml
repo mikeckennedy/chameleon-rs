@@ -45,6 +45,25 @@ jobs:
       - run: make dev
       - run: make test-integration
 
+  pgo:
+    # The profile-guided release build (Phase 10: about 10% faster renders), built and tested
+    # as the release wheels will be (Phase 12).
+    name: pgo (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - run: rustup show active-toolchain
+      - run: uv venv venv --python 3.15
+      - run: make dev
+      - run: make build-pgo
+      - run: venv/bin/python -m pytest -q
+      - run: CHAMELEON_ENGINE=rust venv/bin/python -m pytest -q tests/upstream
+
   lint:
     runs-on: ubuntu-latest
     steps:
