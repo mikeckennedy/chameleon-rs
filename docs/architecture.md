@@ -863,6 +863,55 @@ Real-site verification. Every behaviour below was checked against the reference.
   (median), `--shadow` crawls stock Chameleon with shadow mode on. It refuses to write pages or
   reports inside this repository.
 
+## Phase 10 amendments (2026-10-21)
+
+Performance pass. Each fast path below reproduces what the Python it replaces does, and falls
+back to that Python whenever its preconditions do not hold. Measurements: plan.md, Phase 10.
+
+- **Scope sharing (D5).** Compiling marks the functions (macros, slot bodies) that only read
+  their scope: no `tal:define`, `tal:repeat`, `tal:on-error`, code block, macro call or slot
+  fill, and every expression's free variables known with no writes
+  (`Program::mark_scope_sharing`, `shares_scope(entry)`). A call to such a function passes
+  the caller's scope itself instead of `econtext.copy()`. Equivalence: the copy holds the
+  caller's local items and shares its root, so every lookup gives the same value, and neither
+  side is written while the callee runs. One deliberate edge: a body that mutates a scope it
+  captured earlier as a value (`tal:define="ctx econtext"` in the caller, then
+  `ctx.update(...)` inside the macro, through a method call, which is not an `econtext`
+  expression) sees the change in the shared case where Chameleon's snapshot would not; no
+  real template is known to do this.
+- **`PageTemplate.render` natively** (`_native.render_page`, D7): the same steps in the same
+  order (defaults, `cook_check()`, the `_render` protocol in Python via `_render_protocol`,
+  then the scope from the keywords, the missing defaults and a fresh `RepeatDict`). Defaults
+  for an `encoding` or `translate` argument are cached (`_encoded_defaults`), so successive
+  renders share the closures (unobservable within a render).
+- **`repeat` (D2).** An exact `chameleon_rs.tal.RepeatDict` is called natively
+  (`list(iterable)`, `RepeatItem(iter, len)`, stored with `self[key] = ...`). `lookup_attr`
+  computes `repeat.name` (for names not starting with `_`, present keys) and the
+  `RepeatItem` descriptors `index`, `number`, `start`, `end`, `odd`, `even`, `parity` for the
+  exact classes with Python arithmetic and the same `callableint`/`callablestr` results;
+  subclasses, other names, missing keys and iterators without `__length_hint__` run the Python
+  code (`crate::repeat`). The classes stay Python (identity, subclassing, pickling unchanged).
+- **Conversions (D6).** `structure:`'s exact `Markup` is written from its own text (its
+  `__html__` is `str(self)`); with the default translation function (`simple_translate`,
+  checked by identity, so an `encoding` wrapper or a user function takes the call), a
+  non-string value converts by reading its `default` and `mapping` attributes natively, the
+  function itself being called only for a true `mapping` (then those attributes are read
+  twice); exact `callableint`/`callablestr` skip the attribute reads (their classes have
+  none). Escaping finds gate and replaced characters eight bytes at a time (SWAR in safe
+  Rust; a property test checks it against the byte rule); the output buffer gets an eighth
+  of headroom over the last size.
+- **Method calls (D4).** `obj.name()` / `obj.name(c1, c2)` with constant arguments use
+  `PyObject_VectorcallMethod` (no bound method). Constants cannot fail or have effects, so
+  looking the method up after them changes nothing. An `AttributeError` when `obj` has no
+  attribute `name` takes `lookup_attr`'s `__getitem__` fallback; otherwise it came from the
+  call and propagates. Only on that error path can a property getter run more than once.
+- **Startup.** `chameleon_rs.__version__` is resolved on first access (module
+  `__getattr__`); `importlib.metadata` is imported only when used.
+- **PGO** (D12): `make build-pgo` (instrumented build, `bench/pgo_train.py`, `llvm-profdata`
+  from rustup's `llvm-tools`, optimised build); about 10% faster on every benchmark; a CI
+  job builds and tests it. Release wheels (Phase 12) should be built this way. No
+  `chameleon-capi` crate was needed: no measured gap required `unsafe`.
+
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
 ```

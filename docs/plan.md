@@ -1016,6 +1016,92 @@ escaping, capacity hints, moving `render()` setup into Rust if the wrapper shows
 
 Exit gate: speed targets met; no regressions on any benchmark.
 
+**In progress (2026-10-21), before Phase 9; real-page validation to follow in the owner's
+checkout.** Details and the exactness arguments: architecture.md, "Phase 10 amendments".
+
+Profile findings (`make build-profiling`, macOS `sample`, synthetic pages only):
+- Translated elements spent a third of their time in an O(n²) WTF-8 scan (`chars` re-validated
+  the rest of the stream for every character, Phase 8).
+- Macro calls per item: `Scope::copy` (two per call with a slot) was 20% inclusive; the
+  slot key was formatted and hashed on every lookup; `getattr(include)` on our own `Macro`.
+- Listing: escaping (gate scan plus replace) about 16%, and the output buffer, sized to the
+  last render exactly, doubled and copied at its final write.
+- Per render: the Python wrapper (`setdefault` loop, `RepeatDict({})`, defaults key) was
+  ~40% of a tiny render; chameleon_partials passes `encoding`, which rebuilt the defaults'
+  closures on every partial.
+- App-shaped pages (and the owner's real pages): most time is CPython work the template
+  triggers. What the engine added there: a Python frame per `tal:repeat` (`RepeatDict.__call__`),
+  three or more Python frames per `repeat.x.index`/`parity`, a `translate` call for every
+  non-string value converted with the default translation function, a bound method per
+  method call, `Markup` plus two `__html__` calls per `structure:` value, and `import
+  chameleon_rs` loading `importlib.metadata` (~6 ms per process start).
+
+Done, each measured (same-process A/B, `bench/bench_ab.py`, interleaved, medians):
+1. Linear WTF-8 scan: translated element 2,305 -> 1,533 ns per item.
+2. Word-at-a-time escape scan (SWAR, safe Rust), replace from the first gate character, buffer
+   headroom (+1/8 + 64 bytes): listing -31..-52 ns per item.
+3. Read-only macro and slot bodies run with the caller's scope instead of a copy
+   (`Program::mark_scope_sharing`); interned slot keys; exact-`Macro` fast path; empty
+   `rcontext` skips `econtext.update`: macro call per item 1,105 -> 735 ns.
+4. `PageTemplate.render` is one native call (`render_page`); defaults for an `encoding` or
+   `translate` argument cached: tiny render 693 -> 634 ns; chameleon_partials through the
+   compat alias 3,133 -> 2,500 ns per item (Chameleon 7,300).
+5. Native `RepeatDict` call and exact-tuple unpack; `repeat.x` and the `RepeatItem`
+   descriptors computed natively for the exact classes; `simple_translate` conversions
+   without the Python call; method calls with constant arguments through
+   `PyObject_VectorcallMethod`; `structure:` markup written directly. Per item:
+   `repeat.x.parity` 401 -> 187 ns, emitted `repeat.x.index` 297 -> 156 ns, a converted
+   non-string 220 -> 136 ns.
+6. `importlib.metadata` deferred to first use (`__version__` via module `__getattr__`).
+7. PGO (`make build-pgo`, `bench/pgo_train.py`): a further ~10% on every scenario (A/B
+   against the plain release build of the same commit: listing -51 ns, macro -71 ns, page
+   -7.9 us). Adopted for release builds: a CI job builds and tests it on Linux and macOS
+   (not yet run in CI); Phase 12's wheels should use it. Profiles are not byte-identical
+   between runs, so neither are the binaries.
+
+Results (release, load average 8-11 during the runs; Chameleon from the same run):
+
+| Scenario | a7bd81a | Phase 10 | Phase 10 + PGO | Chameleon | Ratio (PGO) |
+|---|---|---|---|---|---|
+| Listing, ns per item | 513 | 475 | 415 | 3,086 | 7.3x |
+| Partial listing (native prototype), ns per item | 666 | 654-680 | - | 7,300 | 10.9x (no PGO) |
+| Macro call filling a slot, ns per item | 1,105 | 735 | 635 | 5,292 | 7.9x (8.3x) |
+| Translated element, ns per item | 2,305 | 1,520 | - | 2,870 | 1.9x (no PGO) |
+| Layout page (50 videos), us | 28.8 | 27.0 | - | 164 | 6.1x (no PGO) |
+| App page, inline cards, us | 88.9 | 77.0 | 61.1 | 313 | 5.1x |
+| App report page (1,000-row partial), ms | 1.87 | 1.53 | 1.31 | 4.5-5.7 | 3.4-4.3x |
+| chameleon_partials via compat, ns per item | ~3,130 | 2,500 | - | 7,300 | 2.9x (no PGO) |
+
+The report page is shaped like the owner's heaviest pages (properties, small helpers, a method
+call and `structure:` per row): there the remaining time is the application's own Python
+(property getters, `money()`/`pct()`, float formatting), which both engines pay.
+
+Compile and first request (`bench/bench_first.py`, fresh processes, medians of 7): compile
+of 118 fixture and benchmark templates 9.6 ms in total against Chameleon's 657 ms (68x;
+median 0.053 ms against 3.8 ms per template); the app page's first request (compile, layout
+through `load:`, first render) 1.4 ms against 54 ms (39x). The split is no longer worth
+optimising: file reads, the Python wrapper and CPython's `compile()` for expressions are of
+similar size; `import chameleon_rs` (~17-22 ms, standard-library modules) is now the larger
+part of a cold start.
+
+Tests: 93 core + 6 `chameleon-py` Rust tests; 2,561 pytest passed, 7 skipped (corpus), 3
+strict xfails; upstream 227 passed on each engine; integration 40/16/39/6; render fuzzers
+3,000-5,000 examples each. New: scope-sharing macro cases, method-call and structure-value
+grids, hand-made `RepeatItem`s, a property test of the word-at-a-time escape against the
+plain rule. The longer fuzz run found one slot-stream ordering difference (extend-macro, a
+slot inside an `i18n:name`, a recursive translated fill) that a7bd81a has too: pinned as a
+strict xfail, not fixed.
+
+Carried forward:
+- **After Phase 9:** re-measure the partial listing (native `render_partial`) and the +12 ns
+  note; reuse `partial_call`'s scope and `RepeatDict` setup in the new path.
+- **Not done:** a faster `Scope::copy` for bodies that write (no bulk-insert API exists for a
+  dict subclass with its own `__iter__`; CPython's fast clone needs `tp_iter == dict_iter`);
+  per-type `__html__` caching (no safe access to the type version tag); attribute-chain
+  caching (not exact: attributes can change between reads).
+- **Real-page validation** in the owner's checkout: crawl-and-diff both applications again
+  and re-time them (`scripts/realsite.py --timing`).
+
 ## Phase 11: Concurrency and async
 
 D9: `render_async` on the resumable VM, concurrent expressions with placeholders, partial
