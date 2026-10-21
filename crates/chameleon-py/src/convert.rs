@@ -167,6 +167,12 @@ fn quote<'py>(
         write_str(s, esc, out)?;
         return Ok(Quoted::Written);
     }
+    if is_markup(value)? {
+        // `structure:`'s `Markup`: `__html__()` is `str(self)`, which every stage writes
+        // unescaped (a lone value, a part, content, a boolean attribute's text).
+        write_str(value.cast::<PyString>()?, Escape::Structure, out)?;
+        return Ok(Quoted::Written);
+    }
     if value.is_exact_instance_of::<PyInt>() {
         if let Ok(n) = value.extract::<i64>() {
             let _ = write!(out, "{n}");
@@ -204,18 +210,22 @@ static MARKUP: pyo3::sync::PyOnceLock<Py<PyAny>> = pyo3::sync::PyOnceLock::new()
 /// `value.__html__()` if the value has the method (`None` if it has not). For an exact
 /// `chameleon_rs.utils.Markup` (what `structure:` makes), whose `__html__` is `str(self)`,
 /// that `str` is made natively, without the attribute lookup and the Python call.
-fn html_of<'py>(value: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
+fn is_markup(value: &Bound<'_, PyAny>) -> PyResult<bool> {
     let py = value.py();
     let markup = MARKUP.get_or_try_init(py, || {
         Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs.utils"))?.getattr(intern!(py, "Markup"))?.unbind())
     })?;
-    if value.get_type().is(markup.bind(py)) {
+    Ok(value.get_type().is(markup.bind(py)))
+}
+
+fn html_of<'py>(value: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
+    if is_markup(value)? {
         return Ok(Some(value.str()?.into_any()));
     }
     if crate::repeat::is_plain_callable(value)? {
         return Ok(None);
     }
-    match value.getattr_opt(intern!(py, "__html__"))? {
+    match value.getattr_opt(intern!(value.py(), "__html__"))? {
         Some(html) => Ok(Some(html.call0()?)),
         None => Ok(None),
     }

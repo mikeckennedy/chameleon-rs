@@ -98,6 +98,21 @@ def renders(scenario: str, chameleon, current, base) -> tuple[list, int]:
         path = str(TEMPLATES / 'app' / 'episodes_inline.pt')
         classes = (chameleon.zpt.template.PageTemplateFile, base.PageTemplateFile, current.PageTemplateFile)
         return [bound(cls(path), make_model(50)) for cls in classes], 1
+    if scenario == 'report':
+        import chameleon.zpt.template
+        import chameleon_partials
+        from bench_page import REPORT, TEMPLATES, make_report_model
+
+        chameleon_partials.register_extensions(str(TEMPLATES), auto_reload=False, cache_init=False)
+        model = make_report_model(1000)
+        path = str(TEMPLATES / 'app' / 'report.pt')
+        ours = []
+        for engine in (base, current):
+            registry: dict = {}
+            registry[REPORT] = engine.PageTemplate((TEMPLATES / REPORT).read_text(), partials=registry)
+            ours.append(bound(engine.PageTemplateFile(path, partials=registry), model))
+        ref = chameleon.zpt.template.PageTemplateFile(path)
+        return [bound(ref, {**model, 'render_partial': chameleon_partials.render_partial}), *ours], 1
     raise SystemExit(f'unknown scenario {scenario!r}')
 
 
@@ -109,9 +124,9 @@ def main() -> int:
     parser.add_argument(
         '--scenario',
         default='listing',
-        choices=('listing', 'macro', 'page'),
+        choices=('listing', 'macro', 'page', 'report'),
         help='listing (the gate, ns per item), macro (a macro call filling a slot, ns per item) or '
-        'page (bench_page.py inline cards, ns per render)',
+        'page (bench_page.py inline cards, ns per render) or report (its 1,000-row report page)',
     )
     parser.add_argument('--keep', help='build the baseline into this directory once and reuse it')
     args = parser.parse_args()

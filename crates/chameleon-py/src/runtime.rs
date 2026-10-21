@@ -605,7 +605,11 @@ impl Macros for PyRuntime<'_, '_> {
     /// `econtext.update(rcontext)`: the local dict gets every `rcontext` entry (the globals
     /// defined so far, and `__error__` once an error was recorded).
     fn after_macro(&mut self) -> PyResult<()> {
-        let rcontext = self.render.rcontext(self.py);
+        // Nothing to copy while `rcontext` is empty (or not even made yet).
+        let Some(rcontext) = self.render.rcontext.get() else { return Ok(()) };
+        if rcontext.is_empty() {
+            return Ok(());
+        }
         self.scope.as_super().update(rcontext.as_mapping())
     }
 

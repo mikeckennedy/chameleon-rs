@@ -545,3 +545,20 @@ def test_handler_in_a_slot_body_drops_the_failing_text_node() -> None:
         + """ U</y></x>""",
         translate=lambda msgid, **kw: f'<{msgid}|{kw.get("mapping")}>',
     )
+
+
+@pytest.mark.xfail(strict=True, reason='known difference, found by the Phase 10 fuzz run, present since Phase 8')
+def test_extended_slot_inside_a_name_with_a_recursive_translated_fill() -> None:
+    """An `extend-macro` whose first fill of a slot (defined inside an `i18n:name`) is a
+    translated body calling the macro itself, and whose second fill is plain: Chameleon writes
+    the plain fill's output inside the outer `<b>` before the translation's, chameleon-rs after
+    it (`<b><b>fa</b>[...]` against `<b>fa</b><b>[...]`). Not caused by Phase 10: a7bd81a
+    renders it the same way."""
+    same(
+        """<p metal:define-macro="mt1"><i i18n:translate="">F<b i18n:name="n"><s metal:define-slot="s2"/></b></i>"""
+        """</p><div metal:extend-macro="macros['mt1']" metal:define-macro="m2"><b metal:fill-slot="s2" """
+        """i18n:translate="">fa<z metal:use-macro="macros['m2']"/></b><b metal:fill-slot="s2">fa</b></div>"""
+        """${x}${macroname | 0}""",
+        x=1,
+        translate=lambda msgid, **kw: repr([msgid, kw.get('mapping')]),
+    )
