@@ -15,7 +15,8 @@ make test-upstream-rust   # chameleon_rs, aliased in as `chameleon`
 ## Baseline
 
 On Python 3.15.0 (macOS arm64), the reference Chameleon passes **227 of 233** tests. The six
-failures below are environmental (they fail for stock Chameleon too) and are excluded from
+failures below are environmental (they fail for stock Chameleon on the maintainer's Mac but pass on
+CI runners, so they are non-strict xfails) and are excluded from
 the compatibility score:
 
 | Test | Why it fails on the reference engine |

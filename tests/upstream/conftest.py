@@ -8,8 +8,9 @@ Runs Chameleon's own test suite (vendored, unmodified, from malthe/chameleon at 
 The tests import `chameleon.*`, so the Rust engine is tested by installing chameleon_rs's
 compatibility package under that name before collection starts.
 
-Expected failures are strict: a listed test that starts passing fails the run, so the lists
-below and expected_failures_rust.txt always match reality.
+The Rust ratchet (expected_failures_rust.txt) is strict: a listed test that starts passing
+fails the run, so the list always matches reality. The environmental failures are not strict,
+because they depend on the machine: they fail on the maintainer's Mac and pass on CI runners.
 """
 
 import os
@@ -85,7 +86,7 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         key = item.nodeid.split('chameleon_tests/', 1)[-1]
         if key in ENVIRONMENTAL_FAILURES:
-            item.add_marker(pytest.mark.xfail(reason='fails on reference Chameleon (environmental)', strict=True))
+            item.add_marker(pytest.mark.xfail(reason='fails on reference Chameleon in some environments', strict=False))
         elif key in rust_failures:
             item.add_marker(pytest.mark.xfail(reason=rust_failures[key], strict=True))
 

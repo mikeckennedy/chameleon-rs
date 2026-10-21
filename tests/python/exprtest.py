@@ -38,6 +38,10 @@ def describe_value(value: Any) -> tuple[str, str]:
 def describe_error(error: BaseException) -> tuple[str, str, str]:
     # Chameleon wraps render errors in a `RenderError` subclass named like the original.
     args = error.args if not isinstance(error, (chameleon.exc.TemplateError, chameleon_rs.exc.TemplateError)) else ()
+    if isinstance(error, SyntaxError):
+        # Chameleon's location points into its generated module, ours into the expression
+        # (a documented difference); on some Python versions it is set, on others not.
+        args = (error.msg,)
     return 'raise', type(error).__name__, canon(repr(args))
 
 
