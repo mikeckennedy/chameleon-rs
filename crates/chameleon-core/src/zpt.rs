@@ -58,8 +58,28 @@ impl<'a, C: ExprCompiler> Builder<'a, C> {
         Ok(Some(match item {
             Item::Text(span) => self.visit_text(*span)?,
             Item::Comment(span) => return self.visit_comment(*span),
+            // `visit_default`: declarations, doctypes and unclassifiable tokens, verbatim.
             Item::Default(span) => Node::Text(span.text(self.src).to_owned()),
-            Item::Unsupported { kind, span } => return Err(CompileError::unsupported(kind, *span)),
+            Item::Cdata(span) => {
+                let text = span.text(self.src);
+                if text.contains("${") {
+                    return Err(CompileError::unsupported("Interpolation in a CDATA section", *span));
+                }
+                Node::Text(text.to_owned())
+            }
+            Item::ProcessingInstruction { span, name, text } => {
+                let name = name.text(self.src);
+                if name == "python" {
+                    return Err(CompileError::unsupported("A <?python ?> code block", *span));
+                }
+                // `visit_processing_instruction` rebuilds the text and visits it as text.
+                let rebuilt = format!("<?{name}{}?>", text.text(self.src));
+                if rebuilt.contains("${") {
+                    return Err(CompileError::unsupported("Interpolation in a processing instruction", *span));
+                }
+                self.last = Some(rebuilt.rsplit('\n').next().unwrap_or_default().chars().count());
+                Node::Text(rebuilt.replace("$$", "$"))
+            }
             Item::StartTag(tag) => self.visit_element(tag, None, &[])?,
             Item::Element(e) => {
                 let Element { start, end, children } = &**e;
@@ -122,7 +142,7 @@ impl<'a, C: ExprCompiler> Builder<'a, C> {
         }
         let mut whitespace = self.whitespace.clone();
 
-        let drop_tags = DROP_NS.contains(&&*start.namespace);
+        let drop_tags = DROP_NS.contains(&&*start.namespace.uri);
 
         let content = get(TAL_NS, "content")
             .map(|(clause, span)| {
@@ -137,7 +157,7 @@ impl<'a, C: ExprCompiler> Builder<'a, C> {
         let start_tag =
             if drop_tags { None } else { Some(self.start_tag(start, &ns, content.is_some() && end.is_none())?) };
         let end_tag = match (drop_tags, end) {
-            (false, Some(end)) => Some(end_tag_text(src, end)?),
+            (false, Some(end)) => Some(end_tag_text(src, end)),
             // tal:content on an empty or unclosed tag gets an explicit end tag.
             (false, None) if content.is_some() => Some(format!("</{}>", start.name.text(src))),
             _ => None,
@@ -163,7 +183,7 @@ impl<'a, C: ExprCompiler> Builder<'a, C> {
                     ));
                 }
                 let expr = self.value(&define.expr, span, self.cx(false))?;
-                if &*start.namespace == TAL_NS {
+                if &*start.namespace.uri == TAL_NS {
                     self.last = None;
                     whitespace.trim_start_matches('\n').clone_into(&mut self.whitespace);
                     whitespace = String::new();
@@ -245,14 +265,8 @@ impl<'a, C: ExprCompiler> Builder<'a, C> {
     fn start_tag(&mut self, tag: &Tag, ns: &[(&NsAttr, String)], force_open: bool) -> Result<StartTag, C::Error> {
         let src = self.src;
         let open = format!("{}{}", tag.prefix.text(src), tag.name.text(src));
-        let close = if force_open {
-            ">".to_owned()
-        } else {
-            tag.suffix
-                .ok_or_else(|| CompileError::unsupported("A tag without a closing `>`", tag.span))?
-                .text(src)
-                .to_owned()
-        };
+        // A missing suffix is `None` in Chameleon, which `Token.__add__` treats as "".
+        let close = if force_open { ">".to_owned() } else { tag.suffix.map_or("", |s| s.text(src)).to_owned() };
         let mut attrs = Vec::with_capacity(tag.attrs.len());
         // prepare_attributes pairs attributes with ns_attrs keys by position (`zip`).
         for (i, attr) in tag.attrs.iter().enumerate() {
@@ -296,9 +310,11 @@ fn interpolation(parts: Vec<Part>, esc: Escape) -> Node {
     }
 }
 
-fn end_tag_text<E>(src: &str, end: &Tag) -> Result<String, E> {
-    let suffix = end.suffix.ok_or_else(|| CompileError::unsupported("An end tag without a closing `>`", end.span))?;
-    Ok(format!("{}{}{}{}", end.prefix.text(src), end.name.text(src), end.space.text(src), suffix.text(src)))
+/// `End`: prefix, name, space and suffix, where a missing (`None`) part adds nothing, as
+/// `Token.__add__(None)` does in Chameleon (`<p>a</p\n` renders `<p>a</p`).
+fn end_tag_text(src: &str, end: &Tag) -> String {
+    let opt = |s: Option<Span>| s.map_or("", |s| s.text(src));
+    format!("{}{}{}{}", end.prefix.text(src), end.name.text(src), opt(end.space), opt(end.suffix))
 }
 
 /// The prefix an attribute was written with (`tal:`), for messages.

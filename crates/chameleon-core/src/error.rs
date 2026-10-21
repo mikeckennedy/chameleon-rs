@@ -1,7 +1,7 @@
 //! Compile-time errors (D8). Positions are byte spans; the Python layer converts them to
 //! code-point offsets and `(line, column)` on the error path.
 
-use crate::parser::ParseError;
+use crate::parser::{ParseError, ParseErrorKind};
 use crate::source::Span;
 
 /// Which of Chameleon's exception classes an error corresponds to.
@@ -17,6 +17,10 @@ pub enum ErrorKind {
     Expression,
     /// `chameleon.exc.TranslationError`
     Translation,
+    /// A bare `KeyError` (an undefined namespace prefix under `restricted_namespace`).
+    Key,
+    /// A bare `AttributeError` (Chameleon's parser fails this way on a tag with no name).
+    Attribute,
     /// Valid Chameleon that this build does not support yet.
     Unsupported,
 }
@@ -45,6 +49,11 @@ impl<E> CompileError<E> {
 
 impl<E> From<ParseError> for CompileError<E> {
     fn from(e: ParseError) -> Self {
-        Self::new(ErrorKind::Parse, e.message, e.span)
+        let kind = match e.kind {
+            ParseErrorKind::Syntax => ErrorKind::Parse,
+            ParseErrorKind::UndefinedPrefix => ErrorKind::Key,
+            ParseErrorKind::NoTagName => ErrorKind::Attribute,
+        };
+        Self::new(kind, e.message, e.span)
     }
 }

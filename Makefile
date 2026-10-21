@@ -54,12 +54,12 @@ lint:
 	cargo fmt --all -- --check
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	cargo deny check -A license-not-encountered
-	ruff check python tests/python tests/upstream/conftest.py bench
-	ruff format --check python tests/python tests/upstream/conftest.py
+	ruff check python tests/python tests/upstream/conftest.py bench scripts
+	ruff format --check python tests/python tests/upstream/conftest.py scripts
 
 fmt:
 	cargo fmt --all
-	ruff format python tests/python tests/upstream/conftest.py
+	ruff format python tests/python tests/upstream/conftest.py scripts
 
 bench: build-release
 	$(PY) bench/bench_render.py

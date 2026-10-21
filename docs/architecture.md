@@ -108,6 +108,89 @@ pinned down a detail. Each decision's text below still describes the intent.
   awaitable (Phase 11); the redundancy of `Call { program, code }` (the `Arc` is reachable
   from `code`); the partial registry (Phase 9).
 
+## Phase 3 amendments (2026-10-20)
+
+The tokenizer and element parser are exact ports; these are the decisions that made them so,
+and the places where the port pins down or changes a Phase 2 detail.
+
+- **Regexes kept verbatim, engines chosen per pattern.** `XML_SPE` is assembled in Rust from
+  Chameleon's `recollector` table with the same `%(Name)s` expansion (a pytest asserts every
+  one of the 28 expanded patterns equals `chameleon.tokenize.collector.res`).
+  - Patterns without lookaround or backreferences run on the `regex` crate, whose
+    leftmost-first matches and groups are the ones a backtracking engine reports, in linear
+    time: the tokenizer's `<!` (comments, CDATA, doctypes), `<?` and `</` branches, and the
+    parser's `match_tag_prefix_and_name` and `match_processing_instruction`.
+  - The patterns with lookaheads are matched by hand: `ElemTagCE` (`(?!(?:S)?=)`),
+    `match_single_attribute` (two lookaheads and a backreference) and `match_double_hyphen`.
+    Each is derived from the pattern's backtracking priority order (the reasoning is in the
+    doc comments) and checked against the verbatim pattern on fancy-regex by proptest, and
+    against Chameleon by the Hypothesis differential.
+  - fancy-regex is a dev-dependency only. **Its backtracking stack is fixed at 1,000,000
+    entries** (not configurable in 0.19), so a markup token of about 1 MB (a long comment,
+    CDATA section, data-URI attribute value, or a quarter of a million attributes) fails with
+    `StackOverflow` where Python's `re` succeeds. The first Phase 3 build ran on it and turned
+    that error into a lone `<` token silently (a 1.1 MB `title` made a `tal:condition="False"`
+    paragraph a `ParseError`); the review caught it. Production matching now has no failure
+    mode at all, and deterministic tests feed over-1 MB tokens of every kind to both engines.
+- **Python's character classes.** `crate::pyre` translates the syntax differences: `\s`, `\d`
+  and `\w` become explicit classes generated from Python's own `re`
+  (`scripts/gen_pychars.py` writes `pychars_table.rs`; Python 3.15, Unicode 17). Python's `\s`
+  includes `\x1c`-`\x1f` and its `\w` is `str.isalnum()` plus `_` (no combining marks, all
+  numerics), both unlike Rust's; inside a class `[`, `&` and `~` are escaped (Rust gives them
+  meaning there), and a bare `]` outside one. The same tables replace Phase 2's approximate
+  `\d` / `\w` in entity decoding. **Known deviation:** on Python 3.12-3.14, whose Unicode
+  databases are older, the tables also classify code points assigned only in Unicode 16-17
+  (3.12 counts 680 `\d` and 137,936 `\w` code points against the tables' 770 and 147,597).
+  Such characters are unassigned for that interpreter (`Cn`); the pytest checks that every
+  difference is one of them, and verified on 3.12 and 3.14.
+- **Tokenizer dispatch.** `XML_SPE` is `[^<]+|MarkupSPE` and every `MarkupSPE` match starts
+  with `<`, so text runs are found with memchr; at a `<`, each branch of `MarkupSPE` can match
+  empty after its lead character and nothing follows the group, so the character after the
+  `<` picks the branch exactly. The literal `finditer` on fancy-regex stays as a test
+  reference. Tokenize plus parse is 3-4x faster than Chameleon's (Phase 3 results in
+  plan.md).
+- **Item kinds as `ElementParser` yields them:** text, comment, cdata, default (declarations
+  and doctypes, tokens `identify` calls errors, processing instructions its regex rejects),
+  processing_instruction (name and text spans), start_tag (unclosed) and element; the XML
+  declaration is an element named `?xml`. Phase 2 rejected declarations, CDATA and
+  processing instructions as unsupported; the builder now outputs declarations and CDATA
+  without `${` as Chameleon does, visits a non-`python` processing instruction as text, and
+  treats a missing tag suffix or space as empty (`Token.__add__(None)` returns the token, so
+  `<p>a</p\n` renders `<p>a</p`). Interpolated CDATA and `<?python ?>` wait for Phase 4.
+- **Errors as Chameleon raises them:** `ParseError` with the token (`Unexpected end tag.`,
+  `The string '--' is not allowed in a comment.` on the `--` itself), a bare
+  `KeyError('Undefined namespace prefix: x.')` under `restricted_namespace` (Phase 2 raised
+  a `ParseError`), and a bare `AttributeError` for a tag with no name (`</`), which Chameleon
+  hits by calling `groupdict()` on a failed match. The core's `ErrorKind` gained `Key` and
+  `Attribute` for these.
+- **Thread safety:** parser options and trees use `Arc`, so `ParseOptions` (which Phase 7
+  keeps in frozen pyclasses) and `Program` are `Send + Sync`, asserted at compile time.
+- **Namespaces.** The stack reproduces Chameleon's quirk of popping once per end tag even
+  when the end tag closes several unclosed start tags, so prefixes declared on an unclosed
+  element stay visible after its parent closes. Each tag keeps an `Rc` snapshot of its prefix
+  map (`ns_map`); Chameleon shares the dict, which differs only if an end tag carried
+  `xmlns` attributes, which `iter_xml` never produces. A namespace URI remembers whether it
+  came from the defaults (a plain string) or an attribute (a token, with its position); so do
+  the empty strings Chameleon substitutes for an unquoted or valueless attribute
+  (`AttrKind`).
+- **`Source`:** byte spans everywhere; code-point offsets and `Token.location`-style
+  `(line, column)` come from a line index built on first use (ASCII sources skip counting).
+- **Encoding sniffing stays in Python** (`chameleon_rs.utils.read_bytes`, `detect_encoding`,
+  `read_xml_encoding`, `read_encoded`): the bytes are decoded with whatever codec a BOM, an
+  XML declaration or a `<meta http-equiv>` names, which needs Python's codecs, and running
+  Chameleon's `re` patterns unchanged makes the behaviour identical by construction. It runs
+  once per file load, off the render path. Differential tests (fixed and generated bytes)
+  compare all three functions with Chameleon's.
+- **`_native._testing`** returns tokens and trees normalized to plain data (`(text, pos)`
+  for a token, `(text, None)` for a plain string, Chameleon's tag dict keys) and raises
+  parse errors exactly as compiling does, for the differential tests.
+- **Open for Phase 7:** the parser takes spans of one source string, so a user-supplied
+  `tokenizer` (a Chameleon option) whose tokens are not slices of the body needs a different
+  entry point; a template containing lone surrogates cannot become a Rust `str` at all
+  (Chameleon accepts it), which Phase 7 must decide.
+- **`cargo-fuzz` skipped:** it needs a nightly toolchain and the project pins stable 1.99;
+  proptest covers the no-panic and coverage invariants, Hypothesis the differential ones.
+
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
 ```
@@ -440,7 +523,8 @@ in a model is recognized and routed to the native path.
 - **`chameleon-core`:** pure Rust tests with toy `Runtime`/`ExprCompiler`; `insta` snapshots for
   program and bytecode dumps (regression guards, not proof of compatibility); `proptest` for
   invariants (no panics, spans cover the input, tokens concatenate back to the input);
-  `cargo-fuzz` on the tokenizer and parser for panics.
+  `cargo-fuzz` on the tokenizer and parser for panics (skipped in Phase 3: it needs nightly;
+  see the Phase 3 amendments).
 - **`chameleon-py`:** a few embedded-interpreter tests that use only the standard library (the
   embedded interpreter does not see the venv, verified), via a dev-dependency on
   `pyo3/auto-initialize`.

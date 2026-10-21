@@ -1,6 +1,9 @@
 from collections.abc import Iterator, Mapping
 from typing import Any, final
 
+# Differential-test helpers (tokens and element trees); see crates/chameleon-py/src/testing.rs.
+_testing: Any
+
 def core_version() -> str: ...
 def lookup_attr(obj: object, name: str) -> Any: ...
 

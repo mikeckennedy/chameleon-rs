@@ -11,6 +11,7 @@ mod expr;
 mod program;
 mod runtime;
 mod scope;
+mod testing;
 
 use pyo3::prelude::*;
 
@@ -31,6 +32,13 @@ mod _native {
     #[pyfunction]
     fn core_version() -> &'static str {
         chameleon_core::VERSION
+    }
+
+    /// Tokens and element trees for the differential tests (see `testing.rs`).
+    #[pymodule(gil_used = false)]
+    mod _testing {
+        #[pymodule_export]
+        use crate::testing::{char_class, parse, parse_count, token_count, tokenizer_pattern, tokens};
     }
 
     #[pymodule_init]

@@ -10,8 +10,11 @@ publish.workspace = true
 [dependencies]
 thiserror.workspace = true
 memchr.workspace = true
+regex.workspace = true
 
 [dev-dependencies]
+# The reference engine for the hand-written matchers and the tokenizer fast path (tests only).
+fancy-regex.workspace = true
 insta.workspace = true
 proptest.workspace = true
 

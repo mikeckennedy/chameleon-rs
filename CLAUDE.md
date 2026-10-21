@@ -4,7 +4,9 @@ A Rust re-implementation of Python's Chameleon page template engine, shipped as 
 package `chameleon-rs` (import `chameleon_rs`). Goal: drop-in compatible with Chameleon
 (95%+ of its test suite, byte-identical output on real sites) and much faster.
 
-- Decisions: `docs/architecture.md`. Build plan and current phase: `docs/plan.md`.
+- Decisions: `docs/architecture.md`. Build plan and current phase: `docs/plan.md`. Speculative
+  ideas not yet designed (partials settings, async extras, memory saver, post-release
+  optimisation, docs, logo): `docs/vision.md`.
 - Reference implementation: `temp/chameleon` (gitignored clone of malthe/chameleon at
   `90b9002`, installed editable in `venv`). When behavior is unclear, read it and run it.
 - Chameleon's test suite is vendored unmodified in `tests/upstream/chameleon_tests`. Never

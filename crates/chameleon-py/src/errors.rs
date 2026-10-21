@@ -2,11 +2,11 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use pyo3::exceptions::{PyRecursionError, PyRuntimeError};
+use pyo3::exceptions::{PyAttributeError, PyKeyError, PyRecursionError, PyRuntimeError};
 use pyo3::intern;
 use pyo3::prelude::*;
 
-use chameleon_core::{CompileError, ErrorKind, VmError, char_offset, location};
+use chameleon_core::{CompileError, ErrorKind, Source, VmError};
 
 fn exc_class<'py>(py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
     py.import(intern!(py, "chameleon_rs.exc"))?.getattr(name)
@@ -34,10 +34,14 @@ pub(crate) fn compile_error(py: Python<'_>, err: CompileError<PyErr>, src: &str,
                 ErrorKind::Expression => "ExpressionError",
                 ErrorKind::Translation => "TranslationError",
                 ErrorKind::Unsupported => "UnsupportedError",
+                // Chameleon raises these as bare built-in exceptions, without a position.
+                ErrorKind::Key => return PyKeyError::new_err(message),
+                ErrorKind::Attribute => return PyAttributeError::new_err(message),
             };
             let token = span.text(src);
-            let offset = char_offset(src, span.start as usize);
-            let loc = location(src, span.start as usize);
+            let source = Source::new(src);
+            let offset = source.char_offset(span.start as usize);
+            let loc = source.location(span.start as usize);
             match exc_class(py, class).and_then(|cls| cls.call1((message, token, offset, loc, filename))) {
                 Ok(exc) => PyErr::from_value(exc),
                 Err(e) => e,

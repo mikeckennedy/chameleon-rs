@@ -9,7 +9,7 @@ use crate::error::CompileError;
 use crate::escape::Escape;
 use crate::expr::ExprCompiler;
 use crate::nodes::{AttrNode, Node, Part};
-use crate::parser::parse;
+use crate::parser::{ParseOptions, parse};
 use crate::source::{Span, check_len};
 use crate::tokenize::tokenize;
 use crate::vm::{LoopInfo, NameId, Op, Program, TextRef};
@@ -21,7 +21,7 @@ pub fn compile<C: ExprCompiler>(src: &str, compiler: &mut C) -> Result<Program, 
         return Err(CompileError::TooLarge);
     }
     let tokens = tokenize(src);
-    let items = parse(src, &tokens)?;
+    let items = parse(src, &tokens, &ParseOptions::default())?;
     let tree = Builder::new(src, compiler).build(&items)?;
     lower(&tree).ok_or_else(|| CompileError::new(crate::ErrorKind::Unsupported, "program too large", Span::default()))
 }

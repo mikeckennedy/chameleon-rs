@@ -365,7 +365,8 @@ fn compile_errors() {
     assert_eq!(err("<p tal:define=\"x 1\"/>"), "The attribute tal:define is not supported yet by chameleon-rs");
     assert_eq!(err("<p tal:repeat=\"econtext xs\"/>"), "Name disallowed by compiler: econtext");
     assert_eq!(err("<p>a</b>"), "Unexpected end tag.");
-    assert_eq!(err("<!DOCTYPE html>"), "declaration is not supported yet by chameleon-rs");
+    assert_eq!(err("<?python x = 1 ?>"), "A <?python ?> code block is not supported yet by chameleon-rs");
+    assert_eq!(err("<a foo:b=\"1\"/>"), "Undefined namespace prefix: foo.");
     assert!(matches!(compile("${boom}", &mut Toy::default()), Err(crate::CompileError::Expr(e)) if e == "boom"));
 }
 
@@ -445,4 +446,14 @@ fn capacity_hint_is_smoothed_and_capped() {
     assert_eq!(p.capacity_hint(), crate::MAX_CAPACITY_HINT);
     p.record_size(0);
     assert_eq!(p.capacity_hint(), crate::MAX_CAPACITY_HINT / 2);
+}
+
+#[test]
+fn declarations_processing_instructions_and_cdata_pass_through() {
+    // Verified against Chameleon: a processing instruction is visited as text (`$$` unescaped),
+    // CDATA and declarations are output as is, a missing `>` adds nothing.
+    assert_eq!(
+        render("<!DOCTYPE html>\n<?php $$x ?><![CDATA[ $$ ]]><p>a</p\n<b", &[]),
+        "<!DOCTYPE html>\n<?php $x ?><![CDATA[ $$ ]]><p>a</p<b"
+    );
 }

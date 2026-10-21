@@ -74,6 +74,13 @@ CASES: list[tuple[str, str, dict[str, Any]]] = [
     ('empty-tags', '<br/><br /><img src="x"/>', {}),
     ('unclosed', '<p>unclosed <b>bold</p>', {}),
     ('lone-lt', 'a < b <p>x</p>', {}),
+    ('doctype', '<!DOCTYPE html>\n<html><p>${x}</p></html>', {'x': 1}),
+    ('doctype-subset', '<!DOCTYPE a [ <!ENTITY b "c"> ]><a/>', {}),
+    ('xml-declaration', '<?xml version="1.0" encoding="utf-8"?>\n<a>$$</a>', {}),
+    ('processing-instruction', '<?php echo $$x; ?><p tal:repeat="i [1, 2]">${i}</p>', {}),
+    ('cdata', '<![CDATA[ <b> $$ ]]>', {}),
+    ('unclosed-bracket', '<p>a</p\n<b x="1"', {}),
+    ('xmlns-scope', '<a xmlns:foo="u"><b></a><c foo:bar="1">${x}</c>', {'x': 2}),
     ('entities-static', '<p title="&amp;">&lt;&nbsp;</p>', {}),
     ('comment', '<!-- plain --><p>x</p>', {}),
     ('comment-interpolated', '<!-- ${x} -->', {'x': '<&>'}),
@@ -295,6 +302,7 @@ COMPILE_ERRORS: list[tuple[str, str, str]] = [
     ('undefined-prefix', '<svg xlink:href="a"/>', 'KeyError'),
     ('unexpected-end-tag', '<p>a</b>', 'ParseError'),
     ('double-hyphen', '<!-- a -- b -->', 'ParseError'),
+    ('nameless-end-tag', '<p>a</</p>', 'AttributeError'),
     ('bad-repeat', '<p tal:repeat="( a, b) x">d</p>', 'LanguageError'),
     ('unknown-type', '<p>${foo: 1}</p>', 'LookupError'),
 ]
@@ -305,10 +313,11 @@ def test_same_compile_error(source: str, name: str) -> None:
     with pytest.raises(Exception) as want:
         chameleon.PageTemplate(source)()
     assert any(c.__name__ == name for c in type(want.value).__mro__), want.value
-    if name == 'KeyError':
-        # Chameleon raises a bare KeyError for an undefined prefix; we raise a ParseError.
-        with pytest.raises(chameleon_rs.exc.ParseError):
+    if name in ('KeyError', 'AttributeError'):
+        # Chameleon raises these bare (an undefined prefix; a tag with no name), and so do we.
+        with pytest.raises(type(want.value)) as got:
             chameleon_rs.PageTemplate(source)()
+        assert str(got.value) == str(want.value)
         return
     if name == 'LookupError':
         with pytest.raises(LookupError):
@@ -328,7 +337,8 @@ def test_error_positions_are_code_points() -> None:
 def test_unsupported_features_say_so() -> None:
     for source in (
         '<p tal:define="x 1">${x}</p>',
-        '<!DOCTYPE html>',
+        '<?python x = 1 ?>',
+        '<![CDATA[${x}]]>',
         '<p>${string: a}</p>',
         '<p metal:use-macro="x"/>',
     ):

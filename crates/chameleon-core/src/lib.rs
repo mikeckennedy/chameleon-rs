@@ -19,6 +19,8 @@ mod nodes;
 mod output;
 mod parser;
 mod pychars;
+mod pychars_table;
+mod pyre;
 mod source;
 mod tal;
 mod tokenize;
@@ -31,14 +33,47 @@ pub use escape::{Escape, Quote, escape_into, needs_escape};
 pub use expr::{ExprCompileError, ExprCompiler, ExprContext, ExprId};
 pub use output::{Mark, Output};
 pub use pychars::is_space as is_python_space;
-pub use source::{Span, char_offset, location};
+pub use source::{Source, Span, char_offset, location};
 pub use vm::{
     Call, Countdown, Done, Emitted, Loop, MAX_CAPACITY_HINT, MAX_FRAMES, NameId, Op, Program, Runtime, Step, TextRef,
     VmError, VmState, run,
 };
 
+/// Tokens, element trees and character classes, exposed for the differential tests in
+/// `chameleon_rs._native._testing` (compared against Chameleon's `iter_xml` and
+/// `ElementParser`). Not part of the rendering API.
+pub mod testing {
+    pub use crate::parser::{
+        Attr, AttrKind, Element, Item, Namespaces, NsAttr, NsValue, ParseError, ParseErrorKind, ParseOptions, Tag,
+        parse,
+    };
+    pub use crate::pychars::Class;
+    pub use crate::tokenize::{pattern, tokenize, tokenize_text};
+
+    /// [`parse`] with its error converted the way [`crate::compile`] converts it.
+    pub fn parse_tokens<E>(
+        src: &str,
+        tokens: &[crate::Span],
+        options: &ParseOptions,
+    ) -> Result<Vec<Item>, crate::CompileError<E>> {
+        if !crate::source::check_len(src) {
+            return Err(crate::CompileError::TooLarge);
+        }
+        Ok(parse(src, tokens, options)?)
+    }
+}
+
 /// The version of this crate, reported by the Python extension for diagnostics.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+// Compiled programs and parser options are shared across threads (frozen pyclasses under
+// free-threaded Python), so they must stay `Send + Sync`.
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<Program>();
+    assert_send_sync::<testing::ParseOptions>();
+    assert_send_sync::<testing::Item>();
+};
 
 #[cfg(test)]
 mod tests;
