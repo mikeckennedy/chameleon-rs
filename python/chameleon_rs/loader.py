@@ -1,27 +1,46 @@
 # Ported from Chameleon's src/chameleon/loader.py (`cache`, `import_package_resource`,
-# `TemplateLoader`), modified: type annotations; the compiled-module loaders
-# (`MemoryLoader`, `ModuleLoader`) do not apply to chameleon-rs.
+# `TemplateLoader`, `MemoryLoader`, `ModuleLoader`), modified: type annotations; `cache`
+# stores with `setdefault`, so concurrent loads share one template. chameleon-rs
+# does not compile templates into Python modules, so `MemoryLoader` and `ModuleLoader` are
+# kept only for code that uses them directly (and as a template's `loader` attribute).
 """Template loading by path spec: what the ``load:`` expression type calls (as the
-``__loader`` template builtin of file templates) and what Phase 7's ``PageTemplateLoader``
-builds on."""
+``__loader`` template builtin of file templates) and what ``PageTemplateLoader`` builds on."""
 
 from __future__ import annotations
 
 import contextlib
 import functools
 import importlib.resources
+import logging
 import os
 import posixpath
+import py_compile
+import shutil
+import sys
+import tempfile
+import warnings
 from collections.abc import Callable, Iterator, Sequence
+from importlib.machinery import SourceFileLoader
+from importlib.util import module_from_spec, spec_from_loader
 from pathlib import Path
+from threading import RLock
 from typing import Any, cast
+
+lock = RLock()
+acquire_lock = lock.acquire
+release_lock = lock.release
+del lock
+
+log = logging.getLogger('chameleon.loader')
 
 
 def cache[F: Callable[..., Any]](func: F) -> F:
     def load(self: Any, *args: Any, **kwargs: Any) -> Any:
         template = self.registry.get(args)
         if template is None:
-            self.registry[args] = template = func(self, *args, **kwargs)
+            # Threads loading the same spec at once may each create a template; `setdefault`
+            # (atomic on a dict, free-threaded builds included) makes them all use the first.
+            template = self.registry.setdefault(args, func(self, *args, **kwargs))
         return template
 
     return cast('F', load)
@@ -102,3 +121,84 @@ class TemplateLoader:
 
     def bind(self, cls: Any) -> Callable[[str], Any]:
         return functools.partial(self.load, cls=cls)
+
+
+class MemoryLoader:
+    def build(self, source: str, filename: str) -> dict[str, Any]:
+        code = compile(source, filename, 'exec')
+        env: dict[str, Any] = {}
+        exec(code, env)  # noqa: S102 - Chameleon's module loader
+        return env
+
+    def get(self, name: str) -> None:
+        return None
+
+
+class ModuleLoader:
+    def __init__(self, path: str, remove: bool = False) -> None:
+        self.path = path
+        self.remove = remove
+
+    def __del__(self, shutil: Any = shutil) -> None:
+        if not self.remove:
+            return
+        try:
+            shutil.rmtree(self.path)
+        except BaseException:  # noqa: BLE001 - as in Chameleon
+            warnings.warn(f'Could not clean up temporary file path: {self.path}', stacklevel=1)
+
+    def get(self, filename: str) -> dict[str, Any] | None:
+        path = os.path.join(self.path, filename)
+        if os.path.exists(path):
+            log.debug('loading module from cache: %s.', filename)
+            base, _ext = os.path.splitext(filename)
+            return self._load(base, path)
+        log.debug('cache miss: %s', filename)
+        return None
+
+    def build(self, source: str, filename: str) -> dict[str, Any]:
+        acquire_lock()
+        try:
+            base, _ext = os.path.splitext(filename)
+            name = os.path.join(self.path, base + '.py')
+
+            log.debug('writing source to disk (%d bytes).', len(source))
+            fd, fn = tempfile.mkstemp(prefix=base, suffix='.tmp', dir=self.path)
+            temp = os.fdopen(fd, 'wb')
+            encoded = source.encode('utf-8')
+            header = b'# -*- coding: utf-8 -*-\n'
+
+            try:
+                try:
+                    temp.write(header)
+                    temp.write(encoded)
+                finally:
+                    temp.close()
+            except BaseException:
+                os.remove(fn)
+                raise
+
+            os.rename(fn, name)
+            log.debug('compiling %s into byte-code...', filename)
+            py_compile.compile(name)
+
+            return self._load(base, name)
+        finally:
+            release_lock()
+
+    def _load(self, base: str, filename: str) -> dict[str, Any]:
+        acquire_lock()
+        try:
+            module = sys.modules.get(base)
+            if module is None:
+                loader = SourceFileLoader(base, filename)
+                spec = spec_from_loader(base, loader)
+                if spec is None:
+                    raise ModuleNotFoundError(f'{base} ({filename})')
+                module = module_from_spec(spec)
+                loader.exec_module(module)
+                sys.modules[base] = module
+        finally:
+            release_lock()
+
+        return module.__dict__

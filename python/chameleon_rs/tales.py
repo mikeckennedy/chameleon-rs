@@ -1,6 +1,7 @@
 # Ported from Chameleon's src/chameleon/tales.py (the expression type classes PythonExpr,
 # StringExpr, NotExpr, ExistsExpr, ImportExpr, StructureExpr, ProxyExpr, ExpressionParser,
-# and `match_prefix`), modified: Chameleon's types are compiled natively by chameleon-rs, so
+# `match_prefix`, `split_parts`, `re_continuation`, and verbatim `TalesExpr`, `resolve_global`,
+# `transform_attribute`), modified: Chameleon's types are compiled natively by chameleon-rs, so
 # these classes name them in a template's `expression_types`; called directly (from a custom
 # type), they delegate to the engine.
 """TALES expression types.
@@ -24,7 +25,15 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from chameleon_rs._native import DEFAULT_MARKER
+from chameleon_rs.astutil import Builtin, Symbol
+from chameleon_rs.codegen import reverse_builtin_map, template
+from chameleon_rs.exc import ExpressionError
+from chameleon_rs.utils import lookup_attr
+
+split_parts = re.compile(r'(?<!\\)\|')
 match_prefix = re.compile(r'^\s*([a-z][a-z0-9\-_]*):').match
+re_continuation = re.compile(r'\\\s*$', re.MULTILINE)
 
 
 class _NativeExpr:
@@ -130,6 +139,129 @@ def native_types(expression_types: Mapping[str, Any]) -> list[tuple[str, tuple[A
     return [(prefix, _spec(factory)) for prefix, factory in expression_types.items()]
 
 
+# Chameleon's base class for TALES expression types, vendored for custom types that subclass
+# it (z3c.pt does): a subclass's `translate(expression, target)` returns statements for one
+# pipe alternative; `__call__` chains the alternatives with `try`/`except`, which the AST
+# bridge (D11) compiles.
+
+
+def resolve_global(value):
+    name = reverse_builtin_map.get(value)
+    if name is not None:
+        return Builtin(name)
+
+    return Symbol(value)
+
+
+def transform_attribute(node):
+    return template(
+        'lookup(object, name)', lookup=Symbol(lookup_attr), object=node.value, name=ast.Constant(node.attr), mode='eval'
+    )
+
+
+class TalesExpr:
+    """Base class.
+
+    This class helps implementations for the Template Attribute
+    Language Expression Syntax (TALES).
+
+    The syntax evaluates one or more expressions, separated by '|'
+    (pipe). The first expression that succeeds, is returned.
+
+    Expression:
+
+      expression    := (type ':')? line ('|' expression)?
+      line          := .*
+
+    Expression lines may not contain the pipe character unless
+    escaped. It has a special meaning:
+
+    If the expression to the left of the pipe fails (raises one of the
+    exceptions listed in ``catch_exceptions``), evaluation proceeds to
+    the expression(s) on the right.
+
+    Subclasses must implement ``translate`` which assigns a value for
+    a given expression.
+
+    >>> class PythonPipeExpr(TalesExpr):
+    ...     def translate(self, expression, target):
+    ...         compiler = PythonExpr(expression)
+    ...         return compiler(target, None)
+
+    >>> test(PythonPipeExpr('foo | bar | 42'))
+    42
+
+    >>> test(PythonPipeExpr('foo|42'))
+    42
+    """
+
+    exceptions = AttributeError, NameError, LookupError, TypeError, ValueError
+
+    ignore_prefix = True
+
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __call__(self, target, engine):
+        remaining = self.expression
+        assignments = []
+
+        while remaining:
+            if self.ignore_prefix and match_prefix(remaining) is not None:
+                compiler = engine.parse(remaining)
+                assignment = compiler.assign_value(target)
+                remaining = ''
+            else:
+                for m in split_parts.finditer(remaining):
+                    expression = remaining[: m.start()]
+                    remaining = remaining[m.end() :]
+                    break
+                else:
+                    expression = remaining
+                    remaining = ''
+
+                expression = expression.replace('\\|', '|')
+                assignment = self.translate_proxy(engine, expression, target)
+            assignments.append(assignment)
+
+        if not assignments:
+            if not remaining:
+                raise ExpressionError('No input:', remaining)
+
+            assignments.append(self.translate_proxy(engine, remaining, target))
+
+        for i, assignment in enumerate(reversed(assignments)):
+            if i == 0:
+                body = assignment
+            else:
+                body = [
+                    ast.Try(
+                        body=assignment,
+                        handlers=[
+                            ast.ExceptHandler(
+                                type=ast.Tuple(elts=list(map(resolve_global, self.exceptions)), ctx=ast.Load()),
+                                name=None,
+                                body=body,
+                            )
+                        ],
+                        finalbody=[],
+                        orelse=[],
+                    )
+                ]
+
+        return body
+
+    def translate_proxy(self, engine, *args):
+        """Default implementation delegates to ``translate`` method."""
+
+        return self.translate(*args)
+
+    def translate(self, expression, target):
+        """Return statements that assign a value to ``target``."""
+
+        raise NotImplementedError('Must be implemented by a subclass.')
+
+
 class ExpressionParser:
     """Chameleon's interface: ``factories`` by prefix, and the default type."""
 
@@ -151,3 +283,27 @@ class ExpressionParser:
             raise LookupError(f'Unknown expression type: {exc!s}.') from None
 
         return factory(expression)
+
+
+__all__ = [
+    'DEFAULT_MARKER',
+    'Builtin',
+    'ExistsExpr',
+    'ExpressionError',
+    'ExpressionParser',
+    'ImportExpr',
+    'NotExpr',
+    'ProxyExpr',
+    'PythonExpr',
+    'StringExpr',
+    'StructureExpr',
+    'Symbol',
+    'TalesExpr',
+    'match_prefix',
+    'native_types',
+    're_continuation',
+    'resolve_global',
+    'split_parts',
+    'template',
+    'transform_attribute',
+]

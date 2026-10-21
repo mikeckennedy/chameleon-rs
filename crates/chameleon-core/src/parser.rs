@@ -117,6 +117,8 @@ impl NsValue {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NsAttr {
     pub ns: Arc<str>,
+    /// Where the namespace URI was declared (an `xmlns` attribute's value), if it was.
+    pub ns_span: Option<Span>,
     /// The local name (after the prefix).
     pub name: String,
     pub name_span: Span,
@@ -174,13 +176,13 @@ pub struct Element {
 /// Prefix (`None` for `xmlns="..."`) to namespace URI, in insertion order like the dict
 /// Chameleon copies for every start tag.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Namespaces(Vec<(Option<Arc<str>>, NsValue)>);
+pub struct Namespaces(Vec<(Option<Arc<str>>, Option<Span>, NsValue)>);
 
 impl Namespaces {
     pub fn new<'a>(entries: impl IntoIterator<Item = (Option<&'a str>, &'a str)>) -> Self {
         let mut ns = Self::default();
         for (prefix, uri) in entries {
-            ns.set(prefix, NsValue::plain(uri));
+            ns.set(prefix, None, NsValue::plain(uri));
         }
         ns
     }
@@ -200,19 +202,25 @@ impl Namespaces {
 
     #[must_use]
     pub fn get(&self, prefix: Option<&str>) -> Option<&NsValue> {
-        self.0.iter().find(|(p, _)| p.as_deref() == prefix).map(|(_, ns)| ns)
+        self.0.iter().find(|(p, _, _)| p.as_deref() == prefix).map(|(_, _, ns)| ns)
     }
 
-    /// `namespace[prefix] = value`: an existing key keeps its place.
-    fn set(&mut self, prefix: Option<&str>, value: NsValue) {
-        match self.0.iter_mut().find(|(p, _)| p.as_deref() == prefix) {
-            Some((_, v)) => *v = value,
-            None => self.0.push((prefix.map(Arc::from), value)),
+    /// `namespace[prefix] = value`: an existing key keeps its place (and the key object that
+    /// was first used: `span`, the prefix's position in its `xmlns:` attribute).
+    fn set(&mut self, prefix: Option<&str>, span: Option<Span>, value: NsValue) {
+        match self.0.iter_mut().find(|(p, _, _)| p.as_deref() == prefix) {
+            Some((_, _, v)) => *v = value,
+            None => self.0.push((prefix.map(Arc::from), span, value)),
         }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (Option<&str>, &NsValue)> {
-        self.0.iter().map(|(p, v)| (p.as_deref(), v))
+        self.0.iter().map(|(p, _, v)| (p.as_deref(), v))
+    }
+
+    /// Each prefix with where it was declared (`None`: a default namespace), and its value.
+    pub fn iter_spans(&self) -> impl Iterator<Item = (Option<&str>, Option<Span>, &NsValue)> {
+        self.0.iter().map(|(p, s, v)| (p.as_deref(), *s, v))
     }
 }
 
@@ -370,9 +378,9 @@ fn parse_tag(src: &str, span: Span, namespaces: &mut Namespaces, restricted: boo
             span: (attr.kind != AttrKind::Valueless).then_some(attr.value),
         };
         if name == "xmlns" {
-            namespaces.set(None, value);
+            namespaces.set(None, None, value);
         } else if let Some(prefix) = name.strip_prefix("xmlns:") {
-            namespaces.set(Some(prefix), value);
+            namespaces.set(Some(prefix), Some(attr.name.sub(6, attr.name.len())), value);
         }
     }
     let tag_name = tag.name.text(src);
@@ -384,7 +392,7 @@ fn parse_tag(src: &str, span: Span, namespaces: &mut Namespaces, restricted: boo
         let name = attr.name.text(src);
         let (ns, local, local_start) = match name.split_once(':') {
             Some((prefix, local)) => match namespaces.get(Some(prefix)) {
-                Some(ns) => (ns.uri.clone(), local, prefix.len() + 1),
+                Some(ns) => (ns.clone(), local, prefix.len() + 1),
                 None if restricted => {
                     return Err(ParseError {
                         kind: ParseErrorKind::UndefinedPrefix,
@@ -392,10 +400,11 @@ fn parse_tag(src: &str, span: Span, namespaces: &mut Namespaces, restricted: boo
                         span: attr.name,
                     });
                 }
-                None => (default.uri.clone(), local, prefix.len() + 1),
+                None => (default.clone(), local, prefix.len() + 1),
             },
-            None => (default.uri.clone(), name, 0),
+            None => (default.clone(), name, 0),
         };
+        let NsValue { uri: ns, span: ns_span } = ns;
         let name_span = attr.name.sub(local_start, attr.name.len());
         // An OrderedDict keyed by (namespace, name): a repeat keeps its place, takes the value.
         // A linear scan for ordinary tags, an index past `INDEX_FROM` attributes.
@@ -414,7 +423,14 @@ fn parse_tag(src: &str, span: Span, namespaces: &mut Namespaces, restricted: boo
             if !index.is_empty() {
                 index.insert((ns.clone(), local.to_owned()), ns_attrs.len());
             }
-            ns_attrs.push(NsAttr { ns, name: local.to_owned(), name_span, value: attr.value, kind: attr.kind });
+            ns_attrs.push(NsAttr {
+                ns,
+                ns_span,
+                name: local.to_owned(),
+                name_span,
+                value: attr.value,
+                kind: attr.kind,
+            });
         }
     }
     tag.namespace = default;
@@ -693,6 +709,23 @@ mod tests {
             Some(Item::StartTag(t)) => *t,
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn namespace_declarations_keep_their_positions() {
+        let src = r#"<a xmlns:x="u1" xmlns="d"><b x:c="1" xmlns:x="u2"/></a>"#;
+        let tokens = tokenize(src);
+        let items = parse(src, &tokens, &ParseOptions::default()).unwrap();
+        let Item::Element(a) = &items[0] else { panic!("{items:?}") };
+        let Item::Element(b) = &a.children[0] else { panic!("{:?}", a.children) };
+        let spans: Vec<_> = b.start.ns_map.iter_spans().map(|(p, s, v)| (p, s.map(|s| s.text(src)), &*v.uri)).collect();
+        // The prefix keeps its first declaration's key (in `a`), the value is the newer one.
+        assert!(spans.contains(&(Some("x"), Some("x"), "u2")));
+        let x = b.start.ns_map.iter_spans().find(|(p, _, _)| *p == Some("x")).and_then(|(_, s, _)| s).unwrap();
+        assert_eq!(x.start, 9);
+        assert!(spans.contains(&(None, None, "d")));
+        let attr = &b.start.ns_attrs[0];
+        assert_eq!((&*attr.ns, attr.ns_span.map(|s| s.text(src))), ("u2", Some("u2")));
     }
 
     #[test]

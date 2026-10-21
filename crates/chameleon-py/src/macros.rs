@@ -16,13 +16,13 @@ use std::sync::Arc;
 use pyo3::exceptions::PyKeyError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
-use pyo3::{PyTraverseError, PyVisit};
+use pyo3::{PyTraverseError, PyVisit, intern};
 
 use chameleon_core::{Done, Fill, I18n, VmError, VmState, run};
 
 use crate::errors::{internal_error, vm_error};
 use crate::expr::RenderCtx;
-use crate::program::{Program, marker};
+use crate::program::Program;
 use crate::runtime::PyRuntime;
 use crate::scope::Scope;
 
@@ -219,7 +219,14 @@ fn render_function<'py>(
         // Another engine's scope: its items, as a mapping.
         Err(_) => Scope::new_root(py, &PyDict::from_sequence(&econtext.call_method0("items")?)?)?,
     };
-    let render = RenderCtx::new(marker(py)?, None, None, builtins);
+    // Chameleon's render functions start with `translate = econtext['__translate']` and so on
+    // (outside their `try`, so the error is not recorded).
+    for key in [intern!(py, "__translate"), intern!(py, "__decode"), intern!(py, "__on_error_handler")] {
+        if Scope::lookup(&scope, key.as_any())?.is_none() {
+            return Err(PyKeyError::new_err((key.clone().unbind(),)));
+        }
+    }
+    let render = RenderCtx::new(program.get().marker.bind(py).clone(), None, None, builtins);
     let _ = render.rcontext.set(rcontext.cast::<PyDict>()?.clone());
     let _ = render.stream.set(stream.clone());
     let compiled = Arc::clone(&program.get().core);

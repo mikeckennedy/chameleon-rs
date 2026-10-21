@@ -24,7 +24,26 @@ jobs:
       - run: rustup show active-toolchain
       - run: uv venv venv --python ${{ matrix.python }}
       - run: make dev
+      # `make test` includes the upstream suite on both engines (`test-upstream-rust`: the
+      # compatibility score, a strict ratchet).
       - run: make test
+
+  integration:
+    # Level 4: fastapi-chameleon, chameleon-flask, chameleon-robyn and chameleon_partials,
+    # unmodified, on chameleon-rs through the compat alias (Python 3.14: robyn's wheels).
+    name: integration (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - run: rustup show active-toolchain
+      - run: uv venv venv --python 3.15
+      - run: make dev
+      - run: make test-integration
 
   lint:
     runs-on: ubuntu-latest

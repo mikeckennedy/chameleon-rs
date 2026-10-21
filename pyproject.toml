@@ -43,7 +43,16 @@ addopts = "-p no:cacheprovider"
 
 [tool.ruff]
 line-length = 120
-extend-exclude = ["tests/upstream/chameleon_tests", "temp"]
+# Vendored verbatim from Chameleon (D7): kept as upstream wrote them.
+extend-exclude = [
+    "tests/upstream/chameleon_tests",
+    "temp",
+    "python/chameleon_rs/astutil.py",
+    "python/chameleon_rs/codegen.py",
+    "python/chameleon_rs/metal.py",
+    "python/chameleon_rs/namespaces.py",
+    "python/chameleon_rs/types.py",
+]
 
 [tool.ruff.format]
 quote-style = "single"

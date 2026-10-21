@@ -11,8 +11,21 @@ CHAMELEON_COMMIT := 90b900244abd9ce39c9a9ca70b38ed559ae2b969
 PARTIALS_REPO := https://github.com/mikeckennedy/chameleon_partials
 PARTIALS_COMMIT := f54ca1a103a3c034eaabc39b1bcb50210a8ad4d9
 
+# Integration suites (level 4): projects written for Chameleon, run on chameleon-rs through
+# the compat alias (tests/integration/chameleon_compat_plugin.py) in a scratch venv that has
+# their dependencies but not stock Chameleon. Python 3.14: robyn has no 3.15 wheels yet.
+FASTAPI_REPO := https://github.com/mikeckennedy/fastapi-chameleon
+FASTAPI_COMMIT := 4d070f27a09f0e6fdb6b55c82d490d041dbf5112
+FLASK_REPO := https://github.com/mikeckennedy/chameleon-flask
+FLASK_COMMIT := 326644f1d55b51c3681104ab10c571c8ca8f8a3a
+ROBYN_REPO := https://github.com/mikeckennedy/chameleon-robyn
+ROBYN_COMMIT := ab4f6e83f50cf1b6d808645b34ff966a4483c048
+INTEGRATION_PYTHON ?= 3.14
+INTEGRATION_VENV := $(CURDIR)/temp/venv-integration
+INTEGRATION_SUITES := fastapi-chameleon chameleon-flask chameleon-robyn chameleon_partials
+
 .PHONY: dev reference build build-release build-profiling test test-rust test-python \
-	test-upstream test-upstream-rust lint fmt bench
+	test-upstream test-upstream-rust integration test-integration lint fmt bench
 
 dev: reference
 	uv pip install --python $(PY) --group dev -e temp/chameleon -e temp/chameleon_partials
@@ -28,6 +41,24 @@ temp/chameleon:
 temp/chameleon_partials:
 	git clone -q $(PARTIALS_REPO) $@
 
+integration: reference temp/fastapi-chameleon temp/chameleon-flask temp/chameleon-robyn
+	git -C temp/fastapi-chameleon checkout -q $(FASTAPI_COMMIT)
+	git -C temp/chameleon-flask checkout -q $(FLASK_COMMIT)
+	git -C temp/chameleon-robyn checkout -q $(ROBYN_COMMIT)
+	test -x $(INTEGRATION_VENV)/bin/python || uv venv -q $(INTEGRATION_VENV) --python $(INTEGRATION_PYTHON)
+	uv pip install -q --python $(INTEGRATION_VENV)/bin/python fastapi httpx 'flask[async]' robyn pytest maturin
+	VIRTUAL_ENV=$(INTEGRATION_VENV) PYO3_PYTHON=$(INTEGRATION_VENV)/bin/python CARGO_TARGET_DIR=$(CURDIR)/target/integration \
+		$(INTEGRATION_VENV)/bin/maturin develop -q --profile dev-opt
+
+temp/fastapi-chameleon:
+	git clone -q $(FASTAPI_REPO) $@
+
+temp/chameleon-flask:
+	git clone -q $(FLASK_REPO) $@
+
+temp/chameleon-robyn:
+	git clone -q $(ROBYN_REPO) $@
+
 # Fast optimized build for the test loop; release (fat LTO) for benchmarks and wheels.
 build:
 	$(MATURIN) develop --profile dev-opt
@@ -38,7 +69,7 @@ build-release:
 build-profiling:
 	$(MATURIN) develop --profile profiling
 
-test: test-rust test-python test-upstream
+test: test-rust test-python test-upstream test-upstream-rust
 
 test-rust:
 	cargo test --workspace
@@ -52,16 +83,26 @@ test-upstream:
 test-upstream-rust: build
 	CHAMELEON_ENGINE=rust $(PYTEST) tests/upstream
 
+# Each suite runs from its own checkout (its own rootdir and conftest), unmodified.
+test-integration: integration
+	set -e; for suite in $(INTEGRATION_SUITES); do \
+		echo "== $$suite"; \
+		cd $(CURDIR)/temp/$$suite; \
+		PYTHONPATH=$(CURDIR)/tests/integration:$(CURDIR)/temp/$$suite:$(CURDIR)/temp/chameleon_partials \
+			$(INTEGRATION_VENV)/bin/python -m pytest -q -c pyproject.toml --rootdir . \
+			-p chameleon_compat_plugin -p no:cacheprovider tests; \
+	done
+
 lint:
 	cargo fmt --all -- --check
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	cargo deny check -A license-not-encountered
-	ruff check python tests/python tests/upstream/conftest.py bench scripts
-	ruff format --check python tests/python tests/upstream/conftest.py scripts
+	ruff check python tests/python tests/upstream/conftest.py tests/integration bench scripts
+	ruff format --check python tests/python tests/upstream/conftest.py tests/integration scripts
 
 fmt:
 	cargo fmt --all
-	ruff format python tests/python tests/upstream/conftest.py scripts
+	ruff format python tests/python tests/upstream/conftest.py tests/integration scripts
 
 bench: build-release
 	$(PY) bench/bench_render.py

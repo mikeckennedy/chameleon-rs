@@ -5,6 +5,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use pyo3::exceptions::{PyAssertionError, PyAttributeError, PyKeyError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
+use pyo3::types::PyString;
 
 use chameleon_core::{CompileError, ErrorKind, Source, VmError};
 
@@ -42,22 +43,33 @@ pub(crate) fn compile_error(py: Python<'_>, err: CompileError<PyErr>, src: &str,
                 ErrorKind::Type => return PyTypeError::new_err(message),
             };
             let (text, pos) = token.resolve(src);
-            let source = Source::new(src);
-            // A token without a position is a plain `str` in Chameleon: offset 0, location
-            // (0, 0) and no filename.
-            let (offset, loc, filename) = match pos {
+            // Chameleon's `TemplateError(msg, token)`: a `Token` of the source at its code-point
+            // position, or, for a token without a position, a plain `str` (which the class
+            // turns into `Token(text, 0)`: offset 0, location (0, 0), no source).
+            let token = match pos {
                 Some(p) => {
-                    let offset = p.offset(&source);
-                    (offset, source.location_of_offset(offset), filename)
+                    let offset = p.offset(&Source::new(src));
+                    make_token(py, &text, offset, src, filename)
                 }
-                None => (0, (0, 0), ""),
+                None => Ok(PyString::new(py, &text).into_any()),
             };
-            match exc_class(py, class).and_then(|cls| cls.call1((message, text, offset, loc, filename))) {
+            match token.and_then(|token| exc_class(py, class)?.call1((message, token))) {
                 Ok(exc) => PyErr::from_value(exc),
                 Err(e) => e,
             }
         }
     }
+}
+
+/// `chameleon_rs.tokenize.Token(text, pos, source, filename)`.
+pub(crate) fn make_token<'py>(
+    py: Python<'py>,
+    text: &str,
+    pos: usize,
+    source: &str,
+    filename: &str,
+) -> PyResult<Bound<'py, PyAny>> {
+    py.import(intern!(py, "chameleon_rs.tokenize"))?.getattr(intern!(py, "Token"))?.call1((text, pos, source, filename))
 }
 
 pub(crate) fn vm_error(py: Python<'_>, err: VmError<PyErr>) -> PyErr {

@@ -31,7 +31,7 @@ mod tokenize;
 mod vm;
 mod zpt;
 
-pub use compile::compile;
+pub use compile::{compile, compile_tokens};
 pub use error::{CompileError, ErrToken, ErrorKind};
 pub use escape::{Escape, Quote, escape_into, needs_escape};
 pub use expr::{DefaultAlias, Engine, ExprCompileError, ExprCompiler, ExprContext, ExprId, FreeVars, StaticAttrs};

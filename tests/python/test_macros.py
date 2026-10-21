@@ -255,8 +255,11 @@ def test_macro_and_template_include_with_chameleons_signature() -> None:
     template = chameleon_rs.PageTemplate('<p metal:define-macro="m">${a}</p>|${a}')
     for include, want in ((template.macros['m'].include, '<p>1</p>'), (template.include, '<p>1</p>|1')):
         stream: list[str] = ['x']
-        include(stream, {'a': 1, '__translate': None}, {})
+        include(stream, {'a': 1, '__translate': None, '__decode': None, '__on_error_handler': None}, {})
         assert stream == ['x', want]
+        # As Chameleon's render functions, it reads the render's settings first.
+        with pytest.raises(KeyError, match='__decode'):
+            include([], {'a': 1, '__translate': None}, {})
 
 
 @pytest.mark.parametrize(

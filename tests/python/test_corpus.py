@@ -71,7 +71,7 @@ def test_corpus_compiles_or_is_unsupported(capsys: pytest.CaptureFixture[str]) -
             chameleon_rs.PageTemplateFile(path).cook_check()
         except exc.UnsupportedError as e:
             # The feature named in the message, never template content.
-            reasons[re.sub(r' is not supported yet.*', '', e.msg, flags=re.DOTALL)] += 1
+            reasons[re.sub(r' is not supported yet.*', '', e.args[0], flags=re.DOTALL)] += 1
             continue
         compiled += 1
     assert compiled > 0

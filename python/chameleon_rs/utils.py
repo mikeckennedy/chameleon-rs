@@ -1,8 +1,10 @@
 # Ported from Chameleon's src/chameleon/utils.py (callablestr, callableint, descriptorstr,
 # descriptorint, Markup, _resolve_dotted / resolve_dotted, safe_native, limit_string,
-# value_repr, create_formatted_exception, and the encoding sniffing: xml_prefixes,
-# read_encoded, read_bytes, detect_encoding, read_xml_encoding), modified: only the helpers
-# chameleon-rs needs so far, with type annotations.
+# value_repr, create_formatted_exception, the encoding sniffing: xml_prefixes,
+# read_encoded, read_bytes, detect_encoding, read_xml_encoding, and the remaining helpers:
+# raise_with_traceback, mangle, char2entity, substitute_entity, join, decode_htmlentities,
+# DebuggingOutputStream, ListDictProxy, ImportableMarker), modified: type annotations;
+# `Scope` and `lookup_attr` are the native ones.
 """Small helpers shared by the template runtime, and template encoding sniffing.
 
 The sniffing stays in Python on purpose (see docs/architecture.md, "Phase 3 amendments"):
@@ -14,9 +16,15 @@ from __future__ import annotations
 
 import codecs
 import logging
+import os
 import re
-from collections.abc import Callable, Iterator
-from typing import Any
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from enum import Enum
+from html import entities as htmlentitydefs
+from types import TracebackType
+from typing import Any, Literal, NoReturn
+
+from chameleon_rs import _native
 
 log = logging.getLogger('chameleon.utils')
 
@@ -270,3 +278,130 @@ def create_formatted_exception(
         name = type(exc).__name__
         log.warning("Unable to copy exception of type '%s'.", name)
         raise TypeError(exc) from None
+
+
+# The rest of Chameleon's utils.py, for code that imports it (the compat package, D7).
+
+Scope = _native.Scope
+lookup_attr = _native.lookup_attr
+
+
+class _Marker(Enum):
+    marker = object()
+
+
+marker: Literal[_Marker.marker] = _Marker.marker
+
+
+def raise_with_traceback(exc: BaseException, tb: TracebackType | None) -> NoReturn:
+    exc.__traceback__ = tb
+    raise exc
+
+
+entity_re = re.compile(r'&(#?)(x?)(\d{1,5}|\w{1,8});')
+
+
+def mangle(filename: str) -> str:
+    """Mangles template filename into top-level Python module name.
+
+    >>> mangle('hello_world.pt')
+    'hello_world'
+
+    >>> mangle('foo.bar.baz.pt')
+    'foo_bar_baz'
+
+    >>> mangle('foo-bar-baz.pt')
+    'foo_bar_baz'
+
+    """
+
+    base, _ext = os.path.splitext(filename)
+    return base.replace('.', '_').replace('-', '_')
+
+
+def char2entity(c: str | bytes | bytearray) -> str:
+    cp = ord(c)
+    name = htmlentitydefs.codepoint2name.get(cp)
+    return f'&{name};' if name is not None else f'&#{cp};'
+
+
+def substitute_entity(match: re.Match[str], n2cp: Mapping[str, int] = htmlentitydefs.name2codepoint) -> str:
+    ent = match.group(3)
+
+    if match.group(1) == '#':
+        if match.group(2) == '':
+            return chr(int(ent))
+        if match.group(2) == 'x':
+            return chr(int('0x' + ent, 16))
+        return ''
+    cp = n2cp.get(ent)
+
+    if cp:
+        return chr(cp)
+    return match.group()
+
+
+_concat = ''.join
+
+
+def join(stream: Iterable[str]) -> str:
+    """Concatenate stream.
+
+    >>> print(join(('Hello', ' ', 'world')))
+    Hello world
+    """
+
+    try:
+        return _concat(stream)
+    except BaseException:
+        # Loop through stream and coerce each element into unicode; this should raise an
+        # exception
+        for element in stream:
+            str(element)
+
+        # In case it didn't, re-raise the original exception
+        raise
+
+
+def decode_htmlentities(string: str) -> str:
+    """
+    >>> str(decode_htmlentities('&amp;amp;'))
+    '&amp;'
+
+    """
+
+    decoded = entity_re.subn(substitute_entity, string)[0]
+
+    # preserve input token data
+    return string.replace(string, decoded)
+
+
+class DebuggingOutputStream(list[str]):
+    def append(self, value: str) -> None:
+        if not isinstance(value, str):
+            raise TypeError(value)
+        super().append(value)
+
+
+class ListDictProxy[KT, VT]:
+    def __init__(self, _l: Sequence[Mapping[KT, VT]]) -> None:
+        self._l = _l
+
+    def get(self, key: KT) -> VT | None:
+        return self._l[-1].get(key)
+
+
+class ImportableMarker:
+    """A named marker object (Chameleon's type for ``DEFAULT_MARKER``; chameleon-rs's own
+    default marker is the native ``_native.DEFAULT_MARKER``, which behaves the same)."""
+
+    def __init__(self, module: str, name: str) -> None:
+        self.__module__ = module
+        self.name = name
+
+    @property
+    def __name__(self) -> str:
+        return f'{self.name}_MARKER'
+
+    def __repr__(self) -> str:
+        return f'<{self.name}>'

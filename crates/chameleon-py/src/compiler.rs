@@ -600,8 +600,10 @@ fn expression_error(py: Python<'_>, e: PyErr, expression: &Tok) -> ExprCompileEr
         return ExprCompileError::Other(e);
     }
     let value = e.value(py);
-    let message = value.getattr(intern!(py, "msg")).and_then(|m| m.extract::<String>()).unwrap_or_default();
-    let token = value.getattr(intern!(py, "token")).and_then(|t| t.extract::<String>()).ok();
+    let args = value.getattr(intern!(py, "args")).ok();
+    let arg = |i: usize| args.as_ref().and_then(|a| a.get_item(i).ok()).and_then(|v| v.extract::<String>().ok());
+    let message = arg(0).unwrap_or_default();
+    let token = arg(1);
     let token = token.map_or_else(|| expression.clone(), Tok::plain);
     ExprCompileError::Invalid { message, token: Some(token) }
 }
@@ -648,17 +650,16 @@ impl ExprCompiler for PyExprCompiler<'_, '_> {
     /// offset and location computed now.
     fn deferred(&mut self, message: &str, token: &Tok) -> Result<ExprId, ExprCompileError<PyErr>> {
         let py = self.py;
-        let (offset, (line, column), filename) = match token.pos {
+        // Chameleon's `ExpressionError(msg, token)`, with the token's source position.
+        let token_obj = match token.pos {
             Some(p) => {
-                let source = Source::new(self.source);
-                let offset = p.offset(&source);
-                (offset, source.location_of_offset(offset), self.filename)
+                let offset = p.offset(&Source::new(self.source));
+                crate::errors::make_token(py, &token.text, offset, self.source, self.filename)
             }
-            None => (0, (0, 0), ""),
-        };
-        let args = (message, token.text.as_str(), offset, (line, column), filename)
-            .into_pyobject(py)
-            .map_err(ExprCompileError::Other)?;
+            None => Ok(PyString::new(py, &token.text).into_any()),
+        }
+        .map_err(ExprCompileError::Other)?;
+        let args = (message, token_obj).into_pyobject(py).map_err(ExprCompileError::Other)?;
         // `TokenRef(exc.token)` precedes the raise.
         let token_id = self.token_id(token);
         self.register(Expr::Raise(args.unbind()), token_id)

@@ -1,0 +1,11 @@
+# Vendored from Chameleon's src/chameleon/namespaces.py (malthe/chameleon at 90b9002, under
+# Chameleon's license, LICENSE.txt), modified: none (verbatim).
+XML_NS = "http://www.w3.org/XML/1998/namespace"
+XMLNS_NS = "http://www.w3.org/2000/xmlns/"
+XHTML_NS = "http://www.w3.org/1999/xhtml"
+TAL_NS = "http://xml.zope.org/namespaces/tal"
+META_NS = "http://xml.zope.org/namespaces/meta"
+METAL_NS = "http://xml.zope.org/namespaces/metal"
+XI_NS = "http://www.w3.org/2001/XInclude"
+I18N_NS = "http://xml.zope.org/namespaces/i18n"
+PY_NS = "http://genshi.edgewall.org/"

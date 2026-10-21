@@ -28,7 +28,7 @@ use crate::nodes::{
 use crate::options::{Mode, Options};
 use crate::parser::{Namespaces, ParseOptions, parse};
 use crate::resolve::{Resolved, Table, resolve};
-use crate::source::check_len;
+use crate::source::{Span, check_len};
 use crate::tok::Tok;
 use crate::tokenize::{tokenize, tokenize_text};
 use crate::vm::{
@@ -43,19 +43,49 @@ pub fn compile<C: ExprCompiler>(
     compiler: &mut C,
     options: &Options,
 ) -> std::result::Result<Program, CompileError<C::Error>> {
-    let tree = build_tree(src, options).map_err(widen)?;
+    compile_tokens(src, None, compiler, options)
+}
+
+/// [`compile`] with the tokens given (a user-supplied `tokenizer`): byte spans into `src`, in
+/// order and not overlapping. `None` tokenizes as the mode says.
+pub fn compile_tokens<C: ExprCompiler>(
+    src: &str,
+    tokens: Option<Vec<Span>>,
+    compiler: &mut C,
+    options: &Options,
+) -> std::result::Result<Program, CompileError<C::Error>> {
+    let tree = build_tree_with(src, tokens, options).map_err(widen)?;
     let table = resolve(&tree, compiler, options)?;
     lower(&tree, &table).map_err(widen)
 }
 
 /// Tokenizes, parses and builds the program tree of `src` (no expressions are compiled).
 pub fn build_tree(src: &str, options: &Options) -> LResult<Tree> {
+    build_tree_with(src, None, options)
+}
+
+fn build_tree_with(src: &str, tokens: Option<Vec<Span>>, options: &Options) -> LResult<Tree> {
     if !check_len(src) {
         return Err(CompileError::TooLarge);
     }
-    let tokens = match options.mode {
-        Mode::Xml => tokenize(src),
-        Mode::Text => tokenize_text(src),
+    let tokens = match (tokens, options.mode) {
+        (Some(tokens), _) => {
+            let in_order = tokens.windows(2).all(|w| w[0].end <= w[1].start);
+            let inside = tokens.last().is_none_or(|t| t.end as usize <= src.len());
+            let boundaries = tokens.iter().all(|t| {
+                t.start <= t.end && src.is_char_boundary(t.start as usize) && src.is_char_boundary(t.end as usize)
+            });
+            if !(in_order && inside && boundaries) {
+                return Err(CompileError::new(
+                    ErrorKind::Value,
+                    "tokens must be ordered, non-overlapping slices of the source",
+                    Tok::plain(""),
+                ));
+            }
+            tokens
+        }
+        (None, Mode::Xml) => tokenize(src),
+        (None, Mode::Text) => tokenize_text(src),
     };
     let parse_options =
         ParseOptions { namespaces: Namespaces::zpt(), restricted_namespace: options.restricted_namespace };

@@ -713,6 +713,23 @@ fn compile_errors() {
 }
 
 #[test]
+fn compile_with_given_tokens() {
+    let src = "<p>${x}</p><b>t</b>";
+    let spans = |cuts: &[usize]| cuts.windows(2).map(|w| crate::Span::new(w[0], w[1])).collect::<Vec<_>>();
+    // The tokenizer's tokens and a coarser split of the same text both compile.
+    assert!(
+        crate::compile_tokens(src, Some(spans(&[0, 3, 7, 11, 14, 15, 19])), &mut Toy::default(), &options()).is_ok()
+    );
+    // Tokens out of order, overlapping, past the end or inside a character are refused.
+    for bad in [vec![crate::Span::new(3, 7), crate::Span::new(0, 3)], vec![crate::Span::new(0, 30)]] {
+        let err = crate::compile_tokens(src, Some(bad), &mut Toy::default(), &options()).unwrap_err();
+        assert_eq!(err.to_string(), "tokens must be ordered, non-overlapping slices of the source");
+    }
+    let err = crate::compile_tokens("é", Some(vec![crate::Span::new(0, 1)]), &mut Toy::default(), &options());
+    assert!(err.is_err());
+}
+
+#[test]
 fn define_backs_up_before_evaluating_and_restores_in_reverse() {
     let vars = [("x", V::Str("outer".into()))];
     let mut w = world(&["<p tal:define=\"x 1; y x; global g 'G'\">${x}${y}${g}</p>${x}${g}"], &vars);

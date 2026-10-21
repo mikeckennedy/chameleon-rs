@@ -65,8 +65,8 @@ def tag(d: dict[str, Any]) -> dict[str, Any]:
         'space': tok(d['space']),
         'attrs': attrs,
         'namespace': tok(d['namespace']),
-        'ns_attrs': [((str(ns), tok(name)), tok(value)) for (ns, name), value in d['ns_attrs'].items()],
-        'ns_map': {(None if k is None else str(k)): tok(v) for k, v in d['ns_map'].items()},
+        'ns_attrs': [((tok(ns), tok(name)), tok(value)) for (ns, name), value in d['ns_attrs'].items()],
+        'ns_map': {tok(k): tok(v) for k, v in d['ns_map'].items()},
     }
 
 
@@ -89,7 +89,7 @@ def item(kind: str, args: tuple[Any, ...]) -> tuple[Any, ...]:
 def error(e: BaseException) -> tuple[Any, ...]:
     """What must match when parsing fails: type, message and the token's text and position."""
     if isinstance(e, exc.TemplateError):
-        return ('ParseError', e.msg, e.token, e.offset)
+        return ('ParseError', e.args[0], e.token, e.offset)
     if isinstance(e, chameleon.exc.TemplateError):
         msg, token = e.args
         return ('ParseError', msg, str(token), token.pos)
@@ -305,7 +305,7 @@ def test_large_attribute_renders_like_chameleon() -> None:
 def test_error_positions() -> None:
     with pytest.raises(exc.ParseError) as err:
         _testing.parse('é\n<!-- a -- b -->', ZPT_NAMESPACES)
-    assert (err.value.msg, err.value.token, err.value.offset, err.value.location) == (
+    assert (err.value.args[0], err.value.token, err.value.offset, err.value.location) == (
         "The string '--' is not allowed in a comment.",
         '--',
         9,

@@ -37,7 +37,74 @@ Open questions:
 - Do settings apply per loader or process-wide? chameleon_partials is process-wide and
   unlocked, which isn't a good fit for free-threaded Python.
 
-## 2. Async rendering
+## 2. Built-in framework integrations: Flask/Quart, FastAPI and Robyn
+
+Same idea as partials: what chameleon-flask and fastapi-chameleon provide today becomes part of
+chameleon-rs, with no separate package and less setup. chameleon-robyn has the same shape and
+is included too.
+
+Both libraries have nearly the same API:
+
+- `global_init(template_folder, auto_reload, cache_init)`
+- `@template('page.pt')` (or bare `@template`, which finds the template from the view's name)
+- `render()`
+- `response()`
+- `not_found()` and `generic_error()`
+- `clear()`
+
+A view returns a dict; the decorator renders it and builds the framework's response, or passes
+a response object through unchanged.
+
+Ideas:
+
+- **Modules:** `chameleon_rs.flask` and `chameleon_rs.fastapi`, keeping the same function
+  names and signatures so moving over is a one-line import change. Possibly shims so the old
+  `import chameleon_flask` / `import fastapi_chameleon` keep working, like the `chameleon`
+  compat alias.
+- **No new dependencies.** The framework is already in the user's app. These modules import it
+  only when they are imported themselves, so `import chameleon_rs` never pulls in Flask or
+  FastAPI. This follows the no-runtime-dependencies rule, so no extras are needed.
+- **Settings in one place.** One configuration call covers the template folder, auto-reload,
+  partials, markdown settings and so on, instead of a `global_init` per library (see
+  section 1's settings question).
+- **FastAPI and async.** The `@template` decorator could await `render_async`, so a slow
+  template never blocks the event loop under Granian or Uvicorn. This is the integration point
+  where async rendering pays off with no template changes.
+- **Native responses.** Rendering could go straight to the response body with no extra copies,
+  and `not_found()` / error pages could use precompiled templates.
+- **Tests.** Phase 7 already runs both libraries' test suites against the compat alias. The
+  built-in versions would have to pass the same suites.
+
+Leanings from Michael (2026-10-21):
+
+- **Template folder and name lookup:** use chameleon-flask's rules exactly:
+  - The folder is the one given to `global_init`, or `templates` relative to the working
+    directory when it was never called.
+  - A bare `@template` looks for `{last module segment}/{function name}.html`, then the same
+    with `.pt`.
+- **Async:** yes. Flask async views and **Quart** are both supported, as chameleon-flask does
+  today. Async views would render with `render_async`.
+
+API direction, from an interview with Michael (2026-10-21). Still a vision, not a plan: modernise
+the API and keep every old name and signature working as an alias, so moving over stays a
+one-line import change.
+
+| Today (chameleon-flask / fastapi-chameleon / chameleon-robyn) | Chosen direction | Why |
+|---|---|---|
+| `global_init(template_folder, auto_reload, cache_init[, restricted_namespace])`, once per library | `configure(template_folder=..., auto_reload=..., ...)`, one call for templates, partials, markdown and the integration; `global_init` stays as an alias | One place for every setting |
+| `cache_init=True` (a second `global_init` is a no-op unless `False`) | `configure()` always applies; tests call `clear()` to reset. The `global_init` alias still accepts and honours `cache_init` | The flag is hard to understand; `clear()` already exists |
+| `mimetype=` (FastAPI) vs `content_type=` (Flask) | `content_type=` everywhere; `mimetype=` still accepted, with no warning | Same keyword everywhere, matching the HTTP header |
+| `@template(..., status_code=)` in Flask only | `status_code=` in every framework | Parity |
+| `not_found(four04template_file='errors/404.pt')`, empty model | `not_found(template_file='errors/404.pt', **template_data)`; the old keyword and positional calls still work | Clearer name, and the 404 page can get data |
+| `generic_error(template_file, status_code, template_data)` in FastAPI only | `error(template_file, status_code, **template_data)` everywhere; `generic_error` stays as an alias with today's signature | Parity, and data passed like `render()` |
+| Views must return a `dict` | Any `Mapping`, dataclasses (shallow field mapping) and Pydantic models (duck-typed through `model_dump()`, without importing pydantic) | Fewer conversions in views; the zero-dependency rule holds |
+| `render()` / `response()` are sync only | `@template` picks `render_async` automatically for async views (FastAPI, Quart, Flask async), plus explicit `render_async()` / `response_async()` | Async views never block the event loop |
+| Per-library exceptions (`FlaskChameleonException`, `FastAPIChameleonException`, the not-found variants) | Shared `chameleon_rs.web.TemplateError` / `NotFound`; the old names become subclasses | One way to catch errors; old `except` clauses keep working |
+| Module-level global state (one template folder per process) | Process-wide default as today, plus optional `configure(app=app, ...)` stored in Flask's `app.extensions` / FastAPI's `app.state` | Several apps or test fixtures per process; safer under free-threading |
+| `import fastapi_chameleon` / `import chameleon_flask` / `import chameleon_partials` | `chameleon_rs.compat.install()` also maps these old module names to the built-ins, like the `chameleon` alias | Existing apps switch with one line at startup |
+| chameleon-robyn | Included: `chameleon_rs.robyn` with the same API | Its suite already passes on the compat layer; same shape |
+
+## 3. Async rendering
 
 Decided so far (D9, D3): `render_async()` is an `async def` on the template class. The VM can
 pause and resume, so an expression whose final value is awaitable suspends the render instead
@@ -59,7 +126,7 @@ Still speculative:
 - **Granian single-threaded asyncio** is the deployment we design for. The success measure is
   event-loop lag under 1 ms while an async render is in flight.
 
-## 3. Memory saver mode
+## 4. Memory saver mode
 
 An opt-in mode that releases objects as early as possible during a render, so peak memory
 drops on large pages. It costs a little speed. Large pages are the target: long listings, big
@@ -81,7 +148,7 @@ reference counting frees it mid-render instead of at the end.
 - **Partials.** A partial's fresh scope and its keyword arguments are released when its frame
   returns. That likely needs no extra mode; check it.
 - **The output buffer itself** can't shrink, because the page is the result. Streaming
-  (section 2) is the real fix for very large output.
+  (section 3) is the real fix for very large output.
 
 Where it must turn itself off, because it would change behaviour:
 
@@ -95,7 +162,7 @@ How we'd prove it: a benchmark that reports peak memory (`tracemalloc` and RSS) 
 large listing, with and without the mode. It ships only if the memory win is clear and the
 time cost stays small (say under 5%). All differential tests run in both modes.
 
-## 4. Profiling and optimisation once it's finished
+## 5. Profiling and optimisation once it's finished
 
 Phase 10 is a performance pass before release, aimed at the plan's speed targets. This section
 is about what comes after: once the engine is complete and matches Chameleon, profile it on
@@ -136,7 +203,7 @@ real workloads and keep making it faster, without giving up any compatibility.
 - **The rule:** every optimisation must keep all differential tests and the real-site diff
   identical. Speed never buys a difference in output.
 
-## 5. A `markdown:` expression type
+## 6. A `markdown:` expression type
 
 The idea: `${markdown: episode.notes}`, or `tal:content="markdown: episode.notes"`, converts
 the value from Markdown to HTML at render time and inserts it as markup.
@@ -172,7 +239,7 @@ the value from Markdown to HTML at render time and inserts it as markup.
   - Is inline Markdown (no wrapping `<p>`) a separate mode?
   - How does it combine with `|` fallbacks and `structure`?
 
-## 6. Documentation
+## 7. Documentation
 
 We'll need real docs, built with Great Docs and hosted on Michael's site. A first outline:
 
@@ -187,7 +254,7 @@ We'll need real docs, built with Great Docs and hosted on Michael's site. A firs
 Open: the docs site's URL, whether the docs live in this repo (`docs/site/`) or on their own,
 and when to start. The API is stable enough to document after Phase 7.
 
-## 7. Icon and logo
+## 8. Icon and logo
 
 We want one for the README, the docs site and PyPI. Directions to explore:
 

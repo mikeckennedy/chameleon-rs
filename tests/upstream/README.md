@@ -15,7 +15,8 @@ make test-upstream-rust   # chameleon_rs, aliased in as `chameleon`
 ## Baseline
 
 On Python 3.15.0 (macOS arm64), the reference Chameleon passes **227 of 233** tests. The six
-failures below are environmental (they fail for stock Chameleon on the maintainer's Mac but pass on
+failures below are environmental (found in Phase 7: on the maintainer's Mac they came from
+`CHAMELEON_EAGER=1` in the shell, which `conftest.py` now clears, and they pass there too) (they fail for stock Chameleon on the maintainer's Mac but pass on
 CI runners, so they are non-strict xfails) and are excluded from
 the compatibility score:
 
@@ -30,3 +31,13 @@ the compatibility score:
 
 The compatibility target is that chameleon_rs passes at least 95% of the 227 (216 tests),
 run unmodified. See `docs/plan.md` for how the score is defined.
+
+## chameleon_rs
+
+Since Phase 7 (2026-10-21), chameleon_rs passes **all 227** of them, unmodified
+(`expected_failures_rust.txt` is empty), installed as `chameleon` by
+`chameleon_rs.compat.install()`. The harness adapts two things the suite assumes about stock
+Chameleon's package: `chameleon.tests.test_templates` is the vendored test module (fixture 079
+imports it), and resources of the package `chameleon` (fixtures 081, 082 and 089 load
+`chameleon:tests/inputs/hello_world.pt`) are looked up in a directory whose `tests` is this
+suite.

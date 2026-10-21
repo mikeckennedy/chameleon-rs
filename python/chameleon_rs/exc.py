@@ -1,49 +1,114 @@
 # Ported from Chameleon's src/chameleon/exc.py (the TemplateError hierarchy, RenderError,
 # compute_source_marker, iter_source_marker_lines, ellipsify, ExceptionFormatter) and
-# template.py (`BaseTemplate.render`'s error handler, as `render_error`), modified: compile
-# errors carry a code-point offset and location computed by the Rust core instead of a Token
-# (their message format is simplified until Phase 7), and the render error handler is
-# called by the native render on its error path.
+# template.py (`BaseTemplate.render`'s error handler, as `render_error`), modified: the
+# render error handler is called by the native render on its error path; `TemplateError`'s
+# token defaults to empty; `UnsupportedError` and `InternalError` are chameleon-rs's own.
 """Exceptions raised by chameleon-rs."""
 
 from __future__ import annotations
 
 import traceback
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from typing import Any
+from typing import Any, Self
 
+from chameleon_rs.config import SOURCE_EXPRESSION_MARKER_LENGTH
+from chameleon_rs.tokenize import Token
 from chameleon_rs.utils import create_formatted_exception, safe_native, value_repr
-
-# Chameleon's `config.SOURCE_EXPRESSION_MARKER_LENGTH`.
-SOURCE_EXPRESSION_MARKER_LENGTH = 60
 
 
 class TemplateError(Exception):
-    """An error raised by chameleon-rs while compiling a template."""
+    """An error raised by Chameleon.
 
-    def __init__(
-        self,
-        msg: str,
-        token: str = '',
-        offset: int = 0,
-        location: tuple[int, int] = (0, 0),
-        filename: str = '',
-    ) -> None:
+        >>> from chameleon_rs.config import SOURCE_EXPRESSION_MARKER_LENGTH
+    from chameleon_rs.tokenize import Token
+        >>> token = Token('token')
+        >>> message = 'message'
+
+        Make sure the exceptions can be copied:
+
+        >>> from copy import copy
+        >>> copy(TemplateError(message, token))
+        TemplateError('message', 'token')
+
+        And pickle/unpickled:
+
+        >>> from pickle import dumps, loads
+        >>> loads(dumps(TemplateError(message, token), -1))
+        TemplateError('message', 'token')
+
+    """
+
+    args: tuple[str, Token]  # type: ignore[assignment]
+
+    def __init__(self, msg: str, token: str = '') -> None:
+        # (`token` defaults to empty here, for errors chameleon-rs raises without one.)
+        if not isinstance(token, Token):
+            token = Token(token, 0)
+
         Exception.__init__(self, msg, token)
-        self.msg = msg
-        self.token = token
-        self.offset = offset
-        self.location = location
-        self.filename = filename
+
+    def __copy__(self) -> Self:
+        inst = Exception.__new__(type(self))
+        inst.args = self.args
+        return inst
 
     def __str__(self) -> str:
-        text = f'{self.msg}\n\n'
-        text += f' - String:     "{self.token}"'
+        text = '%s\n\n' % self.args[0]  # noqa: UP031 - Chameleon's formatting
+        text += ' - String:     "%s"' % safe_native(self.token)  # noqa: UP031
+
         if self.filename:
-            text += f'\n - Filename:   {self.filename}'
+            text += '\n'
+            text += ' - Filename:   %s' % self.filename  # noqa: UP031
+
         lineno, column = self.location
-        text += f'\n - Location:   (line {lineno}: col {column})'
+        text += '\n'
+        text += ' - Location:   (line %d: col %d)' % (lineno, column)  # noqa: UP031
+
+        lines: Iterable[str]
+        if lineno and column:
+            if self.token.source:
+                lines = iter_source_marker_lines(self.token.source.splitlines(), self.token, lineno, column)
+            elif self.filename and not self.filename.startswith('<'):
+                try:
+                    f = open(self.filename)  # noqa: SIM115 - as in Chameleon
+                except OSError:
+                    pass
+                else:
+                    lines = iter_source_marker_lines(iter(f), self.token, lineno, column)
+                    try:
+                        lines = list(lines)
+                    finally:
+                        f.close()
+            else:
+                lines = ()
+
+            # Prepend newlines.
+            for line in lines:
+                text += '\n' + safe_native(line)
+
         return text
+
+    def __repr__(self) -> str:
+        try:
+            return f"{self.__class__.__name__}('{self.args[0]}', '{safe_native(self.token)}')"
+        except AttributeError:
+            return object.__repr__(self)
+
+    @property
+    def token(self) -> Token:
+        return self.args[1]
+
+    @property
+    def filename(self) -> str:
+        return self.token.filename
+
+    @property
+    def location(self) -> tuple[int, int]:
+        return self.token.location
+
+    @property
+    def offset(self) -> int:
+        return getattr(self.token, 'pos', 0)
 
 
 class ParseError(TemplateError):

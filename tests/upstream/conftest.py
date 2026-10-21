@@ -20,18 +20,17 @@ from pathlib import Path
 
 import pytest
 
+# Chameleon's settings are read from the environment when the engine is imported; a
+# developer's shell (for example `CHAMELEON_EAGER=1`) must not change what the suite sees.
+for _name in ('CHAMELEON_EAGER', 'CHAMELEON_DEBUG', 'CHAMELEON_CACHE', 'CHAMELEON_RELOAD'):
+    os.environ.pop(_name, None)
+
 ENGINE = os.environ.get('CHAMELEON_ENGINE', 'python')
 HERE = Path(__file__).parent
 
 if ENGINE == 'rust':
-    try:
-        from chameleon_rs import compat
-    except ImportError:
-        pytest.exit(
-            'chameleon_rs.compat is not implemented yet (see docs/plan.md, Phase 7). '
-            'Run with CHAMELEON_ENGINE=python for the baseline.',
-            returncode=2,
-        )
+    from chameleon_rs import compat
+
     compat.install()
 elif ENGINE != 'python':
     pytest.exit(f'Unknown CHAMELEON_ENGINE={ENGINE!r}; use "python" or "rust".', returncode=2)
@@ -54,6 +53,40 @@ def _alias_vendored_test_module() -> None:
 
 
 _alias_vendored_test_module()
+
+
+def _alias_vendored_test_resources() -> None:
+    # Fixtures 081, 082 and 089 load `chameleon:tests/inputs/hello_world.pt`, a resource of the
+    # package named `chameleon`, which stock Chameleon ships its tests in. Under the Rust
+    # engine that package is chameleon_rs; as for the module alias above, resources of the
+    # package `chameleon` are looked up in a directory whose `tests` is the vendored suite.
+    import atexit
+    import contextlib
+    import shutil
+    import tempfile
+
+    import chameleon_rs.loader
+    import chameleon_rs.template
+
+    root = Path(tempfile.mkdtemp(prefix='chameleon-resources-'))
+    (root / 'tests').symlink_to(HERE / 'chameleon_tests', target_is_directory=True)
+    atexit.register(shutil.rmtree, root, ignore_errors=True)  # removes the link, not its target
+    original = chameleon_rs.loader.import_package_resource
+
+    @contextlib.contextmanager
+    def import_package_resource(name):
+        if name == 'chameleon':
+            yield root
+        else:
+            with original(name) as path:
+                yield path
+
+    chameleon_rs.loader.import_package_resource = import_package_resource
+    chameleon_rs.template.import_package_resource = import_package_resource
+
+
+if ENGINE == 'rust':
+    _alias_vendored_test_resources()
 
 # Fail on the reference Chameleon too, in this environment; excluded from the compatibility
 # score. See tests/upstream/README.md for why each one fails.

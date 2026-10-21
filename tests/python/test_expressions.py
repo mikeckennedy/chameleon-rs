@@ -318,7 +318,7 @@ def test_non_strict_error_is_raised_fresh_each_render() -> None:
             template()
         errors.append(e.value)
     assert errors[0] is not errors[1]
-    assert errors[0].msg == 'invalid syntax'
+    assert errors[0].args[0] == 'invalid syntax'
 
 
 # The doctests of tales.py and compiler.py that concern expressions, as templates.

@@ -791,6 +791,98 @@ Carried forward:
 Exit gate: level 1 (216+ of 227), level 2 complete (all fixtures, including loader ones),
 level 4 (integration suites).
 
+**Done (2026-10-21).** `chameleon_rs` now has Chameleon's class layout and configuration
+surface (`BaseTemplate`, `BaseTemplateFile`, the page template classes, `PageTemplateLoader`
+with `formats`, `MemoryLoader`/`ModuleLoader`, `Macros`), every keyword Chameleon accepts
+(including `default_marker` and `tokenizer`, which needed native support), the `CHAMELEON_*`
+settings, thread-safe `cook_check` and `auto_reload`, Chameleon's `TemplateError` with
+`Token`s (compile errors now print the `- Source:` lines), `ExpressionEvaluator`, and
+`chameleon_rs.compat.install()`, which makes `import chameleon` give chameleon-rs without
+stock Chameleon installed. Per-module decisions (Rust-backed, vendored, ported, not
+provided), the lone-surrogate decision and the deviations: architecture.md, "Phase 7
+amendments".
+
+Results:
+
+- **Level 1: 227 of 227** upstream tests pass on chameleon_rs (`make test-upstream-rust`,
+  `CHAMELEON_ENGINE=rust`, unmodified tests; the 6 environmental xfails are excluded as for the
+  reference). `expected_failures_rust.txt` is empty. The harness maps resources of the package
+  `chameleon` to the vendored suite (three fixtures load `chameleon:tests/inputs/...`), as it
+  already mapped `chameleon.tests`. `make test` now runs the upstream suite on both engines, so
+  CI checks the ratchet on every matrix entry.
+- **Level 2:** all 122 fixture renders byte-exact (unchanged), loader fixtures included.
+- **Level 4: all integration suites pass**, unmodified, on chameleon-rs through the compat
+  alias, in a scratch Python 3.14 venv without stock Chameleon (`make test-integration`;
+  robyn has no 3.15 wheels): fastapi-chameleon 40, chameleon-flask 16, chameleon-robyn 39,
+  chameleon_partials 6 (pinned commits in the Makefile; a new CI job runs them on Linux and
+  macOS).
+- **Tests:** `tests/python/test_api.py` (304): compile-error messages whole, for strings and
+  files, against Chameleon (16 shapes each, plus non-strict render-time ones); custom
+  `default_marker` and `tokenizer` renders against Chameleon; every configuration keyword; the
+  loader (search paths, `default_extension`, `formats`, caching, package resources, absolute
+  paths, `prepend_relative_search_path`, `auto_reload`); 8 threads rendering while the file is
+  rewritten 29 times (no errors, no stale or torn output, versions compiled in order) and 16
+  threads compiling once; `CHAMELEON_*` settings in subprocesses; `ExpressionEvaluator`
+  against Chameleon's; `iter_xml` and `ElementParser` items token for token against
+  Chameleon's for every fixture and for streams from several sources or plain strings; macros;
+  `compat.install()` with stock Chameleon blocked and replacing it; and a run that imports
+  every module with all non-stdlib imports blocked (no runtime dependencies). 96 Rust tests (90
+  core, with given tokens and namespace positions new; 6 `chameleon-py`), 2,301 pytest
+  passed, 2 skipped, 1 strict xfail (with `CHAMELEON_RS_CORPUS` set); upstream 227 passed on each engine; also green on
+  Python 3.12 and on free-threaded 3.14t (GIL disabled, `-W error::RuntimeWarning`).
+  `make lint test` green with `CHAMELEON_RS_CORPUS` set (corpus: 228 identical renders, 1 same
+  error, unchanged).
+- **Speed (release, load average 2-4):** `bench/bench_ab.py 86f2c21`, 16 rounds, twice:
+  **+3.6 ns** (range -0..+7) and **+1.6 ns** (range -2..+33) per listing item, 6.0x Chameleon
+  in the same run; within the +5 ns tolerance. The render path did not change; the Python
+  wrapper costs about +50 ns per render (the `_render` and defaults checks), 0.1 ns per item.
+  Not part of the gate: the partial listing measured **+12 ns per item** (two native partial
+  calls) in the same kind of A/B, twice, with byte-identical program dumps and no change to
+  the runtime's partial path; unexplained (code layout is the likeliest cause), carried to
+  Phase 9, which replaces the prototype. `bench_skeleton.py`: listing 500-505 ns against
+  Chameleon's 2,925 ns (5.8x; the machine ran ~2.5% slower than in Phase 6b's run), partial
+  listing 664-666 ns against 6,800 ns (10.2x).
+
+Review fixes (2026-10-21, after the Rust Architect's review; each checked against Chameleon
+first): **blocker:** a file template whose `cook` sets `_render` (pyramid_chameleon's `macro=`
+renderer) rendered the whole page on its first render, because the `_render` check ran
+before `cook_check()`; fixed and tested with pyramid_chameleon's subclass. Both test harnesses
+now clear `CHAMELEON_EAGER`/`_DEBUG`/`_CACHE`/`_RELOAD` first (the owner's shell had
+`CHAMELEON_EAGER=1`, which was also the cause of the six "environmental" upstream failures:
+they now pass on both engines). `chameleon.tales.TalesExpr` (with `resolve_global`,
+`transform_attribute`) vendored, and a custom `TalesExpr` subclass tested against Chameleon;
+`tal`'s parsing helpers vendored and differential-tested; `install()` now aliases every public
+module, stops any other `chameleon.X` with `ModuleNotFoundError` (no second copy of
+`_native` or `compat`), and warns when it replaces stock Chameleon modules; a `default_marker`
+must be importable, as in Chameleon; `ExpressionEvaluator` evaluates in the caller's `Scope`
+(new `Program.render_scope`); the loader cache shares one template between concurrent loads;
+a compilation is one `(program, builtins)` attribute; span offsets are checked before the
+`u32` conversion; the per-template lock's deadlock risk is documented; the robyn leg of CI
+has cp314 manylinux wheels (0.88.0). **Not done:** lone surrogates in the source keep being
+refused: the review's private-use mapping touches the core's text API and some twenty call
+sites (architecture.md, Phase 7 amendments), carried to Phase 8. After the fixes:
+`tests/python/test_api.py` 364 tests, 2,361 pytest passed, 2 skipped, 1 strict xfail (corpus
+set, `CHAMELEON_EAGER` unset), upstream 227 passed on each engine (6 environmental xpassed),
+integration suites unchanged (40, 16, 39, 6). A/B against 86f2c21, release, five runs:
++2.1, +1.8, -0.7, -4.5, -0.6 ns per listing item (5.97-6.30x Chameleon; the last three at load
+6-8). One intermediate build measured bimodally (+0.5 to +7.7 ns over seven runs) with the
+scope handling inside `Program.render`; moving it to `render_scope` and sharing the render
+body out of line brought it back.
+
+Carried forward:
+
+- **Phase 8:** lone surrogates in the template source (Chameleon renders them in text,
+  attributes and `string:`; we refuse them): the private-use mapping described in
+  architecture.md, with differential tests.
+- **Phase 9:** the partial listing's +12 ns per item in the A/B against 86f2c21 (see above).
+- **Phase 8 / known differences** (architecture.md, Phase 7 amendments): a custom
+  `default_marker` is per render, not per template, across templates; a user `tokenizer`'s
+  error positions are into its tokens joined; `ExpressionEvaluator` ignores `rcontext` (and
+  copies a plain dict, which Chameleon rejects);
+  messages naming `chameleon_rs.*` classes (`ErrorInfo`'s repr, the scope's qualified name).
+- **Phase 12:** `chameleon.nodes`, `chameleon.program` and `chameleon.zpt.program` are not
+  provided (Chameleon's code generator); documented in the compat module.
+
 ## Phase 8: Real-site verification
 
 Compatibility is goal #1, so this comes before performance work.

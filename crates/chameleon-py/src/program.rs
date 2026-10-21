@@ -67,6 +67,8 @@ pub(crate) struct Program {
     /// The (normalized) source and filename, for error positions.
     source: Box<str>,
     pub(crate) filename: Py<PyString>,
+    /// The object `default` evaluates to (the template's `default_marker`).
+    pub(crate) marker: Py<PyAny>,
 }
 
 impl Program {
@@ -105,7 +107,7 @@ impl Program {
     #[new]
     #[pyo3(signature = (
         source, filename = "<string>", *, expression_types = None, default_expression = None, builtins = None,
-        fast_path = true, **options
+        fast_path = true, default_marker = None, token_lengths = None, **options
     ))]
     #[allow(clippy::too_many_arguments)] // Python keyword arguments
     fn new(
@@ -116,6 +118,8 @@ impl Program {
         default_expression: Option<String>,
         builtins: Option<Vec<String>>,
         fast_path: bool,
+        default_marker: Option<Bound<'_, PyAny>>,
+        token_lengths: Option<Vec<usize>>,
         options: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
         let options = self::options(options)?;
@@ -130,9 +134,14 @@ impl Program {
             config.template_builtins = builtins;
         }
         config.fast_path = fast_path;
+        let marker = match default_marker {
+            Some(m) => m,
+            None => marker(py)?,
+        };
+        let tokens = token_lengths.map(|lengths| crate::elements::spans_from_lengths(source, &lengths)).transpose()?;
         catch_panics(py, || {
-            let mut compiler = PyExprCompiler::new(py, marker(py)?, config, source, filename)?;
-            let core = chameleon_core::compile(source, &mut compiler, &options)
+            let mut compiler = PyExprCompiler::new(py, marker.clone(), config, source, filename)?;
+            let core = chameleon_core::compile_tokens(source, tokens, &mut compiler, &options)
                 .map_err(|e| compile_error(py, e, source, filename))?;
             let names = core.names().iter().map(|n| PyString::intern(py, n).unbind()).collect();
             let has_loops = core.ops().iter().any(|op| matches!(op, chameleon_core::Op::LoopStart { .. }));
@@ -150,6 +159,7 @@ impl Program {
                 token_table: compiler.token_table,
                 source: source.into(),
                 filename: PyString::new(py, filename).unbind(),
+                marker: marker.unbind(),
             })
         })
     }
@@ -167,31 +177,19 @@ impl Program {
         builtins: Option<Bound<'py, PyDict>>,
     ) -> PyResult<Bound<'py, PyString>> {
         let py = slf.py();
-        catch_panics(py, || {
-            let program = slf.get();
-            let scope = Scope::new_root(py, variables)?;
-            let builtins = builtins.unwrap_or_else(|| PyDict::new(py));
-            let render = RenderCtx::new(marker(py)?, partials, defaults, builtins);
-            // `render(..., target_language=__kw.get("target_language"))`.
-            // (`None` stays the VM's "no value", so frames without i18n settings stay plain.)
-            let target_language =
-                variables.get_item(intern!(py, "target_language"))?.filter(|t| !t.is_none()).map(Bound::unbind);
-            let mut st = VmState::new(
-                Arc::clone(&program.core),
-                slf.clone().into_any().unbind(),
-                scope.clone().into_any().unbind(),
-                target_language,
-            );
-            let mut rt = PyRuntime::new(&render, slf.clone(), scope.clone());
-            match run(&mut st, &mut rt) {
-                Ok(Done::Finished) => {}
-                Ok(Done::Suspended(_)) => return Err(internal_error(py, "a synchronous render suspended")),
-                Err(VmError::Runtime(e)) => return Err(render_error(py, e, &scope, &render)),
-                Err(e) => return Err(vm_error(py, e)),
-            }
-            program.core.record_size(st.out.len());
-            output_str(py, &st.out)
-        })
+        let scope = Scope::new_root(py, variables)?;
+        render_in(slf, &scope, partials, defaults, builtins)
+    }
+
+    /// Renders with `scope` itself as the scope, so names the template assigns stay in it
+    /// (`ExpressionEvaluator` evaluates in the caller's scope, as Chameleon does).
+    #[pyo3(signature = (scope, builtins = None))]
+    fn render_scope<'py>(
+        slf: &Bound<'py, Self>,
+        scope: &Bound<'py, Scope>,
+        builtins: Option<Bound<'py, PyDict>>,
+    ) -> PyResult<Bound<'py, PyString>> {
+        render_in(slf, scope, None, None, builtins)
     }
 
     /// A readable listing of the bytecode.
@@ -219,8 +217,44 @@ impl Program {
         for n in &self.names {
             visit.call(n)?;
         }
-        visit.call(&self.filename)
+        visit.call(&self.filename)?;
+        visit.call(&self.marker)
     }
+}
+
+/// A render of `program` in `scope` (see [`Program::render`]).
+fn render_in<'py>(
+    slf: &Bound<'py, Program>,
+    scope: &Bound<'py, Scope>,
+    partials: Option<Bound<'py, PyDict>>,
+    defaults: Option<Bound<'py, PyDict>>,
+    builtins: Option<Bound<'py, PyDict>>,
+) -> PyResult<Bound<'py, PyString>> {
+    let py = slf.py();
+    catch_panics(py, || {
+        let program = slf.get();
+        let builtins = builtins.unwrap_or_else(|| PyDict::new(py));
+        let render = RenderCtx::new(program.marker.bind(py).clone(), partials, defaults, builtins);
+        // `render(..., target_language=__kw.get("target_language"))`.
+        // (`None` stays the VM's "no value", so frames without i18n settings stay plain.)
+        let target_language =
+            Scope::lookup(scope, intern!(py, "target_language").as_any())?.filter(|t| !t.is_none()).map(Bound::unbind);
+        let mut st = VmState::new(
+            Arc::clone(&program.core),
+            slf.clone().into_any().unbind(),
+            scope.clone().into_any().unbind(),
+            target_language,
+        );
+        let mut rt = PyRuntime::new(&render, slf.clone(), scope.clone());
+        match run(&mut st, &mut rt) {
+            Ok(Done::Finished) => {}
+            Ok(Done::Suspended(_)) => return Err(internal_error(py, "a synchronous render suspended")),
+            Err(VmError::Runtime(e)) => return Err(render_error(py, e, scope, &render)),
+            Err(e) => return Err(vm_error(py, e)),
+        }
+        program.core.record_size(st.out.len());
+        output_str(py, &st.out)
+    })
 }
 
 static RENDER_ERROR: PyOnceLock<Py<PyAny>> = PyOnceLock::new();

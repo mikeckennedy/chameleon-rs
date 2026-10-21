@@ -618,6 +618,144 @@ reference (the differential tests and the fuzzer compare whole outputs and messa
   renders nothing; the lowering replaces such a function's body with a return. `await` remains
   the `SyntaxError` both raise.
 
+## Phase 7 amendments (2026-10-21)
+
+The Python API and the compat layer. Every behaviour below was checked against the reference
+(`tests/python/test_api.py` compares outputs, messages and objects with Chameleon's).
+
+- **D7, the class layout as built.** `chameleon_rs.template` mirrors Chameleon's
+  `template.py` plus `zpt/template.py`: `BaseTemplate` (`write`, `cook(body)`, `cook_check`,
+  `render` calling `self._render(stream, econtext, rcontext, ...)`, `digest`, `keep_body`,
+  `keep_source`, `debug`, `loader`, `value_repr`), `BaseTemplateFile` (`filename` property,
+  `auto_reload`, `mtime` including zip resources, `read`, `post_init_hook`,
+  `CHAMELEON_EAGER`), `PageTemplate`, `PageTemplateFile`, `PageTextTemplate(File)`, `Macros`.
+  Subclasses that override `cook` or set `_render` on an instance work as in Chameleon (the
+  upstream tests do both). `cook` compiles a native `Program` and does not set `_render`: a
+  `PageTemplate` renders natively unless `'_render' in self.__dict__` after `cook_check()`
+  (pyramid_chameleon's `macro=` renderer sets it in `cook`, so the check must follow
+  compiling: the review found the first render of such a file template rendering the whole
+  page), in which case it takes Chameleon's stream protocol (`BaseTemplate.render`, with its
+  error formatting). A compilation is stored as one `(program, builtins)` attribute, so a
+  render or macro lookup never pairs one compilation's program with another's builtins. The render
+  defaults (`__translate`, `__decode`, `__on_error_handler`) are cached and recomputed when
+  `translate`, `encoding` or `on_error_handler` changes (Chameleon reads them each render).
+- **Thread-safe cooking (the Phase 5 item).** `BaseTemplateFile.cook_check` compiles under a
+  per-template `RLock`, double-checked, so one thread compiles while others wait; with
+  `auto_reload`, a changed mtime is re-read under the lock, so a thread that read the time
+  before another reloaded the file cannot set `_v_last_read` back and recompile (Chameleon has
+  no lock; its unlocked check could also cook twice). A render never sees a half-updated
+  template: it reads the compilation once. The lock is per template, so a `cook` override
+  that compiles another template while a second thread's override compiles this one (say
+  each looks up the other's macros) can deadlock; Chameleon's unlocked cooking cannot. No
+  known code does this; such overrides should not touch other templates. The loader's cache
+  stores with `setdefault`, so threads loading the same spec at once share one template.
+- **Configuration.** Every keyword of Chameleon's is accepted and honoured: the program
+  options (Phase 4), `translate`, `encoding`, `on_error_handler`, `value_repr`,
+  `extra_builtins`, `expression_types`/`default_expression`, `debug`, `keep_source`,
+  `keep_body`, the loader keywords, and two that needed native support:
+  - `default_marker`: an AST node as in Chameleon (`Symbol(obj)`, `Builtin`, `Constant`;
+    anything else is used as the object). A `Symbol`'s object must be importable, as
+    Chameleon's generated module imports it: `TypeError` without a `__name__`, `ImportError`
+    if its module lacks it (the imported object is used). The `Program` holds its marker (`default_marker=`),
+    compiles `default` to it and renders with it. A render uses the marker of the template it
+    starts from; a macro of another template with a different custom marker sees the
+    caller's (Chameleon: its own). Only custom markers are affected.
+  - `tokenizer`: Chameleon passes its tokens to the parser. The core's parser takes byte spans
+    of one source (`chameleon_core::compile_tokens`), so the template compiles the tokens
+    joined, with their lengths (`token_lengths=`); for tokenizers that return slices of the
+    body (all of Chameleon's) that is the body itself. Positions in errors are then into the
+    joined tokens (Chameleon keeps each token's own position and source).
+  - `debug` / `CHAMELEON_DEBUG` give the template a `ModuleLoader` in a temporary directory and
+    keep the body and `source`; `source` is a dump of the program (D11), not Python code.
+    `CHAMELEON_CACHE` is validated and sets the loader as in Chameleon, but nothing is written
+    to it (D11). `CHAMELEON_EAGER` and `CHAMELEON_RELOAD` behave as in Chameleon; unknown
+    `CHAMELEON_*` variables are logged.
+- **D8, compile errors as Chameleon's.** `TemplateError(msg, token)` is Chameleon's class
+  (vendored): `token` is a `chameleon_rs.tokenize.Token` (code-point `pos`, `source`,
+  `filename`), and `offset`, `location`, `filename` are properties of it. The native compiler
+  builds the token from the core's position (a plain `str` for positionless tokens) and
+  `cook` sets its filename, as Chameleon's `_cook` does, so `str(error)` is Chameleon's whole
+  message including the `- Source:` lines (the Phase 6a item), for strings, files and
+  non-strict render-time `ExpressionError`s. `msg` is no longer an attribute (Chameleon has
+  none; it is `args[0]`).
+- **Lone surrogates in the template source (the Phase 3 item): refused, for now.** Chameleon
+  renders them in text, attribute values and `string:` expressions (a Python expression with
+  one fails there too, `UnicodeEncodeError` from `compile`); the core's source is UTF-8 text
+  and cannot hold them. Compiling raises `UnsupportedError` (a `CompilationError`) with a
+  token at the first surrogate, instead of a bare `UnicodeEncodeError`. A template read from a
+  file can never contain them (decoding is strict); values with lone surrogates still render
+  (`surrogatepass`, D6). The planned fix (the review's): map each surrogate one-to-one onto a
+  2,048-code-point block of the BMP Private Use Area that the source does not use (both are 3
+  UTF-8 bytes, so offsets are unchanged), and map back wherever source text leaves the core:
+  static text (rewritten to `surrogatepass` bytes in the program's text table), every place
+  the VM turns static text into a `str` (`text_str`: defines, translation message ids,
+  names, defaults, attribute names), Python expression and `string:` sources, error tokens.
+  That touches the core's text API and some twenty call sites in the VM and the runtime, so it
+  was deferred (plan.md, Phase 8).
+- **Render-function preamble.** A macro or template called through Chameleon's `include`
+  signature from outside a native render raises `KeyError` when the scope lacks
+  `__translate`, `__decode` or `__on_error_handler`, as Chameleon's render functions read
+  them first.
+- **D7, the compat package, decided per module.** `chameleon_rs.compat.install()` puts
+  `chameleon_rs` in `sys.modules` as `chameleon` and each of its modules as `chameleon.<same
+  name>` (`MODULES`), replacing stock Chameleon's entries if any; it never imports stock
+  Chameleon, and the package imports only the standard library (a test blocks every
+  third-party import; another installs the alias with stock Chameleon blocked):
+  - **Backed by the Rust implementation:** `tokenize.iter_xml` (the native tokenizer's
+    ranges, `_native.tokenize_ranges`), `parser.ElementParser` (the native parser over the
+    stream's tokens, `_native.parse_elements`; the items' strings are slices of the original
+    tokens, so a stream from several sources or of plain strings gives what Chameleon gives),
+    `utils.Scope` and `utils.lookup_attr` (native), `tales.DEFAULT_MARKER` (the native
+    marker), `compiler.ExpressionEvaluator` (each expression compiles to a small native
+    program, evaluated in the caller's `Scope` itself, so its writes stay visible; errors are
+    raised unformatted, `econtext['_result']` is set; `rcontext` is not used; a plain dict,
+    which Chameleon rejects, is copied into a new scope), and the template classes and
+    loaders.
+  - **Vendored verbatim** (Chameleon's license header noting the change of import names):
+    `astutil`, `codegen` (custom expression types build their AST with them), `namespaces`,
+    `metal`, `types`; and inside ported modules, `tales.TalesExpr` (with `resolve_global`,
+    `transform_attribute`; z3c.pt subclasses it, and a subclass's piped alternatives run
+    through the AST bridge, tested against Chameleon) and `tal`'s `split_parts`,
+    `parse_attributes`, `parse_substitution`, `parse_defines`, `prepare_attributes`
+    (differential-tested).
+  - **Ported** (Chameleon's code, adapted): `tokenize.Token`, `exc`, `config`, `loader`
+    (`TemplateLoader`, `MemoryLoader`, `ModuleLoader`: the latter two only as objects code
+    may inspect), `zpt.loader.TemplateLoader` (= `PageTemplateLoader`), `i18n`
+    (`fast_translate` when zope.i18n is installed, `parse_attributes`), the helpers of
+    `parser`, `tal` and `utils`.
+  - **Not provided:** code-generation internals with no counterpart (`chameleon.nodes`,
+    `chameleon.program`, `chameleon.zpt.program`, `chameleon.benchmark`):
+    `ModuleNotFoundError`, as is any other `chameleon.X` that is not aliased: a meta-path
+    finder stops the import system from searching chameleon-rs's directory under the
+    `chameleon` name, which would load a second copy of a module (`chameleon.compat`) or of
+    the native extension (`chameleon._native`, with different `Scope` and `Program` types).
+    Every public module of chameleon-rs is aliased (found with `pkgutil`), as the same object;
+    private ones are not. Stock Chameleon modules imported before `install()` are replaced with
+    a `RuntimeWarning` naming them. `compiler.ExpressionEngine` holds its configuration but
+    `parse` raises `NotImplementedError` (custom types get the bridge's engine, D11).
+- **The parser keeps namespace token positions.** Chameleon's `ns_map` keys are slices of the
+  `xmlns:` attribute names (the first declaration's, for a prefix redeclared later) and its
+  `ns_attrs` keys hold the declaring attribute's value token. `chameleon_core`'s `Namespaces`
+  and `NsAttr` now record those spans, so the compat `ElementParser`'s items equal
+  Chameleon's token for token (the Phase 3 differential tests compared these keys as plain
+  strings; they now compare positions too).
+- **Type names (the carried item) stay ours.** A render error's message prints classes the way
+  Python does: `chameleon_rs.tal.ErrorInfo`'s default `repr` (`${error}` in an `on-error`
+  handler) and the few messages that print the scope's qualified name name chameleon-rs's
+  modules (`chameleon_rs._native.Scope`), where Chameleon prints `chameleon.tal.ErrorInfo` /
+  `chameleon.utils.Scope`. With the compat alias these are the same classes under
+  `chameleon.*`, so `isinstance` and imports work; the text differs only in the module name
+  (and the object address, which differs anyway).
+- **Upstream harness.** With `CHAMELEON_ENGINE=rust` the suite runs on `compat.install()`. As
+  the harness already maps `chameleon.tests.test_templates` to the vendored module, it maps
+  resources of the package `chameleon` to a directory whose `tests` is the vendored suite
+  (fixtures 081, 082 and 089 load `chameleon:tests/inputs/hello_world.pt`, a file stock
+  Chameleon ships). Result: all 227 pass; `expected_failures_rust.txt` is empty. Both test
+  harnesses now clear `CHAMELEON_EAGER`, `_DEBUG`, `_CACHE` and `_RELOAD` before importing
+  either engine: the six "environmental" upstream failures on the maintainer's Mac were
+  `CHAMELEON_EAGER=1` in the shell, and they now pass on both engines (still non-strict
+  xfails, as their outcome depends on the environment).
+
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
 ```

@@ -7,6 +7,7 @@
 mod compiler;
 mod convert;
 mod custom;
+mod elements;
 mod errors;
 mod expr;
 mod lower;
@@ -27,6 +28,8 @@ mod _native {
 
     #[pymodule_export]
     use super::custom::SubEval;
+    #[pymodule_export]
+    use super::elements::{parse_elements, tokenize_ranges};
     #[pymodule_export]
     use super::expr::py_lookup_attr;
     #[pymodule_export]
