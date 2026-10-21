@@ -998,14 +998,46 @@ Carried forward:
   escape pass when nothing needs escaping; (6) macro and slot overhead: copy-on-write
   `copy_scope` and `econtext.update(rcontext)`.
 
-## Phase 9: Built-in partials
+## Phase 9: Built-in partials and the Flask/Quart integration
 
-D10: `render_partial` built in, path resolution, native frames writing into the caller's
-buffer, recognizing `chameleon_partials.render_partial`, `auto_reload` checked at most once per
-file per render.
+Order decided by Michael (2026-10-21): this phase runs **right after Phase 10 and before Phase 11**.
+`render_partial` through chameleon_partials' Python code can't suspend mid-render, so native partials
+come first and `render_async` can then cover whole pages, partials included.
 
-Exit gate: the `bench/` partial templates render identically to chameleon_partials; partial
-listing at 10x or better.
+**Built-in partials (D10).**
+- `render_partial` built in, with no setup.
+- Path resolution, with native frames writing into the caller's buffer.
+- Recognises `chameleon_partials.render_partial`, and maps the old module name through
+  `compat.install()`.
+- `auto_reload` is checked at most once per file per render.
+- Settings (template folder, reload, caching) follow the vision doc's one-time `configure()` direction.
+
+**Built-in Flask/Quart integration**, the API Michael chose in the vision-doc interview (`docs/vision.md`
+section 2).
+- `chameleon_rs.flask`, with chameleon-flask's function names and signatures kept as aliases:
+  `configure()` / `global_init`, `@template`, `render`, `response`, `not_found`, `error` /
+  `generic_error`, `clear`.
+- Rendering:
+  - chameleon-flask's template-folder and `{module}/{function}.html|.pt` lookup rules.
+  - `content_type=` (`mimetype=` accepted), `status_code=`.
+  - Views may return any `Mapping`, dataclass or Pydantic-like model.
+- Errors and app state:
+  - Shared `TemplateError` / `NotFound` exceptions, with the old names kept as subclasses.
+  - Process-wide default config plus optional per-app config.
+- Flask async views and Quart are supported. Async views render through the sync path until Phase 11
+  adds `render_async`.
+- Imports Flask only when `chameleon_rs.flask` itself is imported, so there are still no runtime
+  dependencies.
+- `compat.install()` maps `chameleon_flask` to it.
+- FastAPI and Robyn modules come later, with the same shape.
+
+Exit gate:
+- The `bench/` partial templates render identically to chameleon_partials, and the partial listing is
+  at least 10x faster.
+- chameleon_partials' and chameleon-flask's own test suites pass against the built-ins through the
+  compat aliases.
+- The owner's real-app crawl and locust runs are repeated on the built-ins: identical HTML, with
+  numbers recorded.
 
 ## Phase 10: Performance pass
 
@@ -1016,6 +1048,14 @@ escaping, capacity hints, moving `render()` setup into Rust if the wrapper shows
 
 Exit gate: speed targets met; no regressions on any benchmark.
 
+Real-app checkpoint (2026-10-21, owner's app, production-like render path, warmed up, median of 5): over
+614 real pages, template render time was 2.10x faster than Chameleon in total (per-page median 2.68x) and
+whole requests 1.30x faster, because app code outside templates dominates. In chameleon-rs renders, native
+engine code was only about 3-6% of samples; most of the time was CPython work the templates trigger
+(attribute lookups, small helper and property calls, conversions, allocation). **After Phase 10 lands,
+re-run that real-app crawl** (the owner's private harness and notes live in the app's spike branch, not in
+this repository) and record the new ratios here, aggregate numbers only.
+
 ## Phase 11: Concurrency and async
 
 D9: `render_async` on the resumable VM, concurrent expressions with placeholders, partial
@@ -1024,6 +1064,10 @@ renders of the same templates on 3.15t).
 
 Exit gate: the dashboard benchmark's concurrent render near its 25 ms ceiling; event-loop lag
 during an async render under 1 ms; no failures under the free-threaded stress suite.
+
+Real-app re-test: after this phase, repeat the owner's real-app crawl and the owner's locust load tests (many
+simultaneous requests against a single-threaded asyncio Granian worker): throughput, p50/p95/p99 latency
+and event-loop lag, chameleon-rs sync vs async vs stock Chameleon.
 
 ## Phase 12: Release
 

@@ -39,6 +39,9 @@ Open questions:
 
 ## 2. Built-in framework integrations: Flask/Quart, FastAPI and Robyn
 
+> **Status (2026-10-21):** the Flask/Quart part has moved into the plan as part of Phase 9, which runs right
+> after Phase 10 alongside built-in partials. FastAPI and Robyn remain vision items with the same API.
+
 Same idea as partials: what chameleon-flask and fastapi-chameleon provide today becomes part of
 chameleon-rs, with no separate package and less setup. chameleon-robyn has the same shape and
 is included too.
