@@ -1,0 +1,28 @@
+<div metal:use-macro="load: _layout.pt">
+    <title metal:fill-slot="title">${ title } - ${ site.name }</title>
+    <div metal:fill-slot="content">
+        <h1>${ title }</h1>
+        <p class="lead">${ structure: intro_html }</p>
+        <div class="episodes" tal:define="count len(episodes)">
+            <p class="count">${ count } episodes</p>
+            <div tal:repeat="ep episodes" tal:omit-tag="">
+                <div class="episode ${ 'featured' if ep.featured else '' }" id="ep-${ ep.number }">
+                    <a href="/episodes/show/${ ep.number }/${ ep.slug }" class="title">#${ ep.number }: ${ ep.title }</a>
+                    <div class="meta">
+                        <span class="date">${ format_date(ep.published) }</span>
+                        <span class="duration">${ ep.duration_text }</span>
+                        <span class="listens">${ "{:,}".format(ep.listens) } listens</span>
+                    </div>
+                    <div class="guests" tal:condition="ep.guests">
+                        with <a tal:repeat="guest ep.guests" href="/guests/${ guest.slug }" class="guest">${ guest.name }</a>
+                    </div>
+                    <div class="summary">${ ep.summary }</div>
+                    <ul class="tags" tal:condition="ep.tags">
+                        <li tal:repeat="tag ep.tags" class="tag">${ tag }</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script metal:fill-slot="scripts" src="/static/js/episodes.js"></script>
+</div>
