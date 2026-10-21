@@ -24,7 +24,6 @@ import builtins as _builtins_module
 import datetime
 import hashlib
 import importlib
-import importlib.metadata
 import logging
 import os
 import pathlib
@@ -36,7 +35,7 @@ from collections.abc import Callable, Collection, Iterable, Mapping
 from functools import partial
 from typing import Any, ClassVar
 
-from chameleon_rs._native import DEFAULT_MARKER, Macro, Program, Scope
+from chameleon_rs._native import DEFAULT_MARKER, Macro, Program, Scope, render_page
 from chameleon_rs.astutil import Symbol
 from chameleon_rs.codegen import reverse_builtin_map
 from chameleon_rs.config import AUTO_RELOAD, CACHE_DIRECTORY, DEBUG_MODE, EAGER_PARSING
@@ -96,6 +95,8 @@ PROGRAM_OPTIONS = (
 
 
 def safe_get_package_version(name: str) -> str | None:
+    import importlib.metadata  # imported when used: ~6 ms at startup
+
     try:
         return importlib.metadata.version(name)
     except importlib.metadata.PackageNotFoundError:
@@ -103,6 +104,8 @@ def safe_get_package_version(name: str) -> str | None:
 
 
 def get_package_versions() -> list[tuple[str, str]]:
+    import importlib.metadata  # imported when used
+
     distributions = importlib.metadata.packages_distributions().values()
     versions = {x: safe_get_package_version(x) or '' for x in sum(distributions, [])}  # noqa: RUF017 - as in Chameleon
     return sorted(versions.items())
@@ -548,6 +551,7 @@ class PageTemplate(BaseTemplate):
 
     _partials: Mapping[str, PageTemplate] | None = None
     _defaults_key: tuple[Any, ...] | None = None
+    _encoded: tuple[tuple[Any, ...], dict[str, Any]] | None = None
 
     def __init__(self, body: Any, *, partials: Mapping[str, PageTemplate] | None = None, **config: Any) -> None:
         self.macros = Macros(self)
@@ -673,28 +677,33 @@ class PageTemplate(BaseTemplate):
         overrides the template's translation function and ``target_language`` is the
         language passed to it when no ``i18n:target`` applies.
         """
-        translate = kw.get('translate')
-        if encoding is None and translate is None:
-            # The defaults depend on these settings only; computed again when they change.
-            key = (self.translate, self.encoding, self.on_error_handler)
-            if key != self._defaults_key:
-                self._defaults = self._render_defaults(None, None)
-                self._defaults_key = key
-            defaults = self._defaults
-        else:
-            defaults = self._render_defaults(encoding, translate)
+        # Natively (`chameleon_rs._native.render_page`, Phase 10), in this order: the defaults
+        # (`_defaults` while `translate`, `encoding` and `on_error_handler` are unchanged and
+        # neither argument is given, else `_encoded_defaults`), `cook_check()` (compiling may
+        # set a render function: pyramid_chameleon's `macro=` does, in `cook`), then
+        # `_render_protocol` if the instance has a `_render`, else the program renders with
+        # the keywords, the defaults they lack and a fresh `repeat`.
+        return render_page(self, encoding, kw)  # type: ignore[no-any-return]
+
+    def _encoded_defaults(self, encoding: str | None, translate: Callable[..., Any] | None) -> dict[str, Any]:
+        """The defaults for an `encoding` or `translate` argument, kept while the arguments and
+        the settings they depend on are the same (chameleon_partials passes `encoding`)."""
+        key = (encoding, translate, self.translate, self.encoding, self.on_error_handler)
+        cached = self._encoded
+        # By identity: equal but distinct translators (one per language) are different.
+        if cached is not None and len(cached[0]) == len(key) and all(a is b for a, b in zip(cached[0], key)):
+            return cached[1]
+        defaults = self._render_defaults(encoding, translate)
+        self._encoded = (key, defaults)
+        return defaults
+
+    def _render_protocol(self, kw: dict[str, Any], defaults: Mapping[str, Any]) -> str:
+        # A render function set on the instance: Chameleon's protocol.
         for name, value in defaults.items():
             kw.setdefault(name, value)
         if 'repeat' not in kw:
             kw['repeat'] = RepeatDict({})
-        # First: compiling may set a render function (pyramid_chameleon's `macro=` does, in
-        # `cook`).
-        self.cook_check()
-        if '_render' in self.__dict__:
-            # A render function set on the instance: Chameleon's protocol.
-            return BaseTemplate.render(self, **kw)
-        program, builtins = self._compiled
-        return program.render(kw, self._partial_programs(), defaults, builtins)  # type: ignore[no-any-return]
+        return BaseTemplate.render(self, **kw)
 
     def digest(self, body: str, names: Collection[str]) -> str:
         hex_digest = super().digest(body, names)

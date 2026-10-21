@@ -16,7 +16,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pyclass::CompareOp;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{PyBool, PyDict, PyInt, PyList, PySet, PySlice, PyString, PyTuple};
+use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyFrozenSet, PyInt, PyList, PySet, PySlice, PyString, PyTuple};
 use pyo3::{PyTraverseError, PyVisit};
 
 use chameleon_core::{Call, Escape, FreeVars, Step};
@@ -444,6 +444,10 @@ pub(crate) struct RenderCtx<'py> {
     /// For a render called through `include` by another engine: the stream it writes to
     /// (that engine's slot fills append to it directly, through their closure).
     pub(crate) stream: OnceCell<Bound<'py, PyAny>>,
+    /// A scope object of this render was handed to user code (`econtext` as a value, a code
+    /// block, a custom expression type, a dynamic fallback, a call from outside): from then
+    /// on no function shares its caller's scope (`chameleon_core::Macros::may_share_scope`).
+    pub(crate) scope_exposed: Cell<bool>,
 }
 
 /// What expressions see of the active frame: its template's builtins (a macro's are those
@@ -481,6 +485,7 @@ impl<'py> RenderCtx<'py> {
             nested: Cell::new((0, 0)),
             namespaces: RefCell::new(Vec::new()),
             stream: OnceCell::new(),
+            scope_exposed: Cell::new(false),
         }
     }
 
@@ -605,6 +610,16 @@ pub(crate) fn eval<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny
         }
         Expr::Const(v) | Expr::Folded(v) => Ok(v.bind(py).clone()),
         Expr::Attr(obj, name) => lookup_attr(&eval(obj, cx)?, name.bind(py)),
+        // `obj.name()` / `obj.name(constant, ...)`: a method call without a bound method.
+        Expr::Call { func, args, kwargs }
+            if kwargs.is_empty()
+                && args.len() <= 2
+                && matches!(**func, Expr::Attr(..))
+                && args.iter().all(is_const) =>
+        {
+            let Expr::Attr(obj, name) = &**func else { return eval_more(e, cx) };
+            call_method(&eval(obj, cx)?, name.bind(py), args)
+        }
         // Fixed arities go through vectorcall without building a tuple first.
         Expr::Call { func, args, kwargs } if kwargs.is_empty() && args.len() <= 2 => {
             let func = eval(func, cx)?;
@@ -624,9 +639,17 @@ pub(crate) fn eval<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny
         }
         // `[]` is common (`' '.join(classes or [])`): no intermediate vector.
         Expr::List(items) if items.is_empty() => Ok(PyList::empty(py).into_any()),
-        Expr::Econtext => Ok(cx.scope.clone().into_any()),
+        Expr::Econtext => {
+            cx.render.scope_exposed.set(true);
+            Ok(cx.scope.clone().into_any())
+        }
         Expr::Partial { call, .. } => eval(call, cx),
         Expr::Fallback(f) => {
+            // The rewritten code only reads names through `econtext` unless it uses it as a
+            // value (then its free variables are unknown).
+            if matches!(f.free, FreeVars::Dynamic) {
+                cx.render.scope_exposed.set(true);
+            }
             let rcontext = cx.render.rcontext(py);
             f.func.bind(py).call1((cx.scope, rcontext, &cx.render.marker, cx.builtins()))
         }
@@ -804,7 +827,10 @@ fn eval_rare<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
         }
         Expr::Import(name) => utils_attr(py, &RESOLVE_DOTTED, "chameleon_rs.utils", "resolve_dotted")?.call1((name,)),
         Expr::Interp(s) => eval_interp(s, cx),
-        Expr::Custom(c) => c.eval(cx),
+        Expr::Custom(c) => {
+            cx.render.scope_exposed.set(true);
+            c.eval(cx)
+        }
         Expr::Raise(args) => {
             let exc = utils_attr(py, &EXPRESSION_ERROR, "chameleon_rs.exc", "ExpressionError")?.call1(args.bind(py))?;
             Err(PyErr::from_value(exc))
@@ -822,6 +848,7 @@ static EVAL: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 /// function has in scope: `econtext`, `rcontext`, the default marker, the template builtins
 /// and the `attrs` alias.
 fn eval_ns<'py>(code: &NsCode, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
+    cx.render.scope_exposed.set(true);
     let py = cx.scope.py();
     let key = cx.frame.serial;
     let existing = cx.render.namespaces.borrow().iter().find(|(k, _)| *k == key).map(|(_, ns)| ns.clone());
@@ -914,11 +941,66 @@ fn compare<'py>(
     }
 }
 
+fn is_const(e: &Expr) -> bool {
+    matches!(e, Expr::Const(_))
+}
+
+/// `lookup_attr(obj, name)(*args)` for constant arguments. For an exact builtin receiver it
+/// goes through `PyObject_VectorcallMethod` (no bound method object): the arguments cannot
+/// fail or have effects, so looking the method up after them changes nothing; an
+/// `AttributeError` with no attribute `name` on `obj` means the lookup failed, and
+/// `lookup_attr`'s `__getitem__` fallback is taken; with the attribute there, the error came
+/// from the call and propagates. Any other receiver (where `__getattr__` or a property could
+/// run twice) is looked up once with `lookup_attr`, as Chameleon does.
+#[inline(never)]
+fn call_method<'py>(
+    obj: &Bound<'py, PyAny>,
+    name: &Bound<'py, PyString>,
+    args: &[Expr],
+) -> PyResult<Bound<'py, PyAny>> {
+    let py = obj.py();
+    let call = |func: Bound<'py, PyAny>| match args {
+        [] => func.call0(),
+        [Expr::Const(a)] => func.call1((a.bind(py),)),
+        [Expr::Const(a), Expr::Const(b)] => func.call1((a.bind(py), b.bind(py))),
+        _ => Err(PyValueError::new_err("method call arity")),
+    };
+    // Builtin receivers only: no `__getattr__`, no properties, reads without effects.
+    let builtin = obj.is_exact_instance_of::<PyString>()
+        || obj.is_exact_instance_of::<PyDict>()
+        || obj.is_exact_instance_of::<PyList>()
+        || obj.is_exact_instance_of::<PyTuple>()
+        || obj.is_exact_instance_of::<PyInt>()
+        || obj.is_exact_instance_of::<PyFloat>()
+        || obj.is_exact_instance_of::<PyBytes>()
+        || obj.is_exact_instance_of::<PySet>()
+        || obj.is_exact_instance_of::<PyFrozenSet>();
+    if !builtin {
+        // Looked up once, as Chameleon does, then called (vectorcall).
+        return call(lookup_attr(obj, name)?);
+    }
+    let result = match args {
+        [] => obj.call_method0(name),
+        [Expr::Const(a)] => obj.call_method1(name, (a.bind(py),)),
+        [Expr::Const(a), Expr::Const(b)] => obj.call_method1(name, (a.bind(py), b.bind(py))),
+        _ => return Err(PyValueError::new_err("method call arity")),
+    };
+    match result {
+        Err(err) if err.is_instance_of::<PyAttributeError>(py) && obj.getattr_opt(name)?.is_none() => {
+            call(lookup_attr(obj, name)?)
+        }
+        other => other,
+    }
+}
+
 /// Chameleon's `lookup_attr` (utils.py:515), exactly: `getattr`; on `AttributeError` look up
 /// `__getitem__` as an attribute and call it; a `KeyError` from that re-raises the original
 /// `AttributeError`; any other error propagates.
 pub(crate) fn lookup_attr<'py>(obj: &Bound<'py, PyAny>, name: &Bound<'py, PyString>) -> PyResult<Bound<'py, PyAny>> {
     let py = obj.py();
+    if let Some(value) = crate::repeat::attr(obj, name)? {
+        return Ok(value);
+    }
     match obj.getattr(name) {
         Ok(value) => Ok(value),
         Err(original) if original.is_instance_of::<PyAttributeError>(py) => {

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use pyo3::exceptions::{PyRecursionError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{PyBytes, PyDict, PyList, PyString};
+use pyo3::types::{PyBytes, PyDict, PyList, PyString, PyTuple};
 use pyo3::{PyTraverseError, PyVisit, intern};
 
 use chameleon_core::{Done, ErrorSite, Mode, Options, Output, VmError, VmState, run};
@@ -45,12 +45,18 @@ pub(crate) fn marker(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
     Ok(MARKER.get_or_try_init(py, || Py::new(py, DefaultMarker))?.bind(py).clone().into_any())
 }
 
+/// The class `chameleon_rs.tal.RepeatDict`.
+pub(crate) fn repeat_dict_type(py: Python<'_>) -> PyResult<&Bound<'_, PyAny>> {
+    Ok(REPEAT_DICT
+        .get_or_try_init(py, || {
+            Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs.tal"))?.getattr(intern!(py, "RepeatDict"))?.unbind())
+        })?
+        .bind(py))
+}
+
 /// A fresh `chameleon_rs.tal.RepeatDict({})`, as `PageTemplate.render` provides.
 pub(crate) fn new_repeat_dict(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
-    let class = REPEAT_DICT.get_or_try_init(py, || {
-        Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs.tal"))?.getattr(intern!(py, "RepeatDict"))?.unbind())
-    })?;
-    class.bind(py).call1((PyDict::new(py),))
+    repeat_dict_type(py)?.call1((PyDict::new(py),))
 }
 
 /// An immutable compiled template. Frozen, so it is `Sync` and can be shared by threads
@@ -63,6 +69,8 @@ pub(crate) struct Program {
     pub(crate) names: Vec<Py<PyString>>,
     /// Whether a native partial frame running this program needs a `repeat` variable.
     pub(crate) needs_repeat: bool,
+    /// The scope key of each slot name the program uses (`__slot_<name>`), interned once.
+    slot_keys: Vec<(Box<str>, Py<PyString>)>,
     pub(crate) token_table: Vec<TokenSpan>,
     /// The (normalized) source and filename, for error positions.
     source: Box<str>,
@@ -88,6 +96,11 @@ impl Program {
             }
         }
         0
+    }
+
+    /// The scope key of slot `name` (`__slot_<name>`), if the program uses that slot.
+    pub(crate) fn slot_key(&self, name: &str) -> Option<&Py<PyString>> {
+        self.slot_keys.iter().find(|(n, _)| **n == *name).map(|(_, key)| key)
     }
 
     pub(crate) fn token_info(&self, token: u32) -> Option<(&str, usize, usize)> {
@@ -153,9 +166,22 @@ impl Program {
                 core.set_surrogate_base(base);
             }
             let names = core.names().iter().map(|n| PyString::intern(py, n).unbind()).collect();
+            let mut slot_keys: Vec<(Box<str>, Py<PyString>)> = Vec::new();
+            for name in core.slot_names() {
+                if !slot_keys.iter().any(|(n, _)| **n == *name) {
+                    let key = crate::convert::source_str(py, &format!("__slot_{name}"), surrogate_base)?;
+                    // Interned unless it holds lone surrogates (a `str` Rust cannot borrow).
+                    let key = match key.to_str() {
+                        Ok(text) => PyString::intern(py, text),
+                        Err(_) => key,
+                    };
+                    slot_keys.push((name.into(), key.unbind()));
+                }
+            }
             let has_loops = core.ops().iter().any(|op| matches!(op, chameleon_core::Op::LoopStart { .. }));
             Ok(Self {
                 needs_repeat: has_loops || compiler.mentions_repeat,
+                slot_keys,
                 core: Arc::new(core),
                 exprs: compiler
                     .exprs
@@ -187,7 +213,7 @@ impl Program {
     ) -> PyResult<Bound<'py, PyString>> {
         let py = slf.py();
         let scope = Scope::new_root(py, variables)?;
-        render_in(slf, &scope, partials, defaults, builtins)
+        render_in(slf, &scope, partials, defaults, builtins, false)
     }
 
     /// Renders with `scope` itself as the scope, so names the template assigns stay in it
@@ -198,7 +224,7 @@ impl Program {
         scope: &Bound<'py, Scope>,
         builtins: Option<Bound<'py, PyDict>>,
     ) -> PyResult<Bound<'py, PyString>> {
-        render_in(slf, scope, None, None, builtins)
+        render_in(slf, scope, None, None, builtins, true)
     }
 
     /// A readable listing of the bytecode.
@@ -226,9 +252,96 @@ impl Program {
         for n in &self.names {
             visit.call(n)?;
         }
+        for (_, key) in &self.slot_keys {
+            visit.call(key)?;
+        }
         visit.call(&self.filename)?;
         visit.call(&self.marker)
     }
+}
+
+/// `PageTemplate.render(encoding, **kw)` (`chameleon_rs.template`) in one native call: the
+/// same steps in the same order, without the Python frame's bytecode, the `setdefault` loop
+/// and the intermediate dict:
+///
+/// ```python
+/// translate = kw.get('translate')
+/// if encoding is None and translate is None:
+///     key = (self.translate, self.encoding, self.on_error_handler)
+///     if not all(a is b for a, b in zip(key, self._defaults_key or ())):  # identity
+///         self._defaults = self._render_defaults(None, None)
+///         self._defaults_key = key
+///     defaults = self._defaults
+/// else:
+///     defaults = self._encoded_defaults(encoding, translate)
+/// self.cook_check()
+/// if '_render' in self.__dict__:
+///     return self._render_protocol(kw, defaults)
+/// program, builtins = self._compiled
+/// partials = None if self._partials is None else self._partial_programs()
+/// scope = Scope(kw); scope.setdefault(...) for each default; scope['repeat'] = RepeatDict({})
+/// return program.render(...)
+/// ```
+#[pyfunction]
+pub(crate) fn render_page<'py>(
+    template: &Bound<'py, PyAny>,
+    encoding: Option<Bound<'py, PyAny>>,
+    kw: &Bound<'py, PyDict>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let py = template.py();
+    let translate = kw.get_item(intern!(py, "translate"))?.filter(|t| !t.is_none());
+    let encoding = encoding.filter(|e| !e.is_none());
+    let defaults = if encoding.is_none() && translate.is_none() {
+        let key = PyTuple::new(
+            py,
+            [
+                template.getattr(intern!(py, "translate"))?,
+                template.getattr(intern!(py, "encoding"))?,
+                template.getattr(intern!(py, "on_error_handler"))?,
+            ],
+        )?;
+        // By identity: equal but distinct translators (one per language) are different.
+        let old = template.getattr(intern!(py, "_defaults_key"))?;
+        let same = old
+            .cast::<PyTuple>()
+            .is_ok_and(|old| old.len() == key.len() && old.iter().zip(key.iter()).all(|(a, b)| a.is(&b)));
+        if same {
+            template.getattr(intern!(py, "_defaults"))?
+        } else {
+            let defaults = template.call_method1(intern!(py, "_render_defaults"), (py.None(), py.None()))?;
+            template.setattr(intern!(py, "_defaults"), &defaults)?;
+            template.setattr(intern!(py, "_defaults_key"), key)?;
+            defaults
+        }
+    } else {
+        template.call_method1(intern!(py, "_encoded_defaults"), (encoding, translate))?
+    };
+    let defaults = defaults.cast_into::<PyDict>()?;
+    template.call_method0(intern!(py, "cook_check"))?;
+    if template.getattr(intern!(py, "__dict__"))?.contains(intern!(py, "_render"))? {
+        // A render function set on the instance: Chameleon's protocol, in Python.
+        return template.call_method1(intern!(py, "_render_protocol"), (kw, defaults));
+    }
+    let compiled = template.getattr(intern!(py, "_compiled"))?;
+    let (program, builtins): (Bound<'py, Program>, Bound<'py, PyDict>) = compiled.extract()?;
+    let partials = if template.getattr(intern!(py, "_partials"))?.is_none() {
+        None
+    } else {
+        let programs = template.call_method0(intern!(py, "_partial_programs"))?;
+        if programs.is_none() { None } else { Some(programs.cast_into::<PyDict>()?) }
+    };
+    let scope = Scope::new_root(py, kw)?;
+    let locals = scope.as_super();
+    for (name, value) in defaults.iter() {
+        if !locals.contains(&name)? {
+            locals.set_item(name, value)?;
+        }
+    }
+    let repeat = intern!(py, "repeat");
+    if !locals.contains(repeat)? {
+        locals.set_item(repeat, new_repeat_dict(py)?)?;
+    }
+    Ok(render_in(&program, &scope, partials, Some(defaults), Some(builtins), false)?.into_any())
 }
 
 /// A render of `program` in `scope` (see [`Program::render`]).
@@ -238,12 +351,15 @@ fn render_in<'py>(
     partials: Option<Bound<'py, PyDict>>,
     defaults: Option<Bound<'py, PyDict>>,
     builtins: Option<Bound<'py, PyDict>>,
+    exposed: bool,
 ) -> PyResult<Bound<'py, PyString>> {
     let py = slf.py();
     catch_panics(py, || {
         let program = slf.get();
         let builtins = builtins.unwrap_or_else(|| PyDict::new(py));
         let render = RenderCtx::new(program.marker.bind(py).clone(), partials, defaults, builtins);
+        // A scope given by the caller (`render_scope`) is already in user code's hands.
+        render.scope_exposed.set(exposed);
         // `render(..., target_language=__kw.get("target_language"))`.
         // (`None` stays the VM's "no value", so frames without i18n settings stay plain.)
         let target_language =

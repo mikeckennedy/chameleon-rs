@@ -1056,6 +1056,111 @@ engine code was only about 3-6% of samples; most of the time was CPython work th
 re-run that real-app crawl** (the owner's private harness and notes live in the app's spike branch, not in
 this repository) and record the new ratios here, aggregate numbers only.
 
+**In progress (2026-10-21), before Phase 9; real-page validation to follow in the owner's
+checkout.** Details and the exactness arguments: architecture.md, "Phase 10 amendments".
+
+Profile findings (`make build-profiling`, macOS `sample`, synthetic pages only):
+- Translated elements spent a third of their time in an O(n²) WTF-8 scan (`chars` re-validated
+  the rest of the stream for every character, Phase 8).
+- Macro calls per item: `Scope::copy` (two per call with a slot) was 20% inclusive; the
+  slot key was formatted and hashed on every lookup; `getattr(include)` on our own `Macro`.
+- Listing: escaping (gate scan plus replace) about 16%, and the output buffer, sized to the
+  last render exactly, doubled and copied at its final write.
+- Per render: the Python wrapper (`setdefault` loop, `RepeatDict({})`, defaults key) was
+  ~40% of a tiny render; chameleon_partials passes `encoding`, which rebuilt the defaults'
+  closures on every partial.
+- App-shaped pages (and the owner's real pages): most time is CPython work the template
+  triggers. What the engine added there: a Python frame per `tal:repeat` (`RepeatDict.__call__`),
+  three or more Python frames per `repeat.x.index`/`parity`, a `translate` call for every
+  non-string value converted with the default translation function, a bound method per
+  method call, `Markup` plus two `__html__` calls per `structure:` value, and `import
+  chameleon_rs` loading `importlib.metadata` (~6 ms per process start).
+
+Done, each measured (same-process A/B, `bench/bench_ab.py`, interleaved, medians):
+1. Linear WTF-8 scan: translated element 2,305 -> 1,533 ns per item.
+2. Word-at-a-time escape scan (SWAR, safe Rust), replace from the first gate character, buffer
+   headroom (+1/8 + 64 bytes): listing -31..-52 ns per item.
+3. Read-only macro and slot bodies run with the caller's scope instead of a copy
+   (`Program::mark_scope_sharing`); interned slot keys; exact-`Macro` fast path; empty
+   `rcontext` skips `econtext.update`: macro call per item 1,105 -> 735 ns.
+4. `PageTemplate.render` is one native call (`render_page`); defaults for an `encoding` or
+   `translate` argument cached: tiny render 693 -> 634 ns; chameleon_partials through the
+   compat alias 3,133 -> 2,500 ns per item (Chameleon 7,300).
+5. Native `RepeatDict` call and exact-tuple unpack; `repeat.x` and the `RepeatItem`
+   descriptors computed natively for the exact classes; `simple_translate` conversions
+   without the Python call; method calls with constant arguments through
+   `PyObject_VectorcallMethod`; `structure:` markup written directly. Per item:
+   `repeat.x.parity` 401 -> 187 ns, emitted `repeat.x.index` 297 -> 156 ns, a converted
+   non-string 220 -> 136 ns.
+6. `importlib.metadata` deferred to first use (`__version__` via module `__getattr__`).
+7. PGO (`make build-pgo`, `bench/pgo_train.py`): a further ~10% on every scenario (A/B
+   against the plain release build of the same commit: listing -51 ns, macro -71 ns, page
+   -7.9 us). Adopted for release builds: a CI job builds and tests it on Linux and macOS
+   (not yet run in CI); Phase 12's wheels should use it. Profiles are not byte-identical
+   between runs, so neither are the binaries.
+
+Results, plain release builds (no PGO), after the review fixes: `bench_ab.py a7bd81a`, 8
+interleaved rounds per scenario, load average 4.5 before and 3.5 after; Chameleon from the
+same run. Ratios are for the plain release build: quote PGO ratios only for builds that ship
+PGO (with PGO, a further ~10%: listing 415 ns, macro 635 ns, app page 61 us, report 1.31 ms,
+measured before the review fixes at load 8-10).
+
+| Scenario | a7bd81a | Phase 10 | Chameleon | Ratio |
+|---|---|---|---|---|
+| Listing, ns per item | 469 | 431 | 2,835 | 6.6x |
+| Macro call filling a slot, ns per item | 1,080 | 676 | 4,648 | 6.9x |
+| App page, inline cards, us | 82.4 | 69.6 | 301 | 4.3x |
+| App report page (1,000-row partial), ms | 1.74 | 1.40 | 4.87 | 3.5x |
+| Translated element, ns per item (bench_macros) | 2,305 | 1,520 | 2,870 | 1.9x |
+| Native partial listing, ns per item (bench_skeleton) | 666 | 654-680 | 7,300 | 10.9x |
+| chameleon_partials via compat, ns per item | ~3,130 | 2,500 | 7,300 | 2.9x |
+
+(The last three rows are from separate runs at load 8-11, before the review fixes.)
+
+Review fixes (2026-10-21, after the Rust Architect's review; each checked against stock
+Chameleon first): the render-defaults caches compared translators by equality, so a second
+render with an equal but different translator used the first's (now by identity); the method
+call fast path ran `__getattr__` three times (now only for exact builtin receivers); sharing
+the caller's scope was observable through an `econtext` alias (now no sharing once a scope has
+reached user code); a message value's `default`/`mapping` are read once; the escape property
+test covers unquoted attributes (4,096 cases, up to 80 bytes); the render fuzzers generate
+`econtext` aliases, application objects, message values and per-render equal translators;
+`make build-pgo` fails on a stale profile. Fuzz after the fixes: 20,000 examples per
+generator (render, macro/i18n, expression), no differences (the expression fuzzer's address
+normalization now ignores case). Tests: 2,569 pytest passed, 7 skipped, 3 strict xfails;
+upstream 227 on each engine; 93 + 6 Rust tests. The page and report scenarios keep their gains
+after the fixes (table above).
+
+The report page is shaped like the owner's heaviest pages (properties, small helpers, a method
+call and `structure:` per row): there the remaining time is the application's own Python
+(property getters, `money()`/`pct()`, float formatting), which both engines pay.
+
+Compile and first request (`bench/bench_first.py`, fresh processes, medians of 7): compile
+of 118 fixture and benchmark templates 9.6 ms in total against Chameleon's 657 ms (68x;
+median 0.053 ms against 3.8 ms per template); the app page's first request (compile, layout
+through `load:`, first render) 1.4 ms against 54 ms (39x). The split is no longer worth
+optimising: file reads, the Python wrapper and CPython's `compile()` for expressions are of
+similar size; `import chameleon_rs` (~17-22 ms, standard-library modules) is now the larger
+part of a cold start.
+
+Tests: 93 core + 6 `chameleon-py` Rust tests; 2,561 pytest passed, 7 skipped (corpus), 3
+strict xfails; upstream 227 passed on each engine; integration 40/16/39/6; render fuzzers
+3,000-5,000 examples each. New: scope-sharing macro cases, method-call and structure-value
+grids, hand-made `RepeatItem`s, a property test of the word-at-a-time escape against the
+plain rule. The longer fuzz run found one slot-stream ordering difference (extend-macro, a
+slot inside an `i18n:name`, a recursive translated fill) that a7bd81a has too: pinned as a
+strict xfail, not fixed.
+
+Carried forward:
+- **After Phase 9:** re-measure the partial listing (native `render_partial`) and the +12 ns
+  note; reuse `partial_call`'s scope and `RepeatDict` setup in the new path.
+- **Not done:** a faster `Scope::copy` for bodies that write (no bulk-insert API exists for a
+  dict subclass with its own `__iter__`; CPython's fast clone needs `tp_iter == dict_iter`);
+  per-type `__html__` caching (no safe access to the type version tag); attribute-chain
+  caching (not exact: attributes can change between reads).
+- **Real-page validation** in the owner's checkout: crawl-and-diff both applications again
+  and re-time them (`scripts/realsite.py --timing`).
+
 ## Phase 11: Concurrency and async
 
 D9: `render_async` on the resumable VM, concurrent expressions with placeholders, partial
@@ -1073,6 +1178,11 @@ and event-loop lag, chameleon-rs sync vs async vs stock Chameleon.
 
 Wheels for macOS, Linux and Windows (maturin), docs, a migration guide, the free-threading
 classifier.
+
+Must fix before release: the slot-ordering difference the Phase 10 fuzz run found (an
+extend-macro whose slot sits in an `i18n:name`, with a recursive translated fill:
+`test_macros.test_extended_slot_inside_a_name_with_a_recursive_translated_fill`, a strict
+xfail; present since Phase 8). Wheels are built with `make build-pgo`.
 
 ## Risks
 

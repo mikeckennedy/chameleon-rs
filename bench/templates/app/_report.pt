@@ -1,0 +1,12 @@
+<table class="report">
+    <tr tal:repeat="row rows" class="${ 'recent' if row.is_recent else 'old' } ${ repeat.row.parity }">
+        <td class="num">${ row.number }</td>
+        <td><a href="${ row.url }">${ row.short_title() }</a> ${ structure: row.badge_html }</td>
+        <td>${ row.guest_names }</td>
+        <td class="money">${ money(row.revenue) }</td>
+        <td class="pct">${ pct(row.listens, total_listens) }</td>
+        <td>${ row.summary }</td>
+        <td tal:condition="row.has_video"><a href="${ row.video_url }">video</a></td>
+        <td tal:condition="not row.has_video">-</td>
+    </tr>
+</table>

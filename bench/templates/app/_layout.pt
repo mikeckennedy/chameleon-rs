@@ -1,0 +1,40 @@
+<!DOCTYPE html metal:define-macro="layout">
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title metal:define-slot="title">Podcast</title>
+    <link rel="stylesheet" href="/static/css/site.css?cache_id=${ cache_id('/static/css/site.css') }"/>
+    <link rel="stylesheet" href="/static/css/theme.css?cache_id=${ cache_id('/static/css/theme.css') }"/>
+    <div metal:define-slot="head" tal:omit-tag=""></div>
+</head>
+<body class="${ 'signed-in' if user else 'anonymous' }">
+<nav class="navbar">
+    <a class="navbar-brand" href="/">${ site.name }</a>
+    <ul class="navbar-nav">
+        <li tal:repeat="item nav" class="nav-item"
+            tal:attributes="class 'nav-item active' if item.url == active else 'nav-item'">
+            <a class="nav-link" href="${ item.url }" title="${ item.title }">${ item.title }</a>
+        </li>
+    </ul>
+    <div class="account" tal:condition="user">
+        <img src="${ user.avatar }" alt="${ user.name }" class="avatar">
+        <a href="/account">${ user.name }</a>
+        <span class="badge" tal:condition="user.is_admin">admin</span>
+    </div>
+    <div class="account" tal:condition="not user"><a href="/signin">Sign in</a></div>
+</nav>
+
+<div class="main_content">
+    <div metal:define-slot="content">No content</div>
+</div>
+
+<footer>
+    <div class="copyright">&copy; ${ year } ${ site.name }. ${ structure: site.footer_html }</div>
+    <ul class="links">
+        <li tal:repeat="link site.footer_links"><a href="${ link.url }">${ link.title }</a></li>
+    </ul>
+</footer>
+<div metal:define-slot="scripts" tal:omit-tag=""></div>
+<script src="/static/js/site.js?cache_id=${ cache_id('/static/js/site.js') }"></script>
+</body>
+</html>

@@ -13,6 +13,7 @@ mod expr;
 mod lower;
 mod macros;
 mod program;
+mod repeat;
 mod runtime;
 mod scope;
 mod strexpr;
@@ -35,7 +36,7 @@ mod _native {
     #[pymodule_export]
     use super::macros::{Macro, SlotFill};
     #[pymodule_export]
-    use super::program::{DefaultMarker, Program};
+    use super::program::{DefaultMarker, Program, render_page};
     #[pymodule_export]
     use super::scope::Scope;
 

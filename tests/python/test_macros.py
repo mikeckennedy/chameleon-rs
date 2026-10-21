@@ -228,6 +228,75 @@ CASES: list[tuple[str, tuple[str, ...]]] = [
         + """<x tal:on-error="string:E" metal:use-macro="macros['r']"/>""",
         (),
     ),
+    # Phase 10: macros and slot bodies that only read their scope run without a copy of it;
+    # what they see must not change (caller's locals and root, the macro's locals in a slot
+    # body, names defined between calls, after-call globals, errors, nested slots).
+    (
+        hidden('<div metal:define-macro="c">${v}:${x}<b metal:define-slot="s">d${v}</b></div>')
+        + """<p tal:repeat="v [1, 2, 3]"><q tal:define="x v * 10" metal:use-macro="macros['c']">"""
+        + """<i metal:fill-slot="s">F${v}${x}${repeat.v.index}</i></q></p>${v | 'none'}""",
+        (),
+    ),
+    (
+        hidden('<div metal:define-macro="c">[${y}]<b metal:define-slot="s"/></div>')
+        + """<p tal:define="y 1" metal:use-macro="macros['c']"><i metal:fill-slot="s">${y}</i></p>"""
+        + """<p tal:define="y 2" metal:use-macro="macros['c']"><i metal:fill-slot="s">${y}</i></p>${y | 'none'}""",
+        (),
+    ),
+    (
+        hidden('<div metal:define-macro="c" tal:define="m 7">${m}<b metal:define-slot="s"/></div>')
+        + """<p metal:use-macro="macros['c']"><i metal:fill-slot="s">${m}${sorted(econtext)[:3]}</i></p>""",
+        (),
+    ),
+    (
+        hidden('<div metal:define-macro="c">${len([k for k in econtext if k.startswith("__slot")])}</div>')
+        + """<p metal:use-macro="macros['c']"><i metal:fill-slot="s">x</i></p>""",
+        (),
+    ),
+    (
+        hidden('<div metal:define-macro="c">${nope}<b metal:define-slot="s"/></div>')
+        + """<p tal:on-error="string:E${error.type.__name__}" metal:use-macro="macros['c']">"""
+        + """<i metal:fill-slot="s">x</i></p>${error | 'no error'}""",
+        (),
+    ),
+    (
+        hidden('<div metal:define-macro="c"><b metal:define-slot="s"><u metal:define-slot="t">T</u></b></div>')
+        + """<p metal:use-macro="macros['c']"><i metal:fill-slot="t">${q | 'noq'}</i></p>"""
+        + """<p tal:define="global q 4" metal:use-macro="macros['c']"><i metal:fill-slot="s">S${q}</i></p>${q}""",
+        (),
+    ),
+    (
+        """<p tal:define="w 2" metal:use-macro="others[0]"><x metal:fill-slot="s">${w}${n | 0}</x></p>${w}""",
+        ('<i>${w}<b metal:define-slot="s"/></i>',),
+    ),
+    (
+        hidden('<div metal:define-macro="c">${[v for v in range(2)]}${v}</div>')
+        + """<p tal:define="v 9" metal:use-macro="macros['c']"/>${v}""",
+        (),
+    ),
+    # ... and once a scope has been handed to user code, a body that writes through the alias
+    # must not see its own write (Chameleon's copy would not): no sharing after exposure.
+    (
+        """<p tal:define="x 'old'; ctx econtext" metal:use-macro="others[0]"/>${x}""",
+        ("""<i>${ctx.__setitem__('x', 'new')}[${x}]</i>""",),
+    ),
+    (
+        hidden("""<i metal:define-macro="m">${ctx.__setitem__('x', 'new')}[${x}]</i>""")
+        + """<p tal:define="x 'old'; ctx econtext" metal:use-macro="macros['m']"/>${x}""",
+        (),
+    ),
+    (
+        hidden("""<i metal:define-macro="m">${ctx.__setitem__('x', 'new')}[${x}]</i>""")
+        + """<?python econtext['ctx'] = econtext ?>"""
+        + """<p tal:define="x 'old'" metal:use-macro="macros['m']"/>${x}""",
+        (),
+    ),
+    (
+        hidden("""<i metal:define-macro="m"><b metal:define-slot="s"/>[${x}]</i>""")
+        + """<p tal:define="x 'old'; ctx econtext" metal:use-macro="macros['m']">"""
+        + """<u metal:fill-slot="s">${ctx.__setitem__('x', 'new')}${x}</u></p>${x}""",
+        (),
+    ),
 ]
 
 
@@ -260,6 +329,25 @@ def test_macro_and_template_include_with_chameleons_signature() -> None:
         # As Chameleon's render functions, it reads the render's settings first.
         with pytest.raises(KeyError, match='__decode'):
             include([], {'a': 1, '__translate': None}, {})
+
+
+def test_included_macro_does_not_share_a_scope_its_caller_holds() -> None:
+    """A macro called from outside (`include`) gets a scope that user code holds: the read-only
+    macro it calls must still get a copy, as in Chameleon."""
+    source = (
+        """<i metal:define-macro="n">${ctx.__setitem__('x', 'new')}[${x}]</i>"""
+        """<b metal:define-macro="m"><u metal:use-macro="macros['n']"/>${x}</b>"""
+    )
+    results = []
+    for engine in (chameleon, chameleon_rs):
+        template = engine.PageTemplate(source)
+        scope = engine.utils.Scope(x='old', __translate=None, __decode=None, __on_error_handler=None)
+        scope['ctx'] = scope
+        scope['macros'] = template.macros
+        stream: list[str] = []
+        template.macros['m'].include(stream, scope, {})
+        results.append(''.join(stream))
+    assert results[0] == results[1]
 
 
 @pytest.mark.parametrize(
@@ -498,4 +586,21 @@ def test_handler_in_a_slot_body_drops_the_failing_text_node() -> None:
         + """<x metal:use-macro="macros['m']"><y metal:fill-slot="s">T <q tal:on-error="string:E">Q${1/0}</q>"""
         + """ U</y></x>""",
         translate=lambda msgid, **kw: f'<{msgid}|{kw.get("mapping")}>',
+    )
+
+
+@pytest.mark.xfail(strict=True, reason='known difference, found by the Phase 10 fuzz run, present since Phase 8')
+def test_extended_slot_inside_a_name_with_a_recursive_translated_fill() -> None:
+    """An `extend-macro` whose first fill of a slot (defined inside an `i18n:name`) is a
+    translated body calling the macro itself, and whose second fill is plain: Chameleon writes
+    the plain fill's output inside the outer `<b>` before the translation's, chameleon-rs after
+    it (`<b><b>fa</b>[...]` against `<b>fa</b><b>[...]`). Not caused by Phase 10: a7bd81a
+    renders it the same way."""
+    same(
+        """<p metal:define-macro="mt1"><i i18n:translate="">F<b i18n:name="n"><s metal:define-slot="s2"/></b></i>"""
+        """</p><div metal:extend-macro="macros['mt1']" metal:define-macro="m2"><b metal:fill-slot="s2" """
+        """i18n:translate="">fa<z metal:use-macro="macros['m2']"/></b><b metal:fill-slot="s2">fa</b></div>"""
+        """${x}${macroname | 0}""",
+        x=1,
+        translate=lambda msgid, **kw: repr([msgid, kw.get('mapping')]),
     )

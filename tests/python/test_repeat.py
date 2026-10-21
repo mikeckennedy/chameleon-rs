@@ -118,6 +118,32 @@ def test_user_supplied_repeat() -> None:
     assert results[0] == results[1]
 
 
+ITEM_ATTRIBUTES = '|'.join(f'${{r.{a}}}${{type(r.{a}).__name__}}' for a in ATTRIBUTES)
+
+
+@pytest.mark.parametrize(
+    'iterator',
+    [lambda: iter([1, 2, 3]), lambda: iter((1, 2)), lambda: (i for i in range(3)), lambda: iter([])],
+    ids=['list', 'tuple', 'generator', 'empty'],
+)
+@pytest.mark.parametrize('length', [3, 2, 10**20], ids=['3', '2', 'big'])
+def test_repeat_items_made_by_hand(iterator: Any, length: int) -> None:
+    """`RepeatItem` and `RepeatDict` attributes chameleon_rs computes natively (Phase 10), on
+    each engine's own classes: iterators with and without `__length_hint__`, huge lengths, a
+    missing key, the dict's own names, and a subclass."""
+    source = f'<p>{ITEM_ATTRIBUTES}|${{d.r.index}}|${{d.nope | "no"}}|${{d.__class__.__name__}}</p>'
+    results = []
+    for engine in (chameleon, chameleon_rs):
+        item = engine.tal.RepeatItem(iterator(), length)
+
+        class Sub(engine.tal.RepeatDict):  # type: ignore[misc, name-defined]
+            pass
+
+        for d in (engine.tal.RepeatDict({'r': item}), Sub({'r': item})):
+            results.append(render(engine, source, r=item, d=d))
+    assert results[:2] == results[2:]
+
+
 def test_letters_beyond_z_and_roman_numerals() -> None:
     source = '<i tal:repeat="x items">${repeat.x.letter}${repeat.x.Letter}${repeat.x.roman}</i>'
     items = list(range(60))

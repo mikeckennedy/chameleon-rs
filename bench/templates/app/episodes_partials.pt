@@ -1,0 +1,14 @@
+<div metal:use-macro="load: _layout.pt">
+    <title metal:fill-slot="title">${ title } - ${ site.name }</title>
+    <div metal:fill-slot="content">
+        <h1>${ title }</h1>
+        <p class="lead">${ structure: intro_html }</p>
+        <div class="episodes" tal:define="count len(episodes)">
+            <p class="count">${ count } episodes</p>
+            <div tal:repeat="ep episodes" tal:omit-tag="">
+                ${ render_partial('app/_episode_card.pt', ep=ep, format_date=format_date) }
+            </div>
+        </div>
+    </div>
+    <script metal:fill-slot="scripts" src="/static/js/episodes.js"></script>
+</div>

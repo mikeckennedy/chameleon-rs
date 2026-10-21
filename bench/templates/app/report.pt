@@ -1,0 +1,7 @@
+<div metal:use-macro="load: _layout.pt">
+    <title metal:fill-slot="title">${ title } - ${ site.name }</title>
+    <div metal:fill-slot="content">
+        <h1>${ title }</h1>
+        ${ render_partial('app/_report.pt', rows=rows, money=money, pct=pct, total_listens=total_listens) }
+    </div>
+</div>
