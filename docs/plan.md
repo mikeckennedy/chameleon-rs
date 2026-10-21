@@ -1056,6 +1056,11 @@ engine code was only about 3-6% of samples; most of the time was CPython work th
 re-run that real-app crawl** (the owner's private harness and notes live in the app's spike branch, not in
 this repository) and record the new ratios here, aggregate numbers only.
 
+**Re-measured after Phase 10 (2026-10-21, PGO release wheel, same method):** render 2.22x in total (per-page
+median 2.94x; the largest page type 2.95x), whole requests 1.33x, HTML identical on every page. Under the
+owner's locust load test (20 closed-loop users, one single-threaded Granian worker, two interleaved runs per
+engine): throughput +34% (116 → 156 req/s), p50 170 → 120 ms, p99 255 → 195 ms, zero failures.
+
 **In progress (2026-10-21), before Phase 9; real-page validation to follow in the owner's
 checkout.** Details and the exactness arguments: architecture.md, "Phase 10 amendments".
 
