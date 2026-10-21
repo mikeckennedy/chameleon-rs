@@ -235,3 +235,69 @@ def test_conversion_in_a_slot_body_ignores_its_i18n_context() -> None:
 
     results = [engine.PageTemplate(body)(xs=[1], translate=tr) for engine in (chameleon, chameleon_rs)]
     assert results[0] == results[1]
+
+
+class Translator:
+    """Equal to every other translator: per-render defaults must not be reused by equality."""
+
+    def __init__(self, language: str) -> None:
+        self.language = language
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Translator)
+
+    def __hash__(self) -> int:
+        return 0
+
+    def __call__(self, msgid: Any, **kw: Any) -> str:
+        return f'{self.language}:{kw.get("default") or msgid}'
+
+
+@pytest.mark.parametrize('encoding', [None, 'utf-8'])
+def test_equal_translators_are_not_confused(encoding: str | None) -> None:
+    """Phase 10 caches the render defaults; distinct translators must each be used, whether
+    passed per render (with or without `encoding`) or set on the template."""
+    body = '<p i18n:translate="">Hi</p>'
+    results = []
+    for engine in (chameleon, chameleon_rs):
+        template = engine.PageTemplate(body)
+        out = [template.render(encoding=encoding, translate=Translator(lang)) for lang in ('de', 'fr')]
+        for lang in ('it', 'es'):
+            template.translate = Translator(lang)
+            out.append(template.render(encoding=encoding))
+        results.append(out)
+    assert (
+        results[0]
+        == results[1]
+        == [
+            '<p>de:Hi</p>',
+            '<p>fr:Hi</p>',
+            '<p>it:Hi</p>',
+            '<p>es:Hi</p>',
+        ]
+    )
+
+
+class Message:
+    """A message-like value: its `default` and `mapping` are read once per conversion."""
+
+    def __init__(self) -> None:
+        self.reads: list[str] = []
+
+    @property
+    def default(self) -> str:
+        self.reads.append('default')
+        return 'Hello ${name}'
+
+    @property
+    def mapping(self) -> dict[str, str]:
+        self.reads.append('mapping')
+        return {'name': 'World'}
+
+
+def test_message_attributes_are_read_once() -> None:
+    results = []
+    for engine in (chameleon, chameleon_rs):
+        message = Message()
+        results.append((engine.PageTemplate('<p>${m}|${string:${m}}</p>')(m=message), message.reads))
+    assert results[0] == results[1]

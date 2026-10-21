@@ -266,10 +266,23 @@ mod tests {
                 _ => out.extend_from_slice(b"&#0;"),
             }
         }
+        if e == Escape::Attr(Quote::Bare) {
+            // Python's `s.replace('', '&#0;')`: the entity before each character and at the end.
+            let mut interleaved = Vec::new();
+            for &b in &out {
+                if b & 0xC0 != 0x80 {
+                    interleaved.extend_from_slice(b"&#0;");
+                }
+                interleaved.push(b);
+            }
+            interleaved.extend_from_slice(b"&#0;");
+            return interleaved;
+        }
         out
     }
 
     proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(4096))]
         #[test]
         fn word_scan_matches_the_plain_rule(
             s in proptest::collection::vec(
@@ -277,7 +290,7 @@ mod tests {
                     proptest::sample::select(b"&<>\"'\0a \xc3\xa9\x80\xff".to_vec()),
                     proptest::num::u8::ANY,
                 ],
-                0..40,
+                0..80,
             ),
         ) {
             for e in [
@@ -285,6 +298,7 @@ mod tests {
                 Escape::Content,
                 Escape::Attr(Quote::Double),
                 Escape::Attr(Quote::Single),
+                Escape::Attr(Quote::Bare),
                 Escape::Structure,
             ] {
                 let mut out = Output::default();

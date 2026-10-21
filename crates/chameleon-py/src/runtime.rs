@@ -579,7 +579,11 @@ impl Macros for PyRuntime<'_, '_> {
         if let Ok(m) = include.cast::<Macro>() {
             let get = m.get();
             let program = Arc::clone(&get.program.bind(py).get().core);
-            let scope = if program.shares_scope(get.entry) { self.scope.clone() } else { Scope::copy(&self.scope)? };
+            let scope = if program.shares_scope(get.entry) && !self.render.scope_exposed.get() {
+                self.scope.clone()
+            } else {
+                Scope::copy(&self.scope)?
+            };
             return Ok(MacroStep::Frame {
                 call: chameleon_core::Call {
                     program,
@@ -596,6 +600,10 @@ impl Macros for PyRuntime<'_, '_> {
         let rcontext = self.render.rcontext(py).clone().into_any();
         self.call_with_stream(&include, vec![scope, rcontext, domain, context, target_language], out)?;
         Ok(MacroStep::Done)
+    }
+
+    fn may_share_scope(&mut self) -> bool {
+        !self.render.scope_exposed.get()
     }
 
     fn copy_scope(&mut self) -> PyResult<Py<PyAny>> {

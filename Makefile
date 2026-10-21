@@ -72,6 +72,8 @@ build-profiling:
 # Profile-guided release build (Phase 10): an instrumented build runs the deterministic
 # training workload (bench/pgo_train.py), llvm-profdata merges the counts, and the release
 # build uses them. Separate target directories keep the plain release build's cache intact.
+# RUSTFLAGS here replaces any rustflags from .cargo/config.toml (none are set today): add them
+# to these lines if some are ever configured.
 PGO_DIR := $(CURDIR)/target/pgo
 LLVM_PROFDATA = $(shell rustc --print sysroot)/lib/rustlib/$(shell rustc -vV | sed -n 's/^host: //p')/bin/llvm-profdata
 
@@ -81,7 +83,11 @@ build-pgo:
 	RUSTFLAGS="-Cprofile-generate=$(PGO_DIR)/data" CARGO_TARGET_DIR=$(PGO_DIR)/generate $(MATURIN) develop --release
 	$(PY) bench/pgo_train.py
 	$(LLVM_PROFDATA) merge -o $(PGO_DIR)/merged.profdata $(PGO_DIR)/data
-	RUSTFLAGS="-Cprofile-use=$(PGO_DIR)/merged.profdata" CARGO_TARGET_DIR=$(PGO_DIR)/use $(MATURIN) develop --release
+	RUSTFLAGS="-Cprofile-use=$(PGO_DIR)/merged.profdata" CARGO_TARGET_DIR=$(PGO_DIR)/use \
+		$(MATURIN) develop --release > $(PGO_DIR)/use.log 2>&1 || (cat $(PGO_DIR)/use.log; exit 1)
+	cat $(PGO_DIR)/use.log
+	@# A profile that no longer matches the code would silently lose the optimisation.
+	! grep -E "profile data may be out of date|control flow change detected|hash mismatch" $(PGO_DIR)/use.log
 
 test: test-rust test-python test-upstream test-upstream-rust
 

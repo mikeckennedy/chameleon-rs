@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from typing import Any
 
 from chameleon_rs.exc import CompilationError
 
@@ -49,14 +50,20 @@ def simple_translate(
         mapping = getattr(msgid, 'mapping', None)
 
     if mapping:
-
-        def replace(match: re.Match[str]) -> str:
-            whole, param1, param2 = match.groups()
-            return str(mapping.get(param1 or param2, whole))
-
-        return _interp_regex.sub(replace, default)
+        return _interpolate(default, mapping)
 
     return default
+
+
+def _interpolate(default: Any, mapping: Any) -> str:
+    """`simple_translate`'s interpolation of a true `mapping` into `default` (also called by
+    the native conversion, which has read both already)."""
+
+    def replace(match: re.Match[str]) -> str:
+        whole, param1, param2 = match.groups()
+        return str(mapping.get(param1 or param2, whole))
+
+    return _interp_regex.sub(replace, default)
 
 
 try:  # pragma: no cover - only when zope.i18n is installed

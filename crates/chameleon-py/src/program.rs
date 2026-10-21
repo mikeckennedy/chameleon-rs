@@ -213,7 +213,7 @@ impl Program {
     ) -> PyResult<Bound<'py, PyString>> {
         let py = slf.py();
         let scope = Scope::new_root(py, variables)?;
-        render_in(slf, &scope, partials, defaults, builtins)
+        render_in(slf, &scope, partials, defaults, builtins, false)
     }
 
     /// Renders with `scope` itself as the scope, so names the template assigns stay in it
@@ -224,7 +224,7 @@ impl Program {
         scope: &Bound<'py, Scope>,
         builtins: Option<Bound<'py, PyDict>>,
     ) -> PyResult<Bound<'py, PyString>> {
-        render_in(slf, scope, None, None, builtins)
+        render_in(slf, scope, None, None, builtins, true)
     }
 
     /// A readable listing of the bytecode.
@@ -268,7 +268,7 @@ impl Program {
 /// translate = kw.get('translate')
 /// if encoding is None and translate is None:
 ///     key = (self.translate, self.encoding, self.on_error_handler)
-///     if key != self._defaults_key:
+///     if not all(a is b for a, b in zip(key, self._defaults_key or ())):  # identity
 ///         self._defaults = self._render_defaults(None, None)
 ///         self._defaults_key = key
 ///     defaults = self._defaults
@@ -300,13 +300,18 @@ pub(crate) fn render_page<'py>(
                 template.getattr(intern!(py, "on_error_handler"))?,
             ],
         )?;
-        if key.as_any().ne(template.getattr(intern!(py, "_defaults_key"))?)? {
+        // By identity: equal but distinct translators (one per language) are different.
+        let old = template.getattr(intern!(py, "_defaults_key"))?;
+        let same = old
+            .cast::<PyTuple>()
+            .is_ok_and(|old| old.len() == key.len() && old.iter().zip(key.iter()).all(|(a, b)| a.is(&b)));
+        if same {
+            template.getattr(intern!(py, "_defaults"))?
+        } else {
             let defaults = template.call_method1(intern!(py, "_render_defaults"), (py.None(), py.None()))?;
             template.setattr(intern!(py, "_defaults"), &defaults)?;
             template.setattr(intern!(py, "_defaults_key"), key)?;
             defaults
-        } else {
-            template.getattr(intern!(py, "_defaults"))?
         }
     } else {
         template.call_method1(intern!(py, "_encoded_defaults"), (encoding, translate))?
@@ -336,7 +341,7 @@ pub(crate) fn render_page<'py>(
     if !locals.contains(repeat)? {
         locals.set_item(repeat, new_repeat_dict(py)?)?;
     }
-    Ok(render_in(&program, &scope, partials, Some(defaults), Some(builtins))?.into_any())
+    Ok(render_in(&program, &scope, partials, Some(defaults), Some(builtins), false)?.into_any())
 }
 
 /// A render of `program` in `scope` (see [`Program::render`]).
@@ -346,12 +351,15 @@ fn render_in<'py>(
     partials: Option<Bound<'py, PyDict>>,
     defaults: Option<Bound<'py, PyDict>>,
     builtins: Option<Bound<'py, PyDict>>,
+    exposed: bool,
 ) -> PyResult<Bound<'py, PyString>> {
     let py = slf.py();
     catch_panics(py, || {
         let program = slf.get();
         let builtins = builtins.unwrap_or_else(|| PyDict::new(py));
         let render = RenderCtx::new(program.marker.bind(py).clone(), partials, defaults, builtins);
+        // A scope given by the caller (`render_scope`) is already in user code's hands.
+        render.scope_exposed.set(exposed);
         // `render(..., target_language=__kw.get("target_language"))`.
         // (`None` stays the VM's "no value", so frames without i18n settings stay plain.)
         let target_language =

@@ -1106,6 +1106,12 @@ pub trait Macros: Values {
     fn macro_call(&mut self, value: Self::Value, out: &mut Output) -> Result<MacroStep<Self::Value>, Self::Error>;
     /// `econtext.copy()` of the active scope.
     fn copy_scope(&mut self) -> Result<Self::Value, Self::Error>;
+    /// Whether a function marked by [`Program::mark_scope_sharing`] may run with its caller's
+    /// scope: false once the embedding has handed a scope to user code (which could keep it
+    /// and write to it later, where a copy would not see the write).
+    fn may_share_scope(&mut self) -> bool {
+        true
+    }
     /// `econtext.update(rcontext)` in the active scope, after a macro call returned.
     fn after_macro(&mut self) -> Result<(), Self::Error>;
     /// Registers a fill for slot `name` in the active scope: `econtext['__slot_name'] =
@@ -2521,6 +2527,7 @@ fn execute_rare<R: Runtime>(
                     return Ok(Flow::Jump(end as usize));
                 };
                 let scope = if fill.program.shares_scope(fill.entry)
+                    && rt.may_share_scope()
                     && let Some(frame) = st.frames.last()
                 {
                     rt.clone_value(&frame.scope)
@@ -2577,7 +2584,7 @@ fn execute_rare<R: Runtime>(
         Op::CallMacro { entry } => {
             let Some(frame) = st.frames.last() else { return Err(VmError::Internal("no frame")) };
             let code = rt.clone_value(&frame.code);
-            let scope = if shared.shares_scope(entry) {
+            let scope = if shared.shares_scope(entry) && rt.may_share_scope() {
                 rt.clone_value(&frame.scope)
             } else {
                 rt.copy_scope().map_err(rt_err)?

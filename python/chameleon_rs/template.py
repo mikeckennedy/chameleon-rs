@@ -690,7 +690,8 @@ class PageTemplate(BaseTemplate):
         the settings they depend on are the same (chameleon_partials passes `encoding`)."""
         key = (encoding, translate, self.translate, self.encoding, self.on_error_handler)
         cached = self._encoded
-        if cached is not None and cached[0] == key:
+        # By identity: equal but distinct translators (one per language) are different.
+        if cached is not None and len(cached[0]) == len(key) and all(a is b for a, b in zip(cached[0], key)):
             return cached[1]
         defaults = self._render_defaults(encoding, translate)
         self._encoded = (key, defaults)

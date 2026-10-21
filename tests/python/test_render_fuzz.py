@@ -25,7 +25,43 @@ class Html:
         return '<i>h</i>'
 
 
+class Model:
+    """An application object (Phase 10 fast paths): `__getattr__` for unknown names, a
+    property, a method, a property returning markup, a mapping fallback."""
+
+    def __getattr__(self, name: str) -> str:
+        if name.startswith('_') or name == 'missing':
+            raise AttributeError(name)
+        return f'ga:{name}'
+
+    @property
+    def p(self) -> str:
+        return 'prop<'
+
+    def m(self, *args: Any) -> str:
+        return f'm{args}'
+
+    @property
+    def html(self) -> Html:
+        return Html()
+
+    def __getitem__(self, key: str) -> Any:
+        if key == 'missing':
+            return lambda *a: 'item'
+        raise KeyError(key)
+
+
+class Message:
+    """A message-like value with `default` and `mapping` (the default translation function
+    interpolates it)."""
+
+    default = 'Hi ${who} <b>'
+    mapping = {'who': 'you&me'}  # noqa: RUF012 - a constant
+
+
 VARIABLES: dict[str, Any] = {
+    'o': Model(),
+    'msg': Message(),
     'x': 1,
     'z': 0,
     'n': None,
@@ -61,6 +97,16 @@ EXPR = st.sampled_from(
         'string:a${1/z}',
         'v | 1/z',
         'y',
+        'o.k',
+        'o.p',
+        'o.m(1)',
+        'o.missing()',
+        'o.html',
+        'msg',
+        's.upper()',
+        "d.get('a')",
+        'econtext',
+        "ctx.__setitem__('x', 'w')",
     ]
 )
 ON_ERROR = st.sampled_from(
@@ -150,6 +196,7 @@ def node(depth: int) -> Any:
             '${v}',
             '<?python v = 2 ?>',
             '<?python def g(k): return k ?>',
+            '<?python econtext["ctx"] = econtext ?>',
             '${g(1) | 0}',
         ]
     )
@@ -229,6 +276,24 @@ TRANSLATIONS: dict[str, Any] = {
     'short': _shorter,
     'non-ascii': lambda msgid, **kwargs: 'é€😀' * (len(canon(str(msgid))) % 4),
 }
+
+
+class EqualTranslator:
+    """Translators that all compare equal: each render gets a new one (the render defaults
+    cached by Phase 10 must not be reused by equality)."""
+
+    def __init__(self, tag: str) -> None:
+        self.tag = tag
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, EqualTranslator)
+
+    def __hash__(self) -> int:
+        return 0
+
+    def __call__(self, msgid: Any, **kwargs: Any) -> Any:
+        text = translate(msgid, **kwargs)
+        return text if not isinstance(text, str) else f'{self.tag}{text}'
 
 
 MACRO_EXPR = st.sampled_from(
@@ -314,7 +379,24 @@ def i18n_node(depth: int, safe: bool = False, fill: bool = False) -> Any:
     has a `tal:on-error` (Chameleon's one fallback register per function, set inside a
     translation stream and used by a handler outside it, deletes from the outer stream by the
     inner stream's item count, which chameleon_rs does not model: architecture.md, Phase 6b)."""
-    text = st.sampled_from(['a', '${x}', '\n  ', '${s} and ${x}', '${h}', ' Hello  world ', '${1/z}', '${v}'])
+    text = st.sampled_from(
+        [
+            'a',
+            '${x}',
+            '\n  ',
+            '${s} and ${x}',
+            '${h}',
+            ' Hello  world ',
+            '${1/z}',
+            '${v}',
+            # Phase 10: scope aliases (a body writing through one must not see its write when
+            # it would run on a copy), application objects, message values.
+            '<?python econtext["ctx"] = econtext ?>',
+            '<i tal:define="global ctx econtext"/>',
+            "${ctx.__setitem__('x', 'w') | 0}[${x}]",
+            '${o.k}${o.p}${o.m(2)}${o.missing() | 0}${o.html}${msg}',
+        ]
+    )
     if safe:
         return st.one_of(text, i18n_element(depth, True, fill), translation(depth, fill))
     # A macro whose slot is defined inside a translation (Phase 8: slot bodies and macro streams).
@@ -339,7 +421,7 @@ def i18n_node(depth: int, safe: bool = False, fill: bool = False) -> Any:
     body=st.lists(i18n_node(2), min_size=1, max_size=3).map(''.join),
     implicit=st.booleans(),
     language=st.sampled_from([None, 'de']),
-    mode=st.sampled_from(['show', 'show', 'empty', 'short', 'non-ascii']),
+    mode=st.sampled_from(['show', 'show', 'empty', 'short', 'non-ascii', 'objects']),
 )
 def test_generated_macro_and_i18n_templates_render_like_chameleon(
     body: str, implicit: bool, language: str | None, mode: str
@@ -349,6 +431,12 @@ def test_generated_macro_and_i18n_templates_render_like_chameleon(
     def run(engine: Any) -> Any:
         try:
             template = engine.PageTemplate(body, **options)
+            if mode == 'objects':
+                # Two renders with new, equal translators, as a request per language would.
+                return ''.join(
+                    template(**VARIABLES, translate=EqualTranslator(tag), target_language=language)
+                    for tag in ('A:', 'B:')
+                )
             return template(**VARIABLES, translate=TRANSLATIONS[mode], target_language=language)
         except Exception as e:  # noqa: BLE001 - comparing exception types across engines
             return e

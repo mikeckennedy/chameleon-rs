@@ -274,6 +274,29 @@ CASES: list[tuple[str, tuple[str, ...]]] = [
         + """<p tal:define="v 9" metal:use-macro="macros['c']"/>${v}""",
         (),
     ),
+    # ... and once a scope has been handed to user code, a body that writes through the alias
+    # must not see its own write (Chameleon's copy would not): no sharing after exposure.
+    (
+        """<p tal:define="x 'old'; ctx econtext" metal:use-macro="others[0]"/>${x}""",
+        ("""<i>${ctx.__setitem__('x', 'new')}[${x}]</i>""",),
+    ),
+    (
+        hidden("""<i metal:define-macro="m">${ctx.__setitem__('x', 'new')}[${x}]</i>""")
+        + """<p tal:define="x 'old'; ctx econtext" metal:use-macro="macros['m']"/>${x}""",
+        (),
+    ),
+    (
+        hidden("""<i metal:define-macro="m">${ctx.__setitem__('x', 'new')}[${x}]</i>""")
+        + """<?python econtext['ctx'] = econtext ?>"""
+        + """<p tal:define="x 'old'" metal:use-macro="macros['m']"/>${x}""",
+        (),
+    ),
+    (
+        hidden("""<i metal:define-macro="m"><b metal:define-slot="s"/>[${x}]</i>""")
+        + """<p tal:define="x 'old'; ctx econtext" metal:use-macro="macros['m']">"""
+        + """<u metal:fill-slot="s">${ctx.__setitem__('x', 'new')}${x}</u></p>${x}""",
+        (),
+    ),
 ]
 
 
@@ -306,6 +329,25 @@ def test_macro_and_template_include_with_chameleons_signature() -> None:
         # As Chameleon's render functions, it reads the render's settings first.
         with pytest.raises(KeyError, match='__decode'):
             include([], {'a': 1, '__translate': None}, {})
+
+
+def test_included_macro_does_not_share_a_scope_its_caller_holds() -> None:
+    """A macro called from outside (`include`) gets a scope that user code holds: the read-only
+    macro it calls must still get a copy, as in Chameleon."""
+    source = (
+        """<i metal:define-macro="n">${ctx.__setitem__('x', 'new')}[${x}]</i>"""
+        """<b metal:define-macro="m"><u metal:use-macro="macros['n']"/>${x}</b>"""
+    )
+    results = []
+    for engine in (chameleon, chameleon_rs):
+        template = engine.PageTemplate(source)
+        scope = engine.utils.Scope(x='old', __translate=None, __decode=None, __on_error_handler=None)
+        scope['ctx'] = scope
+        scope['macros'] = template.macros
+        stream: list[str] = []
+        template.macros['m'].include(stream, scope, {})
+        results.append(''.join(stream))
+    assert results[0] == results[1]
 
 
 @pytest.mark.parametrize(

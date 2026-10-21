@@ -321,21 +321,31 @@ fn simple_translate(py: Python<'_>) -> PyResult<&Bound<'_, PyAny>> {
 /// return default
 /// ```
 ///
-/// A true `mapping` goes to the Python function itself (it would read both attributes again,
-/// as getters with effects would show; message objects are not plain values).
+/// A true `mapping` is interpolated by `chameleon_rs.i18n._interpolate` with the values
+/// already read, so each attribute is read once, as in the Python function.
 fn simple_translate_value<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     let py = value.py();
     if crate::repeat::is_plain_callable(value)? {
         return Ok(value.clone());
     }
-    let default = value.getattr_opt(intern!(py, "default"))?;
+    let default = value.getattr_opt(intern!(py, "default"))?.unwrap_or_else(|| value.clone());
     if let Some(mapping) = value.getattr_opt(intern!(py, "mapping"))?
         && mapping.is_truthy()?
     {
-        let _ = default;
-        return simple_translate(py)?.call1((value,));
+        return interpolate(py)?.call1((default, mapping));
     }
-    Ok(default.unwrap_or_else(|| value.clone()))
+    Ok(default)
+}
+
+static INTERPOLATE: pyo3::sync::PyOnceLock<Py<PyAny>> = pyo3::sync::PyOnceLock::new();
+
+/// `chameleon_rs.i18n._interpolate(default, mapping)`: `simple_translate`'s interpolation.
+fn interpolate(py: Python<'_>) -> PyResult<&Bound<'_, PyAny>> {
+    Ok(INTERPOLATE
+        .get_or_try_init(py, || {
+            Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs.i18n"))?.getattr(intern!(py, "_interpolate"))?.unbind())
+        })?
+        .bind(py))
 }
 
 /// `__append(value)`: Chameleon's final `''.join` accepts only strings.

@@ -227,6 +227,8 @@ fn render_function<'py>(
         }
     }
     let render = RenderCtx::new(program.get().marker.bind(py).clone(), None, None, builtins);
+    // Called from outside: the scope came from user code.
+    render.scope_exposed.set(true);
     let _ = render.rcontext.set(rcontext.cast::<PyDict>()?.clone());
     let _ = render.stream.set(stream.clone());
     let compiled = Arc::clone(&program.get().core);
