@@ -25,6 +25,7 @@ import chameleon_rs
 
 TEMPLATES = Path(__file__).parent / 'templates'
 CARD = 'app/_episode_card.pt'
+REPORT = 'app/_report.pt'
 
 
 class Html(str):
@@ -129,31 +130,95 @@ def make_model(episodes: int) -> dict:
     }
 
 
-def engines(model: dict) -> list[tuple[str, object, object]]:
+class Row:
+    """A report row as an application's model presents it: plain attributes, properties
+    computed on each access, and a method."""
+
+    def __init__(self, i: int) -> None:
+        self.number = 1000 - i
+        self.title = f'Episode {1000 - i}: notes & links' if i % 9 == 0 else f'Show {i} about Python and the web'
+        self.published = datetime.date(2026, 1, 1) - datetime.timedelta(days=i)
+        self.guests = [Guest(f'Guest {i}', f'guest-{i}')] + ([Guest(f'Co {i}', f'co-{i}')] if i % 4 == 0 else [])
+        self.revenue = 1234.5 + i * 3.25
+        self.listens = 5_000 + i * 17
+        self.video_id = f'v{i:05d}' if i % 3 else None
+        self.summary = Html(f'<p>Summary <em>{i}</em></p>')
+
+    @property
+    def url(self) -> str:
+        return f'/episodes/show/{self.number}'
+
+    @property
+    def is_recent(self) -> bool:
+        return self.published > datetime.date(2025, 9, 1)
+
+    @property
+    def badge_html(self) -> str:
+        return '<span class="badge">new</span>' if self.is_recent else ''
+
+    @property
+    def guest_names(self) -> str:
+        return ', '.join(g.name for g in self.guests)
+
+    @property
+    def has_video(self) -> bool:
+        return self.video_id is not None
+
+    @property
+    def video_url(self) -> str:
+        return f'https://www.youtube.com/watch?v={self.video_id}'
+
+    def short_title(self) -> str:
+        return self.title if len(self.title) < 30 else self.title[:27] + '...'
+
+
+def money(value: float) -> str:
+    return f'${value:,.2f}'
+
+
+def pct(part: int, whole: int) -> str:
+    return f'{100 * part / whole:.1f}%'
+
+
+def make_report_model(rows: int) -> dict:
+    model = make_model(0)
+    items = [Row(i) for i in range(rows)]
+    model.update(
+        title='Report',
+        rows=items,
+        money=money,
+        pct=pct,
+        total_listens=sum(r.listens for r in items),
+    )
+    return model
+
+
+def engines(model: dict, report: dict | None = None) -> list[tuple[str, object, object]]:
     """(label, Chameleon render, chameleon_rs render) per variant."""
     chameleon_partials.register_extensions(str(TEMPLATES), auto_reload=False, cache_init=False)
     registry: dict[str, chameleon_rs.PageTemplate] = {}
-    registry[CARD] = chameleon_rs.PageTemplate((TEMPLATES / CARD).read_text(), partials=registry)
+    for name in (CARD, REPORT):
+        registry[name] = chameleon_rs.PageTemplate((TEMPLATES / name).read_text(), partials=registry)
+
+    def bound(template, kw):
+        return lambda: template(**kw)
+
     pairs = []
-    for label, name, partials in (
-        ('inline cards', 'app/episodes_inline.pt', None),
-        ('partial cards', 'app/episodes_partials.pt', registry),
+    for label, name, partials, kw in (
+        ('inline cards', 'app/episodes_inline.pt', None, model),
+        ('partial cards', 'app/episodes_partials.pt', registry, model),
+        ('report', 'app/report.pt', registry, report or make_report_model(1000)),
     ):
         path = str(TEMPLATES / name)
-        ref = chameleon.zpt.template.PageTemplateFile(path)
-        ours = chameleon_rs.PageTemplateFile(path, partials=partials)
-        if partials is None:
-            pairs.append((label, lambda ref=ref: ref(**model), lambda ours=ours: ours(**model)))
-        else:
-            rp = chameleon_partials.render_partial
-            pairs.append(
-                (label, lambda ref=ref, rp=rp: ref(render_partial=rp, **model), lambda ours=ours: ours(**model))
-            )
+        ref_kw = kw if partials is None else {**kw, 'render_partial': chameleon_partials.render_partial}
+        ref = bound(chameleon.zpt.template.PageTemplateFile(path), ref_kw)
+        ours = bound(chameleon_rs.PageTemplateFile(path, partials=partials), kw)
+        pairs.append((label, ref, ours))
     return pairs
 
 
 def scenario(name: str):
-    """A chameleon_rs render for profiling (`page_inline`, `page_partials`)."""
+    """A chameleon_rs render for profiling (`page_inline`, `page_partials`, `page_report`)."""
     model = make_model(50)
     pairs = {label.split()[0]: ours for label, _, ours in engines(model)}
     return pairs[name.removeprefix('page_')]

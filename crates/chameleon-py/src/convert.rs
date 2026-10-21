@@ -160,7 +160,6 @@ fn quote<'py>(
     marker_is_default: bool,
     out: &mut Output,
 ) -> PyResult<Quoted<'py>> {
-    let py = value.py();
     if value.is_none() || (marker_is_default && esc.drops_default() && value.is(&cx.render.marker)) {
         return Ok(Quoted::Nothing);
     }
@@ -182,9 +181,9 @@ fn quote<'py>(
     }
     let converted = if value.is_exact_instance_of::<PyBytes>() {
         decode(cx, value)?
-    } else if let Some(html) = value.getattr_opt(intern!(py, "__html__"))? {
+    } else if let Some(html) = html_of(value)? {
         // The markup is returned as is, never escaped.
-        let markup = html.call0()?;
+        let markup = html;
         return Ok(if markup.is_none() { Quoted::Nothing } else { Quoted::Other(markup) });
     } else {
         translate(cx, value, Target::Local)?
@@ -200,13 +199,34 @@ fn quote<'py>(
     }
 }
 
+static MARKUP: pyo3::sync::PyOnceLock<Py<PyAny>> = pyo3::sync::PyOnceLock::new();
+
+/// `value.__html__()` if the value has the method (`None` if it has not). For an exact
+/// `chameleon_rs.utils.Markup` (what `structure:` makes), whose `__html__` is `str(self)`,
+/// that `str` is made natively, without the attribute lookup and the Python call.
+fn html_of<'py>(value: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let py = value.py();
+    let markup = MARKUP.get_or_try_init(py, || {
+        Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs.utils"))?.getattr(intern!(py, "Markup"))?.unbind())
+    })?;
+    if value.get_type().is(markup.bind(py)) {
+        return Ok(Some(value.str()?.into_any()));
+    }
+    if crate::repeat::is_plain_callable(value)? {
+        return Ok(None);
+    }
+    match value.getattr_opt(intern!(py, "__html__"))? {
+        Some(html) => Ok(Some(html.call0()?)),
+        None => Ok(None),
+    }
+}
+
 /// `emit_convert` (no escaping). `None` means the value converts to `None`.
 fn convert<'py>(
     cx: &Cx<'_, 'py>,
     value: &Bound<'py, PyAny>,
     drops_default: bool,
 ) -> PyResult<Option<Bound<'py, PyAny>>> {
-    let py = value.py();
     if value.is_none() || (drops_default && value.is(&cx.render.marker)) {
         return Ok(None);
     }
@@ -216,8 +236,8 @@ fn convert<'py>(
         value.clone()
     } else if value.is_exact_instance_of::<PyInt>() || value.is_exact_instance_of::<PyFloat>() {
         value.str()?.into_any()
-    } else if let Some(html) = value.getattr_opt(intern!(py, "__html__"))? {
-        html.call0()?
+    } else if let Some(html) = html_of(value)? {
+        html
     } else {
         translate(cx, value, Target::Scope)?
     };
@@ -245,6 +265,13 @@ pub(crate) enum Target {
 fn translate<'py>(cx: &Cx<'_, 'py>, value: &Bound<'py, PyAny>, target: Target) -> PyResult<Bound<'py, PyAny>> {
     let py = value.py();
     let converted = match cx.scope_or_default(intern!(py, "__translate"))? {
+        Some(translate) if translate.is(simple_translate(py)?) => {
+            if target == Target::Scope {
+                // Evaluated for its error (a missing `target_language`), as the argument is.
+                cx.scope_target_language()?;
+            }
+            simple_translate_value(value)?
+        }
         Some(translate) => {
             let kwargs = PyDict::new(py);
             kwargs.set_item(intern!(py, "domain"), &cx.frame.domain)?;
@@ -259,6 +286,46 @@ fn translate<'py>(cx: &Cx<'_, 'py>, value: &Bound<'py, PyAny>, target: Target) -
         None => value.clone(),
     };
     if converted.is(value) { Ok(value.str()?.into_any()) } else { Ok(converted) }
+}
+
+static SIMPLE_TRANSLATE: pyo3::sync::PyOnceLock<Py<PyAny>> = pyo3::sync::PyOnceLock::new();
+
+/// The default translation function, `chameleon_rs.i18n.simple_translate`.
+fn simple_translate(py: Python<'_>) -> PyResult<&Bound<'_, PyAny>> {
+    Ok(SIMPLE_TRANSLATE
+        .get_or_try_init(py, || {
+            Ok::<_, PyErr>(
+                py.import(intern!(py, "chameleon_rs.i18n"))?.getattr(intern!(py, "simple_translate"))?.unbind(),
+            )
+        })?
+        .bind(py))
+}
+
+/// `simple_translate(value)` with no mapping or default, natively (the conversion of a value
+/// that is not a string, a number or markup, with the default translation function):
+///
+/// ```python
+/// default = getattr(msgid, 'default', msgid)
+/// mapping = getattr(msgid, 'mapping', None)
+/// if mapping: return _interp_regex.sub(replace, default)
+/// return default
+/// ```
+///
+/// A true `mapping` goes to the Python function itself (it would read both attributes again,
+/// as getters with effects would show; message objects are not plain values).
+fn simple_translate_value<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let py = value.py();
+    if crate::repeat::is_plain_callable(value)? {
+        return Ok(value.clone());
+    }
+    let default = value.getattr_opt(intern!(py, "default"))?;
+    if let Some(mapping) = value.getattr_opt(intern!(py, "mapping"))?
+        && mapping.is_truthy()?
+    {
+        let _ = default;
+        return simple_translate(py)?.call1((value,));
+    }
+    Ok(default.unwrap_or_else(|| value.clone()))
 }
 
 /// `__append(value)`: Chameleon's final `''.join` accepts only strings.
@@ -317,8 +384,8 @@ pub(crate) fn convert_text<'py>(
             Ok(value.clone())
         } else if value.is_exact_instance_of::<PyInt>() || value.is_exact_instance_of::<PyFloat>() {
             Ok(value.str()?.into_any())
-        } else if let Some(html) = value.getattr_opt(intern!(py, "__html__"))? {
-            html.call0()
+        } else if let Some(html) = html_of(value)? {
+            Ok(html)
         } else {
             translate(cx, value, Target::Scope)
         };
@@ -330,8 +397,8 @@ pub(crate) fn convert_text<'py>(
         value.clone()
     } else if value.is_exact_instance_of::<PyInt>() || value.is_exact_instance_of::<PyFloat>() {
         return Ok(value.str()?.into_any());
-    } else if let Some(html) = value.getattr_opt(intern!(py, "__html__"))? {
-        return html.call0();
+    } else if let Some(html) = html_of(value)? {
+        return Ok(html);
     } else {
         translate(cx, value, Target::Local)?
     };

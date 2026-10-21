@@ -39,6 +39,30 @@ class GetItem:
         raise KeyError(key)
 
 
+class Methods:
+    """Method calls: plain, raising `AttributeError` from inside, a property returning a
+    callable, a property whose getter raises `AttributeError` (then `__getitem__`)."""
+
+    def m(self, *args: Any) -> str:
+        return f'm{args}'
+
+    def fails(self) -> str:
+        return self.missing  # type: ignore[attr-defined, no-any-return]
+
+    @property
+    def prop(self) -> Any:
+        return lambda: 'prop called'
+
+    @property
+    def broken(self) -> Any:
+        raise AttributeError('broken')
+
+    def __getitem__(self, key: str) -> Any:
+        if key == 'broken':
+            return lambda: 'item for broken'
+        raise KeyError(key)
+
+
 # (expression, scope): the value (or error) must match.
 VALUES: list[tuple[str, dict[str, Any]]] = [
     # string:
@@ -186,6 +210,20 @@ VALUES: list[tuple[str, dict[str, Any]]] = [
     ('x \\\n + 1', {'x': 1}),
     ('x +\n 1', {'x': 1}),
     ('await x', {'x': 1}),
+    # Phase 10: method calls with constant arguments go through `PyObject_VectorcallMethod`.
+    ('x.upper()', {'x': 'ab'}),
+    ('x.split(",", 1)', {'x': 'a,b,c'}),
+    ('x.get("k")', {'x': {'k': 1}}),
+    ('x.nope()', {'x': 'ab'}),
+    ('x.k()', {'x': {'k': lambda: 'from item'}}),
+    ('x.k(1)', {'x': {'k': lambda v: v + 1}}),
+    ('x.k()', {'x': GetItem()}),
+    ('x.m()', {'x': Methods()}),
+    ('x.fails()', {'x': Methods()}),
+    ('x.prop()', {'x': Methods()}),
+    ('x.broken()', {'x': Methods()}),
+    ('x.m(1, 2)', {'x': Methods()}),
+    ('x.m(None)', {'x': Methods()}),
 ]
 
 

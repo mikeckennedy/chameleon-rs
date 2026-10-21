@@ -13,6 +13,7 @@ mod expr;
 mod lower;
 mod macros;
 mod program;
+mod repeat;
 mod runtime;
 mod scope;
 mod strexpr;

@@ -605,6 +605,16 @@ pub(crate) fn eval<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny
         }
         Expr::Const(v) | Expr::Folded(v) => Ok(v.bind(py).clone()),
         Expr::Attr(obj, name) => lookup_attr(&eval(obj, cx)?, name.bind(py)),
+        // `obj.name()` / `obj.name(constant, ...)`: a method call without a bound method.
+        Expr::Call { func, args, kwargs }
+            if kwargs.is_empty()
+                && args.len() <= 2
+                && matches!(**func, Expr::Attr(..))
+                && args.iter().all(is_const) =>
+        {
+            let Expr::Attr(obj, name) = &**func else { return eval_more(e, cx) };
+            call_method(&eval(obj, cx)?, name.bind(py), args)
+        }
         // Fixed arities go through vectorcall without building a tuple first.
         Expr::Call { func, args, kwargs } if kwargs.is_empty() && args.len() <= 2 => {
             let func = eval(func, cx)?;
@@ -914,11 +924,50 @@ fn compare<'py>(
     }
 }
 
+fn is_const(e: &Expr) -> bool {
+    matches!(e, Expr::Const(_))
+}
+
+/// `lookup_attr(obj, name)(*args)` for constant arguments, through `PyObject_VectorcallMethod`
+/// (no bound method object). The arguments cannot fail or have effects, so looking the method
+/// up after them changes nothing. An `AttributeError` with no attribute `name` on `obj` means
+/// the lookup failed, and `lookup_attr`'s `__getitem__` fallback is taken; with the attribute
+/// there, the error came from the call and propagates.
+#[inline(never)]
+fn call_method<'py>(
+    obj: &Bound<'py, PyAny>,
+    name: &Bound<'py, PyString>,
+    args: &[Expr],
+) -> PyResult<Bound<'py, PyAny>> {
+    let py = obj.py();
+    let result = match args {
+        [] => obj.call_method0(name),
+        [Expr::Const(a)] => obj.call_method1(name, (a.bind(py),)),
+        [Expr::Const(a), Expr::Const(b)] => obj.call_method1(name, (a.bind(py), b.bind(py))),
+        _ => return Err(PyValueError::new_err("method call arity")),
+    };
+    match result {
+        Err(err) if err.is_instance_of::<PyAttributeError>(py) && obj.getattr_opt(name)?.is_none() => {
+            let func = lookup_attr(obj, name)?;
+            match args {
+                [] => func.call0(),
+                [Expr::Const(a)] => func.call1((a.bind(py),)),
+                [Expr::Const(a), Expr::Const(b)] => func.call1((a.bind(py), b.bind(py))),
+                _ => Err(PyValueError::new_err("method call arity")),
+            }
+        }
+        other => other,
+    }
+}
+
 /// Chameleon's `lookup_attr` (utils.py:515), exactly: `getattr`; on `AttributeError` look up
 /// `__getitem__` as an attribute and call it; a `KeyError` from that re-raises the original
 /// `AttributeError`; any other error propagates.
 pub(crate) fn lookup_attr<'py>(obj: &Bound<'py, PyAny>, name: &Bound<'py, PyString>) -> PyResult<Bound<'py, PyAny>> {
     let py = obj.py();
+    if let Some(value) = crate::repeat::attr(obj, name)? {
+        return Ok(value);
+    }
     match obj.getattr(name) {
         Ok(value) => Ok(value),
         Err(original) if original.is_instance_of::<PyAttributeError>(py) => {
