@@ -1278,7 +1278,10 @@ impl<V> VmState<V> {
     /// resolved.
     #[must_use]
     pub fn at(program: Arc<Program>, entry: u32, code: V, scope: V, i18n: I18n<V>, slots: Vec<Option<V>>) -> Self {
-        let out = Output::with_capacity(program.capacity_hint());
+        // Headroom over the last size: escaping reserves a little ahead, and a render that
+        // just fills the buffer must not double it (and copy everything) at its last write.
+        let hint = program.capacity_hint();
+        let out = Output::with_capacity(if hint == 0 { 0 } else { hint + hint / 8 + 64 });
         let frame = Frame {
             program,
             pc: entry,
