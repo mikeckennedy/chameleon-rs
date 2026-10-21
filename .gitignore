@@ -34,3 +34,6 @@ venv/
 .hypothesis/
 # Per-developer environment (for example CHAMELEON_RS_CORPUS, the private template corpus)
 .envrc
+
+# Agent worktrees (Claude Code isolation); never commit them.
+/.claude/worktrees/
