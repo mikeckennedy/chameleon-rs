@@ -1,0 +1,55 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+macro "master"@345
+  scope attrs=#1
+    element "<html"
+      attr " xmlns=\"http://www.w3.org/1999/xhtml\""
+      attr "template-macros" "\n      template-macros=\"".."\"" default=None interp v0 Attr(Double) "${' '.join(template.macros.names)}"@376
+      attr "macros" "\n      macros=\"".."\"" default=None interp v1 Attr(Double) "${' '.join(macros.names)}"@426
+      close ">"
+      text "\n    "
+      define attrs=#2
+        local "foo"@483 = v2 "'foo'"@487
+        interpolation v3 Text "\n      ${foo}\n      "@494
+        define-slot "content"@538
+          scope attrs=#3
+            content v4 "None"@560
+              default
+                element "<div"
+                  close ">"
+                  text "\n         "
+                  text "<!-- will be replaced -->"
+                  text "\n      "
+                end "</div>"
+        text "\n      "
+        scope attrs=#4
+          element "<span"
+            attr "template-macros" " template-macros=\"".."\"" default=None interp v5 Attr(Double) "${' '.join(template.macros.names)}"@644
+            attr "macros" "\n            macros=\"".."\"" default=None interp v6 Attr(Double) "${' '.join(macros.names)}"@700
+            close ">"
+            text "\n         "
+            text "<!-- demonstrate difference between\n              `template` and `macros` symbol -->"
+            text "\n      "
+          end "</span>"
+        text "\n    "
+      text "\n"
+    end "</html>"
+body
+  scope attrs=#0
+    element "<?xml"
+      attr " version=\"1.0\""
+      attr " encoding=\"UTF-8\""
+      attr " standalone=\"no\""
+      attr " ?"
+      close ">"
+      empty
+  text "\n"
+  text "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">"
+  text "\n"
+  use-internal-macro "master"@345
+  text "\n"
+attrs #0 [("version", "1.0"), ("encoding", "UTF-8"), ("standalone", "no"), ("?", "")]
+attrs #1 [("xmlns", "http://www.w3.org/1999/xhtml"), ("template-macros", "${' '.join(template.macros.names)}"), ("macros", "${' '.join(macros.names)}")]
+attrs #4 [("template-macros", "${' '.join(template.macros.names)}"), ("macros", "${' '.join(macros.names)}")]

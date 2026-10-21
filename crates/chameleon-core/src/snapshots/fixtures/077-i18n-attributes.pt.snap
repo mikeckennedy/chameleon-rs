@@ -1,0 +1,14 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    domain "test"@66
+      element "<input"
+        attr " type=\"hidden\""
+        attr " id=\"uploadify_label_file_title\""
+        attr "value" " value=\"".."\"" default=Some("value") translate Some("Title") (static "value")
+        close " />"
+        empty
+attrs #0 [("type", "hidden"), ("id", "uploadify_label_file_title"), ("value", "value")]

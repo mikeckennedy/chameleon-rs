@@ -25,9 +25,10 @@ def _econtext() -> ast.Name:
 
 
 class _Rewriter(ast.NodeTransformer):
-    def __init__(self, default_is_marker: bool) -> None:
+    def __init__(self, aliases: dict[str, str]) -> None:
         self.scopes: list[set[str]] = [set()]
-        self.default_is_marker = default_is_marker
+        # Compile-time aliases (`default`, `attrs`): name to the parameter or global holding it.
+        self.aliases = aliases
 
     def visit_arg(self, node: ast.arg) -> ast.arg:
         self.scopes[-1].add(node.arg)
@@ -61,8 +62,8 @@ class _Rewriter(ast.NodeTransformer):
             return ast.Subscript(value=_econtext(), slice=ast.Constant(name), ctx=ast.Store())
         if name in DEFAULTS:
             return ast.Subscript(value=_econtext(), slice=ast.Constant(DEFAULTS[name]), ctx=ast.Load())
-        if name == 'default' and self.default_is_marker:
-            return ast.Name(id='__default', ctx=ast.Load())
+        if name in self.aliases:
+            return ast.Name(id=self.aliases[name], ctx=ast.Load())
         if name in BUILTINS:
             get = ast.Attribute(value=_econtext(), attr='get', ctx=ast.Load())
             return ast.Call(func=get, args=[ast.Constant(name), ast.Name(id=name, ctx=ast.Load())], keywords=[])
@@ -70,16 +71,30 @@ class _Rewriter(ast.NodeTransformer):
         return ast.Call(func=get_name, args=[ast.Constant(name)], keywords=[])
 
 
-def build(tree: ast.Expression, default_is_marker: bool, lookup_attr: Callable[[Any, str], Any]) -> Callable[..., Any]:
+def build(
+    tree: ast.Expression,
+    default_is_marker: bool,
+    attrs: dict[str, str] | None,
+    lookup_attr: Callable[[Any, str], Any],
+) -> Callable[..., Any]:
     """Compile a parsed expression to ``f(econtext, rcontext, __default)``.
 
-    The function's globals hold only builtins and ``lookup_attr``, never the template, so a
-    template cannot be kept alive through its own expressions (D4).
+    ``default_is_marker`` and ``attrs`` are the compile-time aliases in effect where the
+    expression appears (``attrs`` is the element's static attributes, or ``None`` outside
+    every element).
+
+    The function's globals hold only builtins, ``lookup_attr`` and the ``attrs`` dict, never
+    the template, so a template cannot be kept alive through its own expressions (D4).
     """
-    body = _Rewriter(default_is_marker).visit(tree.body)
+    aliases = {}
+    if default_is_marker:
+        aliases['default'] = '__default'
+    if attrs is not None:
+        aliases['attrs'] = '__attrs'
+    body = _Rewriter(aliases).visit(tree.body)
     params = [ast.arg(arg=name) for name in ('econtext', 'rcontext', '__default')]
     arguments = ast.arguments(posonlyargs=[], args=params, kwonlyargs=[], kw_defaults=[], defaults=[])
     module = ast.Expression(body=ast.Lambda(args=arguments, body=body))
     ast.fix_missing_locations(module)
     code = compile(module, '<template expression>', 'eval')
-    return eval(code, {'__builtins__': builtins, '__lookup_attr': lookup_attr})
+    return eval(code, {'__builtins__': builtins, '__lookup_attr': lookup_attr, '__attrs': attrs})

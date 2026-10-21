@@ -1,0 +1,8 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  define attrs=#0
+    global "content"@28 = v0 "None"@36
+    empty

@@ -1,0 +1,60 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      define attrs=#1
+        local "hash"@39 = v0 "string:#"@44
+        element "<body"
+          attr " class=\"ltr\""
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<img"
+              attr "src" " src=\"".."\"" default=None interp v1 Attr(Double) "${'#'}"@69
+              attr "alt" " alt=\"".."\"" default=None interp v2 Attr(Double) "copyright (c) ${2010}"@82
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#3
+            element "<img"
+              attr "src" " src=\"".."\"" default=Some("") subst Double v3 "string:$hash"@172
+              attr "alt" " alt=\"".."\"" default=None interp v4 Attr(Double) "copyright (c) ${2010}"@129
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#4
+            element "<img"
+              attr "src" " src=\"".."\"" default=Some("") subst Double v5 "string:${hash}"@253
+              attr "alt" " alt=\"".."\"" default=None interp v6 Attr(Double) "copyright (c) ${2010}"@210
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#5
+            element "<img"
+              attr "src" " src=\"".."\"" default=None interp v7 Attr(Double) "${None}"@286
+              attr " alt=\"$ignored\""
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#6
+            element "<img"
+              attr " src=\"\""
+              attr "alt" " alt=\"".."\"" default=None interp v8 Attr(Double) "${'%stype \\'str\\'%s' % (chr(60), chr(62))}"@334
+              close " />"
+              empty
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
+attrs #1 [("class", "ltr")]
+attrs #2 [("src", "${'#'}"), ("alt", "copyright (c) ${2010}")]
+attrs #3 [("src", ""), ("alt", "copyright (c) ${2010}")]
+attrs #4 [("src", ""), ("alt", "copyright (c) ${2010}")]
+attrs #5 [("src", "${None}"), ("alt", "$ignored")]
+attrs #6 [("src", ""), ("alt", "${'%stype \\'str\\'%s' % (chr(60), chr(62))}")]

@@ -1,0 +1,17 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    use-macro slots=#0 macroname="load('050-define-macro-and-use-not-extend.pt').macros['main']" v0 "load('050-define-macro-and-use-not-extend.pt').macros['main']"@23
+slots #0
+  fill-slot "content"@115
+    scope attrs=#1
+      text "\n    "
+      scope attrs=#2
+        element "<span"
+          close ">"
+          text "Filled content"
+        end "</span>"
+      text "\n  "

@@ -38,7 +38,7 @@ mod _native {
     #[pymodule(gil_used = false)]
     mod _testing {
         #[pymodule_export]
-        use crate::testing::{char_class, parse, parse_count, token_count, tokenizer_pattern, tokens};
+        use crate::testing::{char_class, inventory, parse, parse_count, token_count, tokenizer_pattern, tokens, tree};
     }
 
     #[pymodule_init]

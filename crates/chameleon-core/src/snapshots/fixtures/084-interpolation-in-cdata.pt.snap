@@ -1,0 +1,25 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<head"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<script"
+              close ">"
+              text "\n      "
+              interpolation v0 Structure "<![CDATA[\n      alert(\"${'Hello world!'}\");\n      ]]>"@35
+              text "\n    "
+            end "</script>"
+          text "\n  "
+        end "</head>"
+      text "\n"
+    end "</html>"
+  text "\n"

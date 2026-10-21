@@ -1,0 +1,12 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    content v0 "python: ', '.join((\n    'a', 'b', 'c'))"@19
+      default
+        element "<span"
+          close " />"
+          empty
+  text "\n"

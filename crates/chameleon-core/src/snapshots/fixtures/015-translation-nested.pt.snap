@@ -1,0 +1,39 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<div"
+              close ">"
+              translate ""@41
+                text "\n      Price:\n      "
+                i18n-name "price"@80
+                  scope attrs=#3
+                    element "<span"
+                      close ">"
+                      translate ""@103
+                        text "\n        Per kilo "
+                        i18n-name "amount"@138
+                          scope attrs=#4
+                            element "<em"
+                              close ">"
+                              interpolation v0 Text "${12.5}"@146
+                            end "</em>"
+                        text "\n      "
+                    end "</span>"
+                text "\n    "
+            end "</div>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

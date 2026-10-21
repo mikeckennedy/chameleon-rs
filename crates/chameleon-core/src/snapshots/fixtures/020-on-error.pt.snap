@@ -1,0 +1,83 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          on-error
+            fallback
+              element "<div"
+                attr " id=\"test\""
+                close ">"
+                content v1 "nothing"@90
+              end "</div>"
+            body
+              scope attrs=#2
+                element "<div"
+                  attr " id=\"test\""
+                  attr "class" " class=\"".."\"" default=None subst Double v0 "python: 'abc' + 2"@57
+                  close " />"
+                  empty
+          text "\n    "
+          on-error
+            fallback
+              element "<div"
+                close ">"
+                content v2 "string:${type(error.value).__name__} thrown at ${error.lineno}:${error.offset}."@125
+              end "</div>"
+            body
+              scope attrs=#3
+                element "<div"
+                  close ">"
+                  text "\n      "
+                  scope attrs=#4
+                    element "<div"
+                      close ">"
+                      content v3 "undefined"@231
+                        default
+                          empty
+                    end "</div>"
+                  text "\n    "
+                end "</div>"
+          text "\n    "
+          on-error
+            fallback
+              element "<div"
+                close ">"
+                content v5 "nothing"@303
+              end "</div>"
+            body
+              scope attrs=#5
+                content v4 "undefined"@278
+                  default
+                    element "<div"
+                      close " />"
+                      empty
+          text "\n    "
+          on-error
+            fallback
+              element "<div"
+                close ">"
+                content v7 "nothing"@362
+              end "</div>"
+            body
+              scope attrs=#6
+                element "<div"
+                  close ">"
+                  content v6 "undefined"@337
+                    default
+                      empty
+                end "</div>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
+attrs #2 [("id", "test"), ("class", "python: 'abc' + 2")]

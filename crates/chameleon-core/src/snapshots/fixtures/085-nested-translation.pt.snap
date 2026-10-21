@@ -1,0 +1,54 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  define attrs=#0
+    local "request"@18 = v0 "dict(site_url='http://host')"@26
+    domain "new"@69
+      element "<html"
+        close ">"
+        text "\n  "
+        scope attrs=#1
+          element "<head"
+            close ">"
+            text "\n    "
+            scope attrs=#2
+              element "<title"
+                close ">"
+                text "Welcome"
+              end "</title>"
+            text "\n  "
+          end "</head>"
+        text "\n  "
+        scope attrs=#3
+          element "<body"
+            close ">"
+            text "\n    "
+            scope attrs=#4
+              element "<h1"
+                close ">"
+                text "Welcome"
+              end "</h1>"
+            text "\n    "
+            scope attrs=#5
+              element "<p"
+                close ">"
+                translate ""@174
+                  text "\n      "
+                  i18n-name "click_here"@197
+                    scope attrs=#6
+                      element "<a"
+                        attr "href" " href=\"".."\"" default=None interp v1 Attr(Double) "${request.site_url}"@233
+                        close ">"
+                        translate ""@225
+                          text "Click here"
+                      end "</a>"
+                  text " to continue.\n    "
+              end "</p>"
+            text "\n  "
+          end "</body>"
+        text "\n"
+      end "</html>"
+  text "\n"
+attrs #6 [("href", "${request.site_url}")]

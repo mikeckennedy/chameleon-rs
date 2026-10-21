@@ -12,6 +12,9 @@
 //! escaping) and is appended (text) or `%s`-formatted (attributes); in `a ${x} b` every part
 //! is `%s`-formatted into one string. The second stage only matters when the first one did
 //! not produce a `str` (an `__html__` or `translate` returning `5`, `b'x'`, a list, ...).
+//!
+//! Interpolation without escaping (CDATA, text mode) has the same stages with
+//! `Escape::Structure`; `tal:content` appends the first stage's result directly.
 
 use std::fmt::Write as _;
 
@@ -20,7 +23,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyFloat, PyInt, PyString};
 
-use chameleon_core::{Emitted, Escape, Output, escape_into};
+use chameleon_core::{Emitted, Escape, Output, Stage, escape_into};
 
 use crate::expr::Cx;
 
@@ -34,26 +37,24 @@ enum Quoted<'py> {
     Other(Bound<'py, PyAny>),
 }
 
-/// Converts and writes `value` for `esc`. `lone` says the expression is a whole
-/// interpolation (`attr="${x}"`, or a text node that is just `${x}`), which selects
-/// Chameleon's second-stage conversion; it is ignored for `tal:content`.
+/// Converts and writes `value` for `esc` at `stage` (see [`Stage`]).
 pub(crate) fn emit<'py>(
     cx: &Cx<'_, 'py>,
     value: &Bound<'py, PyAny>,
     esc: Escape,
-    lone: bool,
+    stage: Stage,
     out: &mut Output,
 ) -> PyResult<Emitted> {
-    let other = match quote(cx, value, esc, out)? {
+    let other = match quote(cx, value, esc, true, out)? {
         Quoted::Nothing => return Ok(Emitted::Nothing),
         Quoted::Written => return Ok(Emitted::Value),
         Quoted::Other(other) => other,
     };
-    match esc {
+    match stage {
         // `if NAME is not None: __append(NAME)`: the stream must hold strings.
-        Escape::Content | Escape::Structure => append(&other, out),
+        Stage::Content => append(&other, out),
         // Lone: `emit_convert`, then appended (text) or `"%s" % value` (attribute).
-        _ if lone => match convert(cx, &other, esc.drops_default())? {
+        Stage::Lone => match convert(cx, &other, esc.drops_default())? {
             None => Ok(Emitted::Nothing),
             Some(converted) if matches!(esc, Escape::Attr(_)) => {
                 write_raw(&converted.str()?, out)?;
@@ -62,10 +63,25 @@ pub(crate) fn emit<'py>(
             Some(converted) => append(&converted, out),
         },
         // A part: `"%s%s" % (..., NODE, ...)`.
-        _ => {
+        Stage::Part => {
             write_raw(&other.str()?, out)?;
             Ok(Emitted::Value)
         }
+    }
+}
+
+/// `__quote(value, quote, entity, None, None)` with the result appended (a `tal:attributes`
+/// dictionary value): the template's default marker is not special here.
+pub(crate) fn emit_plain<'py>(
+    cx: &Cx<'_, 'py>,
+    value: &Bound<'py, PyAny>,
+    esc: Escape,
+    out: &mut Output,
+) -> PyResult<Emitted> {
+    match quote(cx, value, esc, false, out)? {
+        Quoted::Nothing => Ok(Emitted::Nothing),
+        Quoted::Written => Ok(Emitted::Value),
+        Quoted::Other(other) => append(&other, out),
     }
 }
 
@@ -75,9 +91,17 @@ pub(crate) fn emit<'py>(
 /// `bytes` are decoded with `__decode`; anything else uses `__html__()` as is if it has one,
 /// else `translate`'s result (`str()` if it returned the value itself). A resulting `str` is
 /// escaped.
-fn quote<'py>(cx: &Cx<'_, 'py>, value: &Bound<'py, PyAny>, esc: Escape, out: &mut Output) -> PyResult<Quoted<'py>> {
+/// `marker_is_default`: the call passes the template's default marker (it does everywhere
+/// except for dictionary attributes).
+fn quote<'py>(
+    cx: &Cx<'_, 'py>,
+    value: &Bound<'py, PyAny>,
+    esc: Escape,
+    marker_is_default: bool,
+    out: &mut Output,
+) -> PyResult<Quoted<'py>> {
     let py = value.py();
-    if value.is_none() || (esc.drops_default() && value.is(&cx.render.marker)) {
+    if value.is_none() || (marker_is_default && esc.drops_default() && value.is(&cx.render.marker)) {
         return Ok(Quoted::Nothing);
     }
     if let Ok(s) = value.cast_exact::<PyString>() {

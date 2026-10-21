@@ -1,0 +1,32 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<h1"
+              close ">"
+              text "Hello world!"
+            end "</h1>"
+          text "\n    "
+          scope attrs=#3
+            element "<a"
+              attr " href=\"http://www.python.org\""
+              attr "\n       title=\"Python\""
+              close ">"
+              text "\n      Python is a programming language.\n    "
+            end "</a>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
+attrs #3 [("href", "http://www.python.org"), ("title", "Python")]

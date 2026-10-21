@@ -1,0 +1,22 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<div"
+      attr " xmlns=\"http://www.w3.org/1999/xhtml\""
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<a"
+          attr " rel=\"self\""
+          attr "href" " href=\"".."\"" default=Some("http://repoze.org") subst Double v0 "'http://python.org'"@175
+          attr " id=\"link-id\""
+          close " />"
+          empty
+      text "\n"
+    end "</div>"
+  text "\n"
+attrs #0 [("xmlns", "http://www.w3.org/1999/xhtml")]
+attrs #1 [("rel", "self"), ("href", "http://repoze.org"), ("id", "link-id")]

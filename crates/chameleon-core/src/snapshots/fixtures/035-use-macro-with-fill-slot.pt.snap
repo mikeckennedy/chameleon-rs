@@ -1,0 +1,15 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    use-macro slots=#0 macroname="load('032-master-template.pt').macros['main']" v0 "load('032-master-template.pt').macros['main']"@23
+slots #0
+  fill-slot "title"@97
+    define attrs=#1
+      local "kind"@116 = v1 "'New'"@121
+      element "<title"
+        close ">"
+        interpolation v2 Text "\n    ${kind} title\n  "@128
+      end "</title>"

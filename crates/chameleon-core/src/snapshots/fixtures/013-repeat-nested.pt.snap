@@ -1,0 +1,37 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<table"
+              close ">"
+              text "\n      "
+              scope attrs=#3
+                repeat "i"@50 in v0 "(1,2)"@52 ws="\n      "
+                  element "<tr"
+                    close ">"
+                    text "\n        "
+                    scope attrs=#4
+                      repeat "j"@84 in v1 "(1,2)"@86 ws="\n        "
+                        element "<td"
+                          close ">"
+                          interpolation v2 Text "\n          [${i},${j}]\n        "@93
+                        end "</td>"
+                    text "\n      "
+                  end "</tr>"
+              text "\n    "
+            end "</table>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

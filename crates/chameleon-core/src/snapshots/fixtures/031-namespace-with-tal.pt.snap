@@ -1,0 +1,36 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<div"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        content v0 "'Hello World!'"@30
+          default
+            empty
+      text "\n  "
+      scope attrs=#2
+        content v1 "'Hello World!'"@77
+          default
+            empty
+      text "\n  "
+      scope attrs=#3
+        content v2 "'Hello World!'"@116
+          default
+            empty
+      text "\n  "
+      scope attrs=#4
+        repeat "i"@159 in v4 "range(3)"@161 ws=""
+          content v3 "i"@180
+            default
+              empty
+      text "\n  "
+      scope attrs=#5
+        condition v5 "True"@208
+          text "True"
+      text "\n"
+    end "</div>"
+  text "\n"

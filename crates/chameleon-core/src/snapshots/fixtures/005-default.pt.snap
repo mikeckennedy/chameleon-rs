@@ -1,0 +1,78 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<img"
+              attr "class" " class=\"".."\"" default=Some("default") subst Double v0 "default"@63
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#3
+            element "<img"
+              attr "class" " class=\"".."\"" default=None subst Double v1 "default"@106
+              close " />"
+              empty
+          text "\n    "
+          define attrs=#4
+            local "foo"@140 = v3 "string:"@144
+            element "<span"
+              close ">"
+              content v2 "foo or default"@166
+                default
+                  text "Default"
+            end "</span>"
+          text "\n    "
+          scope attrs=#5
+            element "<span"
+              close ">"
+              content v4 "unknownvar|default"@220
+                default
+                  text "Default"
+            end "</span>"
+          text "\n    "
+          scope attrs=#6
+            element "<span"
+              close ">"
+              content v5 "True"@278
+                default
+                  text "Default"
+            end "</span>"
+          text "\n    "
+          scope attrs=#7
+            element "<span"
+              close ">"
+              content v6 "False"@322
+                default
+                  text "Default"
+            end "</span>"
+          text "\n    "
+          scope attrs=#8
+            element "<span"
+              close ">"
+              content v7 "default"@367
+                default
+                  text "\n      "
+                  scope attrs=#9
+                    element "<em"
+                      close ">"
+                      interpolation v8 Text "${'Computed default'}"@387
+                    end "</em>"
+                  text "\n    "
+            end "</span>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
+attrs #2 [("class", "default")]
+attrs #3 [("class", "default")]

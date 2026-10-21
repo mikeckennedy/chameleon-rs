@@ -1,0 +1,35 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            repeat "text"@37 in v0 "('Hello', 'Goodbye')"@42 ws="\n    "
+              element "<div"
+                close ">"
+                text "\n      "
+                scope attrs=#3
+                  repeat "char"@89 in v1 "('!', '.')"@94 ws="\n      "
+                    element "<span"
+                      close ">"
+                      interpolation v2 Text "${text}${char}"@106
+                    end "</span>"
+                text "\n    "
+              end "</div>"
+          text "\n    "
+          scope attrs=#4
+            condition v3 "not: exists: text"@165
+              text "ok"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

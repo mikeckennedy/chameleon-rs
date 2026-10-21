@@ -1,0 +1,9 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    use-macro slots=#0 macroname="hello_world.pt" v0 "load: chameleon:tests/inputs/hello_world.pt"@23
+  text "\n"
+slots #0

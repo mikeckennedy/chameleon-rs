@@ -1,0 +1,12 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    use-macro slots=#0 macroname="load('075-nested-macros.pt').macros['master']" v0 "load('075-nested-macros.pt').macros['master']"@23
+  text "\n"
+slots #0
+  fill-slot "content"@97
+    scope attrs=#1
+      text "bar"

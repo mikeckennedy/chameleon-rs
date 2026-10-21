@@ -1,0 +1,53 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<div"
+              close ">"
+              content translate v0 "string:Hello world!"@56
+                default
+                  text "\n      Hello world!\n    "
+            end "</div>"
+          text "\n    "
+          scope attrs=#3
+            element "<img"
+              attr "alt" " alt=\"".."\"" default=None translate None (interp v1 Attr(Double) "${'Hello world!'}"@122)
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#4
+            element "<img"
+              attr "alt" " alt=\"".."\"" default=None translate Some("hello_world") (interp v2 Attr(Double) "${'Hello world!'}"@180)
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#5
+            element "<img"
+              attr "alt" " alt=\"".."\"" default=None translate None (subst Double v3 "'Hello world!'"@265)
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#6
+            element "<img"
+              attr "alt" " alt=\"".."\"" default=None translate Some("hello_world") (subst Double v4 "'Hello world!'"@335)
+              close " />"
+              empty
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
+attrs #3 [("alt", "${'Hello world!'}")]
+attrs #4 [("alt", "${'Hello world!'}")]
+attrs #5 [("alt", "'Hello world!'")]
+attrs #6 [("alt", "'Hello world!'")]

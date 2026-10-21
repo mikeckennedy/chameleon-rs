@@ -1,0 +1,69 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+macro "main"@47
+  define attrs=#0
+    local "content"@65 = v0 "nothing"@73
+    domain "master"@19
+      element "<html"
+        close ">"
+        text "\n  "
+        scope attrs=#1
+          element "<head"
+            close ">"
+            text "\n    "
+            use-internal-macro "title"@160
+            text "\n  "
+          end "</head>"
+        text "\n  "
+        scope attrs=#3
+          element "<body"
+            close ">"
+            text "\n    "
+            scope attrs=#4
+              element "<div"
+                attr " id=\"content\""
+                close ">"
+                text "\n      "
+                define-slot "content"@372
+                  scope attrs=#5
+                    text "\n        "
+                    text "<!-- content here -->"
+                    text "\n      "
+                text "\n    "
+              end "</div>"
+            text "\n    "
+            scope attrs=#6
+              element "<div"
+                attr " id=\"footer\""
+                close ">"
+                text "\n      "
+                define-slot "body-footer"@501
+                  scope attrs=#7
+                    content v3 "nothing"@527
+                      default
+                        text "\n        "
+                        text "<!-- footer here -->"
+                        text "\n      "
+                text "\n    "
+              end "</div>"
+            text "\n  "
+          end "</body>"
+        text "\n"
+      end "</html>"
+macro "title"@160
+  define-slot "title"@122
+    define attrs=#2
+      local "has_title"@190 = v2 "exists: title"@200
+      element "<title"
+        close ">"
+        content v1 "title if has_title else default"@239
+          default
+            text "Master template"
+      end "</title>"
+body
+  use-internal-macro "main"@47
+  text "\n"
+attrs #4 [("id", "content")]
+attrs #6 [("id", "footer")]

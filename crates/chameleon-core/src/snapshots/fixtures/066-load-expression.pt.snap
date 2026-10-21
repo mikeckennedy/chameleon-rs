@@ -1,0 +1,10 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  define attrs=#0
+    local "hello_world"@18 = v1 "load: hello_world.pt"@30
+    use-macro slots=#0 macroname="hello_world" v0 "hello_world"@69
+  text "\n"
+slots #0

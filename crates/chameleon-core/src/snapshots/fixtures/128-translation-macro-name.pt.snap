@@ -1,0 +1,24 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+macro "fancy-link"@23
+  scope attrs=#0
+    element "<a"
+      attr " href=\"#\""
+      close ">"
+      text "Fancy link"
+    end "</a>"
+body
+  use-internal-macro "fancy-link"@23
+  text "\n\n"
+  scope attrs=#1
+    translate "text_with_link"@91
+      text "\n  Now follows a fancy link: "
+      i18n-name "obj_link"@165
+        scope attrs=#2
+          use-macro slots=#0 macroname="macros['fancy-link']" v0 "macros['fancy-link']"@186
+      text "\n"
+  text "\n"
+attrs #0 [("href", "#")]
+slots #0

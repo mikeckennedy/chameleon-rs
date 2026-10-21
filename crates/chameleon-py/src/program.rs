@@ -3,12 +3,13 @@
 use std::cell::OnceCell;
 use std::sync::Arc;
 
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyBytes, PyDict, PyString};
 use pyo3::{PyTraverseError, PyVisit, intern};
 
-use chameleon_core::{Done, Output, VmState, run};
+use chameleon_core::{Done, Mode, Options, Output, VmState, run};
 
 use crate::compiler::PyExprCompiler;
 use crate::errors::{catch_panics, compile_error, internal_error, vm_error};
@@ -24,7 +25,9 @@ pub(crate) struct DefaultMarker;
 impl DefaultMarker {
     #[allow(clippy::unused_self)] // Python's protocol method takes self
     fn __repr__(&self) -> &'static str {
-        "<default>"
+        // Chameleon's `DEFAULT_MARKER` (an `ImportableMarker` named `DEFAULT`): its `str()` is
+        // what a template writes when the marker is converted as an ordinary object.
+        "<DEFAULT>"
     }
 }
 
@@ -57,13 +60,16 @@ pub(crate) struct Program {
 
 #[pymethods]
 impl Program {
+    /// Compiles `source`. The keywords are Chameleon's template-level settings that change
+    /// the program (see [`options`]).
     #[new]
-    #[pyo3(signature = (source, filename = "<string>"))]
-    fn new(py: Python<'_>, source: &str, filename: &str) -> PyResult<Self> {
+    #[pyo3(signature = (source, filename = "<string>", **options))]
+    fn new(py: Python<'_>, source: &str, filename: &str, options: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        let options = self::options(options)?;
         catch_panics(py, || {
             let mut compiler = PyExprCompiler::new(py, marker(py)?)?;
-            let core =
-                chameleon_core::compile(source, &mut compiler).map_err(|e| compile_error(py, e, source, filename))?;
+            let core = chameleon_core::compile(source, &mut compiler, &options)
+                .map_err(|e| compile_error(py, e, source, filename))?;
             let names = core.names().iter().map(|n| PyString::intern(py, n).unbind()).collect();
             let has_loops = core.ops().iter().any(|op| matches!(op, chameleon_core::Op::LoopStart { .. }));
             Ok(Self {
@@ -120,6 +126,49 @@ impl Program {
         }
         Ok(())
     }
+}
+
+/// `Options` from keyword arguments: `mode` (`"xml"` or `"text"`), `escape` (default: true in
+/// XML mode), `boolean_attributes`, `implicit_i18n_translate`, `implicit_i18n_attributes`,
+/// `trim_attribute_space`, `enable_data_attributes`, `enable_comment_interpolation`,
+/// `restricted_namespace`, `strict`. `None` values mean the default, like Chameleon's
+/// `_pop_defaults`.
+pub(crate) fn options(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Options> {
+    let mut o = Options::default();
+    let mut escape = None;
+    let Some(kwargs) = kwargs else { return Ok(o) };
+    for (key, value) in kwargs.iter() {
+        if value.is_none() {
+            continue;
+        }
+        let key: String = key.extract()?;
+        match key.as_str() {
+            "mode" => {
+                o.mode = match value.extract::<String>()?.as_str() {
+                    "xml" => Mode::Xml,
+                    "text" => Mode::Text,
+                    other => return Err(PyValueError::new_err(format!("unknown mode {other:?}"))),
+                }
+            }
+            "escape" => escape = Some(value.is_truthy()?),
+            "boolean_attributes" => o.boolean_attributes = strings(&value)?,
+            "implicit_i18n_translate" => o.implicit_i18n_translate = value.is_truthy()?,
+            "implicit_i18n_attributes" => o.implicit_i18n_attributes = strings(&value)?,
+            "trim_attribute_space" => o.trim_attribute_space = value.is_truthy()?,
+            "enable_data_attributes" => o.enable_data_attributes = value.is_truthy()?,
+            "enable_comment_interpolation" => o.enable_comment_interpolation = value.is_truthy()?,
+            "restricted_namespace" => o.restricted_namespace = value.is_truthy()?,
+            "strict" => o.strict = value.is_truthy()?,
+            other => return Err(PyTypeError::new_err(format!("unexpected template option {other:?}"))),
+        }
+    }
+    o.escape = escape.unwrap_or(o.mode == Mode::Xml);
+    Ok(o)
+}
+
+/// The strings of any iterable (a set's order does not matter: only membership is used).
+fn strings(value: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
+    value.try_iter()?.map(|v| v?.extract::<String>()).collect()
 }
 
 /// Builds the final `str` once: a plain UTF-8 decode, or `surrogatepass` if some value had

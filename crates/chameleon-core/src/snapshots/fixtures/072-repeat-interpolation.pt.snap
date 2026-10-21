@@ -1,0 +1,47 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<ul"
+              close ">"
+              text "\n      "
+              scope attrs=#3
+                repeat "i"@47 in v1 "range(1, 4)"@49 ws="\n      "
+                  element "<li"
+                    attr "class" " class=\"".."\"" default=None interp v0 Attr(Double) "${'odd' if i % 2 != 0 else default}"@69
+                    close ">"
+                    interpolation v2 Text "${i}"@106
+                  end "</li>"
+              text "\n    "
+            end "</ul>"
+          text "\n    "
+          scope attrs=#4
+            element "<ul"
+              close ">"
+              text "\n      "
+              scope attrs=#5
+                repeat "i"@157 in v4 "range(1, 4)"@159 ws="\n      "
+                  element "<li"
+                    attr "class" " class=\"".."\"" default=None interp v3 Attr(Double) "${'odd' if i % 2 != 0 else None}"@179
+                    close ">"
+                    interpolation v5 Text "${i}"@213
+                  end "</li>"
+              text "\n    "
+            end "</ul>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
+attrs #3 [("class", "${'odd' if i % 2 != 0 else default}")]
+attrs #5 [("class", "${'odd' if i % 2 != 0 else None}")]

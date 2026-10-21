@@ -1,0 +1,17 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n    "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          interpolation v0 Text translate "Foo ${message}"@17
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

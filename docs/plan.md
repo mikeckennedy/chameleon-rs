@@ -50,6 +50,18 @@ against both engines. Python 3.15, M-series Mac:
 
 Rust micro-benchmarks (criterion) cover the tokenizer, escaping and the VM loop.
 
+**Per-phase regression check (changed 2026-10-20, after Phase 4).** Phases 2 to 4 checked the
+listing against a fixed figure ("within 10% of the spike", 506 ns). On a shared machine the
+listing's run-to-run spread is about ±15 ns, and session-to-session drift was larger (Phase 3's
+build measured 489 to 525 ns on the same day), so that check measured noise. From Phase 4 on,
+each phase instead shows **no regression against the previous phase's build in a same-process
+A/B** (`bench/bench_ab.py <previous phase commit>`: both builds loaded side by side, measured
+interleaved after a Chameleon render; the median difference must be at most +5 ns per item),
+and reports the ratio to Chameleon from the same run. This is a change of measurement method
+made because of measured noise, not a looser target: the targets in the table above (inline
+listing 0.6 µs or less, `render_partial` listing 0.8 µs or less, beating hand-written Python)
+are unchanged, and `bench_skeleton.py` keeps reporting the absolute figures.
+
 ---
 
 ## Phase 0: Project setup (done)
@@ -197,8 +209,10 @@ and `cargo-fuzz` for panics.
 
 Real-template corpus: Talk Python to Me (106 templates) and Talk Python Training (123),
 229 in all, read in place and never copied into this repository (private code). Tests take
-the directories from `CHAMELEON_RS_CORPUS` (paths separated by `:`), default to the two
-local checkouts, and skip when none exist, so CI stays green without them.
+the directories from `CHAMELEON_RS_CORPUS` (paths separated by `:`) and skip when it is
+unset, so CI stays green without them. No path is hard-coded in the repository (amended
+2026-10-20 after the Phase 4 review): each developer sets the variable in their own shell or
+in an `.envrc`, which `.gitignore` excludes.
 
 Exit gate: all fixtures, the Talk Python corpus and 100,000 generated inputs tokenize and parse
 identically.
@@ -302,6 +316,116 @@ built and tested here.
 
 Tests: `insta` snapshots of the node tree for every fixture; every compile-time error case from
 the upstream tests (same exception type and offset).
+
+**Done (2026-10-20).** The builder is a port of `zpt/program.py`, `tal.py`, `i18n.py` and
+`metal.py` into the typed tree of `nodes.rs`, followed by a resolve pass that compiles the
+expressions in `compiler.py`'s order and a lowering pass to bytecode (three passes, so errors
+come in Chameleon's order). Positions follow Chameleon's `Token` arithmetic (`Tok`), including
+its quirks. Template options are a typed `Options` struct; `PageTemplate` now sniffs the content
+type (HTML boolean attributes, newline normalization), accepts `bytes` and keyword options, and
+`PageTextTemplate` exists. Decisions, interface changes and the Chameleon quirks reproduced:
+architecture.md, "Phase 4 amendments".
+
+Profiling first (the carried-forward item). Rebuilding the spike from git in a scratch
+directory gave a same-session comparison, and macOS `sample` profiled the `profiling` build
+without sudo. Escaping was the largest absolute cost (17% of samples, two `memmove` calls per
+escaped character); constant-length entity copies into a once-reserved buffer fixed that. The
+rest of the gap to the spike is our dispatch plumbing, spread over the eight expressions
+(`Runtime::eval` indirection, the resume check, the `Attr` instruction's mark and split pushes)
+and the loop (Python's iterator and the countdown instead of the spike's Rust queue); CPython's
+share is identical in both profiles, and static text is cheaper than the spike's. Measured in
+one process with the Phase 3 build loaded side by side (session-to-session drift was larger
+than the effects): Phase 3 510-531 ns, Phase 3 plus the escaping fix 490-501 ns (median -27 ns),
+Phase 4 497-510 ns (median -18.5 ns against Phase 3). The larger instruction set costs about 10
+ns (2%): LLVM stopped inlining `execute` into `run` and `value_of` into the instruction arms,
+which `#[inline(always)]` partly recovers (the gap to the escape-only build went from ~20 to
+~10 ns); inlining `run` itself gained nothing. `Op` stays 24 bytes (a test checks it; the first
+draft was 32). Rendering also got 10-20 ns slower whenever Chameleon had compiled or rendered in
+the same process first (process state, most likely the allocator and the 400 KB buffers);
+`bench_skeleton.py` always does that, so it remains the yardstick.
+
+| Scenario, per item (`bench_skeleton.py`, release, n=500, 3 runs, after the review fixes) | Chameleon | chameleon_rs | Target |
+|---|---|---|---|
+| Listing (`listing_loop.pt`) | 2,993-3,005 ns | **492-497 ns** (medians 494-499; 6.0-6.1x) | ≤ 600 ns |
+| Partial listing (prototype native frames) | 7,073-7,081 ns | **636-640 ns** (medians 643-646; 11.1x) | ≤ 800 ns |
+
+Regression check (the method described under "How speed is measured"): `bench/bench_ab.py
+1d2ead4`, 8 interleaved rounds after the review fixes: Phase 3 501-506 ns, Phase 4 497-501 ns,
+median difference **-5.3 ns** (range -7..-4; tolerance +5 ns), 6.03x Chameleon in the same run.
+The machine ran 4-7% slower than on the day the Phase 2/3 tables were measured (Chameleon
+about 3,000 ns against 2,845-2,900 ns, load average 3-13 from other work).
+
+Results:
+
+Review fixes (2026-10-20, after the Rust Architect's review, each verified against Chameleon
+first): the default marker in a `tal:attributes` dictionary is converted like any object
+(Chameleon's `__quote` there passes no marker: it writes `&lt;DEFAULT&gt;`, and our marker's
+`str()` is now Chameleon's `<DEFAULT>`); `attrs` is one dict per element, shared by its
+expressions and across renders (`attrs.setdefault(...)` counts 1 then 2; `x is attrs` holds),
+as Chameleon's compile-time `Static` is; dictionary attributes test `name in set(...)` with real
+sets; bool fields became enums (`Visibility`, `ContentKind`, `Translation`); `Runtime`'s
+methods are grouped in documented sections; tests no longer default to private corpus paths
+(set `CHAMELEON_RS_CORPUS` in your shell or an ignored `.envrc`); the per-phase benchmark check
+became a same-process A/B (`bench/bench_ab.py`).
+
+- **Builder exactness:** an inventory of every expression and assigned name (text and Chameleon
+  position) is compared as a multiset with the `Value` objects in Chameleon's own `MacroProgram`
+  tree: all 107 upstream fixtures, 19 edge cases, all 229 Talk Python templates, and **60,000
+  Hypothesis-generated templates** dense in TAL/METAL/i18n attributes (tricky clause values,
+  nesting, data attributes): zero differences, and identical builder errors (type, message,
+  token, offset, location). The generator found three real divergences on the way, all fixed:
+  a nested `define-macro` re-registering a name wins (Chameleon registers before visiting the
+  children), `i18n:target` with `i18n:name` takes the name's value (a late-binding lambda), and
+  an `extend-macro` slot list that is never popped.
+- **Compile-time errors:** 53 differential cases, one per error site in program.py, tal.py,
+  i18n.py and compiler.py plus all of the upstream suite's (`test_errors`, double underscore,
+  compiler internals, strict syntax error, tag mismatch), including error *order* (builder
+  errors before expression errors, macros first, fallback before element, slots before macro).
+- **Rendering:** `tal:define`, `tal:replace`, `tal:omit-tag`, every `tal:attributes` form
+  except i18n (substitutions, booleans, dictionaries, filtering), HTML boolean attributes,
+  `tal:switch`/`tal:case`, interpolation in CDATA, comments and processing instructions,
+  `meta:interpolation`, `data-tal-*`, `trim_attribute_space` and text mode now render: 89
+  differential cases and **30,000 generated templates** rendered by both engines (same output or
+  same exception type). The render fuzz found one real bug (a filter consulted before the
+  `None` check), fixed. Everything else builds a tree and stops with `UnsupportedError`.
+- **Snapshots:** `insta` snapshots of the tree for the 106 UTF-8 fixtures
+  (`crates/chameleon-core/src/snapshots/fixtures`; `074-encoded-template.pt` is windows-1251
+  and is covered by the pytest inventory instead).
+- **Corpus (229 Talk Python templates):** every tree matches Chameleon's; 65 compile fully (57
+  in Phase 3), 164 stop with `UnsupportedError`: `load:` 120, `structure:` 35, `string:` 7
+  (Phase 5) and `metal:define-macro` 2. Expression types are compiled before lowering, so they
+  are reported first; 152 templates also use `metal:use-macro` (Phase 6b).
+- **Tests:** 79 Rust (75 core, 4 `chameleon-py`), 958 pytest passed, 1 strict xfail (the
+  boolean-attribute gap below), 6 skipped (3 deferred probes, and the 3 corpus tests when
+  `CHAMELEON_RS_CORPUS` is unset; with it set they pass), the upstream suite on the reference
+  engine 227 passed, 6 xfailed; `make lint` clean.
+
+Carried forward:
+
+- **Phase 5:** non-strict mode (`strict=False`, which the upstream fixture harness uses) defers
+  a syntax error to render time; the resolve pass records it (`Resolved::Deferred`) and lowering
+  stops with `UnsupportedError` until the VM can raise it at the expression. `<?python ?>` code
+  blocks need `ExprCompiler::compile_code`. Error tokens for expressions behind a TALES prefix
+  are tracked already; Phase 5 keeps that through the other expression types.
+- **Phase 6a:** `tal:on-error` (and its fallback's quirk: static attributes before a dictionary
+  keep filters that refer to uncached values, a `TypeError` at render time in Chameleon), global
+  `tal:repeat` (Chameleon restores names it never backed up: a `NameError` once the loop ends).
+- **Phase 6b:** macros, slots, i18n (`Translate`, `Name`, `Domain`, `TxContext`, `Target` with
+  its `default` alias, attribute and implicit translation), `econtext.update(rcontext)` after
+  macro calls (global defines already go to `rcontext`).
+- **Known approximation (revisit in Phase 6a):** a boolean attribute's interpolated result is
+  tested for truth by whether it wrote anything; this differs from Chameleon only when an
+  `__html__` returns an object whose own `__html__` returns a false non-`str` (Chameleon then
+  drops the attribute, we write its name). A strict-xfail differential test pins the gap
+  (`test_boolean_attribute_with_non_str_html`).
+- **Phase 6a, `tal:on-error` unwinding:** on an error the handler must **drop, not restore**
+  the `Define` and `Loop` entries above its depth (Chameleon's generated code has no
+  `try/finally`, so a failed body's defines and loop variables leak), while still truncating
+  `Attr` / `Omit` / `Value` / `Switch` entries and the output. Write this test first:
+  `<div tal:on-error="x"><p tal:define="x 2"><b tal:repeat="i [7]">${i}${1/0}</b></p></div>|${x}|${i}`
+  renders `<div>2</div>|2|7`.
+- **D9 analyses** (free-variable sets for concurrent expressions, last-use for the memory
+  saver in vision.md) belong in the resolve table's entries, per `ValueId`, not in the tree.
 
 ## Phase 5: Expressions
 

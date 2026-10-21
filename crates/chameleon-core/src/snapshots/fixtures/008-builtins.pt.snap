@@ -1,0 +1,60 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          interpolation v0 Text "\n    ${attrs}\n    ${nothing}\n    "@15
+          scope attrs=#2
+            element "<div"
+              attr "class" " class=\"".."\"" default=Some("static") subst Double v1 "string:dynamic"@75
+              close ">"
+              interpolation v2 Text "\n      ${attrs['class']}\n    "@106
+            end "</div>"
+          text "\n    "
+          scope attrs=#3
+            element "<div"
+              attr " class=\"static\""
+              close ">"
+              content v3 "attrs['class']"@179
+                default
+                  empty
+            end "</div>"
+          text "\n    "
+          scope attrs=#4
+            content v4 "attrs['class']"@235
+              default
+                element "<div"
+                  attr " class=\"static\""
+                  close " />"
+                  empty
+          text "\n    "
+          define attrs=#5
+            local "x"@290 = v5 "attrs"@292
+            element "<div"
+              attr " class=\"static\""
+              close ">"
+              interpolation v6 Text "${x['class']}"@299
+            end "</div>"
+          text "\n    "
+          define attrs=#6
+            local "nothing"@340 = v7 "string:nothing"@348
+            element "<div"
+              close ">"
+              interpolation v8 Text "\n      ${nothing}\n    "@364
+            end "</div>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
+attrs #2 [("class", "static")]
+attrs #3 [("class", "static")]
+attrs #4 [("class", "static")]
+attrs #5 [("class", "static")]

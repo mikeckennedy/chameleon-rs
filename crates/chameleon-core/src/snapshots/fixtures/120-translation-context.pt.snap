@@ -1,0 +1,47 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<div"
+              close ">"
+              translate ""@41
+                text "\n      Hello world!\n    "
+            end "</div>"
+          text "\n    "
+          scope attrs=#3
+            i18n-context "button"@100
+              element "<button"
+                close ">"
+                translate ""@124
+                  text "\n      Hello world!\n    "
+              end "</button>"
+          text "\n    "
+          scope attrs=#4
+            domain "new"@182
+              i18n-context "navigation"@201
+                element "<div"
+                  close ">"
+                  text "\n       "
+                  scope attrs=#5
+                    element "<a"
+                      close ">"
+                      translate ""@240
+                        text "Tab"
+                    end "</a>"
+                  text "\n    "
+                end "</div>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

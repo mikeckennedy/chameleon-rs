@@ -1,0 +1,18 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      define attrs=#1
+        local "a"@28, "b"@30 = v0 "'a', 'b'"@34
+        element "<body"
+          close ">"
+          interpolation v1 Text "\n    ${a}, ${b}\n  "@44
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

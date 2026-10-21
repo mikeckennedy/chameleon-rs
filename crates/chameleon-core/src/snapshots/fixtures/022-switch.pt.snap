@@ -1,0 +1,108 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            switch v0 "True"@37
+              element "<div"
+                close ">"
+                text "\n      "
+                scope attrs=#3
+                  case of v0 v1 "False"@66
+                    element "<span"
+                      close ">"
+                      text "bad"
+                    end "</span>"
+                text "\n      "
+                scope attrs=#4
+                  case of v0 v2 "True"@106
+                    element "<span"
+                      close ">"
+                      text "ok"
+                    end "</span>"
+                text "\n      "
+                scope attrs=#5
+                  case of v0 v3 "True"@144
+                    element "<span"
+                      close ">"
+                      text "ok"
+                    end "</span>"
+                text "\n      "
+                scope attrs=#6
+                  case of v0 v4 "default"@182
+                    element "<span"
+                      close ">"
+                      text "bad"
+                    end "</span>"
+                text "\n      "
+                scope attrs=#7
+                  case of v0 v5 "True"@224
+                    element "<span"
+                      close ">"
+                      text "bad"
+                    end "</span>"
+                interpolation v6 Text "\n      ${default|string:ok}\n    "@240
+              end "</div>"
+          text "\n    "
+          scope attrs=#8
+            switch v7 "True"@300
+              element "<div"
+                close ">"
+                text "\n      "
+                scope attrs=#9
+                  case of v7 v8 "False"@329
+                    element "<span"
+                      close ">"
+                      text "bad"
+                    end "</span>"
+                text "\n      "
+                scope attrs=#10
+                  case of v7 v9 "default"@369
+                    element "<span"
+                      close ">"
+                      text "ok"
+                    end "</span>"
+                text "\n    "
+              end "</div>"
+          text "\n    "
+          scope attrs=#11
+            switch v10 "3"@420
+              element "<div"
+                close ">"
+                text "\n      "
+                scope attrs=#12
+                  case of v10 v11 "1"@446
+                    element "<span"
+                      close ">"
+                      text "bad"
+                    end "</span>"
+                text "\n      "
+                scope attrs=#13
+                  case of v10 v12 "2"@482
+                    element "<span"
+                      close ">"
+                      text "bad"
+                    end "</span>"
+                text "\n      "
+                scope attrs=#14
+                  case of v10 v13 "default"@518
+                    element "<span"
+                      close ">"
+                      text "ok"
+                    end "</span>"
+                text "\n    "
+              end "</div>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

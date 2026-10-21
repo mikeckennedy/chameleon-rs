@@ -1,0 +1,11 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<div"
+      close ">"
+      interpolation v0 Text "Hello, ${name | 'undefined'}."@5
+    end "</div>"
+  text "\n"

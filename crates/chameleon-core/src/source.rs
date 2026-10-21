@@ -141,6 +141,23 @@ impl<'a> Source<'a> {
     }
 }
 
+impl Source<'_> {
+    /// `Token.location` for a code-point offset, which may lie past the end of the source
+    /// (Chameleon's `Token.split` arithmetic can produce one): the line and column of
+    /// `source[:pos]`, with the column counted from the last newline before `pos`.
+    #[must_use]
+    pub fn location_of_offset(&self, pos: usize) -> (usize, usize) {
+        let (byte, extra) = if let Some((byte, _)) = self.text.char_indices().nth(pos) {
+            (byte, 0)
+        } else {
+            let total = if self.index().ascii { self.text.len() } else { count_chars(self.text.as_bytes()) };
+            (self.text.len(), pos.saturating_sub(total))
+        };
+        let (line, column) = self.location(byte);
+        (line, column + extra)
+    }
+}
+
 /// Code points in a UTF-8 byte slice that starts and ends on char boundaries.
 fn count_chars(b: &[u8]) -> usize {
     b.iter().filter(|&&c| (c & 0xC0) != 0x80).count()
@@ -188,6 +205,14 @@ mod tests {
         assert_eq!(Span::new(0, 1).text(src), "");
         assert_eq!(Span::new(0, 2).text(src), "é");
         assert_eq!(Span::new(5, 9).text(src), "");
+    }
+
+    #[test]
+    fn location_of_an_offset_past_the_end() {
+        let source = Source::new("a\nbé");
+        assert_eq!(source.location_of_offset(3), (2, 1));
+        assert_eq!(source.location_of_offset(4), (2, 2));
+        assert_eq!(source.location_of_offset(9), (2, 7));
     }
 
     /// The naive definition, straight from `Token.location`.

@@ -191,6 +191,112 @@ and the places where the port pins down or changes a Phase 2 detail.
 - **`cargo-fuzz` skipped:** it needs a nightly toolchain and the project pins stable 1.99;
   proptest covers the no-panic and coverage invariants, Hypothesis the differential ones.
 
+## Phase 4 amendments (2026-10-20)
+
+The ZPT program builder is a port of `zpt/program.py`, `tal.py`, `i18n.py` and `metal.py`;
+these are the decisions that shaped it and the places where it changes earlier interfaces.
+
+- **Three passes instead of one.** Chameleon builds the whole program tree first and compiles
+  expressions afterwards (macros before the main body), so of a builder error and a bad
+  expression it reports the builder error, and of two bad expressions the one its compiler
+  visits first. The core now has the same split: `zpt::build` (program.py, never calls the
+  expression compiler) produces the typed tree of `nodes.rs`; `resolve` walks it in
+  `compiler.py`'s visit order (an `on-error` fallback before the element, a content
+  expression before its default content, `tal:attributes` dictionaries before the other
+  attributes, a `use-macro` element's slots before its macro expression), keeps the
+  compile-time aliases and the expression cache, raises the compiler's own errors, and fills a
+  table of compiled expressions indexed by `ValueId`; `compile::lower` turns tree and table
+  into bytecode. The tree is independent of the expression compiler, which is what the
+  `insta` snapshots and the differential inventory test compare.
+- **`Tok`: Chameleon's `Token` arithmetic.** Positions shown to users follow `Token`'s own
+  methods, which are not always the text's real location: `Token.split` advances by each
+  part's length without the separator (`tal:define="x 1;y 2;z 3; econtext 1"` reports
+  `econtext` at 25, not 28), entity decoding keeps the original position for shorter text,
+  `strip` moves past what it removed. `Tok { text, pos: Option<TokPos> }` reproduces this;
+  `TokPos` is a byte offset plus code points, resolved only on the error path. A `Tok` without
+  a position is a plain `str` (`'<?' + name + text + '?>'`): Chameleon then reports offset 0,
+  location (0, 0) and no filename. `CompileError::Template` carries an `ErrToken` (a source
+  span or a `Tok`) instead of a span, and `Source::location_of_offset` handles positions past
+  the end of the source, which the split arithmetic can produce.
+- **D1, `ExprCompiler` as built:** `compile(&Tok, ExprContext)` and `compile_code(&Tok)` for
+  `<?python ?>` blocks. `ExprContext` gained `default: DefaultAlias` (`Name`, `Marker`, or
+  `TargetLanguage` inside `i18n:target`, replacing the `default_is_marker` flag) and `attrs`
+  (the enclosing element's static attributes, or `None` outside every element): both are
+  compile-time aliases, lexically scoped exactly as Chameleon's `Define`/`Alias` nodes scope
+  them, and macro bodies start without the aliases of the elements around their definition.
+  `ExprCompileError::Invalid` carries the token the message is about (the stripped Python
+  part, as `PythonExpr.translate` reports it); `chameleon-py` threads `Tok` through the TALES
+  prefix and pipe splitting for that. The fallback rewriter applies the same aliases, after
+  stores and before builtins, as `NameTransform` does. `attrs` is one dict per element
+  (`StaticAttrs::id`), shared by all its expressions and by every render, exactly like
+  Chameleon's compile-time `Static` (a template that mutates it sees the change next render;
+  that is a free-threading hazard in Chameleon too, kept for parity). `chameleon-py` memoizes
+  the dict per id; the expressions and fallback globals that reference it keep it alive.
+- **D2, the `Runtime` trait** (its methods are grouped in documented sections: frames and
+  evaluation, output, names, loops, attributes and `tal:case`; a sub-trait split is due with
+  Phase 6b): `emit` takes a `Stage` (`Content`, `Lone`, `Part`) instead of a
+  `lone` flag, because interpolation without escaping (CDATA, text mode) needs the lone/part
+  conversion stages while `tal:content structure` appends the first stage directly. New
+  methods: `define` (local binding, plus `rcontext[name] = value` for each name of a global
+  one), `yields_name` (`name in chain(dict)` for attribute filters), `attr_dict`
+  (`visit_DictAttributes`, with Python sets for the excluded and boolean names, and the
+  default marker treated as an ordinary object, because that `__quote` call passes none),
+  `case_compare` and `is_false` (`tal:case` compares with `==` and
+  tests the result with `is False`).
+- **D3, new instructions:** `Define`/`Undefine` (backups taken before the expression, as
+  `_enter_assignment` does; restored in reverse; global names never restored), `OmitTest` /
+  `JumpIfOmitted` / `PopOmit` (the omit expression evaluated once, tags skipped), `CacheValue`
+  / `PopValues` (a start tag's dictionaries, evaluated after its name is written and only if
+  the tag is not omitted), `AttrStatic` (a filtered static attribute), `AttrValue` /
+  `AttrLone` / `AttrBegin` / `AttrEnd` / `AttrDict` (`tal:attributes`, boolean attributes and
+  filtered interpolated attributes), `Switch` / `PopSwitch` / `CaseTest` / `CaseDefault` (the
+  case value is evaluated again only when `value == switch` is `False`, as Chameleon's
+  generated code does). Unwind entries `Define`, `Omit`, `Value`, `Switch` and `Attr` joined
+  `Loop`. Payloads that do not fit stay in side tables, so `Op` stays 24 bytes (a test checks
+  it): a 32-byte `Op` would cost every instruction of the hot loop.
+- **Errors Chameleon raises as bare exceptions** are reproduced: `AssertionError` (a
+  `tal:repeat` with several clauses; a `tal:case` whose switch has not been cached, which
+  happens for a case on its switch's own element and for a case in a `define-macro` whose
+  switch is outside it, because macros compile first), `ValueError` from `int()`/`chr()` in
+  entity decoding (Unicode digits and `_` accepted as Python accepts them; a reference to a
+  surrogate is `UnsupportedError`, since a Rust string cannot hold one), `TypeError` for
+  `trim_attribute_space` on a tag part that is `None`, and `KeyError` for an unknown prefix in
+  a `data-` attribute. The core's `ErrorKind` gained `Assertion`, `Value` and `Type`.
+- **Chameleon quirks reproduced, each verified by running it:** `tal:attributes` records a
+  new name's index before inserting it, so a later name differing only in case replaces the
+  attribute before it; an `extend-macro` element's slot list is never popped, so a later
+  `fill-slot` elsewhere joins it (the tree keeps slot lists in an arena for this); a
+  `define-macro` name registered again by a nested element keeps the nested body (the dict
+  assignment happens before the children are visited); `i18n:target`'s lambda captures
+  `clause` late, so with `i18n:name` on the same element the target expression is the name's
+  value; validation checks all TAL attributes, then METAL, then i18n; `tal:omit-tag` on a
+  TAL/METAL element is never evaluated. Found by the generated differential tests, not by
+  reading.
+- **`Options`** (core) carries `MacroProgram`'s keywords plus `strict` and `mode`; the
+  `default_marker` stays a runtime value. `PageTemplate` now sniffs the content type as
+  `BaseTemplate.write` does, which selects the HTML boolean attributes and newline
+  normalization unless the template is XML (the Phase 2 skeleton rendered `checked="${x}"`
+  with `x='yes'` as `checked="yes"`, where Chameleon writes `checked="checked"`), accepts
+  `bytes`, and takes the options as keywords or class attributes; `PageTextTemplate` exists.
+- **Lowered now** (Phases 6a/6b own the rest): `tal:define`, `tal:replace`, `tal:omit-tag`,
+  every `tal:attributes` form except i18n, boolean attributes, `tal:switch`/`tal:case`,
+  interpolation in CDATA, comments and processing instructions, `meta:interpolation`,
+  `data-tal-*`, `trim_attribute_space` and text mode. Everything else (macros, slots, i18n,
+  `on-error`, code blocks, global `tal:repeat`, implicit translation, non-strict deferred
+  errors) compiles to a tree and then stops with `UnsupportedError`. Known approximation,
+  pinned by a strict-xfail test and due in Phase 6a: a boolean attribute's interpolated result
+  is tested for truth by whether it wrote anything, which differs from Chameleon only for an
+  `__html__` chain ending in a false non-`str`.
+- **Profiling before Phase 4 (the carried-forward item):** the gap to the spike was
+  decomposed against the spike rebuilt from git and with macOS `sample` (no sudo needed for
+  one's own processes). Escaping was the largest absolute cost, fixed with constant-length
+  entity copies; the rest is dispatch plumbing spread over expressions and the loop. The
+  larger Phase 4 instruction set costs about 10 ns per listing item; `execute` and `value_of`
+  are `#[inline(always)]` because LLVM stopped inlining them. Numbers and method in plan.md,
+  Phase 4, which also replaces the fixed per-phase listing figure with a same-process A/B
+  against the previous phase's build (`bench/bench_ab.py`), because run-to-run noise exceeded
+  the effects; the speed targets themselves are unchanged.
+
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
 ```

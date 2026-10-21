@@ -1,0 +1,16 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    text "\n  "
+    scope attrs=#1
+      element "<div"
+        attr "\tstyle=\"height:97px\""
+        attr "class" "\tclass=\"".."\"" default=None interp v0 Attr(Double) "${'test'}"@46
+        close ">"
+        text "\n  "
+      end "</div>"
+    text "\n"
+attrs #1 [("style", "height:97px"), ("class", "${'test'}")]

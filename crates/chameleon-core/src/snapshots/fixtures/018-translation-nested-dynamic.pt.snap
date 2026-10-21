@@ -1,0 +1,29 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<div"
+      attr " xmlns=\"http://www.w3.org/1999/xhtml\""
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        translate ""@120
+          text "\n      "
+          i18n-name "monthname"@162
+            scope attrs=#2
+              content translate v0 "'october'"@228
+                default
+                  text "monthname"
+          text "\n      "
+          i18n-name "year"@307
+            scope attrs=#3
+              content translate v1 "1982"@368
+                default
+                  text "year"
+          text "\n  "
+      text "\n"
+    end "</div>"
+  text "\n"
+attrs #0 [("xmlns", "http://www.w3.org/1999/xhtml")]

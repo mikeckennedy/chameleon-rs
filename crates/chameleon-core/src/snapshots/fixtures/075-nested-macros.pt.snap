@@ -1,0 +1,21 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+macro "master"@26
+  scope attrs=#0
+    text "\n  "
+    scope attrs=#1
+      use-macro slots=#0 macroname="load('032-master-template.pt').macros['main']" v0 "load('032-master-template.pt').macros['main']"@65
+    text "\n"
+body
+  use-internal-macro "master"@26
+  text "\n"
+slots #0
+  fill-slot "content"@142
+    scope attrs=#2
+      text "\n      "
+      define-slot "content"@187
+        scope attrs=#3
+          text "\n        foo\n      "
+      text "\n    "

@@ -1,0 +1,22 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+macro "main"@26
+  scope attrs=#0
+    use-macro slots=#0 macroname="load('032-master-template.pt').macros['main']" v0 "load('032-master-template.pt').macros['main']"@55
+body
+  use-internal-macro "main"@26
+  text "\n"
+slots #0
+  fill-slot "content"@131
+    scope attrs=#1
+      text "\n    "
+      scope attrs=#2
+        domain "mydomain"@164
+          element "<span"
+            close ">"
+            translate ""@190
+              text "\n       Translated content\n    "
+          end "</span>"
+      text "\n  "

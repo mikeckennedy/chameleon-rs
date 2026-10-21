@@ -1,0 +1,11 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  define attrs=#0
+    local "datetime"@17 = v0 "import: datetime.datetime"@26
+    element "<div"
+      close ">"
+      interpolation v1 Text "\n  ${datetime(1984, 12, 31).isoformat()}\n"@53
+    end "</div>"

@@ -1,0 +1,28 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    use-macro slots=#0 macroname="load('039-globals.pt')" v0 "load('039-globals.pt')"@26
+  text "\n"
+  scope attrs=#1
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#2
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#3
+            condition v1 "content is None"@95
+              element "<span"
+                close ">"
+                text "ok"
+              end "</span>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
+slots #0

@@ -1,0 +1,41 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          interpolation v0 Text "\n    ${'Hello world!'}\n    ${literal}\n    ${structure: literal.s}\n    ${\"%stype 'str'%s\" % (chr(60), chr(62))}\n    &&\n    "@15
+          scope attrs=#2
+            element "<script"
+              close ">"
+              text "\n      $(document).ready(function(){\n        imagecropping.init_editor();\n      });\n    "
+            end "</script>"
+          interpolation v1 Text "\n    ${None}\n    ${None or\n      'Hello world'}\n    $leftalone\n    $${'fred'}\n    $$${'fred'}\n    $$$${'fred'}\n    $$$$${'fred'}\n    "@243
+          scope attrs=#3
+            element "<div"
+              close ">"
+              interpolation v2 Text "${None}"@381
+            end "</div>"
+          text "\n    "
+          scope attrs=#4
+            element "<div"
+              close ">"
+              interpolation v3 Text "${1 &lt; 2 and 'Hello world' or None}"@404
+            end "</div>"
+          text "\n    "
+          scope attrs=#5
+            element "<div"
+              close ">"
+              interpolation v4 Text "${} is ignored."@457
+            end "</div>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

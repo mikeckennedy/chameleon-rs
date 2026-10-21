@@ -1,0 +1,39 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+macro "outer"@81
+  scope attrs=#3
+    text "\n        "
+    scope attrs=#4
+      use-macro slots=#0 macroname="template.macros['inner']" v1 "template.macros['inner']"@121
+    text "\n      "
+macro "inner"@205
+  scope attrs=#5
+    interpolation v2 Text "\n        ${title}\n      "@212
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            condition v0 "0"@43
+              text "\n\n      "
+              use-internal-macro "outer"@81
+              text "\n\n      "
+              use-internal-macro "inner"@205
+              text "\n\n    "
+          text "\n\n    "
+          define attrs=#6
+            local "title"@292 = v4 "string:My title"@298
+            use-macro slots=#1 macroname="template.macros['outer']" v3 "template.macros['outer']"@341
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+slots #0
+slots #1

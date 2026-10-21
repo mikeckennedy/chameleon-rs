@@ -1,0 +1,53 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<div"
+      close ">"
+      text "\n  "
+      text "\n"
+    end "</div>"
+  text "\n\n"
+  scope attrs=#1
+    element "<div"
+      close ">"
+      text "\n  "
+      text "<!-- ${left alone} -->"
+      text "\n"
+    end "</div>"
+  text "\n\n"
+  scope attrs=#2
+    element "<div"
+      close ">"
+      text "\n  "
+      text "<!--"
+      interpolation v0 Text " ${'not left alone'} "@89
+      text "-->"
+      text "\n"
+    end "</div>"
+  text "\n\n"
+  scope attrs=#3
+    element "<div"
+      close ">"
+      text "\n  "
+      text "<!--"
+      interpolation v1 Text " ${'not left alone'} "@160
+      text "-->"
+      text "\n"
+    end "</div>"
+  text "\n\n"
+  scope attrs=#4
+    element "<div"
+      close ">"
+      text "\n  "
+      text "<!-- ${left alone} -->"
+      text "\n"
+    end "</div>"
+  text "\n\n"
+  text "<!--"
+  interpolation v2 Text "[if IE ${6}]>\n  Special instructions for IE 6 here\n<![endif]"@263
+  text "-->"
+  text "\n\n"
+  text "<!--[if IE 6]>\n  ${left alone}\n<![endif]-->"

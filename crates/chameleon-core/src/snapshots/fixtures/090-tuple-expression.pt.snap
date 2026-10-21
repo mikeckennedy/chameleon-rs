@@ -1,0 +1,28 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  define attrs=#0
+    local "items"@16 = v0 "('main', 'Welcome'),\n                      ('listings', 'Listings'),\n                      ('about', 'About'),\n                      ('contact', 'Contact')"@22
+    element "<ul"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        repeat "route"@199, "title"@205 in v1 "items"@213 ws="\n  "
+          element "<li"
+            close ">"
+            text "\n    "
+            scope attrs=#2
+              element "<a"
+                attr "href" " href=\"".."\"" default=None interp v2 Attr(Double) "#${route}"@234
+                attr "id" " id=\"".."\"" default=None interp v3 Attr(Double) "${route}nav"@249
+                close ">"
+                interpolation v4 Text "${title}"@262
+              end "</a>"
+            text "\n  "
+          end "</li>"
+      text "\n"
+    end "</ul>"
+  text "\n"
+attrs #2 [("href", "#${route}"), ("id", "${route}nav")]

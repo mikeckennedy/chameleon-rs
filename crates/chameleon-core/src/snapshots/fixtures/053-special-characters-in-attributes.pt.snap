@@ -1,0 +1,32 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<a"
+              attr "href" " href=\"".."\"" default=None subst Double v0 "string:@@view"@44
+              close ">"
+              text "test"
+            end "</a>"
+          text "\n    "
+          scope attrs=#3
+            element "<a"
+              attr "href" " href=\"".."\"" default=None interp v1 Attr(Double) "${'@@'}view"@81
+              close ">"
+              text "test"
+            end "</a>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+attrs #2 [("href", "string:@@view")]
+attrs #3 [("href", "${'@@'}view")]

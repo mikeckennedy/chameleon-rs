@@ -1,7 +1,9 @@
 # Ported from Chameleon's src/chameleon/zpt/template.py (PageTemplate.render's setup of
-# `__translate`, `__decode`, `__on_error_handler`, `target_language` and `repeat`),
-# modified: the template compiles to a native program instead of a Python module.
-"""The public template classes (D7). Only ``PageTemplate(body)`` exists so far."""
+# `__translate`, `__decode`, `__on_error_handler`, `target_language` and `repeat`;
+# `PageTemplate.parse`, `BOOLEAN_HTML_ATTRIBUTES`, `PageTextTemplate`) and template.py
+# (`BaseTemplate.write`), modified: the template compiles to a native program instead of a
+# Python module.
+"""The public template classes (D7): ``PageTemplate(body)`` and ``PageTextTemplate(body)``."""
 
 from __future__ import annotations
 
@@ -11,6 +13,34 @@ from typing import Any, ClassVar
 from chameleon_rs._native import Program
 from chameleon_rs.i18n import simple_translate
 from chameleon_rs.tal import RepeatDict
+from chameleon_rs.utils import detect_encoding, read_bytes, read_xml_encoding
+
+BOOLEAN_HTML_ATTRIBUTES = [
+    # From http://www.w3.org/TR/xhtml1/#guidelines (C.10)
+    'compact',
+    'nowrap',
+    'ismap',
+    'declare',
+    'noshade',
+    'checked',
+    'disabled',
+    'readonly',
+    'multiple',
+    'selected',
+    'noresize',
+    'defer',
+]
+
+# Settings that change the compiled program, passed to the native `Program`.
+PROGRAM_OPTIONS = (
+    'implicit_i18n_translate',
+    'implicit_i18n_attributes',
+    'trim_attribute_space',
+    'enable_data_attributes',
+    'enable_comment_interpolation',
+    'restricted_namespace',
+    'strict',
+)
 
 
 class PageTemplate:
@@ -26,18 +56,64 @@ class PageTemplate:
     on_error_handler: Callable[[BaseException], object] | None = None
     encoding: str | None = None
 
+    mode = 'xml'
+    default_encoding = 'utf-8'
+    default_content_type = 'text/html'
+    boolean_attributes: Any = None
+    implicit_i18n_translate = False
+    implicit_i18n_attributes: Any = frozenset()
+    trim_attribute_space = False
+    enable_data_attributes = False
+    enable_comment_interpolation = True
+    restricted_namespace = True
+    strict = True
+
     def __init__(
         self,
-        body: str,
+        body: str | bytes,
         *,
         filename: str = '<string>',
         partials: Mapping[str, PageTemplate] | None = None,
+        **config: Any,
     ) -> None:
-        self.body = body
+        # Like Chameleon's `BaseTemplate.__init__`: configuration becomes instance attributes.
+        self.__dict__.update(config)
         self.filename = filename
-        self._program = Program(body, filename)
         self._partials = partials
+        self.write(body)
         self._defaults = self._render_defaults(None, None)
+
+    def write(self, body: str | bytes) -> None:
+        """Sniff the content type and encoding (`BaseTemplate.write`), then compile."""
+        encoding: str | None
+        if isinstance(body, bytes):
+            body, encoding, content_type = read_bytes(body, self.default_encoding)
+        elif body.startswith('<?xml'):
+            content_type = 'text/xml'
+            encoding = read_xml_encoding(body.encode('utf-8'))
+        else:
+            content_type, encoding = detect_encoding(body, self.default_encoding)
+        self.content_type = content_type or self.default_content_type
+        self.content_encoding = encoding
+        self.body = body
+        self._program = self._compile(body)
+
+    def _compile(self, body: str) -> Program:
+        """`PageTemplate.parse`: HTML boolean attributes and newline normalization unless the
+        content type is XML."""
+        boolean_attributes = self.boolean_attributes
+        if self.content_type != 'text/xml':
+            if boolean_attributes is None:
+                boolean_attributes = BOOLEAN_HTML_ATTRIBUTES
+            body = body.replace('\r\n', '\n').replace('\r', '\n')
+        options = {name: getattr(self, name) for name in PROGRAM_OPTIONS}
+        return Program(
+            body,
+            self.filename,
+            mode=self.mode,
+            boolean_attributes=boolean_attributes or (),
+            **options,
+        )
 
     def _partial_programs(self) -> dict[str, Program] | None:
         if self._partials is None:
@@ -88,3 +164,9 @@ class PageTemplate:
         return self._program.render(kw, partials, defaults)
 
     __call__ = render
+
+
+class PageTextTemplate(PageTemplate):
+    """A text template: only `${...}` interpolation, no markup, nothing escaped."""
+
+    mode = 'text'

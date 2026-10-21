@@ -1,0 +1,49 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<div"
+              close ">"
+              content v0 "message"@43
+                default
+                  empty
+            end "</div>"
+          text "\n    "
+          scope attrs=#3
+            element "<div"
+              close ">"
+              content structure v1 "message"@87
+                default
+                  empty
+            end "</div>"
+          text "\n    "
+          scope attrs=#4
+            element "<div"
+              close ">"
+              content v2 "string:${message}"@126
+                default
+                  empty
+            end "</div>"
+          text "\n    "
+          scope attrs=#5
+            element "<div"
+              close ">"
+              content structure v3 "string:${message}"@180
+                default
+                  empty
+            end "</div>"
+          interpolation v4 Text "\n    ${message}\n  "@201
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

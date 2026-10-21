@@ -1,0 +1,31 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            text "\n      "
+            scope attrs=#3
+              interpolation v0 Text "\n        ${'first'}\n      "@50
+            text "\n      second\n    "
+          text "\n    "
+          scope attrs=#4
+            condition v1 "True"@146
+              text "\n      ok\n    "
+          text "\n    "
+          scope attrs=#5
+            condition v2 "False"@205
+              text "\n      bad\n    "
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

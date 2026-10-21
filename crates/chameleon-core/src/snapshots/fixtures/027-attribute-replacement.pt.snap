@@ -1,0 +1,53 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<div"
+      attr " xmlns=\"http://www.w3.org/1999/xhtml\""
+      close ">"
+      text "\n  "
+      define attrs=#1
+        local "a"@174 = v4 "'abc'"@176
+        element "<span"
+          attr " id=\"test\""
+          attr "class" "\n        class=\"".."\"" default=Some("dummy") subst Double v1 "default"@213
+          attr "onClick" "\n        onClick=\"".."\"" default=Some("") subst Double v2 "'alert();'"@241
+          attr "style" " style=\"".."\"" default=None subst Double v3 "'hij'"@227
+          close ">"
+          content v0 "a + 'ghi'"@277
+            default
+              empty
+        end "</span>"
+      text "\n  "
+      scope attrs=#2
+        content v5 "'Hello World!'"@312
+          default
+            element "<span"
+              close ">"
+              text "Hello "
+              scope attrs=#3
+                element "<b"
+                  close ">"
+                  text "Universe"
+                end "</b>"
+              text "!"
+            end "</span>"
+      text "\n  "
+      scope attrs=#4
+        content v6 "'Hello World!'"@379
+          default
+            element "<span"
+              close ">"
+              scope attrs=#5
+                element "<b"
+                  close ">"
+                  text "Hello Universe!"
+                end "</b>"
+            end "</span>"
+      text "\n"
+    end "</div>"
+  text "\n"
+attrs #0 [("xmlns", "http://www.w3.org/1999/xhtml")]
+attrs #1 [("id", "test"), ("class", "dummy"), ("onClick", ""), ("style", "'hij'")]

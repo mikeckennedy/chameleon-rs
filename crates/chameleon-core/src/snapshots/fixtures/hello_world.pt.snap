@@ -1,0 +1,16 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          interpolation v0 Text "\n    ${'Hello world!'}\n  "@15
+        end "</body>"
+      text "\n"
+    end "</html>"

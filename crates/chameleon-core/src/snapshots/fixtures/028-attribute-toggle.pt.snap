@@ -1,0 +1,37 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<div"
+      attr " xmlns=\"http://www.w3.org/1999/xhtml\""
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<option"
+          attr "selected" " selected=\"".."\"" default=None boolean "selected" v0 "True"@130
+          close ">"
+          empty
+        end "</option>"
+      text "\n  "
+      scope attrs=#2
+        element "<option"
+          attr "selected" " selected=\"".."\"" default=None boolean "selected" v1 "False"@181
+          close ">"
+          empty
+        end "</option>"
+      text "\n  "
+      scope attrs=#3
+        element "<option"
+          attr "selected" " selected=\"".."\"" default=None boolean "selected" v2 "None"@233
+          close ">"
+          empty
+        end "</option>"
+      text "\n"
+    end "</div>"
+  text "\n"
+attrs #0 [("xmlns", "http://www.w3.org/1999/xhtml")]
+attrs #1 [("selected", "True")]
+attrs #2 [("selected", "False")]
+attrs #3 [("selected", "None")]

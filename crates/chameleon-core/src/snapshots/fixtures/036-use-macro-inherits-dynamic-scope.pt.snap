@@ -1,0 +1,10 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  define attrs=#0
+    local "title"@18 = v1 "string:New title"@24
+    use-macro slots=#0 macroname="load('032-master-template.pt').macros['main']" v0 "load('032-master-template.pt').macros['main']"@65
+  text "\n"
+slots #0

@@ -1,0 +1,11 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    use-macro slots=#0 macroname="load('032-master-template.pt').macros['main']" v0 "load('032-master-template.pt').macros['main']"@23
+slots #0
+  fill-slot "body-footer"@98
+    scope attrs=#1
+      text "New footer"

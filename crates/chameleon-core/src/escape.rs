@@ -68,7 +68,7 @@ const GATE: [bool; 256] = {
     gate
 };
 
-const ENTITIES: [&[u8]; 6] = [b"", b"&amp;", b"&lt;", b"&gt;", b"&quot;", b"&#39;"];
+/// Classes: 1 `&amp;`, 2 `&lt;`, 3 `&gt;`, 4 `&quot;`, 5 `&#39;`, 6 `&#0;` (see `replace`).
 const NUL_CLASS: u8 = 6;
 
 const fn table(quote: Option<u8>) -> [u8; 256] {
@@ -124,17 +124,33 @@ pub fn escape_into(s: &[u8], esc: Escape, out: &mut Output) {
     replace(s, table, out);
 }
 
+/// Copies `s`, replacing the bytes `table` classifies. Each entity is written as a
+/// constant-length copy (inlined stores, no `memmove` call) and the buffer is reserved once:
+/// the profile of the listing benchmark showed two `memmove` calls per escaped character.
 fn replace(s: &[u8], table: &[u8; 256], out: &mut Output) {
+    // Most escaped strings hold a few entities; `push` still grows the buffer if needed.
+    out.reserve(s.len() + 24);
     let mut last = 0;
     for (i, &b) in s.iter().enumerate() {
-        let class = table[b as usize] as usize;
+        let class = table[b as usize];
         if class != 0 {
-            out.push(&s[last..i]);
-            out.push(if class == NUL_CLASS as usize { b"&#0;" } else { ENTITIES[class] });
+            if last < i {
+                out.push(&s[last..i]);
+            }
+            match class {
+                1 => out.push(b"&amp;"),
+                2 => out.push(b"&lt;"),
+                3 => out.push(b"&gt;"),
+                4 => out.push(b"&quot;"),
+                5 => out.push(b"&#39;"),
+                _ => out.push(b"&#0;"),
+            }
             last = i + 1;
         }
     }
-    out.push(&s[last..]);
+    if last < s.len() {
+        out.push(&s[last..]);
+    }
 }
 
 /// Python's `s.replace('', '&#0;')`: the entity before every character and at the end.

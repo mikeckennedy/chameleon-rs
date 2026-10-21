@@ -1,0 +1,11 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    use-macro slots=#0 macroname="load('060-macro-with-multiple-same-slots.pt').macros['main']" v0 "load('060-macro-with-multiple-same-slots.pt').macros['main']"@23
+slots #0
+  fill-slot "title"@112
+    scope attrs=#1
+      text "My document"

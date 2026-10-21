@@ -8,9 +8,9 @@ use pyo3::exceptions::{PyNameError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pyclass::CompareOp;
-use pyo3::types::{PyInt, PyIterator, PyList, PyString, PyTuple};
+use pyo3::types::{PyBool, PyInt, PyIterator, PyList, PySet, PyString, PyTuple};
 
-use chameleon_core::{Countdown, Emitted, Escape, ExprId, NameId, Output, Runtime, Step};
+use chameleon_core::{Countdown, Emitted, Escape, ExprId, NameId, Output, Quote, Runtime, Stage, Step, Visibility};
 
 use crate::convert;
 use crate::expr::{Cx, RenderCtx, eval, eval_emitted};
@@ -58,8 +58,10 @@ impl Runtime for PyRuntime<'_, '_> {
     }
 
     #[inline]
-    fn emit(&mut self, value: Py<PyAny>, esc: Escape, lone: bool, out: &mut Output) -> PyResult<Emitted> {
-        convert::emit(&self.cx(), value.bind(self.py), esc, lone, out)
+    fn emit(&mut self, value: Py<PyAny>, esc: Escape, stage: Stage, out: &mut Output) -> PyResult<Emitted> {
+        // A `Bound` decrefs directly when dropped; a `Py` first checks a thread-local.
+        let value = value.into_bound(self.py);
+        convert::emit(&self.cx(), &value, esc, stage, out)
     }
 
     fn is_default(&mut self, value: &Py<PyAny>) -> bool {
@@ -131,6 +133,93 @@ impl Runtime for PyRuntime<'_, '_> {
             self.scope.as_super().set_item(self.name(*name)?.bind(py), value)?;
         }
         Ok(())
+    }
+
+    /// `econtext[name] = value` (a tuple target for several names), then for a global
+    /// definition `rcontext[name] = value` for each name (the whole value, as Chameleon does).
+    fn define(&mut self, names: &[NameId], value: Py<PyAny>, visibility: Visibility) -> PyResult<()> {
+        let py = self.py;
+        if visibility == Visibility::Global {
+            let rcontext = self.render.rcontext(py);
+            for name in names {
+                rcontext.set_item(self.name(*name)?.bind(py), value.bind(py))?;
+            }
+        }
+        self.assign(names, value)
+    }
+
+    /// `name in __chain(dict)`: iterate and compare with `==`, as `in` on an iterator does.
+    fn yields_name(&mut self, container: &Py<PyAny>, name: &str) -> PyResult<bool> {
+        let py = self.py;
+        let name = PyString::new(py, name);
+        for item in container.bind(py).try_iter()? {
+            if item?.eq(&name)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// `visit_DictAttributes`: `for name, value in TARGET.items()`, skipping names `in
+    /// EXCLUDE` (a set of the names written after it) and `None`, a name `in BOOL_NAMES` written
+    /// as itself when true and skipped when false, each value through
+    /// `__quote(value, '"', '&quot;', None, None)`. The sets are real sets, so membership is
+    /// hashed and an unhashable name raises `TypeError`, as in Chameleon.
+    fn attr_dict(&mut self, dict: &Py<PyAny>, exclude: &[&str], bool_names: &[&str], out: &mut Output) -> PyResult<()> {
+        let py = self.py;
+        let bool_set = (!bool_names.is_empty()).then(|| PySet::new(py, bool_names)).transpose()?;
+        let exclude_set = PySet::new(py, exclude)?;
+        let items = dict.bind(py).call_method0(intern!(py, "items"))?;
+        for item in items.try_iter()? {
+            let item = item?;
+            let mut pair = unpack(&item, 2)?.into_iter();
+            let (Some(name), Some(mut value)) = (pair.next(), pair.next()) else { continue };
+            if let Some(bools) = &bool_set
+                && bools.contains(&name)?
+            {
+                if !value.is_truthy()? {
+                    continue;
+                }
+                value = name.clone();
+            }
+            if exclude_set.contains(&name)? || value.is_none() {
+                continue;
+            }
+            // `' ' + name + '=' + '"' + __quote(...) + '"'`: the name must be a `str`.
+            let name = name.cast::<PyString>().map_err(|_| {
+                pyo3::exceptions::PyTypeError::new_err(format!(
+                    "can only concatenate str (not \"{}\") to str",
+                    name.get_type().name().map_or_else(|_| "?".into(), |n| n.to_string())
+                ))
+            })?;
+            let mark = out.mark();
+            out.push(b" ");
+            convert::write_str(name, Escape::Structure, out)?;
+            out.push(b"=\"");
+            // `default_marker` is `None` in this `__quote` call, so the template's marker is
+            // an ordinary object here (converted with `str()`).
+            match convert::emit_plain(&self.cx(), &value, Escape::Attr(Quote::Double), out) {
+                Ok(_) => out.push(b"\""),
+                Err(e) => {
+                    out.truncate(mark);
+                    return Err(e);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn case_compare(&mut self, value: &Py<PyAny>, switch: Option<&Py<PyAny>>) -> PyResult<Py<PyAny>> {
+        let py = self.py;
+        let other = match switch {
+            Some(s) => s.bind(py).clone(),
+            None => self.render.marker.clone(),
+        };
+        Ok(value.bind(py).rich_compare(other, CompareOp::Eq)?.unbind())
+    }
+
+    fn is_false(&mut self, value: &Py<PyAny>) -> bool {
+        value.bind(self.py).is(PyBool::new(self.py, false))
     }
 
     /// `if backup is marker: del econtext[KEY] else: econtext[KEY] = backup`.

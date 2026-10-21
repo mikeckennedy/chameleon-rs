@@ -1,0 +1,33 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            condition v1 "False"@40
+              repeat "item"@59 in v0 "bad_input"@64 ws="\n    "
+                element "<div"
+                  close " />"
+                  empty
+          text "\n    "
+          define attrs=#3
+            local "sequence"@99 = v3 "1, 2, 3"@108
+            repeat "item"@138 in v4 "sequence"@143 ws="\n    "
+              content v2 "item"@175
+                default
+                  element "<div"
+                    close " />"
+                    empty
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

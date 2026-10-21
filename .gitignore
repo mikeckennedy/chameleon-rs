@@ -32,3 +32,5 @@ venv/
 *.pyd
 .pytest_cache/
 .hypothesis/
+# Per-developer environment (for example CHAMELEON_RS_CORPUS, the private template corpus)
+.envrc

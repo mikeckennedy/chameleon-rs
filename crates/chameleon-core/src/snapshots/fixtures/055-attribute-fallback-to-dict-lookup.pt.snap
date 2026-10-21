@@ -1,0 +1,12 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  define attrs=#0
+    local "obj"@17 = v0 "{'foo': 'bar', 'boo': {'bar': 'baz'}}"@21
+    element "<div"
+      close ">"
+      interpolation v1 Text "\n  ${obj.foo}\n  ${obj.boo.bar}\n"@60
+    end "</div>"
+  text "\n"

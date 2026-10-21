@@ -1,0 +1,42 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<?xml"
+      attr " version=\"1.0\""
+      attr " encoding=\"UTF-8\""
+      attr " ?"
+      close ">"
+      empty
+  text "\n"
+  text "<!DOCTYPE application [\n  <!ENTITY nbsp \"\\&#160;\">\n]>"
+  text "\n"
+  scope attrs=#1
+    element "<application"
+      attr " xmlns=\"http://research.sun.com/wadl/2006/10\""
+      attr "\n             xsi:schemaLocation=\"http://research.sun.com/wadl/2006/10/wadl.xsd\""
+      attr "\n             xmlns:wadl=\"http://research.sun.com/wadl/2006/10\""
+      attr "\n             xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\""
+      close ">"
+      text "\n  "
+      define attrs=#2
+        local "path"@448 = v0 "'/'"@453
+        element "<resources"
+          close ">"
+          text "\n    "
+          scope attrs=#3
+            element "<resource"
+              attr "path" " path=\"".."\"" default=None interp v1 Attr(Double) "${path}"@479
+              close ">"
+              text "ZZZ&nbsp;YYY&nbsp;XXX"
+            end "</resource>"
+          text "\n  "
+        end "</resources>"
+      text "\n"
+    end "</application>"
+  text "\n"
+attrs #0 [("version", "1.0"), ("encoding", "UTF-8"), ("?", "")]
+attrs #1 [("xmlns", "http://research.sun.com/wadl/2006/10"), ("xsi:schemaLocation", "http://research.sun.com/wadl/2006/10/wadl.xsd"), ("xmlns:wadl", "http://research.sun.com/wadl/2006/10"), ("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance")]
+attrs #3 [("path", "${path}")]

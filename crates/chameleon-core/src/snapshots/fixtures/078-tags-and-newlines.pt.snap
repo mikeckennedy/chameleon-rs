@@ -1,0 +1,56 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  define attrs=#0
+    local "id"@191 = v0 "'foo'"@194
+    text "\n  "
+    scope attrs=#1
+      element "<body"
+        close ">"
+        text "\n      "
+        scope attrs=#2
+          element "<span"
+            attr "id" " id=\"".."\"" default=Some("toDataContainer") subst Double v1 "string:${id}-toDataContainer"@275
+            close ">"
+            text "\n        "
+            scope attrs=#3
+              element "<script"
+                attr " type=\"text/javascript\""
+                close ">"
+                content v2 "string:\n          copyDataForSubmit('${id}');"@358
+                  default
+                    text "\n          // initial copying of field \"field.to\" --> \"field\"\n          copyDataForSubmit(\""
+                    scope attrs=#4
+                      content v3 "${id}"@512
+                        default
+                          element "<i"
+                            close "/>"
+                            empty
+                    text "\");\n        "
+              end "</script>"
+            text "\n      "
+          end "</span>"
+        text "\n      "
+        scope attrs=#5
+          repeat "value"@585 in v4 "python: (1, 2, 3)"@591 ws=""
+            scope attrs=#6
+              element "<span"
+                attr " class=\"selected-option\""
+                close ">"
+                content v5 "value"@669
+                  default
+                    empty
+              end "</span>"
+            scope attrs=#7
+              condition v6 "not:repeat.value.end"@704
+                text ", "
+        text "\n  "
+      end "</body>"
+    text "\n"
+  text "\n"
+attrs #0 [("xmlns", "http://www.w3.org/1999/xhtml")]
+attrs #2 [("id", "toDataContainer")]
+attrs #3 [("type", "text/javascript")]
+attrs #6 [("class", "selected-option")]

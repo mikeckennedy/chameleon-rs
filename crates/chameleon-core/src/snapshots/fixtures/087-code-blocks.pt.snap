@@ -1,0 +1,54 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  code v0 "\n    foo = [1, 2, 3] "@8
+  text "\n\n"
+  scope attrs=#0
+    element "<ul"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        repeat "f"@56 in v2 "foo"@58 ws="\n  "
+          element "<li"
+            close ">"
+            content v1 "f"@76
+              default
+                empty
+          end "</li>"
+      text "\n"
+    end "</ul>"
+  text "\n\n"
+  code v3 "\n    foo = [1, 2, 3]\n    boo = [4, 5, 6]\n"@97
+  text "\n\n"
+  scope attrs=#2
+    element "<ul"
+      close ">"
+      text "\n  "
+      scope attrs=#3
+        repeat "f"@166, "g"@168 in v5 "zip(foo, boo)"@172 ws="\n  "
+          element "<li"
+            close ">"
+            content v4 "f + g"@200
+              default
+                empty
+          end "</li>"
+      text "\n"
+    end "</ul>"
+  text "\n\n"
+  scope attrs=#4
+    element "<div"
+      close ">"
+      text "\n  "
+      code v6 " numbers = map(str, range(1, 10)) "@233
+      interpolation v7 Text "\n  Please input a number from the range ${\", \".join(numbers)}.\n"@269
+    end "</div>"
+  text "\n\n"
+  scope attrs=#5
+    element "<div"
+      close ">"
+      text "\n  "
+      code v8 "\n     def function(i):\n         return i + 1\n     "@356
+      interpolation v9 Text "\n  41 + 1 = ${function(41)}.\n"@408
+    end "</div>"

@@ -1,0 +1,36 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    use-macro slots=#0 macroname="load('032-master-template.pt').macros['main']" v0 "load('032-master-template.pt').macros['main']"@23
+attrs #4 [("href", "#")]
+attrs #5 [("id", "chart-info")]
+slots #0
+  fill-slot "content"@106
+    scope attrs=#2
+      element "<div"
+        close ">"
+        text "\n      "
+        scope attrs=#3
+          condition v1 "True"@142
+            element "<div"
+              close ">"
+              text "\n        "
+              scope attrs=#4
+                element "<a"
+                  attr " href=\"#\""
+                  close ">"
+                  text "Chart"
+                end "</a>"
+              text "\n        "
+              scope attrs=#5
+                element "<div"
+                  attr " id=\"chart-info\""
+                  close "/>"
+                  empty
+              text "\n      "
+            end "</div>"
+        text "\n    "
+      end "</div>"

@@ -1,0 +1,11 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  define attrs=#0
+    local "foo"@17 = v0 "1 + \\\n                     1"@21
+    element "<div"
+      close ">"
+      interpolation v1 Text "\n  ${foo}\n"@51
+    end "</div>"

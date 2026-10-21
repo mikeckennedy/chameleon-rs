@@ -1,0 +1,6 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  interpolation v0 Structure "${'Hello world!'}\n"@0

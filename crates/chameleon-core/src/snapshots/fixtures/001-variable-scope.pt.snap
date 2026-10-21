@@ -1,0 +1,26 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      define attrs=#1
+        local "text"@27 = v0 "'Hello world!'"@32
+        element "<body"
+          close ">"
+          interpolation v1 Text "\n    ${text}\n  "@48
+        end "</body>"
+      text "\n  "
+      scope attrs=#2
+        condition v2 "exists: text"@95
+          text "\n    bad\n  "
+      text "\n  "
+      scope attrs=#3
+        condition v3 "not: exists: text"@157
+          text "\n    ok\n  "
+      text "\n"
+    end "</html>"
+  text "\n"

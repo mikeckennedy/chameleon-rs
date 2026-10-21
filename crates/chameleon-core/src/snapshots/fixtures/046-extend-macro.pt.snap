@@ -1,0 +1,20 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+macro "extended"@26
+  scope attrs=#0
+    extend-macro slots=#0 macroname="load('032-master-template.pt').macros['main']" v0 "load('032-master-template.pt').macros['main']"@62
+body
+  use-internal-macro "extended"@26
+slots #0
+  fill-slot "body-footer"@137
+    scope attrs=#1
+      text "\n    "
+      define-slot "kind"@180
+        scope attrs=#2
+          element "<span"
+            close ">"
+            text "New"
+          end "</span>"
+      text " footer\n  "

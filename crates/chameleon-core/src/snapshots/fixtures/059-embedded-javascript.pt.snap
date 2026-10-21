@@ -1,0 +1,33 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<span"
+              attr " onclick=\"alert(true && false);\""
+              close ">"
+              text "test"
+            end "</span>"
+          text "\n    "
+          scope attrs=#3
+            element "<span"
+              attr "onclick" " onclick=\"".."\"" default=None interp v0 Attr(Double) "alert(${str(True).lower()} && ${str(False).lower()});"@89
+              close ">"
+              text "test"
+            end "</span>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
+attrs #2 [("onclick", "alert(true && false);")]
+attrs #3 [("onclick", "alert(${str(True).lower()} && ${str(False).lower()});")]

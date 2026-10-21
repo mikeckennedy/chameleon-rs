@@ -14,7 +14,7 @@ DEFAULT_MARKER: DefaultMarker
 
 @final
 class Program:
-    def __init__(self, source: str, filename: str = '<string>') -> None: ...
+    def __init__(self, source: str, filename: str = '<string>', **options: Any) -> None: ...
     def render(
         self,
         variables: dict[str, Any],

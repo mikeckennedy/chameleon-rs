@@ -27,6 +27,12 @@ impl Output {
         self.buf.extend_from_slice(bytes);
     }
 
+    /// Reserves room for at least `additional` more bytes.
+    #[inline]
+    pub fn reserve(&mut self, additional: usize) {
+        self.buf.reserve(additional);
+    }
+
     #[inline]
     pub fn push_str(&mut self, s: &str) {
         self.buf.extend_from_slice(s.as_bytes());

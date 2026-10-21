@@ -1,0 +1,33 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        condition v0 "True"@30
+          element "<body"
+            close ">"
+            text "\n    "
+            define attrs=#2
+              local "selector"@59 = v1 "False"@68
+              condition v2 "selector"@90
+                element "<span"
+                  close ">"
+                  text "bad"
+                end "</span>"
+            text "\n    "
+            scope attrs=#3
+              condition v3 "True"@136
+                element "<span"
+                  close ">"
+                  text "ok"
+                end "</span>"
+            text "\n  "
+          end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

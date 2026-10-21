@@ -1,0 +1,21 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  define attrs=#0
+    local "local_value"@15 = v0 "python: 35"@27
+    local "local_value"@53 = v1 "python: local_value - 2"@65
+    element "<p"
+      close ">"
+      interpolation v2 Text "\n  ${local_value}\n"@91
+    end "</p>"
+  text "\n"
+  scope attrs=#1
+    element "<p"
+      close ">"
+      content v3 "local_value|default"@130
+        default
+          text "OUTSIDE: No value"
+    end "</p>"
+  text "\n"

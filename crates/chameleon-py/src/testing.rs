@@ -171,6 +171,47 @@ pub(crate) fn parse<'py>(
     Conv { py, src: body, source: Source::new(body) }.items(&items)
 }
 
+fn build_tree(
+    py: Python<'_>,
+    body: &str,
+    options: Option<&Bound<'_, PyDict>>,
+) -> PyResult<chameleon_core::testing::Tree> {
+    let options = crate::program::options(options)?;
+    chameleon_core::testing::build_tree(body, &options).map_err(|e| {
+        let e = match e {
+            chameleon_core::CompileError::Template { kind, message, token } => {
+                chameleon_core::CompileError::Template { kind, message, token }
+            }
+            chameleon_core::CompileError::TooLarge => chameleon_core::CompileError::TooLarge,
+            chameleon_core::CompileError::Expr(never) => match never {},
+        };
+        compile_error(py, e, body, "<string>")
+    })
+}
+
+/// The program tree of `body` as the builder makes it (see `chameleon_core::testing::dump_tree`),
+/// for snapshots and differential tests; the keywords are `Program`'s options. Builder errors
+/// are raised as compiling raises them (expressions are not compiled).
+#[pyfunction]
+#[pyo3(signature = (body, **options))]
+pub(crate) fn tree(py: Python<'_>, body: &str, options: Option<&Bound<'_, PyDict>>) -> PyResult<String> {
+    let tree = build_tree(py, body, options)?;
+    Ok(chameleon_core::testing::dump_tree(&tree, body))
+}
+
+/// `[(kind, text, pos), ...]`: every expression and assigned name of the tree (see
+/// `chameleon_core::testing::inventory`).
+#[pyfunction]
+#[pyo3(signature = (body, **options))]
+pub(crate) fn inventory(
+    py: Python<'_>,
+    body: &str,
+    options: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Vec<(&'static str, String, Option<usize>)>> {
+    let tree = build_tree(py, body, options)?;
+    Ok(chameleon_core::testing::inventory(&tree, body))
+}
+
 /// `collector.res[name]` as built by the core (Python syntax, before translation).
 #[pyfunction]
 pub(crate) fn tokenizer_pattern(name: &str) -> Option<String> {

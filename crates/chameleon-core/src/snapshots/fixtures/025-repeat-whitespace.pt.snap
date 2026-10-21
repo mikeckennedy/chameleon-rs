@@ -1,0 +1,69 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<ul"
+              close ">"
+              text "\n      "
+              scope attrs=#3
+                repeat "i"@47 in v1 "(1, 2, 3)"@49 ws="\n      "
+                  element "<li"
+                    close ">"
+                    content v0 "i"@73
+                      default
+                        empty
+                  end "</li>"
+              text "\n      "
+              scope attrs=#4
+                repeat "i"@103 in v2 "(1, 2, 3)"@105 ws=""
+                  scope attrs=#5
+                    element "<li"
+                      close ">"
+                      content v3 "i"@133
+                        default
+                          empty
+                    end "</li>"
+              text "\n      "
+              scope attrs=#6
+                repeat "j"@190 in v4 "(1, 2, 3)"@192 ws="\n      "
+                  scope attrs=#7
+                    element "<li"
+                      close ">"
+                      content v5 "j"@220
+                        default
+                          empty
+                    end "</li>"
+              text "\n      "
+              scope attrs=#8
+                text "\n        "
+                scope attrs=#9
+                  repeat "count"@283 in v6 "(1, 2, 3)"@289 ws=""
+                    text "\n          "
+                    scope attrs=#10
+                      content v7 "count"@330
+                        default
+                          element "<span"
+                            close "\n                />"
+                            empty
+                    scope attrs=#11
+                      condition v8 "not repeat['count'].end"@377
+                        text ","
+                    text "\n       "
+                text "\n      "
+              text ".\n    "
+            end "</ul>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

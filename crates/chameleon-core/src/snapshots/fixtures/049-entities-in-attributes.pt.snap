@@ -1,0 +1,67 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<pre"
+              close ">"
+              content v0 "string:amp=&amp; lt=&lt;"@38
+                default
+                  empty
+            end "</pre>"
+          text "\n    "
+          scope attrs=#3
+            element "<pre"
+              close ">"
+              content structure v1 "string:amp=&amp; lt=&lt;"@108
+                default
+                  empty
+            end "</pre>"
+          text "\n    "
+          scope attrs=#4
+            content structure v2 "string:<script />"@181
+              default
+                element "<script"
+                  close " />"
+                  empty
+          text "\n    "
+          scope attrs=#5
+            content v3 "string:<script />"@234
+              default
+                element "<script"
+                  close " />"
+                  empty
+          text "\n    "
+          scope attrs=#6
+            content v4 "string:${'<'}script /${'>'}"@287
+              default
+                element "<script"
+                  close " />"
+                  empty
+          text "\n    "
+          scope attrs=#7
+            content structure v5 "string:${'<'}script /${'>'}"@360
+              default
+                element "<script"
+                  close " />"
+                  empty
+          text "\n    "
+          scope attrs=#8
+            element "<img"
+              attr "alt" " alt=\"".."\"" default=None interp v6 Attr(Double) "1 &lt; 2: ${1 &lt; 2}"@412
+              close " />"
+              empty
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+attrs #8 [("alt", "1 &lt; 2: ${1 &lt; 2}")]

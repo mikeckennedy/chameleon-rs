@@ -1,0 +1,26 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      define attrs=#1
+        local "s1"@27 = v0 "string:&"@30
+        local "s2"@59 = v1 "python:'&'"@62
+        element "<body"
+          close ">"
+          interpolation v2 Text "\n    ${s1}\n    ${s2}\n    ${structure: s1}amp;\n    ${structure: s2}amp;\n    "@83
+          scope attrs=#2
+            element "<a"
+              attr "href" " href=\"".."\"" default=None subst Double v3 "string:localhost?a=1b${s1}2"@182
+              close " />"
+              empty
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
+attrs #2 [("href", "string:localhost?a=1b${s1}2")]

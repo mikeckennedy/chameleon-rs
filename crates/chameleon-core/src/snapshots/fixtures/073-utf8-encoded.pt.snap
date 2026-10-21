@@ -1,0 +1,36 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<?xml"
+      attr " version=\"1.0\""
+      attr " ?"
+      close ">"
+      empty
+  text "\n"
+  scope attrs=#1
+    element "<html"
+      attr " xmlns=\"http://www.w3.org/1999/xhtml\""
+      close ">"
+      text "\n"
+      scope attrs=#2
+        element "<head"
+          close ">"
+          scope attrs=#3
+            element "<title"
+              close ">"
+              interpolation v0 Text "${'my title'} — ${'my site'}"@80
+            end "</title>"
+        end "</head>"
+      text "\n"
+      scope attrs=#4
+        element "<body"
+          close ">"
+          empty
+        end "</body>"
+      text "\n"
+    end "</html>"
+attrs #0 [("version", "1.0"), ("?", "")]
+attrs #1 [("xmlns", "http://www.w3.org/1999/xhtml")]

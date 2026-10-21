@@ -1,0 +1,48 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<span"
+              close ">"
+              content v0 "string:0 < 1 or 0 > 1"@39
+                default
+                  empty
+            end "</span>"
+          text "\n    "
+          scope attrs=#3
+            element "<span"
+              close ">"
+              content structure v1 "string:0 < 1 or 0 > 1"@98
+                default
+                  empty
+            end "</span>"
+          text "\n    "
+          scope attrs=#4
+            element "<span"
+              attr " class=\"0 < 1 or 0 > 1\""
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#5
+            element "<span"
+              close ">"
+              text "0 "
+              text "<"
+              text " 1 or 0 > 1"
+            end "</span>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
+attrs #4 [("class", "0 < 1 or 0 > 1")]

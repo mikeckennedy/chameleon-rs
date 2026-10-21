@@ -1,0 +1,41 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+macro "main"@26
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<head"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<title"
+              close ">"
+              define-slot "title"@79
+                scope attrs=#3
+                  text "Untitled"
+            end "</title>"
+          text "\n  "
+        end "</head>"
+      text "\n  "
+      scope attrs=#4
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#5
+            element "<h1"
+              close ">"
+              define-slot "title"@170
+                scope attrs=#6
+                  text "Untitled"
+            end "</h1>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+body
+  use-internal-macro "main"@26
+  text "\n"

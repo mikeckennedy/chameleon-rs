@@ -2,7 +2,9 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use pyo3::exceptions::{PyAttributeError, PyKeyError, PyRecursionError, PyRuntimeError};
+use pyo3::exceptions::{
+    PyAssertionError, PyAttributeError, PyKeyError, PyRecursionError, PyRuntimeError, PyTypeError, PyValueError,
+};
 use pyo3::intern;
 use pyo3::prelude::*;
 
@@ -26,7 +28,7 @@ pub(crate) fn compile_error(py: Python<'_>, err: CompileError<PyErr>, src: &str,
     match err {
         CompileError::Expr(e) => e,
         CompileError::TooLarge => PyRuntimeError::new_err("template source is larger than 4 GiB"),
-        CompileError::Template { kind, message, span } => {
+        CompileError::Template { kind, message, token } => {
             let class = match kind {
                 ErrorKind::Parse => "ParseError",
                 ErrorKind::Compilation => "CompilationError",
@@ -37,12 +39,22 @@ pub(crate) fn compile_error(py: Python<'_>, err: CompileError<PyErr>, src: &str,
                 // Chameleon raises these as bare built-in exceptions, without a position.
                 ErrorKind::Key => return PyKeyError::new_err(message),
                 ErrorKind::Attribute => return PyAttributeError::new_err(message),
+                ErrorKind::Assertion => return PyAssertionError::new_err(()),
+                ErrorKind::Value => return PyValueError::new_err(message),
+                ErrorKind::Type => return PyTypeError::new_err(message),
             };
-            let token = span.text(src);
+            let (text, pos) = token.resolve(src);
             let source = Source::new(src);
-            let offset = source.char_offset(span.start as usize);
-            let loc = source.location(span.start as usize);
-            match exc_class(py, class).and_then(|cls| cls.call1((message, token, offset, loc, filename))) {
+            // A token without a position is a plain `str` in Chameleon: offset 0, location
+            // (0, 0) and no filename.
+            let (offset, loc, filename) = match pos {
+                Some(p) => {
+                    let offset = p.offset(&source);
+                    (offset, source.location_of_offset(offset), filename)
+                }
+                None => (0, (0, 0), ""),
+            };
+            match exc_class(py, class).and_then(|cls| cls.call1((message, text, offset, loc, filename))) {
                 Ok(exc) => PyErr::from_value(exc),
                 Err(e) => e,
             }

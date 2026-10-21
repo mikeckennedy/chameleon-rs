@@ -1,0 +1,71 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<div"
+              close ">"
+              translate ""@41
+                text "\n      Hello\n      "
+                scope attrs=#3
+                  condition v0 "True"@85
+                    text "\n        "
+                    i18n-name "world"@117
+                      scope attrs=#4
+                        element "<span"
+                          close ">"
+                          text "world!"
+                        end "</span>"
+                    text "\n      "
+                text "\n    "
+            end "</div>"
+          text "\n    "
+          scope attrs=#5
+            element "<div"
+              close ">"
+              translate "hello"@194
+                text "\n      Hello\n      "
+                scope attrs=#6
+                  condition v1 "True"@243
+                    text "\n        "
+                    i18n-name "world"@275
+                      scope attrs=#7
+                        element "<span"
+                          close ">"
+                          text "world!"
+                        end "</span>"
+                    text "\n      "
+                text "\n    "
+            end "</div>"
+          text "\n    "
+          scope attrs=#8
+            element "<div"
+              close ">"
+              translate ""@352
+                text "\n      Goodbye\n      "
+                scope attrs=#9
+                  condition v2 "False"@398
+                    text "\n        "
+                    i18n-name "world"@431
+                      scope attrs=#10
+                        element "<span"
+                          close ">"
+                          text "world!"
+                        end "</span>"
+                    text "\n      "
+                text "\n    "
+            end "</div>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

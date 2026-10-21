@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::{
-    Call, Countdown, Done, Emitted, Escape, ExprCompileError, ExprCompiler, ExprContext, ExprId, NameId, Output,
-    Program, Runtime, Span, Step, VmError, VmState, compile, escape_into, run,
+    Call, Countdown, DefaultAlias, Done, Emitted, Escape, ExprCompileError, ExprCompiler, ExprContext, ExprId, NameId,
+    Options, Output, Program, Runtime, Stage, Step, Tok, Visibility, VmError, VmState, compile, escape_into, run,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -17,6 +17,9 @@ enum V {
     Str(String),
     List(Vec<V>),
     Default,
+    Bool(bool),
+    /// An ordered mapping (`dict(a=1,b='x')`).
+    Dict(Vec<(String, V)>),
     /// A loop iterator: the items and an id (the position lives in the scope).
     Iter(Vec<V>, usize),
     /// A frame's code: index into the toy's programs.
@@ -25,13 +28,14 @@ enum V {
     Scope(usize),
 }
 
-/// Toy expressions: `none`, integers, `'strings'`, `[a, b]` lists of those, `default` (when
-/// aliased), `call:N` (run program N as a frame), `wait:X` (suspend, resume with X's value),
-/// and names.
+/// Toy expressions: `none`, `true`/`false`, integers, `'strings'`, `[a, b]` lists of those,
+/// `dict(a=1,b='x')`, `default` (when aliased), `attrs` (when aliased: the attribute names),
+/// `call:N` (run program N as a frame), `wait:X` (suspend, resume with X's value), and names.
 #[derive(Clone, Debug)]
 struct Expr {
     src: String,
-    default_is_marker: bool,
+    default: DefaultAlias,
+    attrs: Option<Vec<(String, String)>>,
     emitted: bool,
 }
 
@@ -42,16 +46,25 @@ struct Toy {
 
 impl ExprCompiler for Toy {
     type Error = String;
-    fn compile(&mut self, source: &str, _: Span, cx: ExprContext) -> Result<ExprId, ExprCompileError<String>> {
-        let s = source.trim();
+    fn compile(&mut self, source: &Tok, cx: ExprContext<'_>) -> Result<ExprId, ExprCompileError<String>> {
+        let s = source.text.trim();
         if s.is_empty() || s.contains('}') || s.matches('\'').count() % 2 == 1 {
-            return Err(ExprCompileError::Invalid { message: format!("invalid: {s:?}") });
+            return Err(ExprCompileError::Invalid { message: format!("invalid: {s:?}"), token: None });
         }
         if s == "boom" {
             return Err(ExprCompileError::Other("boom".into()));
         }
-        self.exprs.push(Expr { src: s.to_owned(), default_is_marker: cx.default_is_marker, emitted: cx.emitted });
+        self.exprs.push(Expr {
+            src: s.to_owned(),
+            default: cx.default,
+            attrs: cx.attrs.map(|a| a.items.to_vec()),
+            emitted: cx.emitted,
+        });
         Ok(ExprId(u32::try_from(self.exprs.len() - 1).unwrap()))
+    }
+
+    fn compile_code(&mut self, _: &Tok) -> Result<ExprId, ExprCompileError<String>> {
+        Err(ExprCompileError::Other("code blocks are not supported by the toy".into()))
     }
 }
 
@@ -94,8 +107,24 @@ impl World {
     fn plain(&self, s: &str, cx: &Expr) -> Result<V, String> {
         Ok(if s == "none" {
             V::None
-        } else if s == "default" && cx.default_is_marker {
+        } else if s == "true" || s == "false" {
+            V::Bool(s == "true")
+        } else if s == "default" && cx.default == DefaultAlias::Marker {
             V::Default
+        } else if s == "attrs" && cx.attrs.is_some() {
+            let names: Vec<_> = cx.attrs.iter().flatten().map(|(k, v)| format!("{k}={v}")).collect();
+            V::Str(names.join(","))
+        } else if let Some(inner) = s.strip_prefix("dict(").and_then(|r| r.strip_suffix(')')) {
+            V::Dict(
+                inner
+                    .split(',')
+                    .filter(|p| !p.trim().is_empty())
+                    .map(|p| {
+                        let (k, v) = p.split_once('=').ok_or("bad dict")?;
+                        Ok((k.trim().to_owned(), self.plain(v.trim(), cx)?))
+                    })
+                    .collect::<Result<_, String>>()?,
+            )
         } else if let Ok(n) = s.parse() {
             V::Int(n)
         } else if let Some(inner) = s.strip_prefix('\'').and_then(|r| r.strip_suffix('\'')) {
@@ -131,11 +160,12 @@ impl Runtime for World {
         self.value(&e.src.clone(), &e)
     }
 
-    fn emit(&mut self, value: V, esc: Escape, _lone: bool, out: &mut Output) -> Result<Emitted, String> {
+    fn emit(&mut self, value: V, esc: Escape, _stage: Stage, out: &mut Output) -> Result<Emitted, String> {
         let s = match value {
             V::None | V::Default => return Ok(Emitted::Nothing),
             V::Int(n) => n.to_string(),
             V::Str(s) => s,
+            V::Bool(b) => if b { "True" } else { "False" }.to_owned(),
             other => format!("{other:?}"),
         };
         escape_into(s.as_bytes(), esc, out);
@@ -147,7 +177,12 @@ impl Runtime for World {
     }
 
     fn truthy(&mut self, value: &V) -> Result<bool, String> {
-        Ok(!matches!(value, V::None | V::Int(0) | V::List(_)) || matches!(value, V::List(l) if !l.is_empty()))
+        Ok(match value {
+            V::None | V::Int(0) | V::Bool(false) => false,
+            V::List(l) => !l.is_empty(),
+            V::Str(s) => !s.is_empty(),
+            _ => true,
+        })
     }
 
     fn lookup(&mut self, name: NameId) -> Result<Option<V>, String> {
@@ -220,6 +255,49 @@ impl Runtime for World {
         };
         Ok(())
     }
+
+    fn define(&mut self, names: &[NameId], value: V, visibility: Visibility) -> Result<(), String> {
+        let label: Vec<_> = names.iter().map(|&n| self.name(n)).collect();
+        let global = if visibility == Visibility::Global { " global" } else { "" };
+        self.log.push(format!("define{global} {}", label.join(",")));
+        self.assign(names, value)
+    }
+
+    fn yields_name(&mut self, container: &V, name: &str) -> Result<bool, String> {
+        let V::Dict(items) = container else { return Err("TypeError: not iterable".into()) };
+        Ok(items.iter().any(|(k, _)| k == name))
+    }
+
+    fn attr_dict(&mut self, dict: &V, exclude: &[&str], bool_names: &[&str], out: &mut Output) -> Result<(), String> {
+        let V::Dict(items) = dict else { return Err("AttributeError: items".into()) };
+        for (name, value) in items {
+            let mut value = value.clone();
+            if bool_names.contains(&name.as_str()) {
+                if !self.truthy(&value)? {
+                    continue;
+                }
+                value = V::Str(name.clone());
+            }
+            if exclude.contains(&name.as_str()) || value == V::None {
+                continue;
+            }
+            out.push_str(&format!(" {name}=\""));
+            self.emit(value, Escape::Attr(crate::Quote::Double), Stage::Lone, out)?;
+            out.push_str("\"");
+        }
+        Ok(())
+    }
+
+    fn case_compare(&mut self, value: &V, switch: Option<&V>) -> Result<V, String> {
+        Ok(V::Bool(match switch {
+            Some(s) => value == s,
+            None => *value == V::Default,
+        }))
+    }
+
+    fn is_false(&mut self, value: &V) -> bool {
+        *value == V::Bool(false)
+    }
 }
 
 fn world(templates: &[&str], vars: &[(&str, V)]) -> World {
@@ -227,12 +305,16 @@ fn world(templates: &[&str], vars: &[(&str, V)]) -> World {
         .iter()
         .map(|t| {
             let mut toy = Toy::default();
-            let p = compile(t, &mut toy).unwrap_or_else(|e| panic!("{t}: {e:?}"));
+            let p = compile(t, &mut toy, &options()).unwrap_or_else(|e| panic!("{t}: {e:?}"));
             (Arc::new(p), toy.exprs)
         })
         .collect();
     let scope = vars.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect();
     World { programs, scopes: vec![scope], code: 0, scope: 0, log: Vec::new(), iterators: 0 }
+}
+
+fn options() -> Options {
+    Options { boolean_attributes: vec!["checked".into(), "selected".into()], ..Options::default() }
 }
 
 fn render_world(w: &mut World) -> String {
@@ -255,7 +337,7 @@ fn render(template: &str, vars: &[(&str, V)]) -> String {
 #[test]
 fn static_text_is_coalesced() {
     let mut toy = Toy::default();
-    let p = compile("<div class=\"a\">\n  <p>hi</p><!-- c --></div>", &mut toy).unwrap();
+    let p = compile("<div class=\"a\">\n  <p>hi</p><!-- c --></div>", &mut toy, &options()).unwrap();
     insta::assert_snapshot!(p.dump(), @r#"
       0 text "<div class=\"a\">\n  <p>hi</p><!-- c --></div>"
       1 end
@@ -266,16 +348,16 @@ fn static_text_is_coalesced() {
 fn listing_bytecode() {
     let mut toy = Toy::default();
     let src = "<ul>\n  <li tal:repeat=\"v vs\" class=\"x ${v}\"><a href=\"${v}\" tal:content=\"v\">d</a></li>\n</ul>";
-    let p = compile(src, &mut toy).unwrap();
+    let p = compile(src, &mut toy, &options()).unwrap();
     insta::assert_snapshot!(p.dump(), @r#"
       0 text "<ul>\n  "
-      1 loop ["v"] in e1 ws="\n  " next=10
+      1 loop ["v"] in e0 ws="\n  " next=10
       2 text "<li class=\"x "
-      3 emit e0 Attr(Double)
+      3 emit e1 Attr(Double) Part
       4 text "\"><a"
-      5 attr e3 Attr(Double) " href=\"" "\""
+      5 attr e2 Attr(Double) " href=\"" "\""
       6 text ">"
-      7 content e2 Content end=9
+      7 content e3 Content end=9
       8 text "d"
       9 text "</a></li>"
      10 loop_next body=2
@@ -359,15 +441,97 @@ fn suspend_and_resume() {
 
 #[test]
 fn compile_errors() {
-    let err = |src: &str| compile(src, &mut Toy::default()).unwrap_err().to_string();
+    let err = |src: &str| compile(src, &mut Toy::default(), &options()).unwrap_err().to_string();
     assert_eq!(err("<p>${ }</p>"), "invalid: \"\"");
     assert_eq!(err("<p tal:foo=\"x\"/>"), "Bad attribute for namespace 'http://xml.zope.org/namespaces/tal'");
-    assert_eq!(err("<p tal:define=\"x 1\"/>"), "The attribute tal:define is not supported yet by chameleon-rs");
-    assert_eq!(err("<p tal:repeat=\"econtext xs\"/>"), "Name disallowed by compiler: econtext");
+    assert_eq!(err("<p metal:use-macro=\"x\"/>"), "metal:use-macro is not supported yet by chameleon-rs");
+    assert_eq!(err("<p tal:repeat=\"econtext xs\"/>"), "Name disallowed by compiler.");
+    assert_eq!(err("<p tal:define=\"__x 1\"/>"), "Name disallowed by compiler (double underscore).");
     assert_eq!(err("<p>a</b>"), "Unexpected end tag.");
-    assert_eq!(err("<?python x = 1 ?>"), "A <?python ?> code block is not supported yet by chameleon-rs");
+    assert_eq!(err("<?python x = 1 ?>"), "expression compiler error");
     assert_eq!(err("<a foo:b=\"1\"/>"), "Undefined namespace prefix: foo.");
-    assert!(matches!(compile("${boom}", &mut Toy::default()), Err(crate::CompileError::Expr(e)) if e == "boom"));
+    assert_eq!(err("<p tal:case=\"1\"/>"), "Must define switch on a parent element.");
+    assert!(
+        matches!(compile("${boom}", &mut Toy::default(), &options()), Err(crate::CompileError::Expr(e)) if e == "boom")
+    );
+}
+
+#[test]
+fn define_backs_up_before_evaluating_and_restores_in_reverse() {
+    let vars = [("x", V::Str("outer".into()))];
+    let mut w = world(&["<p tal:define=\"x 1; y x; global g 'G'\">${x}${y}${g}</p>${x}${g}"], &vars);
+    assert_eq!(render_world(&mut w), "<p>11G</p>outerG");
+    assert_eq!(w.log, ["backup x", "define x", "backup y", "define y", "define global g", "restore y", "restore x"]);
+    let pairs = [("p", V::List(vec![V::Int(1), V::Int(2)]))];
+    assert_eq!(render("<i tal:define=\"(a, b) p\">${a}${b}</i>", &pairs), "<i>12</i>");
+}
+
+#[test]
+fn attrs_alias_is_the_elements_static_attributes() {
+    assert_eq!(render("<p a=\"1\" tal:define=\"s attrs\" tal:content=\"s\"/>", &[]), "<p a=\"1\">a=1</p>");
+    assert_eq!(render("<p b=\"2\"><i tal:content=\"attrs\"/>${attrs}</p>", &[]), "<p b=\"2\"><i></i>b=2</p>");
+    let mut toy = Toy::default();
+    compile("${attrs}", &mut toy, &options()).unwrap();
+    assert_eq!(toy.exprs[0].attrs, None);
+}
+
+#[test]
+fn omit_tag() {
+    let vars = [("t", V::Int(1)), ("f", V::Int(0))];
+    assert_eq!(render("<p tal:omit-tag=\"\">a</p><p tal:omit-tag=\"t\" x=\"${t}\">b</p>", &vars), "ab");
+    assert_eq!(render("<p tal:omit-tag=\"f\">c</p><br tal:omit-tag=\"f\"/>", &vars), "<p>c</p><br/>");
+}
+
+#[test]
+fn replace_with_default() {
+    assert_eq!(render("<p tal:replace=\"'x'\">a</p>|<p tal:replace=\"default\">b</p>", &[]), "x|<p>b</p>");
+}
+
+#[test]
+fn dynamic_attributes() {
+    let vars = [("t", V::Int(1)), ("f", V::Int(0)), ("n", V::None)];
+    assert_eq!(
+        render("<p a=\"1\" tal:attributes=\"a 'x'; b n; c default; d 'y'\">t</p>", &vars),
+        "<p a=\"x\" d=\"y\">t</p>"
+    );
+    assert_eq!(render("<p a=\"1\" tal:attributes=\"a default\">t</p>", &vars), "<p a=\"1\">t</p>");
+    // Boolean attributes: true takes the name, false drops, default keeps the static value.
+    assert_eq!(
+        render(
+            "<i checked=\"yes\" tal:attributes=\"checked t; selected f\"/><i checked=\"c\" tal:attributes=\"checked default\"/>",
+            &vars
+        ),
+        "<i checked=\"checked\"/><i checked=\"c\"/>"
+    );
+    assert_eq!(
+        render("<i checked=\"${t}\" selected=\"${f}\"/><i checked=\"${f}${t}\"/>", &vars),
+        "<i checked=\"checked\"/><i checked=\"checked\"/>"
+    );
+    assert_eq!(render("<i checked=\"${f}${n}\" selected=\"a${n}\"/>", &vars), "<i selected=\"selected\"/>");
+}
+
+#[test]
+fn dictionary_attributes_and_filters() {
+    let vars =
+        [("d", V::Dict(vec![("a".into(), V::Str("A".into())), ("checked".into(), V::Int(0)), ("z".into(), V::None)]))];
+    // `a` is written by the dictionary, so the static `a` before it is filtered out.
+    // The dictionary goes after the written attributes (Chameleon appends it).
+    assert_eq!(render("<p a=\"1\" tal:attributes=\"d\" b=\"2\">t</p>", &vars), "<p b=\"2\" a=\"A\">t</p>");
+    assert_eq!(render("<p a=\"${1}\" tal:attributes=\"d\">t</p>", &vars), "<p a=\"A\">t</p>");
+}
+
+#[test]
+fn switch_and_case() {
+    let src =
+        "<div tal:switch=\"x\"><b tal:case=\"1\">one</b><b tal:case=\"2\">two</b><b tal:case=\"default\">d</b></div>";
+    assert_eq!(render(src, &[("x", V::Int(2))]), "<div><b>two</b></div>");
+    assert_eq!(render(src, &[("x", V::Int(9))]), "<div><b>d</b></div>");
+    assert_eq!(render(src, &[("x", V::Int(1))]), "<div><b>one</b></div>");
+    // An own-element switch is not cached before the case: Chameleon's assertion fails.
+    assert_eq!(
+        compile("<p tal:switch=\"1\" tal:case=\"1\"/>", &mut Toy::default(), &options()).unwrap_err().kind(),
+        Some(crate::ErrorKind::Assertion)
+    );
 }
 
 #[test]
@@ -439,7 +603,7 @@ fn resume_and_run_are_checked() {
 
 #[test]
 fn capacity_hint_is_smoothed_and_capped() {
-    let p = compile("x", &mut Toy::default()).unwrap();
+    let p = compile("x", &mut Toy::default(), &options()).unwrap();
     p.record_size(1000);
     assert_eq!(p.capacity_hint(), 1000);
     p.record_size(usize::MAX / 2);
@@ -456,4 +620,69 @@ fn declarations_processing_instructions_and_cdata_pass_through() {
         render("<!DOCTYPE html>\n<?php $$x ?><![CDATA[ $$ ]]><p>a</p\n<b", &[]),
         "<!DOCTYPE html>\n<?php $x ?><![CDATA[ $$ ]]><p>a</p<b"
     );
+}
+
+/// The program tree of every upstream fixture, as a snapshot (a regression guard; exactness
+/// is checked against Chameleon by the pytest differential tests). Options follow the
+/// upstream harness (`test_templates.execute`): implicit i18n and data attributes by file
+/// name, the HTML boolean attributes and newline normalization unless the fixture is XML.
+#[test]
+fn fixture_trees() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/upstream/chameleon_tests/inputs");
+    let mut paths: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "pt" || e == "txt"))
+        .collect();
+    paths.sort();
+    assert!(paths.len() > 100, "fixtures not found in {}", dir.display());
+    let html_booleans = [
+        "compact", "nowrap", "ismap", "declare", "noshade", "checked", "disabled", "readonly", "multiple", "selected",
+        "noresize", "defer",
+    ];
+    let mut built = 0;
+    for path in &paths {
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        // Not UTF-8 (074 is windows-1251): decoding needs Python's codecs; pytest covers it.
+        let Ok(text) = String::from_utf8(std::fs::read(path).unwrap()) else { continue };
+        let text = text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned();
+        let xml = text.starts_with("<?xml");
+        let text = if xml { text } else { text.replace("\r\n", "\n").replace('\r', "\n") };
+        let implicit = name.contains("implicit-i18n");
+        let text_mode = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("txt"));
+        let options = Options {
+            mode: if text_mode { crate::Mode::Text } else { crate::Mode::Xml },
+            escape: !text_mode,
+            boolean_attributes: if xml { Vec::new() } else { html_booleans.map(String::from).to_vec() },
+            implicit_i18n_translate: implicit,
+            implicit_i18n_attributes: if implicit { vec!["alt".into(), "title".into()] } else { Vec::new() },
+            enable_data_attributes: name.contains("data-attributes"),
+            strict: false,
+            ..Options::default()
+        };
+        let dump = match crate::compile::build_tree(&text, &options) {
+            Ok(tree) => {
+                built += 1;
+                crate::nodes::dump(&tree, &text)
+            }
+            Err(e) => match e {
+                crate::CompileError::Template { kind, message, token } => {
+                    let (t, pos) = token.resolve(&text);
+                    let at = pos.map(|p| p.offset(&crate::Source::new(&text)));
+                    format!("error {kind:?}: {message} token={t:?} at={at:?}\n")
+                }
+                other => format!("error {other}\n"),
+            },
+        };
+        insta::with_settings!({ snapshot_path => "snapshots/fixtures", prepend_module_to_snapshot => false }, {
+            insta::assert_snapshot!(name, dump);
+        });
+    }
+    assert!(built > 100, "only {built} fixtures built");
+}
+
+#[test]
+fn instructions_stay_small() {
+    // The VM's hot loop reads instructions back to back; keep them at Phase 2's size.
+    assert_eq!(std::mem::size_of::<crate::Op>(), 24);
 }

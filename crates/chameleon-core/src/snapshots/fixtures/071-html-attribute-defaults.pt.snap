@@ -1,0 +1,82 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<input"
+              attr " type=\"input\""
+              attr "checked" " checked=\"".."\"" default=None boolean "checked" v0 "True"@64
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#3
+            element "<input"
+              attr " type=\"input\""
+              attr "checked" " checked=\"".."\"" default=None boolean "checked" v1 "False"@121
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#4
+            element "<input"
+              attr " type=\"input\""
+              attr "checked" " checked=\"".."\"" default=None boolean "checked" v2 "None"@179
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#5
+            element "<input"
+              attr " type=\"input\""
+              attr "checked" " checked=\"".."\"" default=Some("checked") boolean "checked" v3 "default"@254
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#6
+            element "<input"
+              attr " type=\"input\""
+              attr "checked" " checked".."" default=Some("") boolean "checked" v4 "default"@322
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#7
+            element "<input"
+              attr " type=\"input\""
+              attr " checked"
+              attr "checked" " checked=\"".."\"" default=None interp boolean "checked" v5 Attr(Double) "${default if True else None}"@375
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#8
+            element "<input"
+              attr " type=\"input\""
+              attr "checked" " checked=\"".."\"" default=None boolean "checked" v6 "default"@456
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#9
+            element "<input"
+              attr " type=\"input\""
+              attr "class" " class=\"".."\"" default=Some("field") subst Double v7 "True"@528
+              close " />"
+              empty
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
+attrs #2 [("type", "input"), ("checked", "True")]
+attrs #3 [("type", "input"), ("checked", "False")]
+attrs #4 [("type", "input"), ("checked", "None")]
+attrs #5 [("type", "input"), ("checked", "checked")]
+attrs #6 [("type", "input"), ("checked", "")]
+attrs #7 [("type", "input"), ("checked", "${default if True else None}")]
+attrs #8 [("type", "input"), ("checked", "default")]
+attrs #9 [("type", "input"), ("class", "field")]

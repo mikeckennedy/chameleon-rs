@@ -1,0 +1,26 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+macro "page"@26
+  scope attrs=#0
+    text "\n  "
+    define-slot "name"@74
+      scope attrs=#1
+        empty
+    text "\n"
+body
+  use-internal-macro "page"@26
+  text "\n\n"
+  scope attrs=#2
+    use-macro slots=#0 macroname="macros['page']" v0 "macros['page']"@131
+  text "\n"
+slots #0
+  fill-slot "name"@171
+    scope attrs=#3
+      element "<h1"
+        close ">"
+        content v1 "macroname"@190
+          default
+            text "name"
+      end "</h1>"

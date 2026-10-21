@@ -1,0 +1,24 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            repeat "i"@38, "j"@40 in v0 "((1, 2), (3, 4))"@44 ws="\n    "
+              element "<div"
+                close ">"
+                interpolation v1 Text "\n      ${repeat['i', 'j'].number}, ${i}, ${j}\n    "@62
+              end "</div>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

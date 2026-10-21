@@ -1,0 +1,80 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<div"
+      attr " xmlns=\"http://www.w3.org/1999/xhtml\""
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<ul"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            repeat "i"@212 in v2 "range(3)"@214 ws="\n    "
+              element "<li"
+                attr "name" " name=\"".."\"" default=None interp v0 Attr(Double) "${i}-${repeat.i.index}"@176
+                attr "class" " class=\"".."\"" default=None subst Double v1 "repeat['i'].even()+repeat['i'].odd()"@132
+                close ">"
+                scope attrs=#3
+                  content v3 "i"@243
+                    default
+                      element "<span"
+                        close " />"
+                        empty
+              end "</li>"
+          text "\n  "
+        end "</ul>"
+      text "\n  "
+      scope attrs=#4
+        element "<ul"
+          close ">"
+          text "\n    "
+          scope attrs=#5
+            repeat "i"@353 in v5 "range(3)"@355 ws="\n    "
+              element "<li"
+                attr "class" " class=\"".."\"" default=None subst Double v4 "repeat['i'].even+repeat['i'].odd"@299
+                close ">"
+                scope attrs=#6
+                  content v6 "i"@384
+                    default
+                      element "<span"
+                        close " />"
+                        empty
+              end "</li>"
+          text "\n  "
+        end "</ul>"
+      text "\n  "
+      scope attrs=#7
+        element "<ul"
+          close ">"
+          text "\n    "
+          scope attrs=#8
+            repeat "i"@430 in v7 "range(3)"@432 ws="\n    "
+              element "<li"
+                close ">"
+                scope attrs=#9
+                  condition v9 "repeat['i'].even"@463
+                    content v8 "repeat['i'].even"@494
+                      default
+                        element "<span"
+                          close " />"
+                          empty
+                scope attrs=#10
+                  condition v11 "repeat['i'].odd"@535
+                    content v10 "repeat['i'].odd"@565
+                      default
+                        element "<span"
+                          close " />"
+                          empty
+              end "</li>"
+          text "\n  "
+        end "</ul>"
+      text "\n"
+    end "</div>"
+  text "\n"
+attrs #0 [("xmlns", "http://www.w3.org/1999/xhtml")]
+attrs #2 [("name", "${i}-${repeat.i.index}"), ("class", "repeat['i'].even()+repeat['i'].odd()")]
+attrs #5 [("class", "repeat['i'].even+repeat['i'].odd")]

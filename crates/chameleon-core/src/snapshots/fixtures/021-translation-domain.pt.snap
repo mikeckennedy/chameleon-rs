@@ -1,0 +1,51 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        domain "old"@28
+          element "<body"
+            close ">"
+            text "\n    "
+            scope attrs=#2
+              domain "new"@56
+                element "<div"
+                  close ">"
+                  translate ""@77
+                    text "\n      Hello world!\n    "
+                end "</div>"
+            text "\n    "
+            scope attrs=#3
+              element "<div"
+                close ">"
+                translate ""@135
+                  text "\n      Hello world!\n    "
+              end "</div>"
+            text "\n    "
+            scope attrs=#4
+              domain "new"@203
+                element "<div"
+                  attr "class" " class=\"".."\"" default=Some("test") translate None (static "test")
+                  close ">"
+                  text "\n      Hello world!\n    "
+                end "</div>"
+            text "\n    "
+            scope attrs=#5
+              domain "new"@298
+                element "<div"
+                  attr "class" " class=\"".."\"" default=Some("test") translate Some("test_msgid") (static "test")
+                  close ">"
+                  text "\n      Hello world!\n    "
+                end "</div>"
+            text "\n  "
+          end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
+attrs #4 [("class", "test")]
+attrs #5 [("class", "test")]

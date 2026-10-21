@@ -1,0 +1,8 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    use-macro slots=#0 macroname="load('032-master-template.pt')" v0 "load('032-master-template.pt')"@23
+slots #0

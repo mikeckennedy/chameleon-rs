@@ -1,0 +1,120 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<div"
+              close ">"
+              content v0 "'Hello world!'"@38
+                default
+                  empty
+            end "</div>"
+          text "\n    "
+          scope attrs=#3
+            element "<div"
+              close ">"
+              content v1 "'Hello world!'"@79
+                default
+                  empty
+            end "</div>"
+          text "1\n   2"
+          scope attrs=#4
+            element "<div"
+              close ">"
+              content v2 "'Hello world!'"@121
+                default
+                  empty
+            end "</div>"
+          text "\n    "
+          scope attrs=#5
+            element "<div"
+              close ">"
+              content v3 "'Hello world!'"@162
+                default
+                  empty
+            end "</div>"
+          text "3\n    "
+          scope attrs=#6
+            element "<div"
+              close ">"
+              content v4 "'Hello world!'"@204
+                default
+                  text "4"
+            end "</div>"
+          text "5\n   6"
+          scope attrs=#7
+            element "<div"
+              close ">"
+              content v5 "'Hello world!'"@251
+                default
+                  empty
+            end "</div>"
+          text "\n    "
+          scope attrs=#8
+            element "<div"
+              close ">"
+              content v6 "1"@296
+                default
+                  empty
+            end "</div>"
+          text "\n    "
+          scope attrs=#9
+            element "<div"
+              close ">"
+              content v7 "1.0"@324
+                default
+                  empty
+            end "</div>"
+          text "\n    "
+          scope attrs=#10
+            element "<div"
+              close ">"
+              content v8 "True"@354
+                default
+                  empty
+            end "</div>"
+          text "\n    "
+          scope attrs=#11
+            element "<div"
+              close ">"
+              content v9 "False"@385
+                default
+                  empty
+            end "</div>"
+          text "\n    "
+          scope attrs=#12
+            element "<div"
+              close ">"
+              content v10 "0"@417
+                default
+                  empty
+            end "</div>"
+          text "\n    "
+          scope attrs=#13
+            element "<div"
+              close ">"
+              content v11 "None"@445
+                default
+                  empty
+            end "</div>"
+          text "\n    "
+          scope attrs=#14
+            content v12 "content"@476
+              default
+                element "<div"
+                  close " />"
+                  empty
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

@@ -327,20 +327,38 @@ def test_same_compile_error(source: str, name: str) -> None:
         chameleon_rs.PageTemplate(source)()
 
 
-def test_error_positions_are_code_points() -> None:
-    with pytest.raises(chameleon_rs.exc.ExpressionError) as err:
-        chameleon_rs.PageTemplate('<p>é\nü ${ 1 + }</p>')
-    assert err.value.location == (2, 4)
-    assert err.value.offset == len('<p>é\nü ${')
+@pytest.mark.parametrize(
+    'source',
+    [
+        '<p>é\nü ${ 1 + }</p>',
+        '<p tal:content=" 1 + ">x</p>',
+        '<p tal:content="x | 1 +">x</p>',
+        '<p>${ a | 1 + }</p>',
+        '<p tal:content="python: 1 +">x</p>',
+        '<p tal:define="a 1; b 1 +">x</p>',
+    ],
+)
+def test_error_positions_are_code_points(source: str) -> None:
+    # The token is the stripped Python part, at the position Chameleon's slicing gives.
+    with pytest.raises(chameleon.exc.ExpressionError) as want:
+        chameleon.PageTemplate(source)
+    with pytest.raises(chameleon_rs.exc.ExpressionError) as got:
+        chameleon_rs.PageTemplate(source)
+    assert (got.value.token, got.value.offset, got.value.location) == (
+        str(want.value.token),
+        want.value.offset,
+        want.value.location,
+    )
 
 
 def test_unsupported_features_say_so() -> None:
     for source in (
-        '<p tal:define="x 1">${x}</p>',
         '<?python x = 1 ?>',
-        '<![CDATA[${x}]]>',
         '<p>${string: a}</p>',
         '<p metal:use-macro="x"/>',
+        '<p tal:on-error="string:x">y</p>',
+        '<p i18n:translate="">y</p>',
+        '<div metal:define-macro="m">y</div>',
     ):
         with pytest.raises(chameleon_rs.exc.UnsupportedError):
             chameleon_rs.PageTemplate(source)

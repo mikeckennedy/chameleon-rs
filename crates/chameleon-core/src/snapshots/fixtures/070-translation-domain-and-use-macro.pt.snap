@@ -1,0 +1,16 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    domain "test"@19
+      use-macro slots=#0 macroname="load('032-master-template.pt').macros['main']" v0 "load('032-master-template.pt').macros['main']"@42
+slots #0
+  fill-slot "title"@116
+    scope attrs=#1
+      element "<title"
+        close ">"
+        translate "title"@139
+          text "Title"
+      end "</title>"

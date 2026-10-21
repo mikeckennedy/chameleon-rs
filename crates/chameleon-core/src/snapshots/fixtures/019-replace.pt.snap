@@ -1,0 +1,82 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            content v0 "'Hello world!'"@38
+              default
+                element "<div"
+                  close " />"
+                  empty
+          text "\n    "
+          scope attrs=#3
+            content v1 "'Hello world!'"@79
+              default
+                element "<div"
+                  close " />"
+                  empty
+          text "1\n   2"
+          scope attrs=#4
+            content v2 "'Hello world!'"@121
+              default
+                element "<div"
+                  close " />"
+                  empty
+          text "\n    "
+          scope attrs=#5
+            content v3 "'Hello world!'"@162
+              default
+                element "<div"
+                  close " />"
+                  empty
+          text "3\n    "
+          scope attrs=#6
+            content v4 "'Hello world!'"@204
+              default
+                element "<div"
+                  close ">"
+                  text "4"
+                end "</div>"
+          text "5\n   6"
+          scope attrs=#7
+            content v5 "'Hello world!'"@251
+              default
+                element "<div"
+                  close ">"
+                  empty
+                end "</div>"
+          text "\n    "
+          scope attrs=#8
+            content v6 "1"@296
+              default
+                element "<div"
+                  close " />"
+                  empty
+          text "\n    "
+          scope attrs=#9
+            content v7 "1.0"@324
+              default
+                element "<div"
+                  close " />"
+                  empty
+          text "\n    "
+          scope attrs=#10
+            content v8 "True"@354
+              default
+                element "<div"
+                  close " />"
+                  empty
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

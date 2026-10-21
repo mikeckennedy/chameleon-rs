@@ -1,60 +1,145 @@
 // Ported from Chameleon's src/chameleon/compiler.py (`Compiler.visit` text coalescing,
-// `visit_Start`, `visit_End`, `visit_Attribute`), modified: lowers the program tree to
-// bytecode instead of generating Python source.
+// `visit_Start`, `visit_End`, `visit_Attribute`, `visit_DictAttributes`, `visit_Define`,
+// `visit_Repeat`, `visit_Condition`, `visit_Content`, `visit_Cache`, `visit_Cancel`), modified:
+// lowers the program tree to bytecode instead of generating Python source.
 
 //! Lowering the program tree to bytecode: static text coalesced into one instruction per
 //! run, attribute prefixes and suffixes precomputed.
+//!
+//! Node kinds the VM does not run yet (macros, slots, i18n, `on-error`, code blocks,
+//! non-strict deferred errors) stop compilation with `UnsupportedError`.
 
-use crate::error::CompileError;
+use std::convert::Infallible;
+
+use crate::error::{CompileError, ErrorKind};
 use crate::escape::Escape;
-use crate::expr::ExprCompiler;
-use crate::nodes::{AttrNode, Node, Part};
-use crate::parser::{ParseOptions, parse};
-use crate::source::{Span, check_len};
-use crate::tokenize::tokenize;
-use crate::vm::{LoopInfo, NameId, Op, Program, TextRef};
-use crate::zpt::Builder;
+use crate::expr::{ExprCompiler, ExprId};
+use crate::interpolate::Part;
+use crate::nodes::{Attr, AttrValue, Content, ContentKind, Define, Element, Interp, Node, Translation, Tree, Value};
+use crate::options::{Mode, Options};
+use crate::parser::{Namespaces, ParseOptions, parse};
+use crate::resolve::{Resolved, Table, resolve};
+use crate::source::check_len;
+use crate::tok::Tok;
+use crate::tokenize::{tokenize, tokenize_text};
+use crate::vm::{AttrInfo, AttrKind, DefineInfo, DictInfo, LoopInfo, NameId, Op, Program, Stage, TextRef, Visibility};
+use crate::zpt::build;
 
 /// Compiles a page template to a [`Program`], parsing expressions with `compiler`.
-pub fn compile<C: ExprCompiler>(src: &str, compiler: &mut C) -> Result<Program, CompileError<C::Error>> {
+pub fn compile<C: ExprCompiler>(
+    src: &str,
+    compiler: &mut C,
+    options: &Options,
+) -> std::result::Result<Program, CompileError<C::Error>> {
+    let tree = build_tree(src, options).map_err(widen)?;
+    let table = resolve(&tree, compiler, options)?;
+    lower(&tree, &table).map_err(widen)
+}
+
+/// Tokenizes, parses and builds the program tree of `src` (no expressions are compiled).
+pub fn build_tree(src: &str, options: &Options) -> LResult<Tree> {
     if !check_len(src) {
         return Err(CompileError::TooLarge);
     }
-    let tokens = tokenize(src);
-    let items = parse(src, &tokens, &ParseOptions::default())?;
-    let tree = Builder::new(src, compiler).build(&items)?;
-    lower(&tree).ok_or_else(|| CompileError::new(crate::ErrorKind::Unsupported, "program too large", Span::default()))
+    let tokens = match options.mode {
+        Mode::Xml => tokenize(src),
+        Mode::Text => tokenize_text(src),
+    };
+    let parse_options =
+        ParseOptions { namespaces: Namespaces::zpt(), restricted_namespace: options.restricted_namespace };
+    let items = parse(src, &tokens, &parse_options)?;
+    build(src, &items, options)
 }
 
-/// Lowers a program tree. `None` if it does not fit in `u32` indices.
-pub(crate) fn lower(tree: &Node) -> Option<Program> {
-    let mut l = Lower::default();
-    l.node(tree)?;
+pub(crate) fn widen<E>(e: CompileError<Infallible>) -> CompileError<E> {
+    match e {
+        CompileError::Template { kind, message, token } => CompileError::Template { kind, message, token },
+        CompileError::TooLarge => CompileError::TooLarge,
+        CompileError::Expr(never) => match never {},
+    }
+}
+
+type LResult<T> = std::result::Result<T, CompileError<Infallible>>;
+
+/// Lowers a tree whose expressions `table` holds.
+pub(crate) fn lower(tree: &Tree, table: &Table) -> LResult<Program> {
+    if let Some((name, _)) = tree.macros.first() {
+        return Err(CompileError::unsupported("metal:define-macro", name));
+    }
+    let mut l = Lower {
+        table,
+        ops: Vec::new(),
+        text: Vec::new(),
+        pending: Vec::new(),
+        names: Vec::new(),
+        tables: crate::vm::Tables::default(),
+    };
+    l.node(&tree.body)?;
     l.flush()?;
     l.ops.push(Op::End);
-    Some(Program::new(l.ops, l.text, l.names, l.loops))
+    Ok(Program::new(l.ops, l.text, l.names, l.tables))
 }
 
-#[derive(Default)]
-struct Lower {
+struct Lower<'a> {
+    table: &'a Table,
     ops: Vec<Op>,
     text: Vec<u8>,
     /// Static text not yet emitted, coalesced into one [`Op::Text`].
     pending: Vec<u8>,
     names: Vec<Box<str>>,
-    loops: Vec<LoopInfo>,
+    tables: crate::vm::Tables,
 }
 
-impl Lower {
-    fn node(&mut self, node: &Node) -> Option<()> {
+fn unsupported(what: &str) -> CompileError<Infallible> {
+    CompileError::unsupported(what, Tok::plain(""))
+}
+
+fn too_large() -> CompileError<Infallible> {
+    CompileError::new(ErrorKind::Unsupported, "program too large", Tok::plain(""))
+}
+
+fn index(n: usize) -> LResult<u32> {
+    u32::try_from(n).map_err(|_| too_large())
+}
+
+impl Lower<'_> {
+    fn expr(&self, v: &Value) -> LResult<ExprId> {
+        match self.table.get(v.id) {
+            Some(Resolved::Expr(id)) => Ok(*id),
+            Some(Resolved::Deferred { .. }) => Err(CompileError::unsupported(
+                "Rendering an expression with a syntax error in non-strict mode",
+                &v.source,
+            )),
+            _ => Err(CompileError::new(ErrorKind::Unsupported, "internal: expression not compiled", &v.source)),
+        }
+    }
+
+    fn parts(&self, i: &Interp) -> LResult<&[Part]> {
+        match self.table.get(i.id) {
+            Some(Resolved::Parts(parts)) => Ok(parts),
+            Some(Resolved::Deferred { .. }) => Err(CompileError::unsupported(
+                "Rendering an interpolation with a syntax error in non-strict mode",
+                &i.source,
+            )),
+            _ => Err(CompileError::new(ErrorKind::Unsupported, "internal: interpolation not compiled", &i.source)),
+        }
+    }
+
+    #[allow(clippy::too_many_lines)] // one arm per node kind
+    fn node(&mut self, node: &Node) -> LResult<()> {
         match node {
             Node::Text(s) => self.pending.extend_from_slice(s.as_bytes()),
-            Node::Interpolation { parts, esc } => {
+            Node::Empty => {}
+            Node::Interpolation(i) => {
+                if i.translate == Translation::Translated {
+                    return Err(CompileError::unsupported("Implicit translation (implicit_i18n_translate)", &i.source));
+                }
+                let parts = self.parts(i)?.to_vec();
                 // A text node that is just `${x}` is a lone interpolation.
                 if let [Part::Expr(expr)] = parts.as_slice() {
-                    self.op(Op::Emit { expr: *expr, esc: *esc, lone: true })?;
+                    self.op(Op::Emit { expr: *expr, esc: i.escape, stage: Stage::Lone })?;
                 } else {
-                    self.parts(parts, *esc)?;
+                    self.emit_parts(&parts, i.escape, false)?;
                 }
             }
             Node::Sequence(nodes) => {
@@ -62,110 +147,313 @@ impl Lower {
                     self.node(n)?;
                 }
             }
-            Node::Element { start, body, end } => {
-                self.pending.extend_from_slice(start.open.as_bytes());
-                for attr in &start.attrs {
-                    match attr {
-                        AttrNode::Static(s) => self.pending.extend_from_slice(s.as_bytes()),
-                        AttrNode::Single { prefix, expr, quote, suffix } => {
-                            let prefix = self.intern(prefix.as_bytes())?;
-                            let suffix = self.intern(suffix.as_bytes())?;
-                            self.op(Op::Attr { expr: *expr, esc: Escape::Attr(*quote), prefix, suffix })?;
-                        }
-                        AttrNode::Parts { prefix, parts, quote, suffix } => {
-                            self.pending.extend_from_slice(prefix.as_bytes());
-                            self.parts(parts, Escape::Attr(*quote))?;
-                            self.pending.extend_from_slice(suffix.as_bytes());
-                        }
-                    }
-                }
-                self.pending.extend_from_slice(start.close.as_bytes());
-                self.node(body)?;
-                if let Some(end) = end {
-                    self.pending.extend_from_slice(end.as_bytes());
-                }
-            }
-            Node::Content { expr, esc, default } => {
-                let at = self.op(Op::Content { expr: *expr, esc: *esc, end: 0 })?;
-                self.node(default)?;
-                let end = self.here()?;
-                if let Some(Op::Content { end: e, .. }) = self.ops.get_mut(at) {
-                    *e = end;
-                }
-            }
+            Node::Element(e) => self.element(e)?,
+            Node::Content(c) => self.content(c)?,
+            Node::Define(d) => self.define(d)?,
             Node::Condition { expr, body } => {
-                let at = self.op(Op::JumpIfNot { expr: *expr, target: 0 })?;
+                let expr = self.expr(expr)?;
+                let at = self.op(Op::JumpIfNot { expr, target: 0 })?;
                 self.node(body)?;
                 let target = self.here()?;
                 if let Some(Op::JumpIfNot { target: t, .. }) = self.ops.get_mut(at) {
                     *t = target;
                 }
             }
-            Node::Repeat { names, expr, whitespace, body } => {
-                let names = names.iter().map(|n| self.name(n)).collect::<Option<Vec<_>>>()?;
-                let whitespace = self.intern(whitespace.as_bytes())?;
-                let info = u32::try_from(self.loops.len()).ok()?;
-                self.loops.push(LoopInfo { names, whitespace });
-                let start = self.op(Op::LoopStart { info, expr: *expr, next: 0 })?;
-                self.node(body)?;
-                let body = u32::try_from(start + 1).ok()?;
+            Node::Repeat(r) => {
+                if r.visibility == Visibility::Global {
+                    return Err(unsupported("A global tal:repeat"));
+                }
+                let expr = self.expr(&r.expr)?;
+                let names = r.names.iter().map(|n| self.name(&n.text)).collect::<LResult<Vec<_>>>()?;
+                let whitespace = self.intern(r.whitespace.as_bytes())?;
+                let info = index(self.tables.loops.len())?;
+                self.tables.loops.push(LoopInfo { names, whitespace });
+                let start = self.op(Op::LoopStart { info, expr, next: 0 })?;
+                self.node(&r.body)?;
+                let body = index(start + 1)?;
                 let next = self.op(Op::LoopNext { info, body })?;
                 if let Some(Op::LoopStart { next: n, .. }) = self.ops.get_mut(start) {
-                    *n = u32::try_from(next).ok()?;
+                    *n = index(next)?;
+                }
+            }
+            Node::Switch { expr, body } => {
+                let expr = self.expr(expr)?;
+                self.op(Op::Switch { expr })?;
+                self.node(body)?;
+                self.op(Op::PopSwitch)?;
+            }
+            Node::Case { expr, body, .. } => {
+                let expr = self.expr(expr)?;
+                let test = self.op(Op::CaseTest { expr, no_match: 0, matched: 0 })?;
+                let default = self.op(Op::CaseDefault { expr, no_match: 0 })?;
+                let matched = index(default + 1)?;
+                self.node(body)?;
+                let no_match = self.here()?;
+                if let Some(Op::CaseTest { no_match: n, matched: m, .. }) = self.ops.get_mut(test) {
+                    *n = no_match;
+                    *m = matched;
+                }
+                if let Some(Op::CaseDefault { no_match: n, .. }) = self.ops.get_mut(default) {
+                    *n = no_match;
+                }
+            }
+            Node::OnError { .. } => return Err(unsupported("tal:on-error")),
+            Node::CodeBlock(code) => return Err(CompileError::unsupported("A <?python ?> code block", &code.source)),
+            Node::Translate { msgid, .. } => return Err(CompileError::unsupported("i18n:translate", msgid)),
+            Node::Name { name, .. } => return Err(CompileError::unsupported("i18n:name", name)),
+            Node::Domain { name, .. } => return Err(CompileError::unsupported("i18n:domain", name)),
+            Node::TxContext { name, .. } => return Err(CompileError::unsupported("i18n:context", name)),
+            Node::Target { expr, .. } => return Err(CompileError::unsupported("i18n:target", &expr.source)),
+            Node::DefineSlot { name, .. } => return Err(CompileError::unsupported("metal:define-slot", name)),
+            Node::UseMacro(m) => {
+                let what = if m.extend { "metal:extend-macro" } else { "metal:use-macro" };
+                return Err(CompileError::unsupported(what, &m.expr.source));
+            }
+            Node::UseInternalMacro(name) => return Err(CompileError::unsupported("metal:define-macro", name)),
+        }
+        Ok(())
+    }
+
+    fn content(&mut self, c: &Content) -> LResult<()> {
+        if c.translate == Translation::Translated {
+            return Err(CompileError::unsupported("i18n:translate on tal:content / tal:replace", &c.expr.source));
+        }
+        let expr = self.expr(&c.expr)?;
+        let esc = if c.kind == ContentKind::Structure { Escape::Structure } else { Escape::Content };
+        let Some(default) = &c.default else {
+            return Err(CompileError::unsupported("tal:on-error", &c.expr.source));
+        };
+        let at = self.op(Op::Content { expr, esc, end: 0 })?;
+        self.node(default)?;
+        let end = self.here()?;
+        if let Some(Op::Content { end: e, .. }) = self.ops.get_mut(at) {
+            *e = end;
+        }
+        Ok(())
+    }
+
+    /// `visit_Define`: local names are backed up before each assignment and restored, in
+    /// reverse order, after the body; global names are not restored.
+    fn define(&mut self, d: &Define) -> LResult<()> {
+        let mut locals = Vec::new();
+        for assign in &d.assigns {
+            let expr = self.expr(&assign.expr)?;
+            let names = assign.names.iter().map(|n| self.name(&n.text)).collect::<LResult<Vec<_>>>()?;
+            let info = index(self.tables.defines.len())?;
+            self.tables.defines.push(DefineInfo { names, visibility: assign.visibility });
+            self.op(Op::Define { info, expr })?;
+            if assign.visibility == Visibility::Local {
+                locals.push(info);
+            }
+        }
+        self.node(&d.body)?;
+        for info in locals.into_iter().rev() {
+            self.op(Op::Undefine { info })?;
+        }
+        Ok(())
+    }
+
+    fn element(&mut self, e: &Element) -> LResult<()> {
+        let omit = match &e.omit {
+            Some(v) => {
+                let expr = self.expr(v)?;
+                self.op(Op::OmitTest { expr })?;
+                Some(self.op(Op::JumpIfOmitted { target: 0 })?)
+            }
+            None => None,
+        };
+        self.pending.extend_from_slice(e.start.open.as_bytes());
+        let dicts: Vec<&Value> = e.start.dicts().collect();
+        for dict in &dicts {
+            let expr = self.expr(dict)?;
+            self.op(Op::CacheValue { expr })?;
+        }
+        let cached = index(dicts.len())?;
+        let mut dict_index = 0;
+        for attr in &e.start.attrs {
+            match attr {
+                Attr::Static { text, filters, name } => {
+                    if filters.is_empty() {
+                        self.pending.extend_from_slice(text.as_bytes());
+                    } else {
+                        let info = self.attr_info(name, text, "", None, filters)?;
+                        self.op(Op::AttrStatic { info, cached })?;
+                    }
+                }
+                Attr::Dynamic { name, prefix, suffix, value, default, filters } => {
+                    self.dynamic_attr(name, prefix, suffix, value, default.as_deref(), filters, cached)?;
+                }
+                Attr::Dict { exclude, bool_names, .. } => {
+                    let exclude = exclude.iter().map(|n| self.intern(n.as_bytes())).collect::<LResult<_>>()?;
+                    let bool_names = bool_names.iter().map(|n| self.intern(n.as_bytes())).collect::<LResult<_>>()?;
+                    let info = index(self.tables.dicts.len())?;
+                    self.tables.dicts.push(DictInfo { exclude, bool_names });
+                    self.op(Op::AttrDict { info, index: dict_index, cached })?;
+                    dict_index += 1;
                 }
             }
         }
-        Some(())
+        if cached > 0 {
+            self.op(Op::PopValues { n: cached })?;
+        }
+        self.pending.extend_from_slice(e.start.close.as_bytes());
+        if let Some(at) = omit {
+            // Only an omit test splits the text: the jump needs a target.
+            let after_start = self.here()?;
+            if let Some(Op::JumpIfOmitted { target }) = self.ops.get_mut(at) {
+                *target = after_start;
+            }
+        }
+        self.node(&e.content)?;
+        if let Some(end) = &e.end {
+            let skip = if omit.is_some() { Some(self.op(Op::JumpIfOmitted { target: 0 })?) } else { None };
+            self.pending.extend_from_slice(end.as_bytes());
+            if let Some(at) = skip {
+                let after_end = self.here()?;
+                if let Some(Op::JumpIfOmitted { target }) = self.ops.get_mut(at) {
+                    *target = after_end;
+                }
+            }
+        }
+        if omit.is_some() {
+            self.op(Op::PopOmit)?;
+        }
+        Ok(())
     }
 
-    fn parts(&mut self, parts: &[Part], esc: Escape) -> Option<()> {
+    #[allow(clippy::too_many_arguments)]
+    fn dynamic_attr(
+        &mut self,
+        name: &str,
+        prefix: &str,
+        suffix: &str,
+        value: &AttrValue,
+        default: Option<&str>,
+        filters: &[u32],
+        cached: u32,
+    ) -> LResult<()> {
+        let kind = match value {
+            AttrValue::Subst { expr, quote } => AttrKind::Subst { expr: self.expr(expr)?, esc: Escape::Attr(*quote) },
+            AttrValue::Boolean { expr, .. } => AttrKind::Boolean { expr: self.expr(expr)? },
+            AttrValue::Interp { interp, boolean, .. } => {
+                if interp.translate == Translation::Translated {
+                    return Err(CompileError::unsupported("Implicit attribute translation", &interp.source));
+                }
+                let parts = self.parts(interp)?.to_vec();
+                if !*boolean && filters.is_empty() {
+                    // The common case: `name="${x}"` or `name="a ${x} b"`.
+                    if let [Part::Expr(expr)] = parts.as_slice() {
+                        let prefix = self.intern(prefix.as_bytes())?;
+                        let suffix = self.intern(suffix.as_bytes())?;
+                        self.op(Op::Attr { expr: *expr, esc: interp.escape, prefix, suffix })?;
+                    } else {
+                        self.pending.extend_from_slice(prefix.as_bytes());
+                        self.emit_parts(&parts, interp.escape, false)?;
+                        self.pending.extend_from_slice(suffix.as_bytes());
+                    }
+                    return Ok(());
+                }
+                // Boolean or filtered: the value is written, then checked.
+                let info = self.attr_info(name, prefix, suffix, default, filters)?;
+                if let [Part::Expr(expr)] = parts.as_slice() {
+                    self.op(Op::AttrLone { expr: *expr, esc: interp.escape, info, boolean: *boolean, cached })?;
+                } else {
+                    self.op(Op::AttrBegin { info })?;
+                    self.emit_parts(&parts, interp.escape, *boolean)?;
+                    self.op(Op::AttrEnd { info, boolean: *boolean, cached })?;
+                }
+                return Ok(());
+            }
+            AttrValue::Static(_) | AttrValue::Translate { .. } => {
+                return Err(unsupported("i18n:attributes (attribute translation)"));
+            }
+        };
+        let info = self.attr_info(name, prefix, suffix, default, filters)?;
+        self.op(Op::AttrValue { info, kind, cached })?;
+        Ok(())
+    }
+
+    fn attr_info(
+        &mut self,
+        name: &str,
+        prefix: &str,
+        suffix: &str,
+        default: Option<&str>,
+        filters: &[u32],
+    ) -> LResult<u32> {
+        let info = AttrInfo {
+            name: self.intern(name.as_bytes())?,
+            prefix: self.intern(prefix.as_bytes())?,
+            suffix: self.intern(suffix.as_bytes())?,
+            default: default.map(|d| self.intern(d.as_bytes())).transpose()?,
+            filters: self.filters(filters)?,
+        };
+        let i = index(self.tables.attrs.len())?;
+        self.tables.attrs.push(info);
+        Ok(i)
+    }
+
+    fn filters(&mut self, filters: &[u32]) -> LResult<(u32, u32)> {
+        let start = index(self.tables.filters.len())?;
+        self.tables.filters.extend_from_slice(filters);
+        Ok((start, index(filters.len())?))
+    }
+
+    /// The parts of an interpolation; for a boolean attribute (`if_true`) a false part writes
+    /// nothing.
+    fn emit_parts(&mut self, parts: &[Part], esc: Escape, if_true: bool) -> LResult<()> {
         for part in parts {
             match part {
                 Part::Text(s) => self.pending.extend_from_slice(s.as_bytes()),
                 Part::Expr(expr) => {
-                    self.op(Op::Emit { expr: *expr, esc, lone: false })?;
+                    let stage = Stage::Part;
+                    self.op(if if_true {
+                        Op::EmitIfTrue { expr: *expr, esc, stage }
+                    } else {
+                        Op::Emit { expr: *expr, esc, stage }
+                    })?;
                 }
             }
         }
-        Some(())
+        Ok(())
     }
 
     /// Flushes pending text, then appends `op`; returns its index.
-    fn op(&mut self, op: Op) -> Option<usize> {
+    fn op(&mut self, op: Op) -> LResult<usize> {
         self.flush()?;
         self.ops.push(op);
-        Some(self.ops.len() - 1)
+        Ok(self.ops.len() - 1)
     }
 
     /// The index the next instruction will get (after flushing pending text).
-    fn here(&mut self) -> Option<u32> {
+    fn here(&mut self) -> LResult<u32> {
         self.flush()?;
-        u32::try_from(self.ops.len()).ok()
+        index(self.ops.len())
     }
 
-    fn flush(&mut self) -> Option<()> {
+    fn flush(&mut self) -> LResult<()> {
         if !self.pending.is_empty() {
             let pending = std::mem::take(&mut self.pending);
             let r = self.intern(&pending)?;
             self.ops.push(Op::Text(r));
         }
-        Some(())
+        Ok(())
     }
 
-    fn intern(&mut self, bytes: &[u8]) -> Option<TextRef> {
-        let start = u32::try_from(self.text.len()).ok()?;
-        let len = u32::try_from(bytes.len()).ok()?;
+    fn intern(&mut self, bytes: &[u8]) -> LResult<TextRef> {
+        let start = index(self.text.len())?;
+        let len = index(bytes.len())?;
         self.text.extend_from_slice(bytes);
-        Some(TextRef { start, len })
+        Ok(TextRef { start, len })
     }
 
-    fn name(&mut self, name: &str) -> Option<NameId> {
+    fn name(&mut self, name: &str) -> LResult<NameId> {
         let i = if let Some(i) = self.names.iter().position(|n| &**n == name) {
             i
         } else {
             self.names.push(name.into());
             self.names.len() - 1
         };
-        Some(NameId(u32::try_from(i).ok()?))
+        Ok(NameId(index(i)?))
     }
 }

@@ -1,0 +1,19 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    use-macro slots=#0 macroname="load('032-master-template.pt').macros['main']" v0 "load('032-master-template.pt').macros['main']"@23
+  text "\n"
+slots #0
+  fill-slot "content"@106
+    scope attrs=#1
+      text "\n    "
+      scope attrs=#2
+        condition v1 "content is None"@141
+          element "<span"
+            close ">"
+            text "ok"
+          end "</span>"
+      text "\n  "

@@ -1,0 +1,14 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    use-macro slots=#0 macroname="load('046-extend-macro.pt').macros['extended']" v0 "load('046-extend-macro.pt').macros['extended']"@23
+slots #0
+  fill-slot "kind"@95
+    scope attrs=#1
+      element "<em"
+        close ">"
+        text "Extended"
+      end "</em>"

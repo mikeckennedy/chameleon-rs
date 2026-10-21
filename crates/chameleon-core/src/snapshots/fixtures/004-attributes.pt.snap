@@ -1,0 +1,181 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<span"
+              attr "class" " class=\"".."\"" default=None subst Double v0 "'hello'"@48
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#3
+            element "<span"
+              attr "class" " class=\"".."\"" default=Some("goodbye") subst Double v1 "'hello'"@108
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#4
+            element "<span"
+              attr "class" " class=\"".."\"" default=Some("goodbye") subst Double v2 "'hello'"@168
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#5
+            element "<span"
+              attr "data-æøå" " data-æøå=\"".."\"" default=Some("goodbye") subst Double v3 "'hello'"@234
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#6
+            element "<span"
+              attr "class" " class=\"".."\"" default=None subst Double v4 "None"@278
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#7
+            element "<span"
+              attr "a" " a=\"".."\"" default=Some("1") subst Double v5 "None"@337
+              attr " b=\"2\""
+              attr " c=\"3\""
+              attr " d=4"
+              close ">"
+              empty
+            end "</span>"
+          text "\n    "
+          scope attrs=#8
+            element "<span"
+              attr " a=\"1\""
+              attr "b" " b=\"".."\"" default=Some("2") subst Double v6 "None"@397
+              attr " c=\"3\""
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#9
+            element "<span"
+              attr " a=\"1\""
+              attr " b=\"2\""
+              attr "c" " c=\"".."\"" default=Some("3") subst Double v7 "None"@452
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#10
+            element "<span"
+              attr " a=\"1\""
+              attr "b" " b=\"".."\"" default=Some("2") subst Double v8 "None"@507
+              attr "c" " c=\"".."\"" default=Some("3") subst Double v9 "None"@514
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#11
+            element "<span"
+              attr " a=\"1\""
+              attr "b" " b=\"".."\"" default=Some("2") subst Double v10 "string:;"@570
+              attr " c=\"3\""
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#12
+            element "<span"
+              attr " a=\"1\""
+              attr "b" " b=\"".."\"" default=Some("2") subst Double v11 "string:&"@630
+              attr " c=\"3\""
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#13
+            element "<span"
+              attr "class" " class=\"".."\"" default=Some("hello") subst Double v12 "'goodbye'"@693
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#14
+            element "<span"
+              attr "class" " class=\"".."\"" default=Some("hello") subst Double v13 "'\"goodbye\"'"@753
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#15
+            element "<span"
+              attr "class" " class=\"".."\"" default=Some("hello") subst Double v14 "'\\'goodbye\\''"@825
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#16
+            element "<span"
+              attr "class" " class='".."'" default=Some("hello") subst Single v15 "'\\'goodbye\\''"@889
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#17
+            element "<span"
+              attr-dict exclude=[] bool=12 v16 "{'class': 'goodbye'}"@933
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#18
+            element "<span"
+              attr " class=\"hello\"" filters=[0]
+              attr-dict exclude=[] bool=12 v17 "{'class': 'goodbye'}"@998
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#19
+            element "<span"
+              attr " a=\"1\"" filters=[0]
+              attr " class=\"hello\"" filters=[0]
+              attr-dict exclude=[] bool=12 v18 "{'class': 'goodbye'}"@1069
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#20
+            element "<span"
+              attr-dict exclude=[] bool=12 v19 "{'class': '\"goodbye\"'}"@1120
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#21
+            element "<span"
+              attr "class" " class=\"".."\"" default=None filters=[0] subst Double v20 "'hello'"@1189
+              attr-dict exclude=[] bool=12 v21 "{'class': '\"goodbye\"'}"@1197
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#22
+            element "<span"
+              attr-dict exclude=["class"] bool=12 v22 "{'class': '\"goodbye\"'}"@1261
+              attr "class" " class=\"".."\"" default=None subst Double v23 "'hello'"@1290
+              close " />"
+              empty
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
+attrs #2 [("class", "'hello'")]
+attrs #3 [("class", "goodbye")]
+attrs #4 [("class", "goodbye")]
+attrs #5 [("data-æøå", "goodbye")]
+attrs #6 [("class", "None")]
+attrs #7 [("a", "1"), ("b", "2"), ("c", "3"), ("d", "4")]
+attrs #8 [("a", "1"), ("b", "2"), ("c", "3")]
+attrs #9 [("a", "1"), ("b", "2"), ("c", "3")]
+attrs #10 [("a", "1"), ("b", "2"), ("c", "3")]
+attrs #11 [("a", "1"), ("b", "2"), ("c", "3")]
+attrs #12 [("a", "1"), ("b", "2"), ("c", "3")]
+attrs #13 [("class", "hello")]
+attrs #14 [("class", "hello")]
+attrs #15 [("class", "hello")]
+attrs #16 [("class", "hello")]
+attrs #18 [("class", "hello")]
+attrs #19 [("a", "1"), ("class", "hello")]
+attrs #21 [("class", "'hello'")]
+attrs #22 [("class", "'hello'")]

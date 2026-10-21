@@ -6,12 +6,14 @@
 use crate::entities_table::NAME_TO_CODEPOINT;
 use crate::pychars::{is_digit, is_word};
 
-/// Why an entity reference could not be decoded. Python raises `ValueError` from `chr()` or
-/// `int()` in these cases, so it is a compile error here too.
+/// Why an entity reference could not be decoded: Python raises a bare `ValueError` from
+/// `int()` or `chr()` (`message` is its text), or the reference names a surrogate, which
+/// Python decodes to a lone surrogate that a Rust string cannot hold.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("invalid character reference: {reference}")]
+#[error("{message}")]
 pub(crate) struct EntityError {
-    pub reference: String,
+    pub message: String,
+    pub surrogate: bool,
 }
 
 /// Chameleon's `decode_htmlentities`: replaces every match of `&(#?)(x?)(\d{1,5}|\w{1,8});`
@@ -88,17 +90,78 @@ fn run_then_semicolon(s: &str, max: usize, pred: impl Fn(char) -> bool) -> Optio
     (end > 0 && s.get(end..)?.starts_with(';')).then_some(end)
 }
 
+/// `substitute_entity`: `chr(int(ent))`, `chr(int('0x' + ent, 16))`, or the HTML 4 name.
 fn substitute(m: &Reference<'_>, whole: &str) -> Result<String, EntityError> {
-    let invalid = || EntityError { reference: whole.to_owned() };
     if m.hash {
-        let value = if m.x { u32::from_str_radix(m.body, 16) } else { m.body.parse::<u32>() };
-        let c = value.ok().and_then(char::from_u32).ok_or_else(invalid)?;
-        return Ok(c.to_string());
+        let (literal, base) = if m.x { (format!("0x{}", m.body), 16) } else { (m.body.to_owned(), 10) };
+        let value = py_int(&literal, base).ok_or_else(|| EntityError {
+            message: format!("invalid literal for int() with base {base}: '{literal}'"),
+            surrogate: false,
+        })?;
+        if value >= 0x11_0000 {
+            return Err(EntityError { message: "chr() arg not in range(0x110000)".to_owned(), surrogate: false });
+        }
+        #[allow(clippy::cast_possible_truncation)] // checked above
+        return char::from_u32(value as u32).map(String::from).ok_or_else(|| EntityError {
+            message: format!("the character reference {whole} is a lone surrogate"),
+            surrogate: true,
+        });
     }
     Ok(match NAME_TO_CODEPOINT.binary_search_by(|(name, _)| (*name).cmp(m.body)) {
-        Ok(i) => char::from_u32(NAME_TO_CODEPOINT[i].1).ok_or_else(invalid)?.to_string(),
+        Ok(i) => char::from_u32(NAME_TO_CODEPOINT[i].1).map_or_else(|| whole.to_owned(), String::from),
         Err(_) => whole.to_owned(),
     })
+}
+
+/// Python's `int(s, base)` for the strings an entity body can be (`\d{1,5}` or `\w{1,8}`,
+/// behind `0x` for base 16): Unicode decimal digits count as digits, a single `_` may follow
+/// the `0x` prefix or separate two digits. `None` where Python raises `ValueError`.
+fn py_int(s: &str, base: u32) -> Option<u64> {
+    let body = if base == 16 {
+        let rest = s.strip_prefix("0x")?;
+        rest.strip_prefix('_').unwrap_or(rest)
+    } else {
+        s
+    };
+    let mut value: u64 = 0;
+    let mut digits = 0;
+    let mut last_underscore = false;
+    for c in body.chars() {
+        if c == '_' {
+            if digits == 0 || last_underscore {
+                return None;
+            }
+            last_underscore = true;
+            continue;
+        }
+        let d = decimal_value(c).or_else(|| if base == 16 { c.to_digit(16) } else { None })?;
+        last_underscore = false;
+        digits += 1;
+        value = value.checked_mul(u64::from(base))?.checked_add(u64::from(d))?;
+    }
+    (digits > 0 && !last_underscore).then_some(value)
+}
+
+/// The value of a Unicode decimal digit (`Py_UNICODE_TODECIMAL`). Decimal digits always come
+/// in contiguous runs of whole `0..=9` groups, so the value is the number of digits directly
+/// before `c` in its run, modulo 10.
+fn decimal_value(c: char) -> Option<u32> {
+    if c.is_ascii_digit() {
+        return c.to_digit(10);
+    }
+    if !is_digit(c) {
+        return None;
+    }
+    let mut n = 0u32;
+    let mut cp = u32::from(c);
+    while let Some(prev) = cp.checked_sub(1).and_then(char::from_u32) {
+        if !is_digit(prev) {
+            break;
+        }
+        n += 1;
+        cp -= 1;
+    }
+    Some(n % 10)
 }
 
 #[cfg(test)]
@@ -119,8 +182,15 @@ mod tests {
     }
 
     #[test]
-    fn invalid_numeric_reference_is_an_error() {
-        assert!(decode_htmlentities("&#xZZ;").is_err());
-        assert!(decode_htmlentities("&#99999999;").is_err());
+    fn numeric_references_follow_python_int_and_chr() {
+        assert_eq!(decode("&#x1_0;&#x_1;&#\u{663};&#x\u{663};&#1_0;&#00065;"), "\u{10}\u{1}\u{3}\u{3}\n\u{41}");
+        let err = |s: &str| decode_htmlentities(s).unwrap_err().message;
+        assert_eq!(err("&#xzz;"), "invalid literal for int() with base 16: '0xzz'");
+        assert_eq!(err("&#x;"), "invalid literal for int() with base 10: 'x'");
+        assert_eq!(err("&#x1__0;"), "invalid literal for int() with base 16: '0x1__0'");
+        assert_eq!(err("&#x110000;"), "chr() arg not in range(0x110000)");
+        assert!(decode_htmlentities("&#xD800;").unwrap_err().surrogate);
+        // U+1D7CE..U+1D7FF are five runs of mathematical digits 0-9.
+        assert_eq!(decode("&#\u{1d7d9};"), "\u{1}");
     }
 }

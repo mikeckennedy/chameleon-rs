@@ -1,0 +1,33 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<head"
+          close ">"
+          text "\n    "
+          define attrs=#2
+            local "field"@40 = v0 "{'oid': 1}"@46
+            local "values"@57 = v1 "'values'"@64
+            local "options"@73 = v2 "'options'"@81
+            element "<script"
+              close ">"
+              interpolation v3 Text "\n      deform.addCallback(\n        '${field.oid}',\n        function (oid) {\n            $('#' + oid).autocomplete({source: ${values}});\n            $('#' + oid).autocomplete(\"option\", ${options});\n        }\n      );\n    "@94
+            end "</script>"
+          text "\n  "
+        end "</head>"
+      text "\n  "
+      scope attrs=#3
+        element "<body"
+          close ">"
+          text "\n    "
+          text "<!-- Form -->"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"

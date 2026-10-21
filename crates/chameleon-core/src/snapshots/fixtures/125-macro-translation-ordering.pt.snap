@@ -1,0 +1,41 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+macro "amacro"@326
+  scope attrs=#4
+    element "<h2"
+      close ">"
+      text "h2"
+    end "</h2>"
+body
+  scope attrs=#0
+    element "<html"
+      attr " xmlns=\"http://www.w3.org/1999/xhtml\""
+      attr " xml:lang=\"en\""
+      attr "\n      lang=\"en\""
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "  \n    "
+          scope attrs=#2
+            element "<div"
+              close ">"
+              translate ""@275
+                text "\n      "
+                scope attrs=#3
+                  element "<h1"
+                    close ">"
+                    text "h1"
+                  end "</h1>"
+                text "\n      "
+                use-internal-macro "amacro"@326
+                text "\n    "
+            end "</div>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+attrs #0 [("xmlns", "http://www.w3.org/1999/xhtml"), ("xml:lang", "en"), ("lang", "en")]

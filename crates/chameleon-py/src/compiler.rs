@@ -12,7 +12,7 @@ use pyo3::prelude::*;
 use pyo3::pyclass::CompareOp;
 use pyo3::types::{PyBool, PyBytes, PyComplex, PyDict, PyEllipsis, PyFloat, PyInt, PyList, PyNone, PyString};
 
-use chameleon_core::{ExprCompileError, ExprCompiler, ExprContext, ExprId, Span, is_python_space};
+use chameleon_core::{DefaultAlias, ExprCompileError, ExprCompiler, ExprContext, ExprId, Tok, is_python_space};
 
 use crate::errors::unsupported_error;
 use crate::expr::{BinaryOp, CmpOp, Expr, UnaryOp, lookup_attr};
@@ -27,6 +27,8 @@ pub(crate) struct PyExprCompiler<'py> {
     pub(crate) exprs: Vec<Expr>,
     /// Whether any expression mentions `repeat` (so native partial frames provide it).
     pub(crate) mentions_repeat: bool,
+    /// The `attrs` dict of each element, by `StaticAttrs::id`.
+    attrs_dicts: std::collections::HashMap<u32, Bound<'py, PyDict>>,
     ast_parse: Bound<'py, PyAny>,
     eval_mode: Bound<'py, PyDict>,
     builtins: Bound<'py, PyDict>,
@@ -44,6 +46,7 @@ impl<'py> PyExprCompiler<'py> {
             py,
             exprs: Vec::new(),
             mentions_repeat: false,
+            attrs_dicts: std::collections::HashMap::new(),
             ast_parse: py.import(intern!(py, "ast"))?.getattr(intern!(py, "parse"))?,
             eval_mode,
             builtins: py.import(intern!(py, "builtins"))?.dict(),
@@ -54,10 +57,12 @@ impl<'py> PyExprCompiler<'py> {
     }
 
     /// `ExpressionParser.__call__`: an optional `type:` prefix selects the expression type.
-    fn typed(&mut self, source: &str, cx: ExprContext, top: bool) -> CompileResult<Expr> {
-        if let Some((prefix, rest)) = match_prefix(source) {
+    /// Sources are `Tok`s so syntax errors carry the position Chameleon's slicing gives.
+    fn typed(&mut self, source: &Tok, cx: ExprContext<'_>, top: bool) -> CompileResult<Expr> {
+        if let Some((prefix, rest)) = match_prefix(&source.text) {
+            let rest = source.slice_from(source.text.len() - rest.len());
             return match prefix {
-                "python" => self.tales(rest, cx, top),
+                "python" => self.tales(&rest, cx, top),
                 p if OTHER_TYPES.contains(&p) => {
                     Err(ExprCompileError::Other(unsupported_error(self.py, &format!("The '{p}:' expression type"))))
                 }
@@ -69,22 +74,24 @@ impl<'py> PyExprCompiler<'py> {
 
     /// `TalesExpr.__call__`: alternatives separated by unescaped `|`; a part with a type
     /// prefix takes the rest of the expression.
-    fn tales(&mut self, expression: &str, cx: ExprContext, top: bool) -> CompileResult<Expr> {
+    fn tales(&mut self, expression: &Tok, cx: ExprContext<'_>, top: bool) -> CompileResult<Expr> {
         let mut alternatives = Vec::new();
-        let mut remaining = expression;
+        let mut remaining = expression.clone();
         while !remaining.is_empty() {
-            if match_prefix(remaining).is_some() {
-                alternatives.push(self.typed(remaining, cx, false)?);
+            if match_prefix(&remaining.text).is_some() {
+                alternatives.push(self.typed(&remaining, cx, false)?);
                 break;
             }
-            let (part, rest) = split_pipe(remaining);
-            let part = part.replace("\\|", "|");
-            remaining = rest;
+            let (part, rest) = split_pipe(&remaining.text);
+            let (part_len, rest_at) = (part.len(), remaining.text.len() - rest.len());
+            let part = remaining.slice(0, part_len);
+            let part = part.with_text(part.text.replace("\\|", "|"));
+            remaining = remaining.slice_from(rest_at);
             let only = top && remaining.is_empty() && alternatives.is_empty();
             alternatives.push(self.python(&part, cx, only)?);
         }
         match alternatives.len() {
-            0 => Err(ExprCompileError::Invalid { message: "No input:".to_owned() }),
+            0 => Err(ExprCompileError::Invalid { message: "No input:".to_owned(), token: Some(remaining) }),
             1 => Ok(alternatives.remove(0)),
             _ => Ok(Expr::Pipe(alternatives)),
         }
@@ -92,10 +99,13 @@ impl<'py> PyExprCompiler<'py> {
 
     /// `PythonExpr.translate`, then lowering. `only` is true for a whole emitted expression
     /// (where a native `render_partial` frame is possible).
-    fn python(&mut self, expression: &str, cx: ExprContext, only: bool) -> CompileResult<Expr> {
-        let string = continuation_to_spaces(expression.trim_matches(is_python_space));
+    fn python(&mut self, expression: &Tok, cx: ExprContext<'_>, only: bool) -> CompileResult<Expr> {
+        // `expression.strip()` is the token a syntax error reports.
+        let stripped = strip_tok(expression);
+        let string = continuation_to_spaces(&stripped.text);
+        let invalid = |message: String| ExprCompileError::Invalid { message, token: Some(stripped.clone()) };
         if cx.candidate && obviously_invalid(&string) {
-            return Err(ExprCompileError::Invalid { message: "invalid syntax".to_owned() });
+            return Err(invalid("invalid syntax".to_owned()));
         }
         if string.contains("repeat") {
             self.mentions_repeat = true;
@@ -104,7 +114,7 @@ impl<'py> PyExprCompiler<'py> {
             Ok(tree) => tree,
             Err(e) if e.is_instance_of::<PySyntaxError>(self.py) => {
                 let message = e.value(self.py).getattr(intern!(self.py, "msg")).and_then(|m| m.extract::<String>());
-                return Err(ExprCompileError::Invalid { message: message.unwrap_or_else(|_| "invalid syntax".into()) });
+                return Err(invalid(message.unwrap_or_else(|_| "invalid syntax".into())));
             }
             Err(e) => return Err(ExprCompileError::Other(e)),
         };
@@ -122,15 +132,19 @@ impl<'py> PyExprCompiler<'py> {
         if let Some(expr) = lowered {
             return Ok(expr);
         }
+        if cx.default == DefaultAlias::TargetLanguage && string.contains("default") {
+            return Err(ExprCompileError::Other(unsupported_error(self.py, "`default` inside i18n:target")));
+        }
+        let attrs = self.attrs_dict(cx).map_err(ExprCompileError::Other)?;
         let func = self
             .build_fallback
-            .call1((tree, cx.default_is_marker, &self.lookup_attr))
+            .call1((tree, cx.default == DefaultAlias::Marker, attrs, &self.lookup_attr))
             .map_err(ExprCompileError::Other)?;
         Ok(Expr::Fallback(func.unbind()))
     }
 
     /// `render_partial(path, name=value, ...)` as a native frame call.
-    fn partial(&mut self, node: &Bound<'py, PyAny>, cx: ExprContext) -> PyResult<Option<Expr>> {
+    fn partial(&mut self, node: &Bound<'py, PyAny>, cx: ExprContext<'_>) -> PyResult<Option<Expr>> {
         let py = self.py;
         if kind(node)? != "Call" {
             return Ok(None);
@@ -162,7 +176,7 @@ impl<'py> PyExprCompiler<'py> {
 
     /// Lowers an `ast` node to the fast-path tree; `None` if any part is not on the whitelist.
     #[allow(clippy::too_many_lines)] // one arm per node type
-    fn lower(&mut self, node: &Bound<'py, PyAny>, cx: ExprContext) -> PyResult<Option<Expr>> {
+    fn lower(&mut self, node: &Bound<'py, PyAny>, cx: ExprContext<'_>) -> PyResult<Option<Expr>> {
         let py = self.py;
         macro_rules! sub {
             ($node:expr) => {
@@ -194,7 +208,13 @@ impl<'py> PyExprCompiler<'py> {
                     "translate" | "decode" | "on_error_handler" => {
                         Expr::ScopeKey(PyString::intern(py, &format!("__{name}")).unbind())
                     }
-                    "default" if cx.default_is_marker => Expr::Const(self.marker.clone().unbind()),
+                    // Compile-time aliases (`Alias` in a `Define`) come before builtins.
+                    "default" if cx.default == DefaultAlias::Marker => Expr::Const(self.marker.clone().unbind()),
+                    "default" if cx.default == DefaultAlias::TargetLanguage => return Ok(None),
+                    "attrs" if cx.attrs.is_some() => match self.attrs_dict(cx)? {
+                        Some(d) => Expr::Const(d.into_any().unbind()),
+                        None => return Ok(None),
+                    },
                     _ => match self.builtins.get_item(&id)? {
                         Some(builtin) => Expr::Builtin(intern_str(&id)?, builtin.unbind()),
                         None => Expr::Name(intern_str(&id)?),
@@ -332,7 +352,24 @@ impl<'py> PyExprCompiler<'py> {
         }))
     }
 
-    fn lower_all(&mut self, list: &Bound<'py, PyAny>, cx: ExprContext) -> PyResult<Option<Vec<Expr>>> {
+    /// The `attrs` alias: the element's static attributes as a dict. One object per element,
+    /// shared by its expressions and across renders, like Chameleon's compile-time `Static`
+    /// (a template may mutate it: `attrs.setdefault(...)` persists into the next render). The
+    /// expressions and fallback functions that use it keep it alive.
+    fn attrs_dict(&mut self, cx: ExprContext<'_>) -> PyResult<Option<Bound<'py, PyDict>>> {
+        let Some(attrs) = cx.attrs else { return Ok(None) };
+        if let Some(d) = self.attrs_dicts.get(&attrs.id) {
+            return Ok(Some(d.clone()));
+        }
+        let d = PyDict::new(self.py);
+        for (k, v) in attrs.items {
+            d.set_item(k, v)?;
+        }
+        self.attrs_dicts.insert(attrs.id, d.clone());
+        Ok(Some(d))
+    }
+
+    fn lower_all(&mut self, list: &Bound<'py, PyAny>, cx: ExprContext<'_>) -> PyResult<Option<Vec<Expr>>> {
         let mut out = Vec::new();
         for item in list.cast::<PyList>()?.iter() {
             if kind(&item)? == "Starred" {
@@ -350,13 +387,24 @@ impl<'py> PyExprCompiler<'py> {
 impl ExprCompiler for PyExprCompiler<'_> {
     type Error = PyErr;
 
-    fn compile(&mut self, source: &str, _span: Span, cx: ExprContext) -> Result<ExprId, ExprCompileError<PyErr>> {
+    fn compile(&mut self, source: &Tok, cx: ExprContext<'_>) -> Result<ExprId, ExprCompileError<PyErr>> {
         let expr = self.typed(source, cx, true)?;
         let id = u32::try_from(self.exprs.len())
             .map_err(|_| ExprCompileError::Other(unsupported_error(self.py, "More than 2**32 expressions")))?;
         self.exprs.push(expr);
         Ok(ExprId(id))
     }
+
+    fn compile_code(&mut self, _source: &Tok) -> Result<ExprId, ExprCompileError<PyErr>> {
+        Err(ExprCompileError::Other(unsupported_error(self.py, "A <?python ?> code block")))
+    }
+}
+
+/// `Token.strip()` with Python's whitespace (the position moves past the leading part).
+fn strip_tok(t: &Tok) -> Tok {
+    let lead = t.text.len() - t.text.trim_start_matches(is_python_space).len();
+    let chars = t.text[..lead].chars().count();
+    Tok { text: t.text.trim_matches(is_python_space).to_owned(), pos: t.pos.map(|p| p.plus(chars)) }
 }
 
 fn kind(node: &Bound<'_, PyAny>) -> PyResult<String> {

@@ -1,0 +1,8 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    text "\n   Hello world\n"
+  text "\n"

@@ -1,0 +1,51 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            text "Hello world!"
+          text "\n    "
+          scope attrs=#3
+            text "1\n      Hello world!\n   2"
+          text "3\n   4"
+          scope attrs=#4
+            element "<div" omit-unless-false v0 "True"@141
+              close ">"
+              text "Hello world!"
+            end "</div>"
+          text "\n    "
+          scope attrs=#5
+            element "<div" omit-unless-false v1 "False"@189
+              close ">"
+              text "Hello world!"
+            end "</div>"
+          text "\n    "
+          scope attrs=#6
+            element "<div" omit-unless-false v2 "True"@254
+              attr " class=\"omitted\""
+              close ">"
+              text "Hello world!"
+            end "</div>"
+          text "\n    "
+          scope attrs=#7
+            element "<div" omit-unless-false v4 "True"@323
+              attr "class" " class=\"".."\"" default=None interp v3 Attr(Double) "${'omitted'}"@295
+              close ">"
+              text "Hello world!"
+            end "</div>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
+attrs #6 [("class", "omitted")]
+attrs #7 [("class", "${'omitted'}")]

@@ -1,0 +1,16 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    text "\n  "
+    scope attrs=#1
+      element "<div"
+        attr "\tid=\"test\""
+        attr "class" "\tclass=\"".."\"" default=None interp v0 Attr(Double) "${'test'}"@36
+        close ">"
+        text "\n  "
+      end "</div>"
+    text "\n"
+attrs #1 [("id", "test"), ("class", "${'test'}")]

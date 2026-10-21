@@ -1,0 +1,33 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<img"
+              attr " src=\"#\""
+              attr "class" " class=\"".."\"" default=None subst Double v0 "1 > 0 and 'up' or 0 < 1 and 'down'"@55
+              close " />"
+              empty
+          text "\n    "
+          scope attrs=#3
+            element "<img"
+              attr " src=\"#\""
+              attr "class" " class=\"".."\"" default=None subst Double v1 "0 > 1 and 'up' or 0 < 1 and 'down'"@137
+              close " />"
+              empty
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
+attrs #2 [("src", "#"), ("class", "1 > 0 and 'up' or 0 < 1 and 'down'")]
+attrs #3 [("src", "#"), ("class", "0 > 1 and 'up' or 0 < 1 and 'down'")]

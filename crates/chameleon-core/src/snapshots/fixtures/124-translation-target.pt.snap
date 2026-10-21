@@ -1,0 +1,39 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            target v0 "string:fr"@55
+              element "<h1"
+                close ">"
+                translate ""@40
+                  text "Hello world!"
+              end "</h1>"
+          text "\n    "
+          scope attrs=#3
+            target v1 "default"@122
+              element "<p"
+                close ">"
+                translate ""@107
+                  text "It's a big world."
+              end "</p>"
+          text "\n    "
+          scope attrs=#4
+            element "<p"
+              close ">"
+              interpolation v2 Text "${target_language}"@160
+            end "</p>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"

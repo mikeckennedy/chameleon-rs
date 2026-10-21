@@ -1,0 +1,93 @@
+---
+source: crates/chameleon-core/src/tests.rs
+expression: dump
+---
+body
+  scope attrs=#0
+    element "<html"
+      close ">"
+      text "\n  "
+      scope attrs=#1
+        element "<body"
+          close ">"
+          text "\n    "
+          scope attrs=#2
+            element "<div"
+              close ">"
+              translate ""@41
+                empty
+            end "</div>"
+          text "\n    "
+          scope attrs=#3
+            element "<div"
+              close ">"
+              translate ""@75
+                text "\n      Hello world!\n    "
+            end "</div>"
+          text "\n    "
+          scope attrs=#4
+            element "<div"
+              close ">"
+              translate "hello_world"@133
+                text "\n      Hello world!\n    "
+            end "</div>"
+          text "\n    "
+          scope attrs=#5
+            element "<div"
+              close ">"
+              translate ""@202
+                text "\n      "
+                scope attrs=#6
+                  element "<sup"
+                    close ">"
+                    text "Hello world!"
+                  end "</sup>"
+                text "\n    "
+            end "</div>"
+          text "\n    "
+          scope attrs=#7
+            element "<div"
+              close ">"
+              translate ""@271
+                text "\n      Hello "
+                i18n-name "first"@301
+                  scope attrs=#8
+                    element "<em"
+                      close ">"
+                      interpolation v0 Text "${'world'}"@308
+                    end "</em>"
+                text "!\n      Goodbye "
+                i18n-name "second"@354
+                  scope attrs=#9
+                    element "<em"
+                      close ">"
+                      interpolation v1 Text "${'planet'}"@362
+                    end "</em>"
+                text "!\n    "
+            end "</div>"
+          text "\n    "
+          scope attrs=#10
+            element "<div"
+              close ">"
+              translate "hello_goodbye"@416
+                text "\n      Hello "
+                i18n-name "first"@459
+                  scope attrs=#11
+                    element "<em"
+                      close ">"
+                      interpolation v2 Text "${'world'}"@466
+                    end "</em>"
+                text "!\n      Goodbye "
+                i18n-name "second"@512
+                  scope attrs=#12
+                    element "<em"
+                      close ">"
+                      interpolation v3 Text "${'planet'}"@520
+                    end "</em>"
+                text "!\n    "
+            end "</div>"
+          text "\n  "
+        end "</body>"
+      text "\n"
+    end "</html>"
+  text "\n"
