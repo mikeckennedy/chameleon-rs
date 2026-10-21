@@ -17,7 +17,7 @@
 use crate::error::{CompileError, ErrorKind};
 use crate::escape::Escape;
 use crate::expr::{DefaultAlias, Engine, ExprCompileError, ExprCompiler, ExprContext, ExprId, FreeVars};
-use crate::interpolate::{Part, interpolate};
+use crate::interpolate::{Implicit, Part, interpolate_full};
 use crate::nodes::{Attr, AttrValue, AttrsId, Interp, Node, Translation, Tree, Value, ValueId};
 use crate::options::Options;
 use crate::tok::Tok;
@@ -31,8 +31,8 @@ const DISALLOWED_NAMES: [&str; 2] = ["econtext", "rcontext"];
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Resolved {
     Expr(ExprId),
-    /// An interpolation's parts.
-    Parts(Vec<Part>),
+    /// An interpolation's parts, and what implicit translation would translate.
+    Parts(Vec<Part>, Option<Implicit>),
 }
 
 /// The compiled expressions of a tree and their analyses, indexed by [`ValueId`].
@@ -43,6 +43,9 @@ pub(crate) struct Table {
     /// of its parts'. Kept here, by site, for the analyses that need them (concurrent
     /// evaluation, last use), not in the tree.
     pub(crate) free: Vec<Option<FreeVars>>,
+    /// The sites whose code makes their function a generator (see
+    /// [`ExprCompiler::is_generator`]).
+    pub(crate) generators: Vec<bool>,
 }
 
 impl Table {
@@ -52,6 +55,10 @@ impl Table {
 
     pub(crate) fn free_vars(&self, id: ValueId) -> Option<&FreeVars> {
         self.free.get(id.0 as usize).and_then(Option::as_ref)
+    }
+
+    pub(crate) fn is_generator(&self, id: ValueId) -> bool {
+        self.generators.get(id.0 as usize).copied().unwrap_or(false)
     }
 }
 
@@ -74,7 +81,11 @@ pub(crate) fn resolve<C: ExprCompiler>(tree: &Tree, compiler: &mut C, options: &
         engine: Engine::default(),
         cached: vec![false; tree.values as usize],
         translations: Vec::new(),
-        table: Table { values: vec![None; tree.values as usize], free: vec![None; tree.values as usize] },
+        table: Table {
+            values: vec![None; tree.values as usize],
+            free: vec![None; tree.values as usize],
+            generators: vec![false; tree.values as usize],
+        },
     };
     for (_, node) in &tree.macros {
         r.node(node)?;
@@ -130,9 +141,18 @@ impl<'t, C: ExprCompiler> Resolver<'t, C> {
     }
 
     fn store(&mut self, id: ValueId, value: Resolved) {
+        let generator = match &value {
+            Resolved::Expr(e) => self.compiler.is_generator(*e),
+            Resolved::Parts(parts, _) => {
+                parts.iter().any(|p| matches!(p, Part::Expr(e) if self.compiler.is_generator(*e)))
+            }
+        };
+        if let Some(g) = self.table.generators.get_mut(id.0 as usize) {
+            *g |= generator;
+        }
         let free = match &value {
             Resolved::Expr(e) => self.compiler.free_vars(*e),
-            Resolved::Parts(parts) => parts.iter().fold(FreeVars::none(), |acc, p| match p {
+            Resolved::Parts(parts, _) => parts.iter().fold(FreeVars::none(), |acc, p| match p {
                 Part::Text(_) => acc,
                 Part::Expr(e) => acc.union(self.compiler.free_vars(*e)),
             }),
@@ -183,11 +203,11 @@ impl<'t, C: ExprCompiler> Resolver<'t, C> {
             return Ok(());
         }
         let cx = self.cx(emitted);
-        let resolved = match interpolate(&i.source, cx, self.compiler) {
-            Ok(parts) => Resolved::Parts(parts),
+        let resolved = match interpolate_full(&i.source, cx, self.compiler) {
+            Ok((parts, implicit)) => Resolved::Parts(parts, implicit),
             Err(CompileError::Template { kind: ErrorKind::Expression, message, token }) if !self.strict => {
                 let (text, pos) = token.resolve("");
-                Resolved::Parts(vec![Part::Expr(self.defer(&message, &Tok { text, pos })?)])
+                Resolved::Parts(vec![Part::Expr(self.defer(&message, &Tok { text, pos })?)], None)
             }
             Err(e) => return Err(e),
         };

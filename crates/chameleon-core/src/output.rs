@@ -13,8 +13,22 @@ pub struct Output {
 }
 
 /// A position in the output, for rolling back (`tal:on-error`, dropped attributes).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Mark(usize);
+
+impl Mark {
+    /// The byte offset.
+    #[must_use]
+    pub(crate) fn position(self) -> usize {
+        self.0
+    }
+
+    /// The mark moved by `n` bytes (after `n` bytes were inserted before it).
+    #[must_use]
+    pub(crate) fn shifted(self, n: usize) -> Self {
+        Self(self.0 + n)
+    }
+}
 
 impl Output {
     #[must_use]
@@ -57,6 +71,18 @@ impl Output {
     /// Drops everything after `mark` (nothing if the buffer is already shorter).
     pub fn truncate(&mut self, mark: Mark) {
         self.buf.truncate(mark.0);
+    }
+
+    /// Removes and returns everything after `mark` (a translation's or `i18n:name`'s stream).
+    pub fn take_since(&mut self, mark: Mark) -> Vec<u8> {
+        if mark.0 >= self.buf.len() { Vec::new() } else { self.buf.split_off(mark.0) }
+    }
+
+    /// Inserts `bytes` at `mark`, moving what follows (a slot's output written to the stream
+    /// its caller had open, before streams opened since).
+    pub fn insert_at(&mut self, mark: Mark, bytes: &[u8]) {
+        let at = mark.0.min(self.buf.len());
+        self.buf.splice(at..at, bytes.iter().copied());
     }
 
     #[must_use]

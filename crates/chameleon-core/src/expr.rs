@@ -155,4 +155,12 @@ pub trait ExprCompiler {
         let _ = id;
         FreeVars::Dynamic
     }
+
+    /// Whether expression (or code block) `id` makes the function it belongs to a generator
+    /// (a `yield`): Chameleon's render function then runs nothing, so the function renders
+    /// nothing.
+    fn is_generator(&self, id: ExprId) -> bool {
+        let _ = id;
+        false
+    }
 }

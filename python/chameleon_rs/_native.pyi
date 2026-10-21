@@ -33,6 +33,31 @@ class Program:
         builtins: Mapping[str, Any] | None = None,
     ) -> str: ...
     def dump(self) -> str: ...
+    @property
+    def macro_names(self) -> list[str]: ...
+
+@final
+class Macro:
+    """A macro of a compiled template (or, with ``name`` ``None``, the whole template)."""
+
+    def __init__(self, program: Program, name: str | None, builtins: Mapping[str, Any]) -> None: ...
+    @property
+    def include(self) -> Macro: ...
+    def __call__(
+        self,
+        stream: list[str],
+        econtext: Mapping[str, Any],
+        rcontext: dict[str, Any],
+        domain: str | None = None,
+        context: str | None = None,
+        target_language: Any = None,
+    ) -> None: ...
+
+@final
+class SlotFill:
+    """A ``metal:fill-slot`` body registered for a macro call (``econtext['__slot_<name>']``)."""
+
+    def __call__(self, stream: list[str], econtext: Mapping[str, Any], rcontext: dict[str, Any]) -> None: ...
 
 class Scope(dict[str, Any]):
     def __init__(self, *args: Any, **kwargs: Any) -> None: ...

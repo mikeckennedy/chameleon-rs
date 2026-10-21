@@ -6,8 +6,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::{
-    Call, Countdown, DefaultAlias, Done, Emitted, Escape, ExprCompileError, ExprCompiler, ExprContext, ExprId, NameId,
-    Options, Output, Program, Runtime, Stage, Step, Tok, Visibility, VmError, VmState, compile, escape_into, run,
+    Active, Attrs, Call, Countdown, DefaultAlias, Done, Emitted, Errors, Escape, Eval, ExprCompileError, ExprCompiler,
+    ExprContext, ExprId, Fill, I18n, Loops, MacroStep, Macros, NameId, NameValue, Names, Options, Output, Program,
+    Stage, Step, Tok, Translate, Translation, Values, Visibility, VmError, VmState, compile, escape_into, run,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -26,11 +27,16 @@ enum V {
     Code(usize),
     /// A frame's scope: index into the toy's scopes.
     Scope(usize),
+    /// A macro: program index and entry.
+    Macro(usize, u32),
+    /// A slot fill: index into the toy's fills.
+    Fill(usize),
 }
 
 /// Toy expressions: `none`, `true`/`false`, integers, `'strings'`, `[a, b]` lists of those,
 /// `dict(a=1,b='x')`, `default` (when aliased), `attrs` (when aliased: the attribute names),
-/// `call:N` (run program N as a frame), `wait:X` (suspend, resume with X's value), and names.
+/// `call:N` (run program N as a frame), `wait:X` (suspend, resume with X's value),
+/// `macro:N:name` (macro `name` of program N; `macro:N` for its main function), and names.
 #[derive(Clone, Debug)]
 struct Expr {
     src: String,
@@ -87,6 +93,11 @@ struct World {
     iterators: usize,
     /// `rcontext`, for global definitions and loops.
     rcontext: HashMap<String, V>,
+    fills: Vec<Fill<V>>,
+    /// The active frame's i18n settings, as the toy's translations show them.
+    i18n: String,
+    /// The serial of each activated frame, in order.
+    serials: Vec<u64>,
 }
 
 impl World {
@@ -122,6 +133,21 @@ impl World {
         }
         if s == "interrupt" {
             return Err("KeyboardInterrupt".into());
+        }
+        if let Some(rest) = s.strip_prefix("macro:") {
+            let (program, name) = rest.split_once(':').map_or((rest, None), |(p, n)| (p, Some(n)));
+            let program: usize = program.parse().map_err(|_| "bad macro")?;
+            let entry = match name {
+                None => 0,
+                Some(n) => self.programs[program]
+                    .0
+                    .macros()
+                    .iter()
+                    .find(|m| &*m.name == n)
+                    .map(|m| m.entry)
+                    .ok_or_else(|| format!("KeyError: {n}"))?,
+            };
+            return Ok(V::Macro(program, entry));
         }
         Ok(if s == "none" {
             V::None
@@ -161,14 +187,26 @@ impl World {
     }
 }
 
-impl Runtime for World {
+impl Values for World {
     type Value = V;
     type Error = String;
 
-    fn activate(&mut self, code: &V, scope: &V) -> Result<(), String> {
-        let (V::Code(c), V::Scope(s)) = (code, scope) else { return Err("bad frame".into()) };
+    fn clone_value(&mut self, value: &V) -> V {
+        value.clone()
+    }
+}
+
+fn i18n_label(i18n: &I18n<V>) -> String {
+    format!("{:?}/{:?}/{:?}", i18n.domain.as_deref(), i18n.context.as_deref(), i18n.target_language)
+}
+
+impl Eval for World {
+    fn activate(&mut self, frame: Active<'_, V>) -> Result<(), String> {
+        let (V::Code(c), V::Scope(s)) = (frame.code, frame.scope) else { return Err("bad frame".into()) };
         self.code = *c;
         self.scope = *s;
+        self.i18n = i18n_label(frame.i18n);
+        self.serials.push(frame.serial);
         Ok(())
     }
 
@@ -211,6 +249,12 @@ impl Runtime for World {
         })
     }
 
+    fn is_false(&mut self, value: &V) -> bool {
+        *value == V::Bool(false)
+    }
+}
+
+impl Names for World {
     fn lookup(&mut self, name: NameId) -> Result<Option<V>, String> {
         let n = self.name(name);
         self.log.push(format!("backup {n}"));
@@ -224,6 +268,34 @@ impl Runtime for World {
         Ok(())
     }
 
+    fn define(&mut self, names: &[NameId], value: V, visibility: Visibility) -> Result<(), String> {
+        let label: Vec<_> = names.iter().map(|&n| self.name(n)).collect();
+        let global = if visibility == Visibility::Global { " global" } else { "" };
+        self.log.push(format!("define{global} {}", label.join(",")));
+        if visibility == Visibility::Global {
+            for n in &label {
+                self.rcontext.insert(n.clone(), value.clone());
+            }
+        }
+        self.assign(names, value, Visibility::Local)
+    }
+
+    fn restore(&mut self, name: NameId, backup: Option<V>) -> Result<(), String> {
+        let n = self.name(name);
+        self.log.push(format!("restore {n}"));
+        match backup {
+            Some(v) => self.scopes[self.scope].insert(n, v),
+            None => self.scopes[self.scope].remove(&n),
+        };
+        Ok(())
+    }
+
+    fn text_value(&mut self, text: Option<&str>) -> V {
+        text.map_or(V::None, |t| V::Str(t.to_owned()))
+    }
+}
+
+impl Loops for World {
     fn repeat(&mut self, names: &[NameId], iterable: V) -> Result<(V, Countdown<V>), String> {
         self.log.push(format!("repeat {}", self.name(names[0])));
         let V::List(items) = iterable else { return Err("not iterable".into()) };
@@ -278,7 +350,9 @@ impl Runtime for World {
     fn missing_backup(&mut self, name: NameId) -> String {
         format!("NameError: __backup_{}", self.name(name))
     }
+}
 
+impl Errors for World {
     fn is_catchable(&mut self, error: &String) -> bool {
         !error.starts_with("KeyboardInterrupt")
     }
@@ -301,24 +375,9 @@ impl Runtime for World {
     fn recursion_error(&mut self) -> String {
         "RecursionError".into()
     }
+}
 
-    fn restore(&mut self, name: NameId, backup: Option<V>) -> Result<(), String> {
-        let n = self.name(name);
-        self.log.push(format!("restore {n}"));
-        match backup {
-            Some(v) => self.scopes[self.scope].insert(n, v),
-            None => self.scopes[self.scope].remove(&n),
-        };
-        Ok(())
-    }
-
-    fn define(&mut self, names: &[NameId], value: V, visibility: Visibility) -> Result<(), String> {
-        let label: Vec<_> = names.iter().map(|&n| self.name(n)).collect();
-        let global = if visibility == Visibility::Global { " global" } else { "" };
-        self.log.push(format!("define{global} {}", label.join(",")));
-        self.assign(names, value, Visibility::Local)
-    }
-
+impl Attrs for World {
     fn yields_name(&mut self, container: &V, name: &str) -> Result<bool, String> {
         let V::Dict(items) = container else { return Err("TypeError: not iterable".into()) };
         Ok(items.iter().any(|(k, _)| k == name))
@@ -350,9 +409,113 @@ impl Runtime for World {
             None => *value == V::Default,
         }))
     }
+}
 
-    fn is_false(&mut self, value: &V) -> bool {
-        *value == V::Bool(false)
+impl Macros for World {
+    fn macro_call(&mut self, value: V, _: &mut Output) -> Result<MacroStep<V>, String> {
+        let V::Macro(program, entry) = value else { return Err(format!("AttributeError: include of {value:?}")) };
+        let scope = self.copy_scope()?;
+        Ok(MacroStep::Frame {
+            call: Call { program: Arc::clone(&self.programs[program].0), code: V::Code(program), scope },
+            entry,
+            cost: 1,
+        })
+    }
+
+    fn copy_scope(&mut self) -> Result<V, String> {
+        self.scopes.push(self.scopes[self.scope].clone());
+        Ok(V::Scope(self.scopes.len() - 1))
+    }
+
+    fn after_macro(&mut self) -> Result<(), String> {
+        let globals: Vec<_> = self.rcontext.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        self.scopes[self.scope].extend(globals);
+        Ok(())
+    }
+
+    fn fill_slot(&mut self, name: &str, fill: Fill<V>, extend: bool) -> Result<(), String> {
+        self.fills.push(fill);
+        let fill = V::Fill(self.fills.len() - 1);
+        let key = format!("__slot_{name}");
+        match self.scopes[self.scope].get_mut(&key) {
+            Some(V::List(stack)) if extend => stack.insert(0, fill),
+            _ => {
+                self.scopes[self.scope].insert(key, V::List(vec![fill]));
+            }
+        }
+        Ok(())
+    }
+
+    fn pop_slot(&mut self, name: &str) -> Option<V> {
+        match self.scopes[self.scope].get_mut(&format!("__slot_{name}")) {
+            Some(V::List(stack)) => stack.pop(),
+            _ => None,
+        }
+    }
+
+    fn slot_call(&mut self, slot: &V, _: &mut Output) -> Result<Option<Fill<V>>, String> {
+        let V::Fill(i) = slot else { return Err("not a fill".into()) };
+        let f = &self.fills[*i];
+        Ok(Some(Fill {
+            program: Arc::clone(&f.program),
+            code: f.code.clone(),
+            entry: f.entry,
+            i18n: I18n {
+                domain: f.i18n.domain.clone(),
+                context: f.i18n.context.clone(),
+                target_language: f.i18n.target_language.clone(),
+            },
+            slots: f.slots.clone(),
+            stream: f.stream,
+        }))
+    }
+}
+
+impl Translate for World {
+    fn i18n_changed(&mut self, i18n: &I18n<V>) -> Result<(), String> {
+        self.i18n = i18n_label(i18n);
+        Ok(())
+    }
+
+    fn translate(&mut self, call: Translation<'_, V>) -> Result<V, String> {
+        let text = |v: &V| match v {
+            V::Str(s) => s.clone(),
+            other => format!("{other:?}"),
+        };
+        Ok(V::Str(match call {
+            Translation::Block { msgid, mapping, default } => {
+                let mapping: Vec<String> = mapping
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(k, v)| match v {
+                        NameValue::Text(t) => format!("{k}={t}"),
+                        NameValue::Pieces(p) => format!("{k}={p:?}"),
+                    })
+                    .collect();
+                format!("tr({msgid}|{}|{default}|{})", mapping.join(","), self.i18n)
+            }
+            Translation::Content(v) => format!("tr({}|{})", text(&v), self.i18n),
+            Translation::Attr { msgid, value } => format!("tr({msgid:?}|{}|{})", text(&value), self.i18n),
+            Translation::Interp { msgid, mapping } => {
+                let mapping: Vec<String> =
+                    mapping.unwrap_or_default().iter().map(|(k, v)| format!("{k}={}", text(v))).collect();
+                format!("tr({msgid}|{}|{})", mapping.join(","), self.i18n)
+            }
+        }))
+    }
+
+    fn quote_value(&mut self, value: V, _: Escape, default: Option<&str>) -> Result<V, String> {
+        Ok(match value {
+            V::Default => default.map_or(V::None, |d| V::Str(d.to_owned())),
+            other => other,
+        })
+    }
+
+    fn convert_value(&mut self, value: V) -> Result<V, String> {
+        Ok(match value {
+            V::Default => V::None,
+            other => other,
+        })
     }
 }
 
@@ -366,7 +529,18 @@ fn world(templates: &[&str], vars: &[(&str, V)]) -> World {
         })
         .collect();
     let scope = vars.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect();
-    World { programs, scopes: vec![scope], code: 0, scope: 0, log: Vec::new(), iterators: 0, rcontext: HashMap::new() }
+    World {
+        programs,
+        scopes: vec![scope],
+        code: 0,
+        scope: 0,
+        log: Vec::new(),
+        iterators: 0,
+        rcontext: HashMap::new(),
+        fills: Vec::new(),
+        i18n: String::new(),
+        serials: Vec::new(),
+    }
 }
 
 fn options() -> Options {
@@ -374,7 +548,7 @@ fn options() -> Options {
 }
 
 fn render_world(w: &mut World) -> String {
-    let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0));
+    let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0), None);
     loop {
         match run(&mut st, w).unwrap() {
             Done::Finished => break,
@@ -478,10 +652,14 @@ fn frames_write_into_the_caller_buffer() {
 #[test]
 fn infinite_recursion_is_an_error() {
     let mut w = world(&["${call:0}"], &[]);
-    let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0));
+    let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0), None);
     assert!(matches!(run(&mut st, &mut w), Err(VmError::Runtime(e)) if e == "RecursionError"));
-    // Every frame records the error on its way out.
-    assert_eq!(w.log.iter().filter(|l| l.starts_with("record RecursionError")).count(), crate::MAX_FRAMES);
+    // Every frame records the error on its way out (a partial's render nests four
+    // interpreter frames in Chameleon).
+    assert_eq!(
+        w.log.iter().filter(|l| l.starts_with("record RecursionError")).count(),
+        crate::DEFAULT_FRAME_BUDGET / 4 + 1
+    );
 }
 
 #[test]
@@ -505,7 +683,7 @@ fn non_strict_mode_defers_syntax_errors_to_the_site() {
         let p = compile(src, &mut toy, &lax).unwrap();
         let mut w = world(&["x"], vars);
         w.programs[0] = (Arc::new(p), toy.exprs);
-        let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0));
+        let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0), None);
         run(&mut st, &mut w).map(|_| String::from_utf8(st.out.as_bytes().to_vec()).unwrap())
     };
     // Not reached: renders.
@@ -523,7 +701,6 @@ fn compile_errors() {
     let err = |src: &str| compile(src, &mut Toy::default(), &options()).unwrap_err().to_string();
     assert_eq!(err("<p>${ }</p>"), "invalid: \"\"");
     assert_eq!(err("<p tal:foo=\"x\"/>"), "Bad attribute for namespace 'http://xml.zope.org/namespaces/tal'");
-    assert_eq!(err("<p metal:use-macro=\"x\"/>"), "metal:use-macro is not supported yet by chameleon-rs");
     assert_eq!(err("<p tal:repeat=\"econtext xs\"/>"), "Name disallowed by compiler.");
     assert_eq!(err("<p tal:define=\"__x 1\"/>"), "Name disallowed by compiler (double underscore).");
     assert_eq!(err("<p>a</b>"), "Unexpected end tag.");
@@ -628,7 +805,7 @@ fn loops_in_callee_frames_keep_their_own_unwind_entries() {
 
 /// Runs until the first suspension and returns the state.
 fn run_to_suspension(w: &mut World) -> (VmState<V>, V) {
-    let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0));
+    let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0), None);
     match run(&mut st, w).unwrap() {
         Done::Suspended(v) => (st, v),
         Done::Finished => panic!("did not suspend"),
@@ -672,7 +849,7 @@ fn suspend_inside_a_loop_body_with_a_frame_call() {
 #[test]
 fn resume_and_run_are_checked() {
     let mut w = world(&["${wait:1}"], &[]);
-    let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0));
+    let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0), None);
     assert!(matches!(st.resume_with::<String>(V::None), Err(VmError::Internal(_))));
     assert!(matches!(run(&mut st, &mut w), Ok(Done::Suspended(_))));
     assert!(matches!(run(&mut st, &mut w), Err(VmError::Internal(_))));
@@ -768,7 +945,7 @@ fn instructions_stay_small() {
 
 /// Renders, returning the output or the error that escaped.
 fn try_render(w: &mut World) -> Result<String, String> {
-    let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0));
+    let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0), None);
     loop {
         match run(&mut st, w) {
             Ok(Done::Finished) => break,
@@ -887,6 +1064,75 @@ fn throw_unwinds_from_the_suspended_instruction() {
 
     // Only a suspended render can be thrown into.
     let mut w = world(&["x"], &[]);
-    let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0));
+    let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0), None);
     assert!(matches!(crate::throw(&mut st, &mut w, "E".to_owned()), Err(VmError::Internal(_))));
+}
+
+#[test]
+fn macros_run_as_frames_with_a_copy_of_the_scope() {
+    // The define-macro element renders in place; `use-macro` runs it again with `macroname`
+    // bound, then `econtext.update(rcontext)` brings the macro's globals back.
+    let src = "<div metal:define-macro=\"m\" tal:define=\"global g 'G'\">[${macroname}]</div>\
+               <p tal:define=\"g 'local'\"><b metal:use-macro=\"macro:0:m\"/>${g}</p>";
+    let mut w = world(&[src], &[("macroname", V::Str("outer".into()))]);
+    assert_eq!(try_render(&mut w).unwrap(), "<div>[outer]</div><p><div>[macro:0:m]</div>G</p>");
+    // Each frame gets its own serial (code blocks' namespaces are keyed by it).
+    let mut serials = w.serials.clone();
+    serials.dedup();
+    assert!(serials.len() >= 3, "{serials:?}");
+}
+
+#[test]
+fn slots_fill_extend_and_default() {
+    let base =
+        "<div metal:define-macro=\"base\">[<b metal:define-slot=\"a\">A</b>|<b metal:define-slot=\"b\">B</b>]</div>";
+    let ext = "<div metal:define-macro=\"ext\" metal:extend-macro=\"macro:0:base\">\
+               <i metal:fill-slot=\"a\">ext<u metal:define-slot=\"c\">C</u></i></div>";
+    let page = "<p metal:use-macro=\"macro:1:ext\"><x metal:fill-slot=\"c\">page</x></p>|\
+                <p metal:use-macro=\"macro:1:ext\"><x metal:fill-slot=\"a\">over</x></p>";
+    let mut w = world(&[base, ext, page], &[]);
+    let mut st = VmState::new(Arc::clone(&w.programs[2].0), V::Code(2), V::Scope(0), None);
+    assert!(matches!(run(&mut st, &mut w), Ok(Done::Finished)));
+    assert_eq!(
+        std::str::from_utf8(st.out.as_bytes()).unwrap(),
+        "<div>[<i>ext<x>page</x></i>|<b>B</b>]</div>|<div>[<x>over</x>|<b>B</b>]</div>"
+    );
+}
+
+#[test]
+fn macro_recursion_stops_at_the_frame_budget() {
+    let src = "<tal:d condition=\"false\"><div metal:define-macro=\"r\"><p metal:use-macro=\"macro:0:r\"/></div></tal:d>\
+               <x tal:on-error=\"'deep'\" metal:use-macro=\"macro:0:r\"/>";
+    // (A `use-macro` element's tags are never written, so the fallback has none either.)
+    assert_eq!(render(src, &[]), "deep");
+    // Slot bodies end without recording (their functions have no error handler).
+    let src = "<tal:d condition=\"false\"><div metal:define-macro=\"m\"><b metal:define-slot=\"s\"/></div></tal:d>\
+               <p metal:use-macro=\"macro:0:m\"><i metal:fill-slot=\"s\">${nope}</i></p>";
+    let mut w = world(&[src], &[]);
+    assert_eq!(try_render(&mut w).unwrap_err(), "NameError: nope");
+    assert_eq!(w.log.iter().filter(|l| l.starts_with("record")).count(), 2, "{:?}", w.log);
+}
+
+#[test]
+fn translations_collect_their_streams_and_names() {
+    let src = "<p i18n:domain=\"d\" i18n:translate=\"\">Hello  <b i18n:name=\"who\">${x}</b>\n !</p>\
+               <p i18n:translate=\"msg\" i18n:context=\"c\">x</p><p i18n:translate=\"\"> </p>";
+    assert_eq!(
+        render(src, &[("x", V::Str("you".into()))]),
+        "<p>tr(Hello ${who} !|who=<b>you</b>|Hello ${who} !|Some(\"d\")/None/None)</p>\
+         <p>tr(msg||x|None/Some(\"c\")/None)</p><p></p>"
+    );
+    // An unfinished name caught inside the translation: its value is its stream.
+    let src = "<p i18n:translate=\"\">a<b i18n:name=\"n\" tal:on-error=\"'E'\">b${nope}</b></p>";
+    assert_eq!(render(src, &[]), "<p>tr(a<b>E</b>|n=[\"<b>b\"]|a<b>E</b>|None/None/None)</p>");
+}
+
+#[test]
+fn a_slot_writes_to_the_stream_its_caller_had_open() {
+    // Chameleon's fill function appends through its defining function's `__append`: a slot
+    // inside a translation in the macro writes before the translation's result.
+    let src = "<tal:d condition=\"false\"><div metal:define-macro=\"m\"><p i18n:translate=\"\">a \
+               <b metal:define-slot=\"s\">d</b> c</p></div></tal:d>\
+               <div metal:use-macro=\"macro:0:m\"><i metal:fill-slot=\"s\">F</i></div>";
+    assert_eq!(render(src, &[]), "<div><p><i>F</i>tr(a c||a c|None/None/None)</p></div>");
 }

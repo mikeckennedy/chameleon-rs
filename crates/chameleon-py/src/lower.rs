@@ -40,7 +40,10 @@ impl<'py> PyExprCompiler<'_, 'py> {
             }
             // Compile-time aliases (`Alias` in a `Define`) come before builtins.
             "default" if cx.default == DefaultAlias::Marker => Expr::Const(self.marker.clone().unbind()),
-            "default" if cx.default == DefaultAlias::TargetLanguage => return Ok(None),
+            // `Alias(["default"], "target_language")`: an ordinary lookup of that name.
+            "default" if cx.default == DefaultAlias::TargetLanguage => {
+                Expr::Name(PyString::intern(py, "target_language").unbind())
+            }
             "attrs" if cx.attrs.is_some() => match self.attrs_dict(cx)? {
                 Some(d) => Expr::Const(d.into_any().unbind()),
                 None => return Ok(None),

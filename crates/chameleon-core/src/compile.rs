@@ -1,29 +1,40 @@
 // Ported from Chameleon's src/chameleon/compiler.py (`Compiler.visit` text coalescing,
 // `visit_Start`, `visit_End`, `visit_Attribute`, `visit_DictAttributes`, `visit_Define`,
 // `visit_Repeat`, `visit_Condition`, `visit_Content`, `visit_Cache`, `visit_Cancel`,
-// `visit_OnError`, `visit_CodeBlock`), modified:
-// lowers the program tree to bytecode instead of generating Python source.
+// `visit_OnError`, `visit_CodeBlock`, `visit_MacroProgram`, `visit_Macro`'s slot resolution,
+// `visit_UseInternalMacro`, `visit_UseExternalMacro`, `visit_DefineSlot`, `visit_Translate`,
+// `visit_Name`, `visit_Domain`, `visit_TxContext`, `visit_Target`, `mangle`, and the
+// `Interpolator`'s translation), modified: lowers the program tree to bytecode instead of
+// generating Python source.
 
 //! Lowering the program tree to bytecode: static text coalesced into one instruction per
 //! run, attribute prefixes and suffixes precomputed.
 //!
-//! Node kinds the VM does not run yet (macros, slots, i18n) stop compilation with
-//! `UnsupportedError`.
+//! A program has several functions, as Chameleon's module does: the main render function
+//! first (at instruction 0), then each macro, each followed by the fill-slot bodies (slot
+//! closures) defined in it.
 
+use std::collections::VecDeque;
 use std::convert::Infallible;
+use std::sync::Arc;
 
 use crate::error::{CompileError, ErrorKind};
 use crate::escape::Escape;
 use crate::expr::{ExprCompiler, ExprId};
-use crate::interpolate::Part;
-use crate::nodes::{Attr, AttrValue, Content, ContentKind, Define, Element, Interp, Node, Translation, Tree, Value};
+use crate::interpolate::{Implicit, Part};
+use crate::nodes::{
+    Attr, AttrValue, Content, ContentKind, Define, Element, Interp, Node, Translation, Tree, UseMacro, Value,
+};
 use crate::options::{Mode, Options};
 use crate::parser::{Namespaces, ParseOptions, parse};
 use crate::resolve::{Resolved, Table, resolve};
 use crate::source::check_len;
 use crate::tok::Tok;
 use crate::tokenize::{tokenize, tokenize_text};
-use crate::vm::{AttrInfo, AttrKind, DefineInfo, DictInfo, LoopInfo, NameId, Op, Program, Stage, TextRef, Visibility};
+use crate::vm::{
+    AttrInfo, AttrKind, AttrTranslateInfo, DefineInfo, DictInfo, FillInfo, I18nKey, InterpTranslateInfo, LoopInfo,
+    MacroEntry, NameId, NameInfo, Op, Program, Stage, Tables, TextRef, TrValue, TranslateInfo, Visibility,
+};
 use crate::zpt::build;
 
 /// Compiles a page template to a [`Program`], parsing expressions with `compiler`.
@@ -79,31 +90,119 @@ type LResult<T> = std::result::Result<T, CompileError<Infallible>>;
 
 /// Lowers a tree whose expressions `table` holds.
 pub(crate) fn lower(tree: &Tree, table: &Table) -> LResult<Program> {
-    if let Some((name, _)) = tree.macros.first() {
-        return Err(CompileError::unsupported("metal:define-macro", name));
-    }
     let mut l = Lower {
+        tree,
         table,
         ops: Vec::new(),
         text: Vec::new(),
         pending: Vec::new(),
         names: Vec::new(),
-        tables: crate::vm::Tables::default(),
+        tables: Tables::default(),
+        slots: Vec::new(),
+        translations: Vec::new(),
+        fills: VecDeque::new(),
+        calls: Vec::new(),
+        generator: false,
     };
-    l.node(&tree.body)?;
-    l.flush()?;
-    l.ops.push(Op::End);
-    Ok(Program::new(l.ops, l.text, l.names, l.tables))
+    l.function(&tree.body)?;
+    let mut macros = Vec::with_capacity(tree.macros.len());
+    for (name, node) in &tree.macros {
+        let entry = l.function(node)?;
+        macros.push(MacroEntry { name: name.text.as_str().into(), mangled: mangle(&name.text).into(), entry });
+    }
+    // `render_<mangled>`: of macros whose names mangle alike, the last one defined wins.
+    for (at, name) in std::mem::take(&mut l.calls) {
+        let mangled = mangle(&name);
+        let entry = macros
+            .iter()
+            .rev()
+            .find(|m| *m.mangled == mangled)
+            .map(|m| m.entry)
+            .ok_or_else(|| CompileError::unsupported("internal: macro not lowered", Tok::plain(name.clone())))?;
+        if let Some(Op::CallMacro { entry: e }) = l.ops.get_mut(at) {
+            *e = entry;
+        }
+    }
+    Ok(Program::new(l.ops, l.text, l.names, l.tables, macros))
+}
+
+/// Chameleon's `mangle`: every character that is not a word character becomes `_`.
+fn mangle(name: &str) -> String {
+    name.chars().map(|c| if crate::pychars::is_word(c) { c } else { '_' }).collect()
+}
+
+/// The slot names a function resolves when it starts (Chameleon's `_slots`, collected while
+/// visiting the function, fill-slot bodies included): mangled, in order of appearance.
+fn collect_slots<'t>(tree: &'t Tree, node: &'t Node, out: &mut Vec<Arc<str>>) {
+    match node {
+        Node::Text(_) | Node::Interpolation(_) | Node::Empty | Node::CodeBlock(_) | Node::UseInternalMacro(_) => {}
+        Node::Sequence(items) => items.iter().for_each(|n| collect_slots(tree, n, out)),
+        Node::Element(e) => collect_slots(tree, &e.content, out),
+        Node::Content(c) => {
+            if let Some(d) = &c.default {
+                collect_slots(tree, d, out);
+            }
+        }
+        Node::Define(d) => collect_slots(tree, &d.body, out),
+        Node::Repeat(r) => collect_slots(tree, &r.body, out),
+        Node::Condition { body, .. }
+        | Node::Switch { body, .. }
+        | Node::Case { body, .. }
+        | Node::Translate { body, .. }
+        | Node::Name { body, .. }
+        | Node::Domain { body, .. }
+        | Node::TxContext { body, .. }
+        | Node::Target { body, .. } => collect_slots(tree, body, out),
+        Node::OnError { fallback, body } => {
+            collect_slots(tree, fallback, out);
+            collect_slots(tree, body, out);
+        }
+        Node::DefineSlot { name, body } => {
+            let mangled = mangle(&name.text);
+            if !out.iter().any(|n| **n == *mangled) {
+                out.push(mangled.into());
+            }
+            collect_slots(tree, body, out);
+        }
+        Node::UseMacro(m) => {
+            if let Some(slots) = tree.slot_lists.get(m.slots.0 as usize) {
+                for slot in slots {
+                    collect_slots(tree, &slot.body, out);
+                }
+            }
+        }
+    }
+}
+
+/// A fill-slot body waiting to be lowered as its own function: the `FillSlot` table entry to
+/// point at it, and the lexical context it was defined in (its function's slots, the open
+/// translations).
+struct PendingFill<'t> {
+    body: &'t Node,
+    info: usize,
+    slots: Vec<Arc<str>>,
+    translations: Vec<u32>,
 }
 
 struct Lower<'a> {
+    tree: &'a Tree,
     table: &'a Table,
     ops: Vec<Op>,
     text: Vec<u8>,
     /// Static text not yet emitted, coalesced into one [`Op::Text`].
     pending: Vec<u8>,
     names: Vec<Box<str>>,
-    tables: crate::vm::Tables,
+    tables: Tables,
+    /// The slot names of the function being lowered (indices of [`Op::DefineSlot`]).
+    slots: Vec<Arc<str>>,
+    /// The open `i18n:translate` elements (indices into `tables.translates`).
+    translations: Vec<u32>,
+    fills: VecDeque<PendingFill<'a>>,
+    /// `CallMacro` instructions and the macro each calls, patched once macros are lowered.
+    calls: Vec<(usize, String)>,
+    /// The function being lowered has an expression with a `yield` (see
+    /// [`ExprCompiler::is_generator`]).
+    generator: bool,
 }
 
 fn unsupported(what: &str) -> CompileError<Infallible> {
@@ -118,36 +217,112 @@ fn index(n: usize) -> LResult<u32> {
     u32::try_from(n).map_err(|_| too_large())
 }
 
-impl Lower<'_> {
-    fn expr(&self, v: &Value) -> LResult<ExprId> {
+impl<'a> Lower<'a> {
+    /// Lowers a root function (the main body or a macro), then the slot bodies defined in
+    /// it; returns where it starts.
+    fn function(&mut self, node: &'a Node) -> LResult<u32> {
+        let entry = self.here()?;
+        let mut slots = Vec::new();
+        collect_slots(self.tree, node, &mut slots);
+        if !slots.is_empty() {
+            let info = index(self.tables.slot_sets.len())?;
+            self.tables.slot_sets.push(slots.clone());
+            self.op(Op::PopSlots { info })?;
+        }
+        self.slots = slots;
+        self.translations.clear();
+        self.generator = false;
+        self.node(node)?;
+        self.op(Op::End)?;
+        self.generator_check(entry)?;
+        while let Some(fill) = self.fills.pop_front() {
+            let at = self.here()?;
+            if let Some(f) = self.tables.fills.get_mut(fill.info) {
+                f.entry = at;
+            }
+            self.slots = fill.slots;
+            self.translations = fill.translations;
+            self.generator = false;
+            self.node(fill.body)?;
+            self.op(Op::End)?;
+            self.generator_check(at)?;
+        }
+        Ok(entry)
+    }
+
+    /// A function with a `yield` is a generator in Chameleon: calling it runs nothing. Its
+    /// instructions are replaced by a return.
+    fn generator_check(&mut self, entry: u32) -> LResult<()> {
+        if self.generator {
+            self.ops.truncate(entry as usize);
+            self.calls.retain(|(at, _)| *at < entry as usize);
+            self.op(Op::End)?;
+        }
+        Ok(())
+    }
+
+    fn expr(&mut self, v: &Value) -> LResult<ExprId> {
+        self.generator |= self.table.is_generator(v.id);
         match self.table.get(v.id) {
             Some(Resolved::Expr(id)) => Ok(*id),
             _ => Err(CompileError::new(ErrorKind::Unsupported, "internal: expression not compiled", &v.source)),
         }
     }
 
-    fn parts(&self, i: &Interp) -> LResult<&[Part]> {
-        match self.table.get(i.id) {
-            Some(Resolved::Parts(parts)) => Ok(parts),
+    fn parts(&mut self, i: &Interp) -> LResult<&'a [Part]> {
+        self.generator |= self.table.is_generator(i.id);
+        let table: &'a Table = self.table;
+        match table.get(i.id) {
+            Some(Resolved::Parts(parts, _)) => Ok(parts),
             _ => Err(CompileError::new(ErrorKind::Unsupported, "internal: interpolation not compiled", &i.source)),
         }
     }
 
+    /// What an implicitly translated interpolation translates, if it is translated at all.
+    fn implicit(&self, i: &Interp) -> Option<&'a Implicit> {
+        let table: &'a Table = self.table;
+        if i.translate != Translation::Translated {
+            return None;
+        }
+        match table.get(i.id) {
+            Some(Resolved::Parts(_, implicit)) => implicit.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// An implicit translation: the parts' values, then the translation (`attr`: the
+    /// attribute it is the value of).
+    fn interp_translate(&mut self, i: &Interp, implicit: &Implicit, attr: Option<u32>, cached: u32) -> LResult<()> {
+        for part in self.parts(i)? {
+            if let Part::Expr(expr) = part {
+                let info = index(self.tables.tr_values.len())?;
+                self.tables.tr_values.push(TrValue::Part { expr: *expr, esc: i.escape });
+                self.op(Op::TrValue { info })?;
+            }
+        }
+        let msgid = self.intern(implicit.msgid.as_bytes())?;
+        let keys = implicit.keys.iter().map(|k| self.intern(k.as_bytes())).collect::<LResult<_>>()?;
+        let info = index(self.tables.interp_translates.len())?;
+        self.tables.interp_translates.push(InterpTranslateInfo { msgid, keys, mapping: implicit.mapping, attr });
+        self.op(Op::InterpTranslate { info, cached })?;
+        Ok(())
+    }
+
     #[allow(clippy::too_many_lines)] // one arm per node kind
-    fn node(&mut self, node: &Node) -> LResult<()> {
+    fn node(&mut self, node: &'a Node) -> LResult<()> {
         match node {
             Node::Text(s) => self.pending.extend_from_slice(s.as_bytes()),
             Node::Empty => {}
             Node::Interpolation(i) => {
-                if i.translate == Translation::Translated {
-                    return Err(CompileError::unsupported("Implicit translation (implicit_i18n_translate)", &i.source));
+                if let Some(implicit) = self.implicit(i) {
+                    return self.interp_translate(i, implicit, None, 0);
                 }
-                let parts = self.parts(i)?.to_vec();
+                let parts = self.parts(i)?;
                 // A text node that is just `${x}` is a lone interpolation.
-                if let [Part::Expr(expr)] = parts.as_slice() {
+                if let [Part::Expr(expr)] = parts {
                     self.op(Op::Emit { expr: *expr, esc: i.escape, stage: Stage::Lone })?;
                 } else {
-                    self.emit_parts(&parts, i.escape, false)?;
+                    self.emit_parts(parts, i.escape, false)?;
                 }
             }
             Node::Sequence(nodes) => {
@@ -222,36 +397,138 @@ impl Lower<'_> {
                 let expr = self.expr(code)?;
                 self.op(Op::Exec { expr })?;
             }
-            Node::Translate { msgid, .. } => return Err(CompileError::unsupported("i18n:translate", msgid)),
-            Node::Name { name, .. } => return Err(CompileError::unsupported("i18n:name", name)),
-            Node::Domain { name, .. } => return Err(CompileError::unsupported("i18n:domain", name)),
-            Node::TxContext { name, .. } => return Err(CompileError::unsupported("i18n:context", name)),
-            Node::Target { expr, .. } => return Err(CompileError::unsupported("i18n:target", &expr.source)),
-            Node::DefineSlot { name, .. } => return Err(CompileError::unsupported("metal:define-slot", name)),
-            Node::UseMacro(m) => {
-                let what = if m.extend { "metal:extend-macro" } else { "metal:use-macro" };
-                return Err(CompileError::unsupported(what, &m.expr.source));
+            Node::Translate { msgid, body } => {
+                let explicit = if msgid.text.is_empty() { None } else { Some(self.intern(msgid.text.as_bytes())?) };
+                let info = index(self.tables.translates.len())?;
+                self.tables.translates.push(TranslateInfo { msgid: explicit, names: Vec::new() });
+                self.op(Op::TranslateBegin { info })?;
+                self.translations.push(info);
+                self.node(body)?;
+                self.translations.pop();
+                self.op(Op::TranslateEnd { info })?;
             }
-            Node::UseInternalMacro(name) => return Err(CompileError::unsupported("metal:define-macro", name)),
+            Node::Name { name, body } => {
+                let Some(&translate) = self.translations.last() else {
+                    return Err(CompileError::unsupported("internal: i18n:name outside a translation", name));
+                };
+                let name_ref = self.intern(name.text.as_bytes())?;
+                let existing = self.tables.translates.get(translate as usize).and_then(|t| {
+                    t.names.iter().position(|n| {
+                        self.text.get(n.start as usize..(n.start + n.len) as usize) == Some(name.text.as_bytes())
+                    })
+                });
+                let at = if let Some(i) = existing {
+                    i
+                } else {
+                    let t = self
+                        .tables
+                        .translates
+                        .get_mut(translate as usize)
+                        .ok_or_else(|| unsupported("internal: translation missing"))?;
+                    t.names.push(name_ref);
+                    t.names.len() - 1
+                };
+                let info = index(self.tables.names.len())?;
+                self.tables.names.push(NameInfo { translate, index: index(at)?, name: name_ref });
+                self.op(Op::NameBegin { info })?;
+                self.node(body)?;
+                self.op(Op::NameEnd { info })?;
+            }
+            Node::Domain { name, body } => self.i18n_set(I18nKey::Domain, &name.text, body)?,
+            Node::TxContext { name, body } => self.i18n_set(I18nKey::Context, &name.text, body)?,
+            Node::Target { expr, body } => {
+                let expr = self.expr(expr)?;
+                self.op(Op::Target { expr })?;
+                self.node(body)?;
+                self.op(Op::I18nRestore)?;
+            }
+            Node::DefineSlot { name, body } => {
+                let mangled = mangle(&name.text);
+                let slot = self
+                    .slots
+                    .iter()
+                    .position(|n| **n == *mangled)
+                    .ok_or_else(|| CompileError::unsupported("internal: slot not collected", name))?;
+                let at = self.op(Op::DefineSlot { slot: index(slot)?, end: 0 })?;
+                self.node(body)?;
+                let end = self.here()?;
+                if let Some(Op::DefineSlot { end: e, .. }) = self.ops.get_mut(at) {
+                    *e = end;
+                }
+            }
+            Node::UseMacro(m) => self.use_macro(m)?,
+            Node::UseInternalMacro(name) => {
+                let at = self.op(Op::CallMacro { entry: 0 })?;
+                self.calls.push((at, name.text.clone()));
+            }
         }
         Ok(())
     }
 
-    fn content(&mut self, c: &Content) -> LResult<()> {
-        if c.translate == Translation::Translated {
-            return Err(CompileError::unsupported("i18n:translate on tal:content / tal:replace", &c.expr.source));
+    fn i18n_set(&mut self, key: I18nKey, name: &str, body: &'a Node) -> LResult<()> {
+        let value = index(self.tables.strings.len())?;
+        self.tables.strings.push(name.into());
+        self.op(Op::I18nSet { key, value })?;
+        self.node(body)?;
+        self.op(Op::I18nRestore)?;
+        Ok(())
+    }
+
+    /// `visit_UseExternalMacro` inside its `macroname` definition: each fill-slot registered
+    /// (its body lowered later as a function of its own), then the call.
+    fn use_macro(&mut self, m: &'a UseMacro) -> LResult<()> {
+        let name = self.name("macroname")?;
+        let define = index(self.tables.defines.len())?;
+        self.tables.defines.push(DefineInfo { names: vec![name], visibility: Visibility::Local });
+        let text = self.intern(m.macroname.as_bytes())?;
+        self.op(Op::DefineText { info: define, text })?;
+        let tree: &'a Tree = self.tree;
+        if let Some(slots) = tree.slot_lists.get(m.slots.0 as usize) {
+            for slot in slots {
+                let info = self.tables.fills.len();
+                self.tables.fills.push(FillInfo { name: mangle(&slot.name.text).into(), entry: 0, extend: m.extend });
+                self.op(Op::FillSlot { info: index(info)? })?;
+                self.fills.push_back(PendingFill {
+                    body: &slot.body,
+                    info,
+                    slots: self.slots.clone(),
+                    translations: self.translations.clone(),
+                });
+            }
         }
+        let expr = self.expr(&m.expr)?;
+        self.op(Op::UseMacro { expr })?;
+        self.op(Op::Undefine { info: define })?;
+        Ok(())
+    }
+
+    fn content(&mut self, c: &'a Content) -> LResult<()> {
+        let translate = c.translate == Translation::Translated;
         let expr = self.expr(&c.expr)?;
         let esc = if c.kind == ContentKind::Structure { Escape::Structure } else { Escape::Content };
         let Some(default) = &c.default else {
             // An `on-error` fallback: no default, so the marker is an ordinary object.
-            self.op(Op::Emit { expr, esc, stage: Stage::Content })?;
+            if translate {
+                // (With `i18n:translate=""` on the element, the fallback is translated; the
+                // marker then skips nothing, there being no default content.)
+                let at = self.op(Op::ContentTranslate { expr, esc, end: 0 })?;
+                let end = index(at + 1)?;
+                if let Some(Op::ContentTranslate { end: e, .. }) = self.ops.get_mut(at) {
+                    *e = end;
+                }
+            } else {
+                self.op(Op::Emit { expr, esc, stage: Stage::Content })?;
+            }
             return Ok(());
         };
-        let at = self.op(Op::Content { expr, esc, end: 0 })?;
+        let at = self.op(if translate {
+            Op::ContentTranslate { expr, esc, end: 0 }
+        } else {
+            Op::Content { expr, esc, end: 0 }
+        })?;
         self.node(default)?;
         let end = self.here()?;
-        if let Some(Op::Content { end: e, .. }) = self.ops.get_mut(at) {
+        if let Some(Op::Content { end: e, .. } | Op::ContentTranslate { end: e, .. }) = self.ops.get_mut(at) {
             *e = end;
         }
         Ok(())
@@ -259,7 +536,7 @@ impl Lower<'_> {
 
     /// `visit_Define`: local names are backed up before each assignment and restored, in
     /// reverse order, after the body; global names are not restored.
-    fn define(&mut self, d: &Define) -> LResult<()> {
+    fn define(&mut self, d: &'a Define) -> LResult<()> {
         let mut locals = Vec::new();
         for assign in &d.assigns {
             let expr = self.expr(&assign.expr)?;
@@ -278,7 +555,7 @@ impl Lower<'_> {
         Ok(())
     }
 
-    fn element(&mut self, e: &Element) -> LResult<()> {
+    fn element(&mut self, e: &'a Element) -> LResult<()> {
         let omit = match &e.omit {
             Some(v) => {
                 let expr = self.expr(v)?;
@@ -352,7 +629,7 @@ impl Lower<'_> {
         name: &str,
         prefix: &str,
         suffix: &str,
-        value: &AttrValue,
+        value: &'a AttrValue,
         default: Option<&str>,
         filters: &[u32],
         cached: u32,
@@ -361,40 +638,80 @@ impl Lower<'_> {
             AttrValue::Subst { expr, quote } => AttrKind::Subst { expr: self.expr(expr)?, esc: Escape::Attr(*quote) },
             AttrValue::Boolean { expr, .. } => AttrKind::Boolean { expr: self.expr(expr)? },
             AttrValue::Interp { interp, boolean, .. } => {
-                if interp.translate == Translation::Translated {
-                    return Err(CompileError::unsupported("Implicit attribute translation", &interp.source));
+                if let Some(implicit) = self.implicit(interp) {
+                    let info = self.attr_info(name, prefix, suffix, default, filters)?;
+                    return self.interp_translate(interp, implicit, Some(info), cached);
                 }
-                let parts = self.parts(interp)?.to_vec();
+                let parts = self.parts(interp)?;
                 if !*boolean && filters.is_empty() {
                     // The common case: `name="${x}"` or `name="a ${x} b"`.
-                    if let [Part::Expr(expr)] = parts.as_slice() {
+                    if let [Part::Expr(expr)] = parts {
                         let prefix = self.intern(prefix.as_bytes())?;
                         let suffix = self.intern(suffix.as_bytes())?;
                         self.op(Op::Attr { expr: *expr, esc: interp.escape, prefix, suffix })?;
                     } else {
                         self.pending.extend_from_slice(prefix.as_bytes());
-                        self.emit_parts(&parts, interp.escape, false)?;
+                        self.emit_parts(parts, interp.escape, false)?;
                         self.pending.extend_from_slice(suffix.as_bytes());
                     }
                     return Ok(());
                 }
                 // Boolean or filtered: the value is written, then checked.
                 let info = self.attr_info(name, prefix, suffix, default, filters)?;
-                if let [Part::Expr(expr)] = parts.as_slice() {
+                if let [Part::Expr(expr)] = parts {
                     self.op(Op::AttrLone { expr: *expr, esc: interp.escape, info, boolean: *boolean, cached })?;
                 } else {
                     self.op(Op::AttrBegin { info })?;
-                    self.emit_parts(&parts, interp.escape, *boolean)?;
+                    self.emit_parts(parts, interp.escape, *boolean)?;
                     self.op(Op::AttrEnd { info, boolean: *boolean, cached })?;
                 }
                 return Ok(());
             }
-            AttrValue::Static(_) | AttrValue::Translate { .. } => {
-                return Err(unsupported("i18n:attributes (attribute translation)"));
+            AttrValue::Translate { msgid, value } => {
+                let attr = self.attr_info(name, prefix, suffix, default, filters)?;
+                self.tr_value(value, name, default)?;
+                let msgid = msgid.as_ref().map(|m| self.intern(m.as_bytes())).transpose()?;
+                let info = index(self.tables.attr_translates.len())?;
+                self.tables.attr_translates.push(AttrTranslateInfo { attr, msgid });
+                self.op(Op::AttrTranslate { info, cached })?;
+                return Ok(());
             }
+            AttrValue::Static(_) => return Err(unsupported("internal: a static value outside a translation")),
         };
         let info = self.attr_info(name, prefix, suffix, default, filters)?;
         self.op(Op::AttrValue { info, kind, cached })?;
+        Ok(())
+    }
+
+    /// The value a translated attribute translates (`ExpressionTransform.visit_Translate`'s
+    /// inner node), pushed on the unwind stack.
+    fn tr_value(&mut self, value: &'a AttrValue, name: &str, default: Option<&str>) -> LResult<()> {
+        let default = default.map(|d| self.intern(d.as_bytes())).transpose()?;
+        let v = match value {
+            AttrValue::Static(text) => TrValue::Static(self.intern(text.as_bytes())?),
+            AttrValue::Subst { expr, quote } => {
+                TrValue::Subst { expr: self.expr(expr)?, esc: Escape::Attr(*quote), default }
+            }
+            AttrValue::Boolean { expr, .. } => {
+                TrValue::Boolean { expr: self.expr(expr)?, name: self.intern(name.as_bytes())?, default }
+            }
+            AttrValue::Interp { interp, boolean, .. } => {
+                let parts = self.parts(interp)?;
+                let boolean = if *boolean { Some(self.intern(name.as_bytes())?) } else { None };
+                if let [Part::Expr(expr)] = parts {
+                    TrValue::Lone { expr: *expr, esc: interp.escape, boolean }
+                } else {
+                    self.op(Op::CaptureBegin)?;
+                    self.emit_parts(parts, interp.escape, boolean.is_some())?;
+                    self.op(Op::CaptureEnd { boolean })?;
+                    return Ok(());
+                }
+            }
+            AttrValue::Translate { .. } => return Err(unsupported("internal: nested attribute translation")),
+        };
+        let info = index(self.tables.tr_values.len())?;
+        self.tables.tr_values.push(v);
+        self.op(Op::TrValue { info })?;
         Ok(())
     }
 

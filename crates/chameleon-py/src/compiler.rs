@@ -11,7 +11,6 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use pyo3::exceptions::{PyLookupError, PySyntaxError, PyTypeError, PyValueError};
 use pyo3::intern;
@@ -26,9 +25,6 @@ use chameleon_core::{
 use crate::custom::{Custom, Sub, SubKind};
 use crate::errors::unsupported_error;
 use crate::expr::{Expr, Fallback, NsCode, TextConv};
-
-/// Distinguishes programs' render namespaces (see [`NsCode`]).
-static NS_KEYS: AtomicU64 = AtomicU64::new(1);
 
 /// An entry of a program's token table, resolved at compile time so the error path costs
 /// a slice: Chameleon re-slices the template source at the token's position for its length
@@ -164,14 +160,16 @@ pub(crate) struct PyExprCompiler<'a, 'py> {
     pub(crate) has_nested: Vec<bool>,
     /// Set while compiling an expression that gets nested tokens.
     nested: bool,
+    /// Whether each expression makes its render function a generator (a `yield`).
+    generators: Vec<bool>,
+    /// Set while compiling an expression or code block with a `yield`.
+    generator: bool,
     pub(crate) free: Vec<FreeVars>,
     /// Names `<?python ?>` blocks defined so far (`def` names, their parameters, imports):
     /// plain names in every later expression, which then runs in the render's namespace.
     local_names: Option<Bound<'py, PySet>>,
     /// The ones the render function itself binds.
     bound_names: Option<Bound<'py, PySet>>,
-    /// This program's render-namespace key.
-    ns_key: u64,
     /// Whether any expression mentions `repeat` (so native partial frames provide it).
     pub(crate) mentions_repeat: bool,
     pub(crate) config: Config<'py>,
@@ -215,10 +213,11 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
             token_table: Vec::new(),
             has_nested: Vec::new(),
             nested: false,
+            generators: Vec::new(),
+            generator: false,
             free: Vec::new(),
             local_names: None,
             bound_names: None,
-            ns_key: NS_KEYS.fetch_add(1, Ordering::Relaxed),
             mentions_repeat: false,
             config,
             attrs_dicts: HashMap::new(),
@@ -380,14 +379,15 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         if let Some(expr) = lowered {
             return Ok(expr);
         }
-        if cx.default == DefaultAlias::TargetLanguage && string.contains("default") {
-            return Err(ExprCompileError::Other(unsupported_error(self.py, "`default` inside i18n:target")));
-        }
         self.fallback(&tree, cx).map_err(ExprCompileError::Other)
     }
 
     /// The exact fallback: Chameleon's rewriting applied to the tree, compiled to a function.
     fn fallback(&mut self, tree: &Bound<'py, PyAny>, cx: ExprContext<'_>) -> PyResult<Expr> {
+        let yields = self.py.import(intern!(self.py, "chameleon_rs._rewrite"))?.getattr(intern!(self.py, "yields"))?;
+        if yields.call1((tree,))?.is_truthy()? {
+            self.generator = true;
+        }
         let attrs = self.attrs_dict(cx)?;
         let kwargs = PyDict::new(self.py);
         kwargs
@@ -395,13 +395,13 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         kwargs.set_item(intern!(self.py, "constants"), &self.constants)?;
         kwargs.set_item(intern!(self.py, "local_names"), &self.local_names)?;
         let result =
-            self.rewrite.call((tree, cx.default == DefaultAlias::Marker, &attrs, &self.lookup_attr), Some(&kwargs))?;
+            self.rewrite.call((tree, default_alias(self.py, cx.default), &attrs, &self.lookup_attr), Some(&kwargs))?;
         let (func, reads, writes, dynamic, in_namespace): (Bound<'py, PyAny>, Vec<String>, Vec<String>, bool, bool) =
             result.extract()?;
         if in_namespace {
             let attrs = attrs.map(Bound::unbind);
             let bound = self.bound_names()?.unbind();
-            return Ok(Expr::Ns(Box::new(NsCode { code: func.unbind(), attrs, key: self.ns_key, exec: false, bound })));
+            return Ok(Expr::Ns(Box::new(NsCode { code: func.unbind(), attrs, exec: false, bound })));
         }
         let free = if dynamic {
             FreeVars::Dynamic
@@ -465,11 +465,7 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         let attrs = self.attrs_dict(cx).map_err(other)?;
         let kwargs = PyDict::new(py);
         let set = |k: &Bound<'py, PyString>, v: Bound<'py, PyAny>| kwargs.set_item(k, v);
-        set(
-            intern!(py, "default_is_marker"),
-            pyo3::types::PyBool::new(py, cx.default == DefaultAlias::Marker).to_owned().into_any(),
-        )
-        .map_err(other)?;
+        set(intern!(py, "default_is_marker"), default_alias(py, cx.default)).map_err(other)?;
         set(intern!(py, "attrs"), attrs.map_or_else(|| py.None().into_bound(py), Bound::into_any)).map_err(other)?;
         set(intern!(py, "lookup_attr"), self.lookup_attr.clone()).map_err(other)?;
         let builtins = PyTuple::new(py, &self.config.template_builtins).map_err(other)?;
@@ -544,6 +540,7 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         self.exprs.push(expr);
         self.tokens.push(token);
         self.has_nested.push(std::mem::take(&mut self.nested));
+        self.generators.push(std::mem::take(&mut self.generator));
         Ok(ExprId(id))
     }
 
@@ -560,10 +557,14 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         let bound_names = self.bound_names()?;
         let compile = py.import(intern!(py, "chameleon_rs._rewrite"))?.getattr(intern!(py, "compile_code"))?;
         let builtins = PyTuple::new(py, &self.config.template_builtins)?;
-        let code =
-            compile.call1((source.text.as_str(), local_names, &bound_names, builtins, &self.constants))?.unbind();
+        let code = compile.call1((source.text.as_str(), local_names, &bound_names, builtins, &self.constants))?;
+        if code.is_none() {
+            // A `yield`: the function this block belongs to never runs.
+            self.generator = true;
+            return Ok(Expr::Const(py.None()));
+        }
         let bound = bound_names.unbind();
-        Ok(Expr::Ns(Box::new(NsCode { code, attrs: None, key: self.ns_key, exec: true, bound })))
+        Ok(Expr::Ns(Box::new(NsCode { code: code.unbind(), attrs: None, exec: true, bound })))
     }
 
     fn bound_names(&mut self) -> PyResult<Bound<'py, PySet>> {
@@ -628,6 +629,8 @@ impl ExprCompiler for PyExprCompiler<'_, '_> {
 
     /// The expression's error token is its stripped source (`TokenRef(string.strip())`).
     fn compile(&mut self, source: &Tok, cx: ExprContext<'_>) -> Result<ExprId, ExprCompileError<PyErr>> {
+        // (A rejected Interpolator candidate may have set it.)
+        self.generator = false;
         let expr = self.typed(source, cx, true)?;
         let token = self.token_id(&strip_tok(source));
         self.register(expr, token)
@@ -635,6 +638,7 @@ impl ExprCompiler for PyExprCompiler<'_, '_> {
 
     /// A code block's error token is its whole source, unstripped (`TokenRef(node.source)`).
     fn compile_code(&mut self, source: &Tok) -> Result<ExprId, ExprCompileError<PyErr>> {
+        self.generator = false;
         let expr = self.code_block(source).map_err(ExprCompileError::Other)?;
         let token = self.token_id(source);
         self.register(expr, token)
@@ -662,6 +666,10 @@ impl ExprCompiler for PyExprCompiler<'_, '_> {
 
     fn free_vars(&self, id: ExprId) -> FreeVars {
         self.free.get(id.0 as usize).cloned().unwrap_or_default()
+    }
+
+    fn is_generator(&self, id: ExprId) -> bool {
+        self.generators.get(id.0 as usize).copied().unwrap_or(false)
     }
 }
 
@@ -767,6 +775,16 @@ fn obviously_invalid(s: &str) -> bool {
         i += 1;
     }
     !stack.is_empty()
+}
+
+/// The `default` alias as `chameleon_rs._rewrite.aliases_for` takes it: `True` for the
+/// marker, `'target_language'` inside `i18n:target`, else `False`.
+fn default_alias(py: Python<'_>, default: DefaultAlias) -> Bound<'_, PyAny> {
+    match default {
+        DefaultAlias::Marker => pyo3::types::PyBool::new(py, true).to_owned().into_any(),
+        DefaultAlias::TargetLanguage => intern!(py, "target_language").clone().into_any(),
+        DefaultAlias::Name => pyo3::types::PyBool::new(py, false).to_owned().into_any(),
+    }
 }
 
 #[cfg(test)]

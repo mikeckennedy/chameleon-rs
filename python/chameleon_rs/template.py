@@ -1,5 +1,6 @@
 # Ported from Chameleon's src/chameleon/zpt/template.py (PageTemplate.render's setup of
 # `__translate`, `__decode`, `__on_error_handler`, `target_language` and `repeat`;
+# `Macros`, `PageTemplate.include` and `__getitem__`;
 # `PageTemplate.parse`, `expression_types`, `_builtins`, `BOOLEAN_HTML_ATTRIBUTES`,
 # `PageTextTemplate`, `PageTemplateFile` with its `load:` type and relative loader,
 # `PageTextTemplateFile`) and template.py (`BaseTemplate.write`, `extra_builtins`,
@@ -16,8 +17,7 @@ from collections.abc import Callable, Iterable, Mapping
 from functools import partial
 from typing import Any, ClassVar
 
-from chameleon_rs._native import Program
-from chameleon_rs.exc import UnsupportedError
+from chameleon_rs._native import Macro, Program
 from chameleon_rs.i18n import simple_translate
 from chameleon_rs.loader import TemplateLoader, import_package_resource
 from chameleon_rs.tal import RepeatDict
@@ -62,17 +62,34 @@ PROGRAM_OPTIONS = (
 
 
 class Macros:
-    """The ``macros`` template builtin. Macros render from Phase 6b on."""
+    """The ``macros`` template builtin: ``macros['name']`` is the macro defined with
+    ``metal:define-macro="name"``."""
+
+    __slots__ = ('_cache', 'template')
 
     def __init__(self, template: PageTemplate) -> None:
         self.template = template
+        # name -> (program, macro): a lookup is cached until the template is compiled again.
+        self._cache: dict[str, tuple[Program, Macro]] = {}
 
-    def __getitem__(self, name: str) -> Any:
-        raise UnsupportedError('Macros are not supported yet by chameleon-rs')
+    def __getitem__(self, name: str) -> Macro:
+        # Chameleon looks the function up as `_render_<name>`, with `-` replaced; it defined
+        # each macro's function under its name with every non-word character replaced.
+        name = name.replace('-', '_')
+        template = self.template
+        template.cook_check()
+        program = template._program
+        cached = self._cache.get(name)
+        if cached is not None and cached[0] is program:
+            return cached[1]
+        macro = Macro(program, name, template._builtin_dict)
+        self._cache[name] = (program, macro)
+        return macro
 
     @property
     def names(self) -> list[str]:
-        return []
+        self.template.cook_check()
+        return list(self.template._program.macro_names)
 
 
 class PageTemplate:
@@ -192,6 +209,17 @@ class PageTemplate:
         """Compiled at construction: nothing to do (file templates compile on first use)."""
         return False
 
+    def __getitem__(self, name: str) -> Macro:
+        return self.macros[name]
+
+    @property
+    def include(self) -> Macro:
+        """The whole template as a macro (``metal:use-macro="template"``): Chameleon's
+        ``include(stream, econtext, rcontext, ...)``, which renders the main function into
+        ``stream``."""
+        self.cook_check()
+        return Macro(self._program, None, self._builtin_dict)
+
     def _partial_programs(self) -> dict[str, Program] | None:
         if self._partials is None:
             return None
@@ -245,7 +273,10 @@ class PageTemplate:
         partials = self._partial_programs()
         return self._program.render(kw, partials, defaults, self._builtin_dict)
 
-    __call__ = render
+    def __call__(self, **kw: Any) -> str:
+        # A method of its own, as `BaseTemplate.__call__` is: the interpreter's stack depth at
+        # the render matters for where deep macro recursion fails (`Errors::frame_budget`).
+        return self.render(**kw)
 
     def __repr__(self) -> str:
         return f'<{type(self).__name__} {self.filename}>'
@@ -360,4 +391,5 @@ class PageTextTemplateFile(PageTemplateFile):
         result = super().render(encoding, **kw)
         return result.encode(self.encoding or 'utf-8')
 
-    __call__ = render
+    def __call__(self, **kw: Any) -> bytes:  # type: ignore[override]
+        return self.render(**kw)

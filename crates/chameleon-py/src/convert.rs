@@ -45,8 +45,8 @@ pub(crate) fn emit<'py>(
     stage: Stage,
     out: &mut Output,
 ) -> PyResult<Emitted> {
-    if stage == Stage::Bool {
-        return emit_bool(cx, value, esc, out);
+    if matches!(stage, Stage::Bool | Stage::Format | Stage::Append) {
+        return emit_special(cx, value, esc, stage, out);
     }
     let other = match quote(cx, value, esc, true, out)? {
         Quoted::Nothing => return Ok(Emitted::Nothing),
@@ -71,7 +71,37 @@ pub(crate) fn emit<'py>(
             Ok(Emitted::Value)
         }
         // Handled above.
-        Stage::Bool => Err(pyo3::exceptions::PyRuntimeError::new_err("boolean stage reached the general conversion")),
+        Stage::Bool | Stage::Format | Stage::Append => {
+            Err(pyo3::exceptions::PyRuntimeError::new_err("stage reached the general conversion"))
+        }
+    }
+}
+
+/// The stages that skip the usual two-step conversion (out of line: `emit` is hot).
+#[cold]
+#[inline(never)]
+fn emit_special<'py>(
+    cx: &Cx<'_, 'py>,
+    value: &Bound<'py, PyAny>,
+    esc: Escape,
+    stage: Stage,
+    out: &mut Output,
+) -> PyResult<Emitted> {
+    match stage {
+        Stage::Bool => emit_bool(cx, value, esc, out),
+        // `'%s' % value` unless `None` (a translated attribute).
+        Stage::Format => {
+            if value.is_none() {
+                return Ok(Emitted::Nothing);
+            }
+            write_raw(&value.str()?, out)?;
+            Ok(Emitted::Value)
+        }
+        // `__append(value)`: the final `''.join` takes only strings.
+        Stage::Append => append(value, out),
+        Stage::Content | Stage::Lone | Stage::Part => {
+            Err(pyo3::exceptions::PyRuntimeError::new_err("a usual stage reached the special conversion"))
+        }
     }
 }
 
@@ -157,7 +187,7 @@ fn quote<'py>(
         let markup = html.call0()?;
         return Ok(if markup.is_none() { Quoted::Nothing } else { Quoted::Other(markup) });
     } else {
-        translate(cx, value)?
+        translate(cx, value, Target::Local)?
     };
     // `__re_needs_escape(target)` raises TypeError for a non-str, which skips escaping.
     match converted.cast::<PyString>() {
@@ -189,7 +219,7 @@ fn convert<'py>(
     } else if let Some(html) = value.getattr_opt(intern!(py, "__html__"))? {
         html.call0()?
     } else {
-        translate(cx, value)?
+        translate(cx, value, Target::Scope)?
     };
     Ok(if converted.is_none() { None } else { Some(converted) })
 }
@@ -201,16 +231,28 @@ fn decode<'py>(cx: &Cx<'_, 'py>, value: &Bound<'py, PyAny>) -> PyResult<Bound<'p
     decode.call1((value,))
 }
 
+/// Which `target_language` a conversion passes: the render function's local (in the
+/// `__quote` / `__convert` helpers) or `getname('target_language')` (in conversion code
+/// generated inline with the expression, which Chameleon's name rewriting reaches).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Target {
+    Local,
+    Scope,
+}
+
 /// `translate(target, domain=..., context=..., target_language=...)`, then
 /// `str(target) if target is converted else converted`.
-fn translate<'py>(cx: &Cx<'_, 'py>, value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+fn translate<'py>(cx: &Cx<'_, 'py>, value: &Bound<'py, PyAny>, target: Target) -> PyResult<Bound<'py, PyAny>> {
     let py = value.py();
     let converted = match cx.scope_or_default(intern!(py, "__translate"))? {
         Some(translate) => {
             let kwargs = PyDict::new(py);
-            kwargs.set_item(intern!(py, "domain"), py.None())?;
-            kwargs.set_item(intern!(py, "context"), py.None())?;
-            let target_language = cx.scope_or_default(intern!(py, "target_language"))?;
+            kwargs.set_item(intern!(py, "domain"), &cx.frame.domain)?;
+            kwargs.set_item(intern!(py, "context"), &cx.frame.context)?;
+            let target_language = match target {
+                Target::Local => cx.frame.target_language.clone(),
+                Target::Scope => cx.scope_target_language()?,
+            };
             kwargs.set_item(intern!(py, "target_language"), target_language)?;
             translate.call((value,), Some(&kwargs))?
         }
@@ -278,7 +320,7 @@ pub(crate) fn convert_text<'py>(
         } else if let Some(html) = value.getattr_opt(intern!(py, "__html__"))? {
             html.call0()
         } else {
-            translate(cx, value)
+            translate(cx, value, Target::Scope)
         };
     };
     // `__quote(target, quote, quote_entity, default, default_marker)`.
@@ -291,13 +333,37 @@ pub(crate) fn convert_text<'py>(
     } else if let Some(html) = value.getattr_opt(intern!(py, "__html__"))? {
         return html.call0();
     } else {
-        translate(cx, value)?
+        translate(cx, value, Target::Local)?
     };
     // `__re_needs_escape(target)` raises TypeError for a non-str, which skips escaping.
     match target.cast::<PyString>() {
         Ok(s) => escape_py(s, esc),
         Err(_) => Ok(target),
     }
+}
+
+/// `__quote(value, quote, entity, default, marker)` as a value: the attribute engine (`esc`
+/// is an attribute's) converts the marker to `default`.
+pub(crate) fn quote_value<'py>(
+    cx: &Cx<'_, 'py>,
+    value: &Bound<'py, PyAny>,
+    esc: Escape,
+    default: Option<&str>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let py = value.py();
+    let conv = crate::expr::TextConv {
+        escape: Some(esc),
+        marker: esc.drops_default(),
+        default: default.map(|d| PyString::new(py, d).unbind()),
+        literal_false: true,
+    };
+    convert_text(cx, value, &conv)
+}
+
+/// `emit_convert` with the attribute engine's settings (the marker converts to `None`).
+pub(crate) fn convert_value<'py>(cx: &Cx<'_, 'py>, value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let conv = crate::expr::TextConv { escape: None, marker: true, default: None, literal_false: true };
+    convert_text(cx, value, &conv)
 }
 
 /// Chameleon's escaping of a Python `str`, returning a `str` (the same object when the gate

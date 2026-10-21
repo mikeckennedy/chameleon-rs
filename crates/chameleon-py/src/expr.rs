@@ -154,14 +154,13 @@ pub(crate) struct Site {
 
 /// A `<?python ?>` block (`exec`), or a fallback expression that reads a name a code block
 /// defined (`eval`): Chameleon inlines both into the render function, whose locals they
-/// share. They run with the render's namespace for this program as globals.
+/// share. They run with the namespace of the frame running them (one per frame: each macro
+/// or slot body is a function of its own in Chameleon) as globals.
 #[derive(Debug)]
 pub(crate) struct NsCode {
     pub(crate) code: Py<PyAny>,
     /// The `attrs` alias where the code appears.
     pub(crate) attrs: Option<Py<PyDict>>,
-    /// Which program's namespace (one per program and render).
-    pub(crate) key: u64,
     /// Statements (`exec`, the value is `None`) rather than an expression (`eval`).
     pub(crate) exec: bool,
     /// The names the render function binds (see `chameleon_rs._rewrite.compile_code`): a
@@ -439,8 +438,31 @@ pub(crate) struct RenderCtx<'py> {
     /// `ExprId` plus one) and the token. Read only on the error path, for the site the VM
     /// reports (`chameleon_core::ErrorSite`).
     pub(crate) nested: Cell<(u32, u32)>,
-    /// Each program's namespace for code blocks, created on first use (see [`NsCode`]).
+    /// Each frame's namespace for code blocks, by frame serial, created on first use (see
+    /// [`NsCode`]).
     pub(crate) namespaces: RefCell<Vec<(u64, Bound<'py, PyDict>)>>,
+    /// For a render called through `include` by another engine: the stream it writes to
+    /// (that engine's slot fills append to it directly, through their closure).
+    pub(crate) stream: OnceCell<Bound<'py, PyAny>>,
+}
+
+/// What expressions see of the active frame: its template's builtins (a macro's are those
+/// of the template it belongs to), its serial, and its i18n settings (Chameleon's
+/// `__i18n_domain`, `__i18n_context` and `target_language` locals).
+pub(crate) struct FrameCx<'py> {
+    /// A macro of another template: that template's builtins (`None`: the render's).
+    pub(crate) builtins: Option<Bound<'py, PyDict>>,
+    pub(crate) serial: u64,
+    pub(crate) domain: Option<Bound<'py, PyString>>,
+    pub(crate) context: Option<Bound<'py, PyString>>,
+    pub(crate) target_language: Bound<'py, PyAny>,
+}
+
+impl<'py> FrameCx<'py> {
+    /// A frame with no i18n domain or context.
+    pub(crate) fn new(builtins: Option<Bound<'py, PyDict>>, serial: u64, target_language: Bound<'py, PyAny>) -> Self {
+        Self { builtins, serial, domain: None, context: None, target_language }
+    }
 }
 
 impl<'py> RenderCtx<'py> {
@@ -458,6 +480,7 @@ impl<'py> RenderCtx<'py> {
             rcontext: OnceCell::new(),
             nested: Cell::new((0, 0)),
             namespaces: RefCell::new(Vec::new()),
+            stream: OnceCell::new(),
         }
     }
 
@@ -466,10 +489,11 @@ impl<'py> RenderCtx<'py> {
     }
 }
 
-/// Evaluation context: the active frame's scope plus render-wide state.
+/// Evaluation context: the active frame's scope and state, plus render-wide state.
 pub(crate) struct Cx<'a, 'py> {
     pub(crate) scope: &'a Bound<'py, Scope>,
     pub(crate) render: &'a RenderCtx<'py>,
+    pub(crate) frame: &'a FrameCx<'py>,
 }
 
 impl<'py> Cx<'_, 'py> {
@@ -484,8 +508,21 @@ impl<'py> Cx<'_, 'py> {
         }
     }
 
+    /// The active frame's template builtins.
+    pub(crate) fn builtins(&self) -> &Bound<'py, PyDict> {
+        self.frame.builtins.as_ref().unwrap_or(&self.render.builtins)
+    }
+
     fn builtin(&self, name: &Bound<'py, PyString>) -> PyResult<Bound<'py, PyAny>> {
-        self.render.builtins.get_item(name)?.ok_or_else(|| PyNameError::new_err(name.clone().unbind()))
+        self.builtins().get_item(name)?.ok_or_else(|| PyNameError::new_err(name.clone().unbind()))
+    }
+
+    /// `getname('target_language')` (what Chameleon's rewritten expression code reads, as
+    /// opposed to the render function's `target_language` local).
+    pub(crate) fn scope_target_language(&self) -> PyResult<Bound<'py, PyAny>> {
+        let py = self.scope.py();
+        let key = intern!(py, "target_language");
+        self.scope_or_default(key)?.ok_or_else(|| PyNameError::new_err((key.clone().unbind(),)))
     }
 }
 
@@ -591,7 +628,7 @@ pub(crate) fn eval<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny
         Expr::Partial { call, .. } => eval(call, cx),
         Expr::Fallback(f) => {
             let rcontext = cx.render.rcontext(py);
-            f.func.bind(py).call1((cx.scope, rcontext, &cx.render.marker, &cx.render.builtins))
+            f.func.bind(py).call1((cx.scope, rcontext, &cx.render.marker, cx.builtins()))
         }
         _ => eval_more(e, cx),
     }
@@ -786,7 +823,8 @@ static EVAL: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 /// and the `attrs` alias.
 fn eval_ns<'py>(code: &NsCode, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
     let py = cx.scope.py();
-    let existing = cx.render.namespaces.borrow().iter().find(|(k, _)| *k == code.key).map(|(_, ns)| ns.clone());
+    let key = cx.frame.serial;
+    let existing = cx.render.namespaces.borrow().iter().find(|(k, _)| *k == key).map(|(_, ns)| ns.clone());
     let ns = if let Some(ns) = existing {
         ns
     } else {
@@ -799,13 +837,13 @@ fn eval_ns<'py>(code: &NsCode, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> 
         let lookup = wrap_pyfunction!(py_lookup_attr, py)?;
         let ns = utils_attr(py, &NAMESPACE, "chameleon_rs._rewrite", "namespace")?.call1((lookup, defaults))?;
         let ns = ns.cast_into::<PyDict>()?;
-        cx.render.namespaces.borrow_mut().push((code.key, ns.clone()));
+        cx.render.namespaces.borrow_mut().push((key, ns.clone()));
         ns
     };
     ns.set_item(intern!(py, "econtext"), cx.scope)?;
     ns.set_item(intern!(py, "rcontext"), cx.render.rcontext(py))?;
     ns.set_item(intern!(py, "__rs_default"), &cx.render.marker)?;
-    ns.set_item(intern!(py, "__rs_tpl"), &cx.render.builtins)?;
+    ns.set_item(intern!(py, "__rs_tpl"), cx.builtins())?;
     ns.set_item(intern!(py, "__rs_attrs"), code.attrs.as_ref().map(|a| a.bind(py)))?;
     let result = if code.exec {
         utils_attr(py, &EXEC, "builtins", "exec")?.call1((code.code.bind(py), &ns))

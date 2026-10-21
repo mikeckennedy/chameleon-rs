@@ -41,8 +41,9 @@ pub use pychars::is_space as is_python_space;
 pub use source::{Source, Span, char_offset, location};
 pub use tok::{Tok, TokPos};
 pub use vm::{
-    AttrKind, Call, Countdown, Done, Emitted, ErrorSite, Loop, MAX_CAPACITY_HINT, MAX_FRAMES, NameId, Op, Program,
-    Runtime, Stage, Step, TextRef, Visibility, VmError, VmState, run, throw,
+    Active, AttrKind, Attrs, Call, Countdown, DEFAULT_FRAME_BUDGET, Done, Emitted, ErrorSite, Errors, Eval, Fill, I18n,
+    I18nKey, Loop, Loops, MAX_CAPACITY_HINT, MAX_FRAMES, MacroEntry, MacroStep, Macros, NameId, NameValue, Names, Op,
+    Program, Runtime, Stage, Step, TextRef, Translate, Translation, Values, Visibility, VmError, VmState, run, throw,
 };
 
 /// Tokens, element trees and character classes, exposed for the differential tests in

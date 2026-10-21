@@ -108,10 +108,16 @@ impl Scope {
 
     /// A new scope with this scope's local items whose root is this scope's root (or this
     /// scope, if it is the root).
-    fn copy<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, Self>> {
+    pub(crate) fn copy<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, Self>> {
         let root = Self::root_or_self(slf).unbind();
         let copy = Bound::new(slf.py(), Self { root: Some(root) })?;
-        copy.as_super().update(slf.as_super().as_mapping())?;
+        // `Scope(self)`: `dict.__init__` on a dict subclass with its own `__iter__` takes the
+        // slow path, `self[key]` for each local key in order, which (local first) is the
+        // local value: the same as copying the local items directly.
+        let target = copy.as_super();
+        for (key, value) in slf.as_super().iter() {
+            target.set_item(key, value)?;
+        }
         Ok(copy)
     }
 

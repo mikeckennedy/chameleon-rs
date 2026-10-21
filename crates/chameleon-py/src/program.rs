@@ -172,10 +172,15 @@ impl Program {
             let scope = Scope::new_root(py, variables)?;
             let builtins = builtins.unwrap_or_else(|| PyDict::new(py));
             let render = RenderCtx::new(marker(py)?, partials, defaults, builtins);
+            // `render(..., target_language=__kw.get("target_language"))`.
+            // (`None` stays the VM's "no value", so frames without i18n settings stay plain.)
+            let target_language =
+                variables.get_item(intern!(py, "target_language"))?.filter(|t| !t.is_none()).map(Bound::unbind);
             let mut st = VmState::new(
                 Arc::clone(&program.core),
                 slf.clone().into_any().unbind(),
                 scope.clone().into_any().unbind(),
+                target_language,
             );
             let mut rt = PyRuntime::new(&render, slf.clone(), scope.clone());
             match run(&mut st, &mut rt) {
@@ -192,6 +197,19 @@ impl Program {
     /// A readable listing of the bytecode.
     fn dump(&self) -> String {
         self.core.dump()
+    }
+
+    /// The macros' names as Chameleon's `Macros.names` lists them: the mangled function
+    /// names (`render_<name>` without the prefix), each once, in definition order.
+    #[getter]
+    fn macro_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for m in self.core.macros() {
+            if !names.iter().any(|n| **n == *m.mangled) {
+                names.push(m.mangled.to_string());
+            }
+        }
+        names
     }
 
     fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
@@ -297,7 +315,7 @@ fn strings(value: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
 
 /// Builds the final `str` once: a plain UTF-8 decode, or `surrogatepass` if some value had
 /// lone surrogates (D6).
-fn output_str<'py>(py: Python<'py>, out: &Output) -> PyResult<Bound<'py, PyString>> {
+pub(crate) fn output_str<'py>(py: Python<'py>, out: &Output) -> PyResult<Bound<'py, PyString>> {
     if out.has_surrogates() {
         let bytes = PyBytes::new(py, out.as_bytes());
         return PyString::from_encoded_object(&bytes, Some(c"utf-8"), Some(c"surrogatepass"));

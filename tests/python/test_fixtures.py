@@ -35,54 +35,9 @@ ROOT = upstream.ROOT
 INPUTS = os.path.join(ROOT, 'inputs')
 OUTPUTS = os.path.join(ROOT, 'outputs')
 
-# Phase 6b: macros, slots and i18n (fixtures using `load:` macros also need the loader).
-LATER = {
-    '012-translation.pt': 'i18n:translate',
-    '015-translation-nested.pt': 'i18n:translate',
-    '016-explicit-translation.pt': 'i18n:translate on tal:content / tal:replace',
-    '018-translation-nested-dynamic.pt': 'i18n:translate',
-    '021-translation-domain.pt': 'i18n:domain',
-    '032-master-template.pt': 'metal:define-macro',
-    '033-use-macro-trivial.pt': 'metal:use-macro',
-    '034-use-template-as-macro.pt': 'metal:use-macro',
-    '035-use-macro-with-fill-slot.pt': 'metal:use-macro',
-    '036-use-macro-inherits-dynamic-scope.pt': 'metal:use-macro',
-    '037-use-macro-local-variable-scope.pt': 'metal:use-macro',
-    '038-use-macro-globals.pt': 'metal:use-macro',
-    '040-macro-using-template-symbol.pt': 'metal:define-macro',
-    '041-translate-nested-names.pt': 'i18n:translate',
-    '042-use-macro-fill-footer.pt': 'metal:use-macro',
-    '043-macro-nested-dynamic-vars.pt': 'metal:define-macro',
-    '046-extend-macro.pt': 'metal:define-macro',
-    '047-use-extended-macro.pt': 'metal:use-macro',
-    '048-use-extended-macro-fill-original.pt': 'metal:use-macro',
-    '050-define-macro-and-use-not-extend.pt': 'metal:define-macro',
-    '051-use-non-extended-macro.pt': 'metal:use-macro',
-    '052-i18n-domain-inside-filled-slot.pt': 'metal:define-macro',
-    '060-macro-with-multiple-same-slots.pt': 'metal:define-macro',
-    '061-fill-one-slot-but-two-defined.pt': 'metal:use-macro',
-    '065-use-macro-in-fill.pt': 'metal:use-macro',
-    '066-load-expression.pt': 'metal:use-macro',
-    '069-translation-domain-and-macro.pt': 'metal:use-macro',
-    '070-translation-domain-and-use-macro.pt': 'i18n:domain',
-    '075-nested-macros.pt': 'metal:define-macro',
-    '076-nested-macro-override.pt': 'metal:use-macro',
-    '077-i18n-attributes.pt': 'i18n:domain',
-    '079-implicit-i18n.pt': 'i18n:translate',
-    '081-load-spec.pt': 'metal:use-macro',
-    '082-load-spec-computed.pt': 'metal:use-macro',
-    '083-template-dict-to-macro.pt': 'metal:use-macro',
-    '085-nested-translation.pt': 'i18n:domain',
-    '086-self-closing.pt': 'metal:use-macro',
-    '089-load-fallback.pt': 'metal:use-macro',
-    '120-translation-context.pt': 'i18n:translate',
-    '121-translation-comment.pt': 'i18n:translate',
-    '124-translation-target.pt': '`default` inside i18n:target',
-    '125-macro-translation-ordering.pt': 'metal:define-macro',
-    '128-translation-macro-name.pt': 'metal:define-macro',
-    '238-macroname.pt': 'metal:define-macro',
-    'multinode-implicit-i18n.pt': 'Implicit translation (implicit_i18n_translate)',
-}
+# Every fixture renders since Phase 6b (macros, slots, i18n), including those that load
+# other templates with `load:` and the `load` keyword (the file loader of Phase 5).
+LATER: dict[str, str] = {}
 
 
 def fixtures() -> list[tuple[str, str | None]]:

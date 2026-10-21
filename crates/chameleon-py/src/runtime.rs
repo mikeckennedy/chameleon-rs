@@ -5,23 +5,28 @@
 
 //! The Python [`Runtime`] (D2): values are `Py<PyAny>`, errors are `PyErr` untouched.
 
+use std::sync::Arc;
+
 use pyo3::exceptions::{PyException, PyKeyError, PyNameError, PyRecursionError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pyclass::CompareOp;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{PyBool, PyInt, PyIterator, PyList, PySet, PyString, PyTuple};
+use pyo3::types::{PyBool, PyDict, PyInt, PyIterator, PyList, PySet, PyString, PyTuple};
 
 use chameleon_core::{
-    Countdown, Emitted, ErrorSite, Escape, ExprId, NameId, Output, Quote, Runtime, Stage, Step, Visibility,
+    Active, Attrs, Countdown, Emitted, ErrorSite, Errors, Escape, Eval, ExprId, Fill, I18n, Loops, MacroStep, Macros,
+    NameId, NameValue, Names, Output, Quote, Stage, Step, Translate, Translation, Values, Visibility,
 };
 
 use crate::convert;
-use crate::expr::{Cx, RenderCtx, eval, eval_emitted};
+use crate::expr::{Cx, FrameCx, RenderCtx, eval, eval_emitted};
+use crate::macros::{Macro, SlotFill};
 use crate::program::{Program, record_error};
 use crate::scope::Scope;
 
 static ERROR_INFO: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+static DEQUE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 /// Rebuilt for every render (and, once async lands, every resume): it holds `Bound`
 /// references, the VM state holds only `Py`.
@@ -30,29 +35,130 @@ pub(crate) struct PyRuntime<'a, 'py> {
     render: &'a RenderCtx<'py>,
     code: Bound<'py, Program>,
     scope: Bound<'py, Scope>,
+    frame: FrameCx<'py>,
 }
 
 impl<'a, 'py> PyRuntime<'a, 'py> {
     pub(crate) fn new(render: &'a RenderCtx<'py>, code: Bound<'py, Program>, scope: Bound<'py, Scope>) -> Self {
-        Self { py: code.py(), render, code, scope }
+        let py = code.py();
+        let frame = FrameCx::new(None, 0, py.None().into_bound(py));
+        Self { py, render, code, scope, frame }
     }
 
     fn cx(&self) -> Cx<'_, 'py> {
-        Cx { scope: &self.scope, render: self.render }
+        Cx { scope: &self.scope, render: self.render, frame: &self.frame }
     }
 
     fn name(&self, name: NameId) -> PyResult<&Py<PyString>> {
         self.code.get().names.get(name.0 as usize).ok_or_else(|| PyValueError::new_err("unknown name id"))
     }
+
+    /// The i18n settings as Python values.
+    #[cold]
+    fn set_i18n(&mut self, i18n: &I18n<Py<PyAny>>) {
+        let py = self.py;
+        if self.frame.domain.is_some() || i18n.domain.is_some() {
+            self.frame.domain = i18n.domain.as_deref().map(|d| PyString::new(py, d));
+        }
+        if self.frame.context.is_some() || i18n.context.is_some() {
+            self.frame.context = i18n.context.as_deref().map(|c| PyString::new(py, c));
+        }
+        match &i18n.target_language {
+            Some(target) => {
+                let target = target.bind(py);
+                if !self.frame.target_language.is(target) {
+                    self.frame.target_language = target.clone();
+                }
+            }
+            None => {
+                if !self.frame.target_language.is_none() {
+                    self.frame.target_language = py.None().into_bound(py);
+                }
+            }
+        }
+    }
+
+    /// The domain, context and `target_language` arguments of a foreign `include` call.
+    fn i18n_args(&self) -> (Bound<'py, PyAny>, Bound<'py, PyAny>, Bound<'py, PyAny>) {
+        let py = self.py;
+        let opt = |s: &Option<Bound<'py, PyString>>| {
+            s.as_ref().map_or_else(|| py.None().into_bound(py), |s| s.clone().into_any())
+        };
+        (opt(&self.frame.domain), opt(&self.frame.context), self.frame.target_language.clone())
+    }
+
+    /// The key of slot `name` in the scope (`__slot_<mangled name>`).
+    fn slot_key(&self, name: &str) -> Bound<'py, PyString> {
+        PyString::new(self.py, &format!("__slot_{name}"))
+    }
+
+    /// Calls a foreign callable with a fresh stream (`f(stream, *args)`) and writes what it
+    /// appended (`''.join(stream)`). Chameleon's slot fills append to their own template's
+    /// stream through a closure instead: when this render was called by another engine, what
+    /// was appended to the stream it writes to is moved here, in order.
+    fn call_with_stream(&self, f: &Bound<'py, PyAny>, args: Vec<Bound<'py, PyAny>>, out: &mut Output) -> PyResult<()> {
+        let py = self.py;
+        let stream = PyList::empty(py);
+        let mut call_args = vec![stream.clone().into_any()];
+        call_args.extend(args);
+        let outer = self.render.stream.get();
+        let before = outer.map(PyAnyMethods::len).transpose()?;
+        f.call1(PyTuple::new(py, call_args)?)?;
+        let mut join = |items: &Bound<'py, PyAny>| -> PyResult<()> {
+            let joined = intern!(py, "").call_method1(intern!(py, "join"), (items,))?;
+            convert::write_str(joined.cast::<PyString>()?, Escape::Structure, out)
+        };
+        if let (Some(outer), Some(before)) = (outer, before)
+            && outer.len()? > before
+        {
+            let appended = outer.get_item(pyo3::types::PySlice::new(py, isize::try_from(before)?, isize::MAX, 1))?;
+            outer.del_item(pyo3::types::PySlice::new(py, isize::try_from(before)?, isize::MAX, 1))?;
+            join(&appended)?;
+        }
+        join(stream.as_any())
+    }
 }
 
-impl Runtime for PyRuntime<'_, '_> {
+impl Values for PyRuntime<'_, '_> {
     type Value = Py<PyAny>;
     type Error = PyErr;
 
-    fn activate(&mut self, code: &Py<PyAny>, scope: &Py<PyAny>) -> PyResult<()> {
-        self.code = code.bind(self.py).cast::<Program>()?.clone();
-        self.scope = scope.bind(self.py).cast::<Scope>()?.clone();
+    fn clone_value(&mut self, value: &Py<PyAny>) -> Py<PyAny> {
+        value.clone_ref(self.py)
+    }
+}
+
+impl Eval for PyRuntime<'_, '_> {
+    /// A frame's code is its `Program`, or for a macro of another template the `Macro`
+    /// (which carries that template's builtins).
+    #[inline]
+    fn activate(&mut self, frame: Active<'_, Py<PyAny>>) -> PyResult<()> {
+        let py = self.py;
+        let code = frame.code.bind(py);
+        if let Ok(program) = code.cast::<Program>() {
+            self.code = program.clone();
+            if self.frame.builtins.is_some() {
+                self.frame.builtins = None;
+            }
+        } else {
+            let m = code.cast::<Macro>()?.get();
+            self.code = m.program.bind(py).clone();
+            self.frame.builtins = Some(m.builtins.bind(py).clone());
+        }
+        self.scope = frame.scope.bind(py).cast::<Scope>()?.clone();
+        self.frame.serial = frame.serial;
+        let i18n = frame.i18n;
+        let plain = i18n.domain.is_none()
+            && i18n.context.is_none()
+            && self.frame.domain.is_none()
+            && self.frame.context.is_none();
+        let same_target = match &i18n.target_language {
+            Some(t) => self.frame.target_language.is(t.bind(py)),
+            None => self.frame.target_language.is_none(),
+        };
+        if !(plain && same_target) {
+            self.set_i18n(i18n);
+        }
         // Nested tokens name sites of the frame that set them.
         self.render.nested.set((0, 0));
         Ok(())
@@ -86,6 +192,12 @@ impl Runtime for PyRuntime<'_, '_> {
         value.bind(self.py).is_truthy()
     }
 
+    fn is_false(&mut self, value: &Py<PyAny>) -> bool {
+        value.bind(self.py).is(PyBool::new(self.py, false))
+    }
+}
+
+impl Names for PyRuntime<'_, '_> {
     fn lookup(&mut self, name: NameId) -> PyResult<Option<Py<PyAny>>> {
         let key = self.name(name)?.bind(self.py);
         Ok(Scope::lookup(&self.scope, key.as_any())?.map(Bound::unbind))
@@ -96,6 +208,37 @@ impl Runtime for PyRuntime<'_, '_> {
         self.scope.as_super().set_item(key, self.py.None())
     }
 
+    /// `econtext[name] = value` (a tuple target for several names), then for a global
+    /// definition `rcontext[name] = value` for each name (the whole value, as Chameleon does).
+    fn define(&mut self, names: &[NameId], value: Py<PyAny>, visibility: Visibility) -> PyResult<()> {
+        let py = self.py;
+        if visibility == Visibility::Global {
+            let rcontext = self.render.rcontext(py);
+            for name in names {
+                rcontext.set_item(self.name(*name)?.bind(py), value.bind(py))?;
+            }
+        }
+        self.assign(names, value, Visibility::Local)
+    }
+
+    /// `if backup is marker: del econtext[KEY] else: econtext[KEY] = backup`.
+    fn restore(&mut self, name: NameId, backup: Option<Py<PyAny>>) -> PyResult<()> {
+        let key = self.name(name)?.bind(self.py);
+        match backup {
+            Some(value) => self.scope.as_super().set_item(key, value),
+            None => self.scope.as_super().del_item(key),
+        }
+    }
+
+    fn text_value(&mut self, text: Option<&str>) -> Py<PyAny> {
+        match text {
+            Some(t) => PyString::new(self.py, t).into_any().unbind(),
+            None => self.py.None(),
+        }
+    }
+}
+
+impl Loops for PyRuntime<'_, '_> {
     /// `__iterator, INDEX = getname('repeat')(key, iterable)`: whatever `repeat` is bound to,
     /// called with the name (or a tuple of names), its result unpacked like a Python
     /// assignment. The loop iterates `iter(__iterator)` (any iterable works, as in a `for`);
@@ -163,7 +306,9 @@ impl Runtime for PyRuntime<'_, '_> {
             Err(e) => e,
         }
     }
+}
 
+impl Errors for PyRuntime<'_, '_> {
     fn is_catchable(&mut self, error: &PyErr) -> bool {
         error.is_instance_of::<PyException>(self.py)
     }
@@ -201,22 +346,32 @@ impl Runtime for PyRuntime<'_, '_> {
     }
 
     fn recursion_error(&mut self) -> PyErr {
-        PyRecursionError::new_err("maximum recursion depth exceeded while rendering a template")
+        PyRecursionError::new_err("maximum recursion depth exceeded")
     }
 
-    /// `econtext[name] = value` (a tuple target for several names), then for a global
-    /// definition `rcontext[name] = value` for each name (the whole value, as Chameleon does).
-    fn define(&mut self, names: &[NameId], value: Py<PyAny>, visibility: Visibility) -> PyResult<()> {
+    /// Chameleon's macros nest as Python calls, so they fail where the interpreter's
+    /// recursion limit is reached: the limit, less the frames on the stack now (the innermost
+    /// is the template's `render`), less Chameleon's own frames before the first macro
+    /// (`BaseTemplate.render`, the render function) and the helpers a macro calls into
+    /// (measured: an `on-error` around infinite macro recursion catches at the same depth).
+    fn frame_budget(&mut self) -> usize {
         let py = self.py;
-        if visibility == Visibility::Global {
-            let rcontext = self.render.rcontext(py);
-            for name in names {
-                rcontext.set_item(self.name(*name)?.bind(py), value.bind(py))?;
+        let measure = || -> PyResult<usize> {
+            let sys = py.import(intern!(py, "sys"))?;
+            let limit: usize = sys.getattr(intern!(py, "getrecursionlimit"))?.call0()?.extract()?;
+            let mut depth = 0usize;
+            let mut frame = sys.getattr(intern!(py, "_getframe"))?.call0().ok();
+            while let Some(f) = frame.filter(|f| !f.is_none()) {
+                depth += 1;
+                frame = f.getattr(intern!(py, "f_back")).ok();
             }
-        }
-        self.assign(names, value, Visibility::Local)
+            Ok(limit.saturating_sub(depth + 4))
+        };
+        measure().unwrap_or(chameleon_core::DEFAULT_FRAME_BUDGET)
     }
+}
 
+impl Attrs for PyRuntime<'_, '_> {
     /// `name in __chain(dict)`: iterate and compare with `==`, as `in` on an iterator does.
     fn yields_name(&mut self, container: &Py<PyAny>, name: &str) -> PyResult<bool> {
         let py = self.py;
@@ -286,19 +441,6 @@ impl Runtime for PyRuntime<'_, '_> {
         };
         Ok(value.bind(py).rich_compare(other, CompareOp::Eq)?.unbind())
     }
-
-    fn is_false(&mut self, value: &Py<PyAny>) -> bool {
-        value.bind(self.py).is(PyBool::new(self.py, false))
-    }
-
-    /// `if backup is marker: del econtext[KEY] else: econtext[KEY] = backup`.
-    fn restore(&mut self, name: NameId, backup: Option<Py<PyAny>>) -> PyResult<()> {
-        let key = self.name(name)?.bind(self.py);
-        match backup {
-            Some(value) => self.scope.as_super().set_item(key, value),
-            None => self.scope.as_super().del_item(key),
-        }
-    }
 }
 
 impl PyRuntime<'_, '_> {
@@ -350,4 +492,162 @@ fn unpack<'py>(item: &Bound<'py, PyAny>, n: usize) -> PyResult<Vec<Bound<'py, Py
         return Err(PyValueError::new_err(format!("not enough values to unpack (expected {n}, got {})", values.len())));
     }
     Ok(values)
+}
+
+impl Macros for PyRuntime<'_, '_> {
+    /// `__m = __macro.include; __m(__stream, econtext.copy(), rcontext, __i18n_domain,
+    /// __i18n_context, target_language)`: a `Macro` of ours runs as a frame; anything else is
+    /// called with a fresh stream.
+    fn macro_call(&mut self, value: Py<PyAny>, out: &mut Output) -> PyResult<MacroStep<Py<PyAny>>> {
+        let py = self.py;
+        let include = value.bind(py).getattr(intern!(py, "include"))?;
+        if let Ok(m) = include.cast::<Macro>() {
+            let get = m.get();
+            let program = Arc::clone(&get.program.bind(py).get().core);
+            let scope = Scope::copy(&self.scope)?;
+            return Ok(MacroStep::Frame {
+                call: chameleon_core::Call {
+                    program,
+                    code: m.clone().into_any().unbind(),
+                    scope: scope.into_any().unbind(),
+                },
+                entry: get.entry,
+                // A template used as a macro goes through its `include` method first.
+                cost: if get.entry == 0 { 2 } else { 1 },
+            });
+        }
+        let (domain, context, target_language) = self.i18n_args();
+        let scope = Scope::copy(&self.scope)?.into_any();
+        let rcontext = self.render.rcontext(py).clone().into_any();
+        self.call_with_stream(&include, vec![scope, rcontext, domain, context, target_language], out)?;
+        Ok(MacroStep::Done)
+    }
+
+    fn copy_scope(&mut self) -> PyResult<Py<PyAny>> {
+        Ok(Scope::copy(&self.scope)?.into_any().unbind())
+    }
+
+    /// `econtext.update(rcontext)`: the local dict gets every `rcontext` entry (the globals
+    /// defined so far, and `__error__` once an error was recorded).
+    fn after_macro(&mut self) -> PyResult<()> {
+        let rcontext = self.render.rcontext(self.py);
+        self.scope.as_super().update(rcontext.as_mapping())
+    }
+
+    fn fill_slot(&mut self, name: &str, fill: Fill<Py<PyAny>>, extend: bool) -> PyResult<()> {
+        let py = self.py;
+        let key = self.slot_key(name);
+        let fill = Py::new(py, SlotFill::new(fill))?;
+        if extend && let Some(stack) = Scope::lookup(&self.scope, key.as_any())? {
+            // `_slots = getname(KEY)` succeeded: `_slots.appendleft(fill)`.
+            stack.call_method1(intern!(py, "appendleft"), (fill,))?;
+            return Ok(());
+        }
+        let deque = DEQUE.get_or_try_init(py, || {
+            Ok::<_, PyErr>(py.import(intern!(py, "collections"))?.getattr(intern!(py, "deque"))?.unbind())
+        })?;
+        let stack = deque.bind(py).call1(((fill,),))?;
+        self.scope.as_super().set_item(key, stack)
+    }
+
+    /// `try: __slot_x = econtext['__slot_x'].pop() except: __slot_x = None`.
+    fn pop_slot(&mut self, name: &str) -> Option<Py<PyAny>> {
+        let py = self.py;
+        let key = self.slot_key(name);
+        let stack = Scope::lookup(&self.scope, key.as_any()).ok().flatten()?;
+        stack.call_method0(intern!(py, "pop")).ok().map(Bound::unbind)
+    }
+
+    /// `__slot_x(__stream, econtext.copy(), rcontext)`.
+    fn slot_call(&mut self, slot: &Py<PyAny>, out: &mut Output) -> PyResult<Option<Fill<Py<PyAny>>>> {
+        let py = self.py;
+        let slot = slot.bind(py);
+        if let Ok(fill) = slot.cast::<SlotFill>() {
+            return Ok(Some(fill.get().fill(py)));
+        }
+        let scope = Scope::copy(&self.scope)?.into_any();
+        let rcontext = self.render.rcontext(py).clone().into_any();
+        self.call_with_stream(slot, vec![scope, rcontext], out)?;
+        Ok(None)
+    }
+}
+
+impl Translate for PyRuntime<'_, '_> {
+    fn i18n_changed(&mut self, i18n: &I18n<Py<PyAny>>) -> PyResult<()> {
+        self.set_i18n(i18n);
+        Ok(())
+    }
+
+    /// The render function's `translate` (`econtext['__translate']`), called with exactly the
+    /// arguments, in the order, Chameleon's generated code uses at each site.
+    fn translate(&mut self, call: Translation<'_, Py<PyAny>>) -> PyResult<Py<PyAny>> {
+        let py = self.py;
+        let cx = self.cx();
+        let key = intern!(py, "__translate");
+        let translate = cx.scope_or_default(key)?.ok_or_else(|| PyKeyError::new_err((key.clone().unbind(),)))?;
+        let kwargs = PyDict::new(py);
+        let none = || py.None().into_bound(py);
+        let i18n = |kwargs: &Bound<'_, PyDict>, target: Bound<'_, PyAny>| -> PyResult<()> {
+            kwargs.set_item(intern!(py, "domain"), &cx.frame.domain)?;
+            kwargs.set_item(intern!(py, "context"), &cx.frame.context)?;
+            kwargs.set_item(intern!(py, "target_language"), target)
+        };
+        let msgid = match call {
+            Translation::Block { msgid, mapping, default } => {
+                let mapping = match mapping {
+                    Some(items) => {
+                        let d = PyDict::new(py);
+                        for (k, v) in items {
+                            match v {
+                                NameValue::Text(t) => d.set_item(k, t)?,
+                                NameValue::Pieces(p) => d.set_item(k, PyList::new(py, p)?)?,
+                            }
+                        }
+                        d.into_any()
+                    }
+                    None => none(),
+                };
+                kwargs.set_item(intern!(py, "mapping"), mapping)?;
+                kwargs.set_item(intern!(py, "default"), default)?;
+                i18n(&kwargs, self.frame.target_language.clone())?;
+                PyString::new(py, msgid).into_any()
+            }
+            Translation::Content(value) => {
+                kwargs.set_item(intern!(py, "default"), none())?;
+                i18n(&kwargs, self.frame.target_language.clone())?;
+                value.into_bound(py)
+            }
+            Translation::Attr { msgid, value } => {
+                let value = value.into_bound(py);
+                kwargs.set_item(intern!(py, "default"), &value)?;
+                i18n(&kwargs, cx.scope_target_language()?)?;
+                match msgid {
+                    Some(m) => PyString::new(py, m).into_any(),
+                    None => value,
+                }
+            }
+            Translation::Interp { msgid, mapping } => {
+                if let Some(items) = mapping {
+                    let d = PyDict::new(py);
+                    for (k, v) in items {
+                        d.set_item(k, v)?;
+                    }
+                    kwargs.set_item(intern!(py, "mapping"), d)?;
+                }
+                i18n(&kwargs, cx.scope_target_language()?)?;
+                PyString::new(py, msgid).into_any()
+            }
+        };
+        Ok(translate.call((msgid,), Some(&kwargs))?.unbind())
+    }
+
+    fn quote_value(&mut self, value: Py<PyAny>, esc: Escape, default: Option<&str>) -> PyResult<Py<PyAny>> {
+        let value = value.into_bound(self.py);
+        Ok(convert::quote_value(&self.cx(), &value, esc, default)?.unbind())
+    }
+
+    fn convert_value(&mut self, value: Py<PyAny>) -> PyResult<Py<PyAny>> {
+        let value = value.into_bound(self.py);
+        Ok(convert::convert_value(&self.cx(), &value)?.unbind())
+    }
 }

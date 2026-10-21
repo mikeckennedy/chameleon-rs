@@ -10,6 +10,7 @@ mod custom;
 mod errors;
 mod expr;
 mod lower;
+mod macros;
 mod program;
 mod runtime;
 mod scope;
@@ -28,6 +29,8 @@ mod _native {
     use super::custom::SubEval;
     #[pymodule_export]
     use super::expr::py_lookup_attr;
+    #[pymodule_export]
+    use super::macros::{Macro, SlotFill};
     #[pymodule_export]
     use super::program::{DefaultMarker, Program};
     #[pymodule_export]

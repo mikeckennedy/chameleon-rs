@@ -351,16 +351,6 @@ def test_error_positions_are_code_points(source: str) -> None:
     )
 
 
-def test_unsupported_features_say_so() -> None:
-    for source in (
-        '<p metal:use-macro="x"/>',
-        '<p i18n:translate="">y</p>',
-        '<div metal:define-macro="m">y</div>',
-    ):
-        with pytest.raises(chameleon_rs.exc.UnsupportedError):
-            chameleon_rs.PageTemplate(source)
-
-
 def test_repeat_backup_happens_before_the_iterable() -> None:
     # The iterable sees the outer binding (backup first, None assigned after evaluation).
     source = '<p tal:repeat="i [i, i]">${i}</p>${i}'

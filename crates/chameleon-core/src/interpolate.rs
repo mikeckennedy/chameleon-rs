@@ -27,15 +27,55 @@ fn search(s: &str) -> Option<(usize, usize)> {
     (close > start + 1).then_some((start, close))
 }
 
+/// What an implicitly translated interpolation translates (`Interpolator` with `translate`
+/// set): the message id with `${expression}` for each expression, the mapping's keys (each
+/// expression's text, in order), and whether a mapping is passed (a single constant node is
+/// translated without one).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Implicit {
+    pub(crate) msgid: String,
+    pub(crate) keys: Vec<String>,
+    pub(crate) mapping: bool,
+}
+
+/// Chameleon's `RE_NAME` (`^[a-zA-Z_][-a-zA-Z0-9_]*$` with `re.match`, so one trailing newline
+/// is allowed): only interpolations whose expressions are all simple names are translated.
+fn is_simple_name(s: &str) -> bool {
+    let s = s.strip_suffix('\n').unwrap_or(s);
+    let mut chars = s.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
 /// Interpolates `text`. Text parts get Chameleon's `$$` -> `$` unescaping. Each expression is
 /// passed with its position in `text` (Chameleon slices the `Token`).
+#[cfg(test)]
 pub(crate) fn interpolate<C: ExprCompiler>(
     text: &Tok,
     cx: ExprContext<'_>,
     compiler: &mut C,
 ) -> Result<Vec<Part>, CompileError<C::Error>> {
+    interpolate_full(text, cx, compiler).map(|(parts, _)| parts)
+}
+
+/// An interpolation's parts, and what implicit translation would translate.
+pub(crate) type Interpolated = (Vec<Part>, Option<Implicit>);
+
+/// [`interpolate`], plus what implicit translation would translate (`None` when an expression
+/// is not a simple name, or the text is a single expression).
+pub(crate) fn interpolate_full<C: ExprCompiler>(
+    text: &Tok,
+    cx: ExprContext<'_>,
+    compiler: &mut C,
+) -> Result<Interpolated, CompileError<C::Error>> {
     let src = text.text.as_str();
     let mut parts = Vec::new();
+    // Chameleon's `nodes`: constants and expressions (`None` for a constant), unmerged.
+    let mut nodes: Vec<Option<String>> = Vec::new();
+    let mut constants = String::new();
+    let mut msgid = String::new();
+    let mut keys = Vec::new();
+    let mut translate = true;
     let end = src.len();
     let mut t = 0;
     // Chameleon's `body`: whether an earlier `${...}` produced code.
@@ -43,7 +83,11 @@ pub(crate) fn interpolate<C: ExprCompiler>(
     while t < end {
         let rest = &src[t..];
         let Some((m_start, close)) = search(rest) else {
-            parts.push(Part::Text(rest.replace("$$", "$")));
+            let text = rest.replace("$$", "$");
+            msgid.push_str(&text);
+            constants.push_str(&text);
+            nodes.push(None);
+            parts.push(Part::Text(text));
             break;
         };
         let start = t + m_start;
@@ -51,7 +95,11 @@ pub(crate) fn interpolate<C: ExprCompiler>(
         t = start;
         if !part.is_empty() {
             let dollars = part.bytes().rev().take_while(|&b| b == b'$').count();
-            parts.push(Part::Text(part.replace("$$", "$")));
+            let text = part.replace("$$", "$");
+            msgid.push_str(&text);
+            constants.push_str(&text);
+            nodes.push(None);
+            parts.push(Part::Text(text));
             if dollars % 2 == 1 {
                 // An odd run of `$` escapes this `${`: drop its `$` and carry on after it.
                 t += 1;
@@ -68,6 +116,9 @@ pub(crate) fn interpolate<C: ExprCompiler>(
         loop {
             let expr = text.slice(start + 2, close_abs);
             if expr.is_empty() {
+                // An expression node with the value `'${}'`: never a simple name.
+                translate = false;
+                nodes.push(Some(String::new()));
                 parts.push(Part::Text("${}".to_owned()));
                 break;
             }
@@ -78,6 +129,12 @@ pub(crate) fn interpolate<C: ExprCompiler>(
             };
             match compiler.compile(&decoded, ExprContext { candidate: true, ..cx }) {
                 Ok(id) => {
+                    translate &= is_simple_name(&decoded.text);
+                    msgid.push_str("${");
+                    msgid.push_str(&decoded.text);
+                    msgid.push('}');
+                    keys.push(decoded.text.clone());
+                    nodes.push(Some(decoded.text.clone()));
                     parts.push(Part::Expr(id));
                     break;
                 }
@@ -102,7 +159,13 @@ pub(crate) fn interpolate<C: ExprCompiler>(
         }
         t = close_abs + 1;
     }
-    Ok(merge_text(parts))
+    let implicit = match nodes.as_slice() {
+        [None] => Some(Implicit { msgid: constants, keys: Vec::new(), mapping: false }),
+        [Some(_)] => None,
+        _ if translate => Some(Implicit { msgid, keys, mapping: true }),
+        _ => None,
+    };
+    Ok((merge_text(parts), implicit))
 }
 
 fn merge_text(parts: Vec<Part>) -> Vec<Part> {

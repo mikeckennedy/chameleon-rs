@@ -510,6 +510,114 @@ by running the reference.
 - **Unpacking messages:** `cannot unpack non-iterable int object`, as CPython's (Phase 2's
   carried item for the loop target; walrus targets remain Phase 8's).
 
+## Phase 6b amendments (2026-10-21)
+
+Macros, slots and translation run; these are the decisions that made them exact, and the
+places where they change D2, D3, D8 and D11. Every behaviour below was checked by running the
+reference (the differential tests and the fuzzer compare whole outputs and messages).
+
+- **D2, the `Runtime` trait split** (the item carried from Phase 6a): `Values` (`Value`,
+  `Error`, `clone_value`), `Eval` (`activate`, `eval`, `emit`, `is_default`, `truthy`,
+  `is_false`), `Names` (`lookup`, `set_null`, `define`, `restore`, `text_value`), `Loops`,
+  `Errors` (`is_catchable`, `catch`, `record_error` with defaults, `recursion_error`,
+  `frame_budget`), `Attrs`, `Macros` (`macro_call`, `copy_scope`, `after_macro`, `fill_slot`,
+  `pop_slot`, `slot_call`) and `Translate` (`i18n_changed`, `translate`, `quote_value`,
+  `convert_value`); `Runtime` is all of them, with a blanket impl. `activate` takes an
+  `Active { code, scope, serial, i18n }`.
+- **D3, programs with several functions.** Chameleon compiles a template into a module with a
+  render function per macro, the main one, and a closure per fill-slot body. The lowering
+  does the same: the main function first (instruction 0, so `VmState::new` is unchanged), then
+  each macro, each followed by the fill-slot bodies defined in it (lowered as functions of
+  their own, with the slot table and open translations of where they were defined).
+  `Program::macros()` lists the entry points with Chameleon's mangled names (`render_<name>`:
+  every non-word character replaced; `macros['a-b']` replaces only `-`, so `a.b` is never
+  found, as in Chameleon; of names that mangle alike, the last definition wins).
+- **D3 item 4, macro frames as built.** `Op::UseMacro` evaluates the macro expression, then
+  `Macros::macro_call` takes `__macro.include`: a native `Macro` (program, entry, and its
+  template's builtins, so a macro of another template sees that template's `template`,
+  `macros` and `__loader`) becomes a frame with a copy of the scope; anything else is called as
+  Chameleon calls it (`include(stream, econtext.copy(), rcontext, domain, context,
+  target_language)`) and its stream written. `macroname` is a local define around the call,
+  fills are registered before the expression is evaluated, and the caller runs
+  `econtext.update(rcontext)` when the frame returns (so a macro's globals come back, and
+  overwrite the caller's locals of the same name, as in Chameleon). The element where a
+  `metal:define-macro` stood is `Op::CallMacro`, which also resets the caller's `__token` (an
+  error caught around it is then a `KeyError`). A template used as a macro is its main function
+  (`template.include` is a `Macro`). `Macro` and `SlotFill` are callable with Chameleon's
+  signatures, so Chameleon's templates can use our macros and slots and ours theirs (a
+  Chameleon fill appends through its closure to the stream it was defined with: when we were
+  called by Chameleon, what it appended there is moved into our output).
+- **D3 item 5 and D11, slot stacks.** D11 planned native slot stacks with no `__slot_*` keys
+  in the scope. They are in the scope after all: `econtext['__slot_<name>']` deques of native
+  `SlotFill` objects, because their semantics depend on the scope copies (an `extend-macro`
+  finds the stack with `getname` through whatever the copies share, appends to the left, and
+  the macro pops the right) and user code can see them (`econtext` listings match Chameleon's).
+  Each function pops its slots when it starts (`Op::PopSlots`: the define-slots of the function
+  and of the fill bodies defined in it, mangled, any error giving `None`); a fill captures the
+  i18n settings and those popped slots of its defining function, as the closure's default
+  arguments and free variables do. A slot body's frame records no errors (its function has no
+  handler), so an error in it is recorded by the macro's frame with the macro's token.
+- **D3, per-frame state.** Each frame has its own error token pair, `__fallback` mark, code-block
+  namespace (keyed by a frame serial passed through `activate`: the Phase 6a item; a recursive
+  partial or macro no longer shares one), i18n settings, slots, and nesting depth. The less
+  common state (i18n settings, slots, a slot body's stream) is a boxed `extra`, reused from a
+  small pool: a native partial's frame stays as small as in Phase 6a, and a free on macOS's
+  allocator costs more than the rest of a macro call. Partials push through their own
+  `Action::Partial`.
+- **D3 item 7, recursion.** The fixed `MAX_FRAMES = 500` became a budget: Chameleon's macros
+  are Python calls (one interpreter frame per macro or slot level, two for a template used as a
+  macro, four for a chameleon_partials render), so the budget is the recursion limit less the
+  frames on the stack when the render started, asked once per render (`Errors::frame_budget`)
+  when nesting first passes 64. Calls carry their cost. Measured equal to Chameleon at the
+  default limit and with a raised one; `MAX_FRAMES` (100,000) remains a memory guard. The
+  message is CPython's (`maximum recursion depth exceeded`); for this, `PageTemplate.__call__`
+  is a method of its own again (Chameleon's adds a frame).
+- **i18n settings are render-function locals** (`__i18n_domain`, `__i18n_context`,
+  `target_language`): `i18n:domain`/`context`/`target` back them up and restore them as unwind
+  entries (an error caught by `on-error` keeps the inner values, there being no `finally`),
+  macros get the caller's, and a fill gets those where it was defined. `default` in
+  `i18n:target` is `getname('target_language')` (Chameleon's `Alias`).
+- **The translate protocol.** Each site calls `translate` with Chameleon's exact arguments, in
+  order: `i18n:translate` passes `msgid, mapping=, default=, domain=, context=,
+  target_language=` with the local target language; `tal:content` with `i18n:translate=""`
+  (and an on-error fallback on such an element) passes `value, default=None, ...`; translated
+  attributes pass `msgid or value, default=value, ...` and implicit interpolation `msgid,
+  [mapping=,] ...` with `getname('target_language')`, because Chameleon's name rewriting
+  reaches that code; conversion of a non-string (`__quote`/`__convert`) uses the local target
+  language, the second conversion stage (inline `emit_convert`) the scope's. A test captures
+  every call with both engines and compares them.
+- **Translation streams are output marks** (D3 item 6 as designed): `TranslateBegin` and
+  `NameBegin` push marks; `NameEnd` takes its text as the name's mapping value (names declared
+  but not run map to `''`) and writes `${name}`; `TranslateEnd` takes the stream, normalizes it
+  (`re.sub(r'\s+', ' ', ...).strip()` with Python's whitespace), and translates (no call when
+  the message id is empty and none was given). Implicit translation follows the Interpolator:
+  translated only when every expression is a simple name (`RE_NAME`, a trailing newline
+  allowed), one constant node without a mapping, the message id with `${expression}` per
+  expression; the values are the quoted parts. Translated attribute values are computed as
+  values (`Op::TrValue`, `CaptureBegin/End` for mixed interpolations) and written with `%s`.
+- **Chameleon's stream quirks reproduced:** a slot body writes with its defining function's
+  `__append`, so a fill whose define-slot is inside a translation in the macro lands *before*
+  the translation's result (moved there when the slot returns); a name an error left unfinished,
+  caught inside the translation, maps to its stream, a list; an outer handler cuts the streams
+  opened inside its body. **Not reproduced** (Phase 8 may revisit): when the one `__fallback`
+  register was set inside a translation stream and is used by a handler outside it, Chameleon
+  deletes from the outer stream by the inner stream's *item count*; we cut at the inner
+  stream's start, both while it is open and after it closed (closing a translation, name or
+  capture moves a fallback mark that points into it to its start, so a handler never cuts into
+  the translated text: the architect's review found the stale mark, which could split a
+  multi-byte character; pinned by `test_fallback_register_set_inside_a_closed_translation`).
+  A stream's text that is not UTF-8 is an internal error, except with lone surrogates
+  (`surrogatepass`), which become U+FFFD in the message id. Item granularity also shows in an unfinished name's list (one piece here),
+  and in a translation function returning a non-`str` for an `i18n:translate` element
+  (Chameleon fails at the final `''.join` with the item's index; we raise the `TypeError` at
+  once, as Phase 6a already does for `tal:content`). A macro called from inside a slot body
+  writes to the slot's stream here, to the define-slot site's stream in Chameleon.
+- **`yield`** (the Phase 5 deviation, now reproduced): an expression or code block whose
+  code yields (outside nested functions; in a comprehension, only its first iterable counts)
+  makes its function, main, macro or slot body, a generator in Chameleon, so the function
+  renders nothing; the lowering replaces such a function's body with a return. `await` remains
+  the `SyntaxError` both raise.
+
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
 ```
@@ -813,7 +921,8 @@ in a model is recognized and routed to the native path.
 
 - `template.source` (generated Python source) does not exist; with `keep_source=True` we expose
   a readable dump of the compiled program. Upstream tests only print it in failure messages.
-- Slot fill functions are kept natively, so the scope has no `__slot_*` keys.
+- Slot fill functions are kept natively, so the scope has no `__slot_*` keys. *(Reversed in
+  Phase 6b: the stacks are in the scope, as in Chameleon; see the Phase 6b amendments.)*
 - Custom expression types (classes returning Python AST statements) work through a bridge
   that wraps their AST in a Python function, at fallback speed. Types that depend on Chameleon
   compiler internals beyond that interface are out of scope.

@@ -142,7 +142,12 @@ class Rewriter(ast.NodeTransformer):
             self.writes.add(name)
             return ast.Subscript(value=_econtext(), slice=ast.Constant(name), ctx=ast.Store())
         if name in self.aliases:
-            return ast.Name(id=self.aliases[name], ctx=ast.Load())
+            alias = self.aliases[name]
+            if alias == TARGET_LANGUAGE:
+                # `i18n:target`'s `default`: `Alias(["default"], "target_language")`, an
+                # ordinary name lookup.
+                return self.transform(ast.Name(id='target_language', ctx=ast.Load()))
+            return ast.Name(id=alias, ctx=ast.Load())
         self.reads.add(name)
         get = ast.Attribute(value=_econtext(), attr='get', ctx=ast.Load())
         if name in self.template_builtins:
@@ -198,9 +203,16 @@ class _Constants(ast.NodeTransformer):
         return node
 
 
-def aliases_for(default_is_marker: bool, attrs: dict[str, str] | None) -> dict[str, str]:
+TARGET_LANGUAGE = 'target_language'
+
+
+def aliases_for(default_is_marker: bool | str, attrs: dict[str, str] | None) -> dict[str, str]:
+    """The compile-time aliases: ``default_is_marker`` is ``True`` for the marker, or
+    ``'target_language'`` inside ``i18n:target``."""
     aliases = {}
-    if default_is_marker:
+    if default_is_marker == TARGET_LANGUAGE:
+        aliases['default'] = TARGET_LANGUAGE
+    elif default_is_marker:
         aliases['default'] = '__rs_default'
     if attrs is not None:
         aliases['attrs'] = '__rs_attrs'
@@ -246,7 +258,7 @@ def function(
 
 def compile_expression(
     tree: ast.Expression,
-    default_is_marker: bool,
+    default_is_marker: bool | str,
     attrs: dict[str, str] | None,
     lookup_attr: Callable[[Any, str], Any],
     template_builtins: Iterable[str] = (),
@@ -289,6 +301,20 @@ def compile_expression(
     return func, sorted(rewriter.reads), sorted(rewriter.writes), rewriter.dynamic, False
 
 
+def yields(node: ast.AST) -> bool:
+    """Whether code makes the function it is part of a generator: a ``yield`` (or ``yield
+    from``) outside nested functions, lambdas and classes (in a comprehension, only the first
+    iterable is evaluated by the enclosing function). Chameleon inlines expressions and code
+    blocks into a render function, which then renders nothing at all."""
+    if isinstance(node, (ast.Yield, ast.YieldFrom)):
+        return True
+    if isinstance(node, (ast.Lambda, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return False
+    if isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+        return yields(node.generators[0].iter)
+    return any(yields(child) for child in ast.iter_child_nodes(node))
+
+
 def compile_code(
     source: str,
     local_names: set[str],
@@ -306,6 +332,9 @@ def compile_code(
     """
     # Chameleon's code generator parses with an empty filename (it shows in a SyntaxError).
     tree = ast.parse(textwrap.dedent(source.strip('\n')), '')
+    if yields(tree):
+        # The render function is a generator: nothing runs (the caller checks `yields`).
+        return None
     if constants is not None:
         tree = _Constants(constants).visit(tree)
     rewriter = Rewriter({}, template_builtins, local_names=local_names)
@@ -352,7 +381,7 @@ def namespace(lookup_attr: Callable[[Any, str], Any], defaults: dict[str, Any]) 
 
 def build(
     tree: ast.Expression,
-    default_is_marker: bool,
+    default_is_marker: bool | str,
     attrs: dict[str, str] | None,
     lookup_attr: Callable[[Any, str], Any],
 ) -> Callable[..., Any]:

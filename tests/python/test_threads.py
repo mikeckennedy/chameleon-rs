@@ -70,3 +70,40 @@ def test_many_threads_render_errors_and_code_blocks() -> None:
         else:
             assert other.startswith(f'{ZERO_DIVISION}\n\n - Expression: "1 // (n % 5)"')
             assert f'x: {n}' in other
+
+
+LAYOUT = (
+    '<html metal:define-macro="page" i18n:domain="site"><title metal:define-slot="title">T</title>'
+    '<body><div metal:define-slot="body">no body</div><p i18n:translate="">Hello <b i18n:name="who">${who}</b></p>'
+    '</body></html>'
+)
+PAGE = (
+    '<html metal:use-macro="layout.macros[\'page\']" tal:define="who n">'
+    '<title metal:fill-slot="title">Page ${n}</title>'
+    '<div metal:fill-slot="body"><i tal:repeat="i range(n % 4)" metal:use-macro="layout.macros[\'item\']">'
+    '<b metal:fill-slot="label">${i}</b></i></div></html>'
+)
+ITEMS = '<tal:d condition="False"><u metal:define-macro="item">[<b metal:define-slot="label"/>]</u></tal:d>'
+
+
+def test_many_threads_render_macros_slots_and_translations() -> None:
+    import chameleon
+
+    def translate(msgid: str, **kw: object) -> str:
+        return f'<{msgid}|{kw.get("domain")}>'
+
+    layout = chameleon_rs.PageTemplate(LAYOUT + ITEMS)
+    page = chameleon_rs.PageTemplate(PAGE)
+    reference = chameleon.PageTemplate(PAGE)
+    reference_layout = chameleon.PageTemplate(LAYOUT + ITEMS)
+
+    def render(n: int) -> tuple[int, str]:
+        return n, page(layout=layout, n=n % 8, translate=translate)
+
+    expected = {n: reference(layout=reference_layout, n=n, translate=translate) for n in range(8)}
+    assert '<Hello ${who}|site>' in expected[3]
+    assert '[<b>2</b>]' in expected[3]
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        results = list(pool.map(render, range(4000)))
+    for n, out in results:
+        assert out == expected[n % 8]

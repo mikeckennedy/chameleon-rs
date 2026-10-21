@@ -16,7 +16,7 @@ use pyo3::types::{PyDict, PyString};
 use pyo3::{PyTraverseError, PyVisit};
 
 use crate::convert::convert_text;
-use crate::expr::{Cx, Expr, RenderCtx, TextConv, eval};
+use crate::expr::{Cx, Expr, FrameCx, RenderCtx, TextConv, eval};
 use crate::scope::Scope;
 
 /// What the custom code asked for a sub-expression.
@@ -78,9 +78,13 @@ impl Custom {
             marker: cx.render.marker.clone().unbind(),
             partials: cx.render.partials.as_ref().map(|p| p.clone().unbind()),
             defaults: cx.render.defaults.as_ref().map(|d| d.clone().unbind()),
-            builtins: cx.render.builtins.clone().unbind(),
+            builtins: cx.builtins().clone().unbind(),
+            serial: cx.frame.serial,
+            domain: cx.frame.domain.as_ref().map(|d| d.clone().unbind()),
+            context: cx.frame.context.as_ref().map(|c| c.clone().unbind()),
+            target_language: cx.frame.target_language.clone().unbind(),
         };
-        self.func.bind(py).call1((cx.scope, rcontext, &cx.render.marker, &cx.render.builtins, sub))
+        self.func.bind(py).call1((cx.scope, rcontext, &cx.render.marker, cx.builtins(), sub))
     }
 }
 
@@ -94,6 +98,10 @@ pub(crate) struct SubEval {
     partials: Option<Py<PyDict>>,
     defaults: Option<Py<PyDict>>,
     builtins: Py<PyDict>,
+    serial: u64,
+    domain: Option<Py<PyString>>,
+    context: Option<Py<PyString>>,
+    target_language: Py<PyAny>,
 }
 
 #[pymethods]
@@ -108,7 +116,14 @@ impl SubEval {
         );
         let _ = render.rcontext.set(self.rcontext.bind(py).clone());
         let scope = self.scope.bind(py);
-        let cx = Cx { scope, render: &render };
+        let frame = FrameCx {
+            builtins: Some(self.builtins.bind(py).clone()),
+            serial: self.serial,
+            domain: self.domain.as_ref().map(|d| d.bind(py).clone()),
+            context: self.context.as_ref().map(|c| c.bind(py).clone()),
+            target_language: self.target_language.bind(py).clone(),
+        };
+        let cx = Cx { scope, render: &render, frame: &frame };
         let value = eval(&sub.expr, &cx)?;
         match &sub.kind {
             SubKind::Value => Ok(value),
@@ -128,6 +143,13 @@ impl SubEval {
         visit.call(&self.rcontext)?;
         visit.call(&self.marker)?;
         visit.call(&self.builtins)?;
+        visit.call(&self.target_language)?;
+        if let Some(d) = &self.domain {
+            visit.call(d)?;
+        }
+        if let Some(c) = &self.context {
+            visit.call(c)?;
+        }
         if let Some(p) = &self.partials {
             visit.call(p)?;
         }

@@ -8,8 +8,9 @@ use std::hint::black_box;
 use std::sync::Arc;
 
 use chameleon_core::{
-    Countdown, Done, Emitted, ErrorSite, Escape, ExprCompileError, ExprCompiler, ExprContext, ExprId, NameId, Options,
-    Output, Program, Quote, Runtime, Stage, Step, Tok, Visibility, VmState, compile, escape_into, run,
+    Active, Attrs, Countdown, Done, Emitted, Errors, Escape, Eval, ExprCompileError, ExprCompiler, ExprContext, ExprId,
+    Fill, I18n, Loops, MacroStep, Macros, NameId, Names, Options, Output, Program, Quote, Stage, Step, Tok, Translate,
+    Translation, Values, Visibility, VmState, compile, escape_into, run,
 };
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 
@@ -101,11 +102,17 @@ impl Toy {
     }
 }
 
-impl Runtime for Toy {
+impl Values for Toy {
     type Value = V;
     type Error = String;
 
-    fn activate(&mut self, _code: &V, _scope: &V) -> Result<(), String> {
+    fn clone_value(&mut self, value: &V) -> V {
+        value.clone()
+    }
+}
+
+impl Eval for Toy {
+    fn activate(&mut self, _frame: Active<'_, V>) -> Result<(), String> {
         Ok(())
     }
 
@@ -139,6 +146,12 @@ impl Runtime for Toy {
         Ok(!matches!(value, V::None))
     }
 
+    fn is_false(&mut self, _value: &V) -> bool {
+        false
+    }
+}
+
+impl Names for Toy {
     fn lookup(&mut self, name: NameId) -> Result<Option<V>, String> {
         Ok(self.get(self.name(name)).cloned())
     }
@@ -159,6 +172,12 @@ impl Runtime for Toy {
         Ok(())
     }
 
+    fn text_value(&mut self, _text: Option<&str>) -> V {
+        V::None
+    }
+}
+
+impl Loops for Toy {
     fn repeat(&mut self, _names: &[NameId], iterable: V) -> Result<(V, Countdown<V>), String> {
         let V::List(items) = iterable else { return Err("TypeError".into()) };
         let len = i64::try_from(items.len()).expect("short list");
@@ -190,21 +209,15 @@ impl Runtime for Toy {
     fn missing_backup(&mut self, _name: NameId) -> String {
         "NameError".into()
     }
+}
 
-    fn is_catchable(&mut self, _error: &String) -> bool {
-        true
-    }
-
-    fn catch(&mut self, _error: &String, _name: NameId, _at: ErrorSite) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn record_error(&mut self, _error: &String, _at: ErrorSite) {}
-
+impl Errors for Toy {
     fn recursion_error(&mut self) -> String {
         "RecursionError".into()
     }
+}
 
+impl Attrs for Toy {
     fn yields_name(&mut self, _container: &V, _name: &str) -> Result<bool, String> {
         Ok(false)
     }
@@ -216,9 +229,50 @@ impl Runtime for Toy {
     fn case_compare(&mut self, _value: &V, _switch: Option<&V>) -> Result<V, String> {
         Ok(V::Unit)
     }
+}
 
-    fn is_false(&mut self, _value: &V) -> bool {
-        false
+/// The listing has no macros or translations.
+impl Macros for Toy {
+    fn macro_call(&mut self, _value: V, _out: &mut Output) -> Result<MacroStep<V>, String> {
+        Err("unused".into())
+    }
+
+    fn copy_scope(&mut self) -> Result<V, String> {
+        Err("unused".into())
+    }
+
+    fn after_macro(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn fill_slot(&mut self, _name: &str, _fill: Fill<V>, _extend: bool) -> Result<(), String> {
+        Err("unused".into())
+    }
+
+    fn pop_slot(&mut self, _name: &str) -> Option<V> {
+        None
+    }
+
+    fn slot_call(&mut self, _slot: &V, _out: &mut Output) -> Result<Option<Fill<V>>, String> {
+        Err("unused".into())
+    }
+}
+
+impl Translate for Toy {
+    fn i18n_changed(&mut self, _i18n: &I18n<V>) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn translate(&mut self, _call: Translation<'_, V>) -> Result<V, String> {
+        Err("unused".into())
+    }
+
+    fn quote_value(&mut self, value: V, _esc: Escape, _default: Option<&str>) -> Result<V, String> {
+        Ok(value)
+    }
+
+    fn convert_value(&mut self, value: V) -> Result<V, String> {
+        Ok(value)
     }
 }
 
@@ -285,7 +339,7 @@ fn bench_vm(c: &mut Criterion) {
         };
         b.iter(|| {
             toy.position = 0;
-            let mut st = VmState::new(Arc::clone(&program), V::Unit, V::Unit);
+            let mut st = VmState::new(Arc::clone(&program), V::Unit, V::Unit, None);
             match run(&mut st, &mut toy) {
                 Ok(Done::Finished) => {}
                 other => panic!("{other:?}"),

@@ -14,6 +14,7 @@ import hashlib
 import os
 import re
 from pathlib import Path
+from typing import Any, Self
 
 import chameleon
 import chameleon_rs
@@ -95,3 +96,140 @@ def test_corpus_expressions_compile_and_fast_path_coverage(capsys: pytest.Captur
     assert fast > 0
     with capsys.disabled():
         print(f'\ncorpus expressions: {fast + fallback}, fast path {fast}, with fallback code {fallback}')
+
+
+class Anything(str):
+    """A stand-in for any application value: a string that has every attribute, can be
+    called, indexed and iterated (two items, a few levels deep), compares equal to its kind
+    and formats as anything. The same object goes to both engines."""
+
+    depth: int
+
+    def __new__(cls, depth: int = 0) -> Self:
+        value = super().__new__(cls, f'any{depth}')
+        value.depth = depth
+        return value
+
+    def __getattribute__(self, name: str) -> Any:
+        if name == 'depth' or name.startswith('__'):
+            return object.__getattribute__(self, name)
+        return Anything(object.__getattribute__(self, 'depth') + 1)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Anything:
+        return Anything(self.depth + 1)
+
+    def __iter__(self) -> Any:
+        return iter(() if self.depth > 3 else (Anything(self.depth + 1), Anything(self.depth + 1)))
+
+    def __len__(self) -> int:
+        return 2
+
+    def __getitem__(self, key: Any) -> Anything:  # type: ignore[override]
+        return Anything(self.depth + 1)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Anything)
+
+    def __hash__(self) -> int:
+        return 1
+
+    def __lt__(self, other: object) -> bool:
+        return False
+
+    __gt__ = __le__ = __ge__ = __lt__
+
+    def __int__(self) -> int:
+        return 1
+
+    def __index__(self) -> int:
+        return 1
+
+    def __float__(self) -> float:
+        return 1.0
+
+    def __add__(self, other: object) -> Anything:  # type: ignore[override]
+        return Anything(self.depth + 1)
+
+    __radd__ = __sub__ = __rsub__ = __mul__ = __rmul__ = __truediv__ = __mod__ = __add__  # type: ignore[assignment]
+
+    def __format__(self, spec: str) -> str:
+        return 'formatted'
+
+    def __contains__(self, item: object) -> bool:  # type: ignore[override]
+        return False
+
+
+class Nothing(Anything):
+    """The stand-in's empty twin: false, empty when iterated, of length 0 (the `else`
+    branches and empty loops the always-true stand-in never reaches)."""
+
+    def __new__(cls, depth: int = 0) -> Self:
+        value = str.__new__(cls, '')
+        value.depth = depth
+        return value
+
+    def __getattribute__(self, name: str) -> Any:
+        if name == 'depth' or name.startswith('__'):
+            return object.__getattribute__(self, name)
+        return Nothing(object.__getattribute__(self, 'depth') + 1)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Nothing:
+        return Nothing(self.depth + 1)
+
+    def __getitem__(self, key: Any) -> Nothing:  # type: ignore[override]
+        return Nothing(self.depth + 1)
+
+    def __iter__(self) -> Any:
+        return iter(())
+
+    def __len__(self) -> int:
+        return 0
+
+    def __bool__(self) -> bool:
+        return False
+
+
+def render_corpus(stand_in: Any) -> tuple[int, int, list[str]]:
+    """Each template rendered by both engines with every name it needs bound to `stand_in`
+    (found by rendering until no `NameError` is left): (identical renders, same errors,
+    hashes of templates that differ)."""
+    from test_errors import canon
+
+    rendered = failed = 0
+    differences = []
+    for path in FILES:
+        templates = [chameleon.PageTemplateFile(str(path)), chameleon_rs.PageTemplateFile(str(path))]
+        variables: dict[str, Any] = {}
+        while True:
+            outcomes: list[tuple[Any, ...]] = []
+            for template in templates:
+                try:
+                    outcomes.append(('ok', template(**variables)))
+                except Exception as e:  # noqa: BLE001 - comparing exceptions across engines
+                    outcomes.append(('raise', type(e).__name__, canon(str(e)), e))
+            want, got = outcomes[0][:3], outcomes[1][:3]
+            name = outcomes[0][3].args[0] if want[:2] == ('raise', 'NameError') and outcomes[0][3].args else None
+            if want == got and isinstance(name, str) and name not in variables:
+                variables[name] = stand_in
+                continue
+            break
+        if want != got:
+            differences.append(tag(path))
+        elif want[0] == 'ok':
+            rendered += 1
+        else:
+            failed += 1
+    return rendered, failed, differences
+
+
+@needs_corpus
+def test_corpus_renders_like_chameleon(capsys: pytest.CaptureFixture[str]) -> None:
+    """Every template rendered by both engines, as a file template (layouts through `load:`
+    macros), twice: names bound to a stand-in that is true and iterates two items, then to
+    one that is false and empty. The same output, or the same error and message. A plumbing
+    smoke test of macros, slots and everything else on real templates, not the sites' data."""
+    for label, stand_in in (('true', Anything()), ('false', Nothing())):
+        rendered, failed, differences = render_corpus(stand_in)
+        assert not differences, f'{label} stand-in: {len(differences)} templates differ: {differences}'
+        with capsys.disabled():
+            print(f'\ncorpus renders ({label} stand-in): {rendered} identical, {failed} raise the same error')

@@ -655,6 +655,124 @@ translate protocol).
 
 Exit gate: 100% of fixtures that don't need the file loader pass byte-exact (level 2, partial).
 
+**Done (2026-10-21).** A program now holds several functions, as Chameleon's generated module
+does: the main render function at instruction 0, one per `metal:define-macro`, and one per
+`metal:fill-slot` body (a closure of the function that defines it). Each runs in a frame of its
+own with Chameleon's per-function state: its `__token` (the internal macro call's reset to
+`None` included), its `__fallback` mark, its code-block namespace (keyed by a frame serial),
+its i18n settings (`__i18n_domain`, `__i18n_context`, `target_language`, passed on to macros
+and captured by slot bodies), and the slots it resolved when it started. Macros of other
+templates and templates used as macros are native `Macro` objects (program, entry, and that
+template's builtins), run as frames; anything else with an `include` is called with
+Chameleon's signature, and ours are callable with it too, so macros and slots mix across the
+two engines. The slot stacks are Chameleon's `econtext['__slot_<name>']` deques, holding native
+`SlotFill`s. Translation streams are output marks: `i18n:translate` and `i18n:name` collect
+their text, the message id is normalized as `__re_whitespace(...).strip()`, and every
+`translate` call passes exactly the arguments Chameleon's code passes at that site (including
+where `target_language` comes from: the render function's local or the scope). `yield` in an
+expression or code block makes its function render nothing, as Chameleon's generator
+functions do. The `Runtime` trait is split into `Values`, `Eval`, `Names`, `Loops`, `Errors`,
+`Attrs`, `Macros` and `Translate` (blanket `Runtime`). Decisions, quirks reproduced and
+deviations: architecture.md, "Phase 6b amendments".
+
+Results:
+
+- **Fixtures (level 2): all 122 renders byte-exact**, the loader-dependent ones included (066,
+  081, 082, 083, 089: the minimal `PageTemplateFile` and `load:` of Phase 5 suffice); `LATER` in
+  `tests/python/test_fixtures.py` is empty.
+- **Corpus (229 Talk Python templates):** **229 compile fully** (75 in Phase 6a; trees still
+  match Chameleon's). New render smoke test (`test_corpus_renders_like_chameleon`): each
+  template rendered by both engines as a file template (layouts through `load:` macros), every
+  name it needs bound to one shared stand-in object (a `str` subclass with every attribute,
+  callable, indexable and iterable), found by rendering until no `NameError` is left: **228
+  render identically, 1 raises the same error with the same formatted message**, 0
+  differences; a second pass with a false, empty stand-in (`else` branches, empty loops):
+  also 228 and 1 (20 s for both). A plumbing signal, not Phase 8's parity on real data.
+- **Differential tests:** `test_macros.py` (65: in-place and called macros, path and Python
+  macro expressions, mangled names and lookup errors, errors through macro and slot frames with
+  whole formatted messages, extend-macro chains, re-exposed and repeated slots, slots in loops,
+  scope copies and `econtext.update(rcontext)`, slot stacks visible in `econtext`, code blocks
+  per frame, templates used as macros, other templates' builtins, recursion depth, files and
+  `load:`, macros across engines, `yield`), `test_i18n.py` (187: every translation site with
+  and without a target language, implicit translation, and **the translate protocol**: every
+  call the translation function receives, positional and keyword arguments in order, compared
+  with Chameleon's), a free-threading test of macros, slots and translations (4,000 renders on
+  16 threads, compared with Chameleon's output).
+- **Render fuzz:** a second generator for macros, slots and i18n (define/use/extend-macro,
+  fill and define-slot, translate with names, domain, context, target, i18n:attributes,
+  implicit translation on and off, two target languages, guarded failures), translation
+  function showing all its arguments: **30,000 examples, zero differences**, and the Phase 6a generator 30,000 more, on the final build (9 minutes for both).
+  After the architect's review, its translation functions also return shorter, empty and
+  non-ASCII results: **30,000 more examples, zero differences** (the stale-mark fix below verified first). Runs found and fixed: the on-error fallback of a translated element is translated; a name
+  left unfinished by a caught error maps to its stream (a list); an outer handler cuts the
+  translation streams opened inside its body.
+- **Recursion:** Chameleon's macros nest as Python calls, so the budget is now the
+  interpreter's recursion limit less the frames on the stack (asked once per render, when
+  nesting first passes 64): an `on-error` at every level catches at **the same depth as
+  Chameleon** (993 for macros, 497 for a template used as a macro, 992 with slots, at the
+  default limit; also with a raised limit). The message is CPython's ("maximum recursion depth
+  exceeded").
+- **Free-threading:** CPython 3.14.7t, wheel built as in Phase 6a: GIL stays disabled;
+  `test_threads.py`, `test_errors.py`, `test_repeat.py`, `test_macros.py`, `test_i18n.py` (626
+  tests) passed five times in a row with `-W error::RuntimeWarning`; the whole suite passes on
+  3.14t, 3.12 and 3.13 too.
+- **Speed (release, load average 1.5-2):** `bench/bench_ab.py f04b927`, 16 rounds: **+2.9 ns** median (range -4..+9; tolerance +5), 6.08x Chameleon in the same run (an earlier run of the same build at load 1.7: +1.7 ns, range -4..+6). A dummy change to the baseline alone measures +2.5 ns (range -2..+5): code layout. `bench_skeleton.py`: listing 476-479 ns per item against Chameleon's 2,854 (6.0x); partial listing 635-637 ns against 6,780 (10.7x).
+  Building it took work: the first complete build measured +13 ns per listing item; the
+  causes were real, not layout: `execute_rare` took `pc` by `&mut`, which kept the loop's `pc`
+  (and the program pointer) in memory, two extra memory operations per instruction (fixed: by
+  value); and frames had grown (176 bytes, a `Box<Pushed>` per call, i18n clones), which cost
+  native partial calls 26 ns each (now about 5-7: a separate `Partial` action, plain frames
+  with the rarely used state in a boxed `extra` reused from a pool, since a free on macOS's
+  allocator calls `mach_absolute_time`). New `bench/bench_macros.py` (both engines, outputs
+  asserted identical), two runs: a layout page (`listing_inline.pt`, a 50-video page filling the
+  `shared/_layout.pt` slot through `load:`) **28.0 us per render against 150.7 us (5.4x)**; a
+  macro call filling a slot per item **987-993 ns against 4,611-4,660 ns (4.7x)**; a translated
+  element with two names and a translated attribute per item, default translation function,
+  1,359-1,377 ns against 2,617-2,631 ns (1.9x: the Python `translate` call dominates).
+- **Review fixes (2026-10-21, after the Rust Architect's review; 69 extra probes, all matching
+  but one):** closing a translation, name or capture left the frame's fallback mark pointing
+  into the replaced text, so an outer handler cut inside the translation (and could split a
+  multi-byte character: a `UnicodeDecodeError`); the mark now moves to the stream's start
+  (output matches the documented deviation, not Chameleon's item-count cut; pinned by three
+  cases in `test_i18n.py`). Non-UTF-8 stream text is an internal error (lone surrogates
+  excepted); spare `extra` boxes keep their slot vectors. A/B after the fixes, `bench_ab.py
+  f04b927`, 16 rounds, load average 2.6-2.9: **+3.5 ns** median (range -17..+29), 5.89x.
+- **Tests:** 94 Rust (88 core: macros as frames with a scope copy, slots and extend, the frame
+  budget, translations and their names, a slot writing to its caller's stream; 6
+  `chameleon-py`), 1,997 pytest passed, 2 skipped and 1 strict xfail (the slot-stream deviation) (the Phase 8 walrus probe, the
+  free-threading check on a GIL build), the upstream suite on the reference engine 227 passed
+  and 6 xfailed; `make lint test` green with `CHAMELEON_RS_CORPUS` set.
+
+Carried forward:
+
+- **Phase 7:** `Macros`/`Macro` are minimal (`macros['name']`, `macros.names`,
+  `template['name']`, `template.include`); a `macros` attribute access (`macros.main`, as the
+  upstream recursion test uses) works through `lookup_attr`'s `__getitem__` fallback.
+  `Macro.__call__` from another engine converts a foreign scope to ours (its items).
+- **Phase 8 / known differences, by design (architecture.md, Phase 6b amendments):** Chameleon's
+  one `__fallback` register per function, set inside a translation stream and used by a
+  handler outside it, deletes from the outer stream by the inner stream's *item count*; we cut
+  at the inner stream's start. An unfinished `i18n:name`'s list holds the text so far as one
+  piece (Chameleon: one item per append). A translation function returning a non-`str` for an
+  `i18n:translate` element raises `TypeError` at once (Chameleon: at the final `''.join`, with
+  the item's index). Inside a slot body, a nested macro call writes to the slot's own stream
+  (Chameleon passes the define-slot site's `__stream` to it).
+- **Phase 8:** a strict-xfail test pins the slot-stream deviation
+  (`test_macro_called_inside_a_slot_body_writes_to_the_define_slot_stream`: Chameleon
+  `<b><y>T  U</y>F<a>K</a>G</b>`, ours `<b><y>T <a>K</a> U</y>FG</b>`).
+- **Phase 9:** native partial frames are plain frames (`Action::Partial`, no `extra`); keep it
+  so. `PARTIAL_COST` (4) mirrors chameleon_partials' call depth for the frame budget.
+- **Phase 10, macro speed:** a macro call copies the scope twice per item when it fills a slot
+  (the call and the slot body), as Chameleon does; `PyDict_SetItem` is the largest cost of the
+  macro benchmark. Candidates: skip the slot body's scope copy when the body cannot observe it
+  (a lowering-time flag: no `tal:define`, `tal:repeat`, code block, nested use-macro or
+  fill-slot, no Python expression naming `econtext`); cached bound methods or vectorcall for
+  the deques' `pop`/`appendleft`; skip `getattr("include")` for an exact `Macro`; a bulk insert
+  in `Scope::copy`.
+- **Phase 11:** for async renders, use a fixed recursion budget (the recursion limit /
+  `DEFAULT_FRAME_BUDGET`) instead of walking `sys._getframe` at a resume, where the stack is
+  the event loop's.
+
 ## Phase 7: Python API and compat layer
 
 - `chameleon_rs` classes with Chameleon's config surface (`auto_reload`, `encoding`,

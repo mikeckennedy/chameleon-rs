@@ -2,8 +2,11 @@
 // `_enter_assignment`, `_leave_assignment`, `visit_Assignment`, `visit_Define`,
 // `visit_Content`, `visit_Attribute`, `visit_DictAttributes`, `visit_Cache`, `visit_Cancel`,
 // `visit_Condition`, `visit_OnError`, the error handler `visit_Macro` wraps every render
-// function in, `visit_CodeBlock`, and `emit_bool`), modified: implemented as bytecode run by a
-// resumable VM.
+// function in, `visit_CodeBlock`, `emit_bool`, `visit_UseInternalMacro`,
+// `visit_UseExternalMacro`, `visit_DefineSlot`, the slot resolution at the start of every
+// macro function, `visit_Translate`, `visit_Name`, `visit_Domain`, `visit_TxContext`,
+// `visit_Target`, and `ExpressionTransform.visit_Translate`), modified: implemented as
+// bytecode run by a resumable VM.
 
 //! The program, its bytecode, and the VM that runs it (D2, D3).
 //!
@@ -12,6 +15,10 @@
 //! values, so a render can stop at any instruction and resume later (D9): an instruction
 //! either completes or leaves no trace, and a value delivered by [`VmState::resume_with`]
 //! takes the place of the expression the instruction was evaluating.
+//!
+//! A program holds several functions, as Chameleon's generated module does: the main render
+//! function, one per `metal:define-macro`, and one per `metal:fill-slot` body (a closure of
+//! the function the slot was filled in). Each runs in its own [`Frame`].
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -48,6 +55,11 @@ pub enum Stage {
     /// writes a false one that is not `None` as text ([`Emitted::Value`]), and returns
     /// [`Emitted::Nothing`] for `None`.
     Bool,
+    /// A translated attribute value: `'%s' % value` unless it is `None`, nothing converted.
+    Format,
+    /// `__append(value)` as is (a translation's result): a `str`, or the error Chameleon's
+    /// final `''.join` raises.
+    Append,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,7 +67,7 @@ pub(crate) struct LoopInfo {
     pub(crate) names: Vec<NameId>,
     pub(crate) whitespace: TextRef,
     /// A global loop (`tal:repeat="global x ..."`) also assigns each item in `rcontext`, takes
-    /// no backups, and ends with a `NameError` (see [`Runtime::missing_backup`]).
+    /// no backups, and ends with a `NameError` (see [`Loops::missing_backup`]).
     pub(crate) visibility: Visibility,
 }
 
@@ -92,6 +104,73 @@ pub(crate) struct DictInfo {
     pub(crate) bool_names: Vec<TextRef>,
 }
 
+/// A `metal:fill-slot` registered before a macro call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct FillInfo {
+    /// The slot's name, mangled as Chameleon's `__slot_<name>` key mangles it.
+    pub(crate) name: Arc<str>,
+    /// Where the fill body's function starts.
+    pub(crate) entry: u32,
+    /// `metal:extend-macro`: added to the left of an existing slot stack.
+    pub(crate) extend: bool,
+}
+
+/// An `i18n:translate` element.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct TranslateInfo {
+    /// The explicit message id (`i18n:translate="msgid"`), else the content is the message id.
+    pub(crate) msgid: Option<TextRef>,
+    /// The `i18n:name`s inside, in order of appearance: the mapping's keys.
+    pub(crate) names: Vec<TextRef>,
+}
+
+/// An `i18n:name`: its translation (index into [`Tables::translates`]) and its position in
+/// that translation's names.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct NameInfo {
+    pub(crate) translate: u32,
+    pub(crate) index: u32,
+    pub(crate) name: TextRef,
+}
+
+/// How [`Op::TrValue`] produces a value for a translation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum TrValue {
+    /// A static attribute value, as written.
+    Static(TextRef),
+    /// A `tal:attributes` value: `__quote(value, quote, entity, default, marker)`.
+    Subst { expr: ExprId, esc: Escape, default: Option<TextRef> },
+    /// A boolean `tal:attributes` value (`emit_bool`): the marker is the static value, a true
+    /// value the attribute's name, anything else `None`.
+    Boolean { expr: ExprId, name: TextRef, default: Option<TextRef> },
+    /// A lone `${...}` in a translated attribute: quoted, then `emit_convert`; for a boolean
+    /// attribute (`boolean` is its name) a false value is `None` and a true result the name.
+    Lone { expr: ExprId, esc: Escape, boolean: Option<TextRef> },
+    /// One `${name}` of an implicitly translated interpolation: quoted (`assign_text`), the
+    /// mapping's value.
+    Part { expr: ExprId, esc: Escape },
+}
+
+/// A translated attribute (`i18n:attributes`, implicit attribute translation):
+/// `translate(msgid or value, default=value, ...)`, written with `%s` unless `None`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct AttrTranslateInfo {
+    pub(crate) attr: u32,
+    pub(crate) msgid: Option<TextRef>,
+}
+
+/// An implicitly translated interpolation (`implicit_i18n_translate`, implicit attribute
+/// translation): the message id with `${name}` for each expression, the mapping's keys (the
+/// values are on the unwind stack), whether a mapping is passed at all (one constant node is
+/// translated without one), and for an attribute its [`AttrInfo`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct InterpTranslateInfo {
+    pub(crate) msgid: TextRef,
+    pub(crate) keys: Vec<TextRef>,
+    pub(crate) mapping: bool,
+    pub(crate) attr: Option<u32>,
+}
+
 /// Side tables instructions refer to.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Tables {
@@ -101,6 +180,16 @@ pub(crate) struct Tables {
     pub(crate) dicts: Vec<DictInfo>,
     /// Dictionary indices (within the start tag) of each filtered attribute.
     pub(crate) filters: Vec<u32>,
+    pub(crate) fills: Vec<FillInfo>,
+    /// The (mangled) slot names each function resolves when it starts.
+    pub(crate) slot_sets: Vec<Vec<Arc<str>>>,
+    pub(crate) translates: Vec<TranslateInfo>,
+    pub(crate) names: Vec<NameInfo>,
+    pub(crate) tr_values: Vec<TrValue>,
+    pub(crate) attr_translates: Vec<AttrTranslateInfo>,
+    pub(crate) interp_translates: Vec<InterpTranslateInfo>,
+    /// `i18n:domain` / `i18n:context` names.
+    pub(crate) strings: Vec<Arc<str>>,
 }
 
 /// How [`Op::AttrValue`] converts its value.
@@ -112,6 +201,15 @@ pub enum AttrKind {
     /// A boolean attribute (`emit_bool`): the marker means the static value, a true value
     /// the attribute's name, a false one drops it.
     Boolean { expr: ExprId },
+}
+
+/// Which i18n setting [`Op::I18nSet`] changes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum I18nKey {
+    /// `i18n:domain` (`__i18n_domain`).
+    Domain,
+    /// `i18n:context` (`__i18n_context`).
+    Context,
 }
 
 /// One instruction. Jump targets are instruction indices within the same program.
@@ -148,6 +246,12 @@ pub enum Op {
         esc: Escape,
         end: u32,
     },
+    /// [`Op::Content`] with `i18n:translate=""`: the value is translated first.
+    ContentTranslate {
+        expr: ExprId,
+        esc: Escape,
+        end: u32,
+    },
     /// `tal:condition`: continue at `target` if the value is false.
     JumpIfNot {
         expr: ExprId,
@@ -168,6 +272,11 @@ pub enum Op {
     Define {
         info: u32,
         expr: ExprId,
+    },
+    /// A local assignment of static text (`macroname` around a macro call).
+    DefineText {
+        info: u32,
+        text: TextRef,
     },
     /// Restore a local assignment's names (in order), dropping its unwind entry.
     Undefine {
@@ -263,7 +372,96 @@ pub enum Op {
     Exec {
         expr: ExprId,
     },
+    /// The slot resolution at the start of a macro function: `__slot_x =
+    /// econtext['__slot_x'].pop()` (`None` on any error) for each name of the slot set.
+    PopSlots {
+        info: u32,
+    },
+    /// `metal:define-slot`: if the function resolved a fill for slot `slot`, run it (a new
+    /// frame with a copy of the scope) and continue at `end`; otherwise run the default
+    /// content that follows.
+    DefineSlot {
+        slot: u32,
+        end: u32,
+    },
+    /// Before a macro call: register a `metal:fill-slot` in the scope's slot stacks.
+    FillSlot {
+        info: u32,
+    },
+    /// `metal:use-macro` / `metal:extend-macro`: evaluate the macro, call its `include`
+    /// (natively when it is one of ours) with a copy of the scope, then
+    /// `econtext.update(rcontext)`.
+    UseMacro {
+        expr: ExprId,
+    },
+    /// Where a `metal:define-macro` element stood: render that macro of this program
+    /// (`__token = None`, then a call with a copy of the scope, then
+    /// `econtext.update(rcontext)`).
+    CallMacro {
+        entry: u32,
+    },
+    /// `i18n:domain` / `i18n:context`: back the setting up and set it (string `value`).
+    I18nSet {
+        key: I18nKey,
+        value: u32,
+    },
+    /// `i18n:target`: back `target_language` up, evaluate, set it.
+    Target {
+        expr: ExprId,
+    },
+    /// Restore the innermost i18n setting changed by [`Op::I18nSet`] or [`Op::Target`].
+    I18nRestore,
+    /// `i18n:translate`: open a translation stream.
+    TranslateBegin {
+        info: u32,
+    },
+    /// Close the stream: normalize its whitespace and append `translate(...)`.
+    TranslateEnd {
+        info: u32,
+    },
+    /// `i18n:name`: open the name's stream.
+    NameBegin {
+        info: u32,
+    },
+    /// Close it: the text becomes the mapping value, `${name}` is written instead.
+    NameEnd {
+        info: u32,
+    },
+    /// Push a value for a translation (see [`TrValue`]).
+    TrValue {
+        info: u32,
+    },
+    /// Capture what the instructions until [`Op::CaptureEnd`] write.
+    CaptureBegin,
+    /// Push the captured text as a value; for a boolean attribute (`boolean`), a non-empty
+    /// result becomes the attribute's name and an empty one `None`.
+    CaptureEnd {
+        boolean: Option<TextRef>,
+    },
+    /// Translate the pushed value of an attribute and write it (see [`AttrTranslateInfo`]).
+    AttrTranslate {
+        info: u32,
+        cached: u32,
+    },
+    /// Translate an interpolation from its pushed parts and write it (see
+    /// [`InterpTranslateInfo`]).
+    InterpTranslate {
+        info: u32,
+        cached: u32,
+    },
+    /// The end of a function: return to the caller.
     End,
+}
+
+/// A named entry point of a program: a `metal:define-macro`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MacroEntry {
+    /// The name as written.
+    pub name: Box<str>,
+    /// Chameleon's function name suffix (`render_<mangled>`): every character that is not a
+    /// word character replaced by `_`.
+    pub mangled: Box<str>,
+    pub entry: u32,
 }
 
 /// An immutable compiled template. `Send + Sync`, shared through `Arc`.
@@ -273,13 +471,20 @@ pub struct Program {
     pub(crate) text: Box<[u8]>,
     pub(crate) names: Vec<Box<str>>,
     pub(crate) tables: Tables,
+    pub(crate) macros: Vec<MacroEntry>,
     /// The last render's output size, used as the next buffer's capacity (D6).
     capacity: AtomicUsize,
 }
 
 impl Program {
-    pub(crate) fn new(ops: Vec<Op>, text: Vec<u8>, names: Vec<Box<str>>, tables: Tables) -> Self {
-        Self { ops, text: text.into_boxed_slice(), names, tables, capacity: AtomicUsize::new(0) }
+    pub(crate) fn new(
+        ops: Vec<Op>,
+        text: Vec<u8>,
+        names: Vec<Box<str>>,
+        tables: Tables,
+        macros: Vec<MacroEntry>,
+    ) -> Self {
+        Self { ops, text: text.into_boxed_slice(), names, tables, macros, capacity: AtomicUsize::new(0) }
     }
 
     #[must_use]
@@ -291,6 +496,13 @@ impl Program {
     #[must_use]
     pub fn names(&self) -> &[Box<str>] {
         &self.names
+    }
+
+    /// The macros (`metal:define-macro`), in Chameleon's dictionary order. The main render
+    /// function starts at instruction 0.
+    #[must_use]
+    pub fn macros(&self) -> &[MacroEntry] {
+        &self.macros
     }
 
     /// A slice of the static text arena; `None` for a reference outside it (a compiler bug).
@@ -321,12 +533,16 @@ impl Program {
 
     /// A readable listing of the bytecode, for snapshots and debugging.
     #[must_use]
+    #[allow(clippy::too_many_lines)] // one arm per instruction
     pub fn dump(&self) -> String {
         use std::fmt::Write;
         let text = |r: TextRef| format!("{:?}", String::from_utf8_lossy(self.text(r).unwrap_or_default()));
         let names =
             |ids: &[NameId]| ids.iter().map(|n| self.names.get(n.0 as usize).map_or("?", |n| &**n)).collect::<Vec<_>>();
         let mut out = String::new();
+        for m in &self.macros {
+            let _ = writeln!(out, "macro {:?} at {}", m.name, m.entry);
+        }
         for (i, op) in self.ops.iter().enumerate() {
             let line = match op {
                 Op::Text(r) => format!("text {}", text(*r)),
@@ -338,6 +554,9 @@ impl Program {
                     format!("attr e{} {esc:?} {} {}", expr.0, text(*prefix), text(*suffix))
                 }
                 Op::Content { expr, esc, end } => format!("content e{} {esc:?} end={end}", expr.0),
+                Op::ContentTranslate { expr, esc, end } => {
+                    format!("content_translate e{} {esc:?} end={end}", expr.0)
+                }
                 Op::JumpIfNot { expr, target } => format!("jump_if_not e{} {target}", expr.0),
                 Op::LoopStart { info, expr, next } => match self.tables.loops.get(*info as usize) {
                     Some(li) => {
@@ -355,6 +574,10 @@ impl Program {
                 Op::Define { info, expr } => match self.tables.defines.get(*info as usize) {
                     Some(d) => format!("define {:?} {:?} = e{}", d.visibility, names(&d.names), expr.0),
                     None => format!("define ? = e{}", expr.0),
+                },
+                Op::DefineText { info, text: t } => match self.tables.defines.get(*info as usize) {
+                    Some(d) => format!("define_text {:?} = {}", names(&d.names), text(*t)),
+                    None => format!("define_text ? = {}", text(*t)),
                 },
                 Op::Undefine { info } => {
                     format!("undefine {:?}", self.tables.defines.get(*info as usize).map(|d| names(&d.names)))
@@ -381,6 +604,58 @@ impl Program {
                 Op::Try { handler, .. } => format!("try handler={handler}"),
                 Op::EndTry { end } => format!("end_try {end}"),
                 Op::Exec { expr } => format!("exec e{}", expr.0),
+                Op::PopSlots { info } => format!("pop_slots {:?}", self.tables.slot_sets.get(*info as usize)),
+                Op::DefineSlot { slot, end } => format!("define_slot {slot} end={end}"),
+                Op::FillSlot { info } => match self.tables.fills.get(*info as usize) {
+                    Some(f) => {
+                        format!("fill_slot {:?} at {}{}", f.name, f.entry, if f.extend { " extend" } else { "" })
+                    }
+                    None => "fill_slot ?".to_owned(),
+                },
+                Op::UseMacro { expr } => format!("use_macro e{}", expr.0),
+                Op::CallMacro { entry } => format!("call_macro {entry}"),
+                Op::I18nSet { key, value } => {
+                    format!("i18n_set {key:?} {:?}", self.tables.strings.get(*value as usize))
+                }
+                Op::Target { expr } => format!("target e{}", expr.0),
+                Op::I18nRestore => "i18n_restore".to_owned(),
+                Op::TranslateBegin { info } => format!("translate_begin {info}"),
+                Op::TranslateEnd { info } => match self.tables.translates.get(*info as usize) {
+                    Some(t) => format!(
+                        "translate_end {info} msgid={:?} names={:?}",
+                        t.msgid.map(|m| self.text_str(m)),
+                        t.names.iter().map(|n| self.text_str(*n)).collect::<Vec<_>>()
+                    ),
+                    None => format!("translate_end {info}"),
+                },
+                Op::NameBegin { .. } => "name_begin".to_owned(),
+                Op::NameEnd { info } => match self.tables.names.get(*info as usize) {
+                    Some(n) => format!("name_end {:?} of {}", self.text_str(n.name), n.translate),
+                    None => "name_end ?".to_owned(),
+                },
+                Op::TrValue { info } => format!("tr_value {:?}", self.tables.tr_values.get(*info as usize)),
+                Op::CaptureBegin => "capture_begin".to_owned(),
+                Op::CaptureEnd { boolean } => format!("capture_end boolean={:?}", boolean.map(|b| self.text_str(b))),
+                Op::AttrTranslate { info, .. } => match self.tables.attr_translates.get(*info as usize) {
+                    Some(t) => {
+                        format!(
+                            "attr_translate msgid={:?} {}",
+                            t.msgid.map(|m| self.text_str(m)),
+                            self.attr_text(t.attr)
+                        )
+                    }
+                    None => "attr_translate ?".to_owned(),
+                },
+                Op::InterpTranslate { info, .. } => match self.tables.interp_translates.get(*info as usize) {
+                    Some(t) => format!(
+                        "interp_translate {} keys={:?} mapping={}{}",
+                        text(t.msgid),
+                        t.keys.iter().map(|k| self.text_str(*k)).collect::<Vec<_>>(),
+                        t.mapping,
+                        t.attr.map(|a| format!(" {}", self.attr_text(a))).unwrap_or_default()
+                    ),
+                    None => "interp_translate ?".to_owned(),
+                },
                 Op::End => "end".to_owned(),
             };
             let _ = writeln!(out, "{i:3} {line}");
@@ -407,19 +682,70 @@ pub enum Step<V> {
     /// The value must be awaited; the render suspends and resumes with the result (D9).
     Suspend(V),
     /// Run another program in a new frame writing into this output (a native partial, D3).
-    /// Only returned where [`Runtime::eval`] was asked for an emitted value.
+    /// Only returned where [`Eval::eval`] was asked for an emitted value.
     Call(Call<V>),
 }
 
+/// A program to run in a new frame: from [`Step::Call`], a render of its own (a native
+/// partial: its main function, fresh i18n settings); from [`MacroStep::Frame`], a macro.
 #[derive(Debug)]
 pub struct Call<V> {
     pub program: Arc<Program>,
-    /// Runtime data for the callee's expressions (in `chameleon-py`, its `Program` object).
+    /// Runtime data for the callee's expressions (in `chameleon-py`, its `Program` object, or
+    /// a macro carrying its template's builtins).
     pub code: V,
     pub scope: V,
 }
 
-/// Whether [`Runtime::emit`] wrote anything (`None` converts to nothing).
+/// What a macro's `include` did ([`Macros::macro_call`]).
+#[derive(Debug)]
+pub enum MacroStep<V> {
+    /// Run a function in a new frame (a macro of ours): where it starts (`0`: the main render
+    /// function, for a template used as a macro), and how deep the call nests in interpreter
+    /// frames (see [`Errors::frame_budget`]): `1` for a macro (Chameleon calls its function
+    /// directly), `2` for a template used as a macro (its `include` method, then its
+    /// function). The callee gets the caller's i18n settings.
+    Frame { call: Call<V>, entry: u32, cost: u16 },
+    /// The runtime called a foreign `include` and wrote its output.
+    Done,
+}
+
+/// A `metal:fill-slot` body ready to be registered (Chameleon's `__fill_<name>` closure): its
+/// function, and what the closure captures from the function that defines it (the i18n
+/// settings as default arguments, the slots that function resolved).
+#[derive(Debug)]
+pub struct Fill<V> {
+    pub program: Arc<Program>,
+    pub code: V,
+    pub entry: u32,
+    pub i18n: I18n<V>,
+    pub slots: Vec<Option<V>>,
+    /// The output stream the defining function was writing to (see [`Frame::stream`]).
+    pub stream: Option<u64>,
+}
+
+/// A render function's i18n settings: Chameleon's `__i18n_domain`, `__i18n_context` and
+/// `target_language` locals, passed on to every macro called.
+#[derive(Debug)]
+pub struct I18n<V> {
+    pub domain: Option<Arc<str>>,
+    pub context: Option<Arc<str>>,
+    /// `None` is the runtime's null value (`None`), so a fresh render costs no value.
+    pub target_language: Option<V>,
+}
+
+/// The frame being made current ([`Eval::activate`]).
+#[derive(Debug, Clone, Copy)]
+pub struct Active<'a, V> {
+    pub code: &'a V,
+    pub scope: &'a V,
+    /// Unique within a render: what per-frame runtime state (a code block's namespace) is
+    /// keyed by.
+    pub serial: u64,
+    pub i18n: &'a I18n<V>,
+}
+
+/// Whether [`Eval::emit`] wrote anything (`None` converts to nothing).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Emitted {
     Value,
@@ -459,35 +785,64 @@ pub enum Countdown<V> {
     Value(V),
 }
 
-/// What [`Runtime::repeat`] returns: an iterator and the loop's countdown.
+/// What [`Loops::repeat`] returns: an iterator and the loop's countdown.
 pub type Loop<V> = (V, Countdown<V>);
 
-/// Value semantics, supplied by the embedding (D2). Names are per program: a runtime
-/// resolves a [`NameId`] against the program it was last [activated](Runtime::activate) for.
-///
-/// The methods come in groups (a split into sub-traits is planned with Phase 6b, which adds
-/// macros and i18n): frames and evaluation; output; names (backups, binding, restoring);
-/// loops; attributes and `tal:case`.
-pub trait Runtime {
+/// A translation call ([`Translate::translate`]), with exactly the arguments Chameleon's
+/// generated code passes at that site.
+#[derive(Debug)]
+pub enum Translation<'a, V> {
+    /// `i18n:translate`: `translate(msgid, mapping=mapping, default=default, domain=...,
+    /// context=..., target_language=<local>)`.
+    Block { msgid: &'a str, mapping: Option<Vec<(&'a str, NameValue)>>, default: &'a str },
+    /// `tal:content` with `i18n:translate=""`: `translate(value, default=None, domain=...,
+    /// context=..., target_language=<local>)`.
+    Content(V),
+    /// A translated attribute: `translate(msgid or value, default=value, domain=...,
+    /// context=..., target_language=getname('target_language'))`.
+    Attr { msgid: Option<&'a str>, value: V },
+    /// An implicitly translated interpolation: `translate(msgid, [mapping=mapping,]
+    /// domain=..., context=..., target_language=getname('target_language'))`.
+    Interp { msgid: &'a str, mapping: Option<Vec<(&'a str, V)>> },
+}
+
+/// An `i18n:name`'s value in its translation's mapping: its text, or, when an error left
+/// the name unfinished (and a `tal:on-error` inside the translation caught it), the stream
+/// itself (Chameleon's list of the pieces appended so far, here the text so far as one piece).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NameValue {
+    Text(String),
+    Pieces(Vec<String>),
+}
+
+/// The values a runtime works with (D2). The VM is generic over the sub-traits below; a
+/// runtime implements them all and gets [`Runtime`] through the blanket impl.
+pub trait Values {
     type Value;
     type Error;
+    /// Another reference to a value (a macro call passes the caller's `target_language` on).
+    fn clone_value(&mut self, value: &Self::Value) -> Self::Value;
+}
 
-    // -- Frames and evaluation ------------------------------------------------------------
-
-    /// Makes `code` and `scope` (a frame's) current. Called whenever the active frame changes.
-    fn activate(&mut self, code: &Self::Value, scope: &Self::Value) -> Result<(), Self::Error>;
+/// Frames, evaluation and output.
+pub trait Eval: Values {
+    /// Makes a frame current. Called whenever the active frame changes. Names are per
+    /// program: a runtime resolves a [`NameId`] against the program of the active frame.
+    fn activate(&mut self, frame: Active<'_, Self::Value>) -> Result<(), Self::Error>;
     /// `emitted` is true where the value is written straight to the output, the only place a
     /// [`Step::Call`] may be returned.
     fn eval(&mut self, expr: ExprId, emitted: bool) -> Result<Step<Self::Value>, Self::Error>;
-    // -- Output ---------------------------------------------------------------------------
-
     /// Converts and writes a value for `stage`.
     fn emit(&mut self, value: Self::Value, esc: Escape, stage: Stage, out: &mut Output)
     -> Result<Emitted, Self::Error>;
     fn is_default(&mut self, value: &Self::Value) -> bool;
     fn truthy(&mut self, value: &Self::Value) -> Result<bool, Self::Error>;
-    // -- Names ----------------------------------------------------------------------------
+    /// Whether a value is the runtime's `False` object (identity, not truth).
+    fn is_false(&mut self, value: &Self::Value) -> bool;
+}
 
+/// Names: backups, binding, restoring.
+pub trait Names: Values {
     /// The current value of a name (local, then global), as a loop's or define's backup.
     fn lookup(&mut self, name: NameId) -> Result<Option<Self::Value>, Self::Error>;
     /// Binds a name to the runtime's null value (`None`) in the local scope.
@@ -497,8 +852,12 @@ pub trait Runtime {
     fn define(&mut self, names: &[NameId], value: Self::Value, visibility: Visibility) -> Result<(), Self::Error>;
     /// Restores a name: deletes it if there was no backup.
     fn restore(&mut self, name: NameId, backup: Option<Self::Value>) -> Result<(), Self::Error>;
-    // -- Loops ----------------------------------------------------------------------------
+    /// A string value (`None` gives the runtime's null value).
+    fn text_value(&mut self, text: Option<&str>) -> Self::Value;
+}
 
+/// `tal:repeat`.
+pub trait Loops: Values {
     /// Registers a loop (Chameleon's `repeat(key, iterable)`) and returns an iterator over
     /// what it returned, and its length.
     fn repeat(&mut self, names: &[NameId], iterable: Self::Value) -> Result<Loop<Self::Value>, Self::Error>;
@@ -513,21 +872,42 @@ pub trait Runtime {
     /// The error a global loop raises when it ends: Chameleon restores names it never backed
     /// up, a `NameError` for its backup variable.
     fn missing_backup(&mut self, name: NameId) -> Self::Error;
-    // -- Errors ---------------------------------------------------------------------------
+}
 
+/// Errors: `tal:on-error` and Chameleon's per-function error records. The defaults suit
+/// runtimes without error tracking (every error is catchable, nothing is recorded).
+pub trait Errors: Values {
     /// Whether `tal:on-error` catches the error (`except Exception`).
-    fn is_catchable(&mut self, error: &Self::Error) -> bool;
+    fn is_catchable(&mut self, error: &Self::Error) -> bool {
+        let _ = error;
+        true
+    }
     /// `tal:on-error` caught `error`: binds `name` to the error information (with the
     /// position of the error token `at` identifies) and calls the error handler. The VM then
     /// truncates the output and runs the fallback.
-    fn catch(&mut self, error: &Self::Error, name: NameId, at: ErrorSite) -> Result<(), Self::Error>;
+    fn catch(&mut self, error: &Self::Error, name: NameId, at: ErrorSite) -> Result<(), Self::Error> {
+        let _ = (error, name, at);
+        Ok(())
+    }
     /// The current frame ends with `error` (Chameleon's render-function `except`: the token,
     /// its position, the filename and the error are appended to `rcontext['__error__']`).
-    fn record_error(&mut self, error: &Self::Error, at: ErrorSite);
+    /// Not called for a slot's frame, whose function has no such handler.
+    fn record_error(&mut self, error: &Self::Error, at: ErrorSite) {
+        let _ = (error, at);
+    }
     /// The error for too many nested frames (`RecursionError`).
     fn recursion_error(&mut self) -> Self::Error;
-    // -- Attributes and `tal:case` --------------------------------------------------------
+    /// How deep calls may nest, in [`Call::cost`] units, before [`Errors::recursion_error`]:
+    /// asked once per render, when nesting first gets deep. Chameleon's macros are Python
+    /// functions, so its limit is the interpreter's recursion limit minus the frames already
+    /// on the stack.
+    fn frame_budget(&mut self) -> usize {
+        DEFAULT_FRAME_BUDGET
+    }
+}
 
+/// Attributes and `tal:case`.
+pub trait Attrs: Values {
     /// `name in itertools.chain(container)`: whether iterating `container` yields an item
     /// equal to the string `name` (an attribute filter).
     fn yields_name(&mut self, container: &Self::Value, name: &str) -> Result<bool, Self::Error>;
@@ -541,13 +921,61 @@ pub trait Runtime {
     ) -> Result<(), Self::Error>;
     /// `value == switch` (or `value == default marker` when `switch` is `None`), as a value.
     fn case_compare(&mut self, value: &Self::Value, switch: Option<&Self::Value>) -> Result<Self::Value, Self::Error>;
-    /// Whether a value is the runtime's `False` object (identity, not truth).
-    fn is_false(&mut self, value: &Self::Value) -> bool;
 }
+
+/// Macros and slots (`metal:*`).
+pub trait Macros: Values {
+    /// `__macro.include(...)`: a macro of ours becomes a frame (with a copy of the active
+    /// scope); anything else is called with a fresh stream, a copy of the scope, `rcontext`
+    /// and the i18n settings, and its output written.
+    fn macro_call(&mut self, value: Self::Value, out: &mut Output) -> Result<MacroStep<Self::Value>, Self::Error>;
+    /// `econtext.copy()` of the active scope.
+    fn copy_scope(&mut self) -> Result<Self::Value, Self::Error>;
+    /// `econtext.update(rcontext)` in the active scope, after a macro call returned.
+    fn after_macro(&mut self) -> Result<(), Self::Error>;
+    /// Registers a fill for slot `name` in the active scope: `econtext['__slot_name'] =
+    /// deque((fill,))`, or for `metal:extend-macro` `getname('__slot_name').appendleft(fill)`
+    /// when that exists.
+    fn fill_slot(&mut self, name: &str, fill: Fill<Self::Value>, extend: bool) -> Result<(), Self::Error>;
+    /// `econtext['__slot_name'].pop()`, `None` on any error.
+    fn pop_slot(&mut self, name: &str) -> Option<Self::Value>;
+    /// Runs a resolved slot: a fill of ours is returned for a new frame; anything else is
+    /// called with a fresh stream, a copy of the scope and `rcontext`, its output written,
+    /// and `None` returned.
+    fn slot_call(&mut self, slot: &Self::Value, out: &mut Output) -> Result<Option<Fill<Self::Value>>, Self::Error>;
+}
+
+/// Translation (`i18n:*`).
+pub trait Translate: Values {
+    /// The active frame's i18n settings changed (`i18n:domain`, `i18n:context`,
+    /// `i18n:target`, or their restoration).
+    fn i18n_changed(&mut self, i18n: &I18n<Self::Value>) -> Result<(), Self::Error>;
+    /// Calls the translation function as Chameleon does at that site.
+    fn translate(&mut self, call: Translation<'_, Self::Value>) -> Result<Self::Value, Self::Error>;
+    /// `__quote(value, quote, entity, default, marker)`: converted and escaped for `esc`, as a
+    /// value (a `str`, `None` or whatever `__html__` / `translate` returned).
+    fn quote_value(
+        &mut self,
+        value: Self::Value,
+        esc: Escape,
+        default: Option<&str>,
+    ) -> Result<Self::Value, Self::Error>;
+    /// `emit_convert` (the attribute engine: the marker converts to `None`).
+    fn convert_value(&mut self, value: Self::Value) -> Result<Self::Value, Self::Error>;
+}
+
+/// Everything the VM needs from its embedding (D2).
+pub trait Runtime: Eval + Names + Loops + Errors + Attrs + Macros + Translate {}
+
+impl<T: Eval + Names + Loops + Errors + Attrs + Macros + Translate> Runtime for T {}
+
+/// A runtime's value and error types.
+type Val<R> = <R as Values>::Value;
+type Err<R> = <R as Values>::Error;
 
 #[derive(Debug, thiserror::Error)]
 pub enum VmError<E> {
-    /// An error the runtime raised (or [`Runtime::recursion_error`]), not caught by any
+    /// An error the runtime raised (or [`Errors::recursion_error`]), not caught by any
     /// `tal:on-error`.
     #[error("runtime error")]
     Runtime(#[source] E),
@@ -562,12 +990,47 @@ pub enum Done<V> {
     Suspended(V),
 }
 
-/// Nested frames allowed before the render raises the runtime's recursion error (Chameleon
-/// hits Python's recursion limit at a few hundred nested macro calls).
-pub const MAX_FRAMES: usize = 500;
+/// Nested frames never allowed, whatever the runtime's budget (a guard against a recursion
+/// limit raised so high that the frame stack would exhaust memory).
+pub const MAX_FRAMES: usize = 100_000;
+
+/// The nesting budget of a runtime that does not choose one ([`Errors::frame_budget`]).
+pub const DEFAULT_FRAME_BUDGET: usize = 500;
+
+/// The nesting of a native partial's render ([`Step::Call`]), in interpreter frames:
+/// `render_partial`, the template's `render`, `BaseTemplate.render` and the render function.
+const PARTIAL_COST: u16 = 4;
+
+/// Nesting below which the budget is not asked for.
+const SHALLOW: usize = 64;
 
 /// Largest initial output buffer a program asks for (1 MiB).
 pub const MAX_CAPACITY_HINT: usize = 1 << 20;
+
+/// Where a program's main render function starts.
+const fn entry_main() -> u32 {
+    0
+}
+
+/// What kind of function a frame runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    /// The main render function, a macro, or a native partial: Chameleon wraps each in a
+    /// handler that records errors in `rcontext['__error__']`.
+    Render,
+    /// A slot body: a closure without such a handler.
+    Fill,
+}
+
+/// What a frame does for its caller when it returns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OnReturn {
+    Nothing,
+    /// Write the caller's text (an attribute's closing quote).
+    Text(TextRef),
+    /// `econtext.update(rcontext)` in the caller (after a macro call).
+    Update,
+}
 
 #[derive(Debug)]
 struct Frame<V> {
@@ -575,8 +1038,8 @@ struct Frame<V> {
     pc: u32,
     code: V,
     scope: V,
-    /// Text of the caller to write when this frame returns (an attribute's closing quote).
-    on_return: Option<TextRef>,
+    kind: Kind,
+    on_return: OnReturn,
     /// Height of the unwind stack when the frame was entered; its own entries lie above.
     unwind_base: usize,
     /// The frame's recent expressions while another frame is active (see [`ErrorSite`]).
@@ -585,12 +1048,62 @@ struct Frame<V> {
     /// frame entered (one register per frame, like Chameleon's `__fallback` local, so an
     /// outer handler truncates to an inner handler's mark once the inner one has started).
     fallback: Mark,
+    serial: u64,
+    /// The caller still has to run `econtext.update(rcontext)` (set when a macro returns).
+    pending_update: bool,
+    /// How deep the frame nests, in [`MacroStep::Frame`]'s `cost` units.
+    depth: usize,
+    /// What macros, slots and translation need, boxed so a plain frame (a native partial's)
+    /// stays small: `None` is no i18n settings and no slots.
+    extra: Option<Box<Extra<V>>>,
 }
 
-impl<V> Frame<V> {
-    fn new(program: Arc<Program>, code: V, scope: V, on_return: Option<TextRef>, unwind_base: usize) -> Self {
-        Self { program, pc: 0, code, scope, on_return, unwind_base, recent: 0, fallback: Mark::default() }
+/// A frame's less common state.
+#[derive(Debug)]
+struct Extra<V> {
+    i18n: I18n<V>,
+    /// The fills the function resolved when it started (`__slot_*` locals), by slot index; a
+    /// slot body sees those of the function it belongs to.
+    slots: Vec<Option<V>>,
+    /// For a slot body: the output stream its text goes to, its defining function's (a
+    /// translation stream's id, or `None` for the render's output), wherever it is called
+    /// from. (Other functions write to the stream open when they were called.)
+    stream: Option<u64>,
+    /// For a slot body: the output length when it started (its output moves to `stream` when
+    /// it returns).
+    start: Mark,
+}
+
+impl<V> Extra<V> {
+    fn new(i18n: I18n<V>) -> Self {
+        Self { i18n, slots: Vec::new(), stream: None, start: Mark::default() }
     }
+
+    /// Drops the values it holds (it goes back to the spare boxes). `stream` and `start` are
+    /// left as they are: whoever takes the box sets them.
+    fn clear(&mut self) {
+        self.i18n = I18n { domain: None, context: None, target_language: None };
+        self.slots.clear();
+    }
+}
+
+/// Spare `extra` boxes a render keeps (see [`VmState::extra`]).
+const SPARE_EXTRAS: usize = 16;
+
+impl<V> Frame<V> {
+    /// The frame's i18n settings (`none` when it has no `extra`).
+    fn i18n<'a>(&'a self, none: &'a I18n<V>) -> &'a I18n<V> {
+        self.extra.as_ref().map_or(none, |e| &e.i18n)
+    }
+
+    fn slots(&self) -> &[Option<V>] {
+        self.extra.as_ref().map_or(&[], |e| &e.slots)
+    }
+}
+
+/// Whether i18n settings are all unset.
+fn is_plain<V>(i18n: &I18n<V>) -> bool {
+    i18n.domain.is_none() && i18n.context.is_none() && i18n.target_language.is_none()
 }
 
 /// The single unwind stack (D3): everything a frame has entered and must leave.
@@ -607,7 +1120,7 @@ enum Unwind<V> {
     },
     /// Whether a `tal:omit-tag` expression was true.
     Omit(bool),
-    /// A cached value (a start tag's `tal:attributes` dictionary).
+    /// A cached value (a start tag's `tal:attributes` dictionary, a translation's value).
     Value(V),
     /// A `tal:switch` value; `None` once a case matched (Chameleon's `CANCEL` marker).
     Switch(Option<V>),
@@ -622,6 +1135,40 @@ enum Unwind<V> {
         handler: u32,
         name: NameId,
     },
+    /// An i18n setting's previous value.
+    I18n(Backup<V>),
+    /// An `i18n:translate` stream: where it starts, its id, which translation of which
+    /// program, and the value of each of its names so far.
+    Translate {
+        mark: Mark,
+        id: u64,
+        /// Boxed: the unwind stack's entries stay small (they are moved on every push).
+        translation: Box<OpenTranslation>,
+    },
+    /// An `i18n:name` stream: where it starts, its id, and which name of which program.
+    Name {
+        mark: Mark,
+        id: u64,
+        program: Arc<Program>,
+        info: u32,
+    },
+    /// Output captured as a value (a translated attribute's interpolation).
+    Capture(Mark),
+}
+
+/// An open `i18n:translate`: which translation of which program, and its names' values.
+#[derive(Debug)]
+struct OpenTranslation {
+    program: Arc<Program>,
+    info: u32,
+    names: Vec<NameValue>,
+}
+
+#[derive(Debug)]
+enum Backup<V> {
+    Domain(Option<Arc<str>>),
+    Context(Option<Arc<str>>),
+    Target(Option<V>),
 }
 
 /// Per-render state (D2): frames, the unwind stack and the output. Holds only runtime
@@ -634,19 +1181,58 @@ pub struct VmState<V> {
     /// The active frame's last two evaluated expressions (see [`ErrorSite::unpack`]).
     recent: u64,
     suspended: bool,
+    /// The last frame serial and stream id handed out.
+    serials: u64,
+    /// The runtime's nesting budget, once asked for.
+    budget: Option<usize>,
+    /// No i18n settings (what a frame without `extra` has).
+    none: I18n<V>,
+    /// Boxes of popped frames' `extra`, for reuse (an allocation and a free per macro call
+    /// cost more than the rest of the call on macOS's allocator).
+    spare: Vec<Box<Extra<V>>>,
     pub out: Output,
 }
 
 impl<V> VmState<V> {
+    /// A render of `program`'s main function with `scope`, no i18n domain or context, and
+    /// `target_language` (the render's keyword, Chameleon's `render(target_language=...)`).
     #[must_use]
-    pub fn new(program: Arc<Program>, code: V, scope: V) -> Self {
+    pub fn new(program: Arc<Program>, code: V, scope: V, target_language: Option<V>) -> Self {
+        let i18n = I18n { domain: None, context: None, target_language };
+        Self::at(program, entry_main(), code, scope, i18n, Vec::new())
+    }
+
+    /// A render that starts at `entry` (a macro's `include`, or a slot body, called from
+    /// outside) with the given i18n settings and, for a slot body, the slots its function
+    /// resolved.
+    #[must_use]
+    pub fn at(program: Arc<Program>, entry: u32, code: V, scope: V, i18n: I18n<V>, slots: Vec<Option<V>>) -> Self {
         let out = Output::with_capacity(program.capacity_hint());
+        let frame = Frame {
+            program,
+            pc: entry,
+            code,
+            scope,
+            kind: Kind::Render,
+            on_return: OnReturn::Nothing,
+            unwind_base: 0,
+            recent: 0,
+            fallback: Mark::default(),
+            serial: 1,
+            pending_update: false,
+            depth: 0,
+            extra: (!is_plain(&i18n) || !slots.is_empty()).then(|| Box::new(Extra { slots, ..Extra::new(i18n) })),
+        };
         Self {
-            frames: vec![Frame::new(program, code, scope, None, 0)],
+            frames: vec![frame],
             unwind: Vec::new(),
             resume: None,
             recent: 0,
             suspended: false,
+            serials: 1,
+            budget: None,
+            none: I18n { domain: None, context: None, target_language: None },
+            spare: Vec::new(),
             out,
         }
     }
@@ -668,6 +1254,12 @@ impl<V> VmState<V> {
         for frame in &self.frames {
             f(&frame.code);
             f(&frame.scope);
+            if let Some(extra) = &frame.extra {
+                if let Some(t) = &extra.i18n.target_language {
+                    f(t);
+                }
+                extra.slots.iter().flatten().for_each(&mut f);
+            }
         }
         for entry in &self.unwind {
             match entry {
@@ -679,8 +1271,15 @@ impl<V> VmState<V> {
                     backups.iter().flatten().for_each(&mut f);
                 }
                 Unwind::Define { backups } => backups.iter().flatten().for_each(&mut f),
-                Unwind::Value(v) | Unwind::Switch(Some(v)) => f(v),
-                Unwind::Omit(_) | Unwind::Switch(None) | Unwind::Attr { .. } | Unwind::Try { .. } => {}
+                Unwind::Value(v) | Unwind::Switch(Some(v)) | Unwind::I18n(Backup::Target(Some(v))) => f(v),
+                Unwind::Omit(_)
+                | Unwind::Switch(None)
+                | Unwind::Attr { .. }
+                | Unwind::Try { .. }
+                | Unwind::I18n(_)
+                | Unwind::Translate { .. }
+                | Unwind::Name { .. }
+                | Unwind::Capture(_) => {}
             }
         }
         if let Some(v) = &self.resume {
@@ -701,35 +1300,219 @@ impl<V> VmState<V> {
     }
 
     /// Pops the top frame, dropping whatever it left on the unwind stack.
-    fn pop_frame(&mut self) -> Option<Frame<V>> {
-        let frame = self.frames.pop()?;
-        self.unwind.truncate(frame.unwind_base);
-        Some(frame)
+    fn pop_frame(&mut self) {
+        if let Some(mut frame) = self.frames.pop() {
+            self.unwind.truncate(frame.unwind_base);
+            if let Some(mut extra) = frame.extra.take()
+                && self.spare.len() < SPARE_EXTRAS
+            {
+                extra.clear();
+                self.spare.push(extra);
+            }
+        }
+    }
+
+    /// The active frame's `extra`, created (from a spare box when there is one) if it has
+    /// none.
+    fn active_extra(&mut self) -> Option<&mut Extra<V>> {
+        let frame = self.frames.last_mut()?;
+        if frame.extra.is_none() {
+            let none = || I18n { domain: None, context: None, target_language: None };
+            let extra = match self.spare.pop() {
+                Some(mut extra) => {
+                    *extra = Extra::new(none());
+                    extra
+                }
+                None => Box::new(Extra::new(none())),
+            };
+            frame.extra = Some(extra);
+        }
+        frame.extra.as_deref_mut()
+    }
+
+    /// A translation stream's (or capture's) text: removed from the output after `mark`. The
+    /// active frame's fallback mark, if it pointed into the stream, moves to its start: the
+    /// stream's text is gone (Chameleon's register then indexes the inner stream's items in
+    /// the outer stream, which is not modelled: see architecture.md, Phase 6b amendments).
+    fn take_text<E>(&mut self, mark: Mark) -> Result<String, VmError<E>> {
+        if let Some(frame) = self.frames.last_mut()
+            && frame.fallback > mark
+        {
+            frame.fallback = mark;
+        }
+        let bytes = self.out.take_since(mark);
+        match String::from_utf8(bytes) {
+            Ok(text) => Ok(text),
+            // Lone surrogates (written with `surrogatepass`) cannot be a Rust `str`: they
+            // become U+FFFD in the translated text.
+            Err(e) if self.out.has_surrogates() => Ok(String::from_utf8_lossy(e.as_bytes()).into_owned()),
+            Err(_) => Err(VmError::Internal("translation stream is not UTF-8")),
+        }
+    }
+
+    /// A box for a frame's `extra`, reused when one is spare.
+    fn extra(&mut self, i18n: I18n<V>, slots: Vec<Option<V>>, stream: Option<u64>, start: Mark) -> Box<Extra<V>> {
+        match self.spare.pop() {
+            Some(mut extra) => {
+                // Field by field: an empty `slots` keeps the spare box's allocation.
+                extra.i18n = i18n;
+                if slots.is_empty() {
+                    extra.slots.clear();
+                } else {
+                    extra.slots = slots;
+                }
+                extra.stream = stream;
+                extra.start = start;
+                extra
+            }
+            None => Box::new(Extra { i18n, slots, stream, start }),
+        }
     }
 
     fn frame_base(&self) -> usize {
         self.frames.last().map_or(0, |f| f.unwind_base)
     }
+
+    fn next_serial(&mut self) -> u64 {
+        self.serials += 1;
+        self.serials
+    }
+
+    /// The stream the active function writes to (Chameleon's `__append` where a slot is
+    /// filled): the innermost translation stream it opened, else a slot body's own stream,
+    /// else the stream open when the function was called.
+    fn current_stream(&self) -> Option<u64> {
+        let innermost = |entries: &[Unwind<V>]| {
+            entries.iter().rev().find_map(|e| match e {
+                Unwind::Translate { id, .. } | Unwind::Name { id, .. } => Some(*id),
+                _ => None,
+            })
+        };
+        let frame = self.frames.last()?;
+        let (below, own) = self.unwind.split_at(frame.unwind_base.min(self.unwind.len()));
+        let stream = frame.extra.as_ref().and_then(|e| e.stream);
+        innermost(own).or(if frame.kind == Kind::Fill { stream } else { innermost(below) })
+    }
+
+    /// A slot body returned: Chameleon's fill function writes with its defining function's
+    /// `__append`, so if translation streams were opened since (around the
+    /// `metal:define-slot`), its output belongs before the first of them.
+    fn move_to_stream(&mut self, stream: Option<u64>, start: Mark) {
+        let base = match stream {
+            None => 0,
+            Some(id) => {
+                let Some(at) = self.unwind.iter().rposition(
+                    |e| matches!(e, Unwind::Translate { id: i, .. } | Unwind::Name { id: i, .. } if *i == id),
+                ) else {
+                    return;
+                };
+                at + 1
+            }
+        };
+        let Some(first) = self.unwind.get(base..).and_then(|rest| {
+            rest.iter().find_map(|e| match e {
+                Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } => Some(*mark),
+                _ => None,
+            })
+        }) else {
+            return;
+        };
+        let bytes = self.out.take_since(start);
+        if bytes.is_empty() {
+            return;
+        }
+        self.out.insert_at(first, &bytes);
+        let n = bytes.len();
+        let shift = |m: &mut Mark| {
+            if *m >= first {
+                *m = m.shifted(n);
+            }
+        };
+        for entry in &mut self.unwind {
+            match entry {
+                Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } | Unwind::Capture(mark) => shift(mark),
+                Unwind::Attr { start, value } => {
+                    shift(start);
+                    shift(value);
+                }
+                _ => {}
+            }
+        }
+        for frame in &mut self.frames {
+            shift(&mut frame.fallback);
+            if let Some(extra) = &mut frame.extra {
+                shift(&mut extra.start);
+            }
+        }
+    }
 }
 
 enum Action<V> {
-    Push(Call<V>, u32, Option<TextRef>),
+    /// A native partial's render: the call, where the caller continues, and what it writes
+    /// when the callee returns.
+    Partial(Call<V>, u32, OnReturn),
+    /// A macro or slot body.
+    Push(Pushed<V>),
     Pop,
     Suspend(V, u32),
 }
 
+/// A frame to push: the call, where the caller continues, and the frame's details.
+struct Pushed<V> {
+    call: Call<V>,
+    /// Where the function starts.
+    entry: u32,
+    /// See [`MacroStep::Frame`].
+    cost: u16,
+    return_pc: u32,
+    on_return: OnReturn,
+    kind: Kind,
+    slots: Vec<Option<V>>,
+    /// For a slot body: its own i18n settings and stream.
+    fill: Option<(I18n<V>, Option<u64>)>,
+    /// The caller's `__token` is reset before the call (an internal macro call).
+    reset_token: bool,
+}
+
+impl<V> Pushed<V> {
+    /// A macro call (the caller's i18n settings, no slots).
+    fn call(call: Call<V>, entry: u32, cost: u16, return_pc: u32, on_return: OnReturn) -> Self {
+        Self {
+            call,
+            entry,
+            cost,
+            return_pc,
+            on_return,
+            kind: Kind::Render,
+            slots: Vec::new(),
+            fill: None,
+            reset_token: false,
+        }
+    }
+}
+
+fn activate<R: Runtime>(rt: &mut R, frame: &Frame<Val<R>>, none: &I18n<Val<R>>) -> Result<(), VmError<Err<R>>> {
+    let i18n = frame.i18n(none);
+    rt.activate(Active { code: &frame.code, scope: &frame.scope, serial: frame.serial, i18n }).map_err(VmError::Runtime)
+}
+
 /// Runs (or resumes) a render until it finishes or suspends. A suspended render continues
 /// only after [`VmState::resume_with`].
-pub fn run<R: Runtime>(st: &mut VmState<R::Value>, rt: &mut R) -> Result<Done<R::Value>, VmError<R::Error>> {
+pub fn run<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R) -> Result<Done<Val<R>>, VmError<Err<R>>> {
     if st.suspended {
         return Err(VmError::Internal("run on a suspended render without resume_with"));
     }
     loop {
-        let Some(frame) = st.frames.last() else { return Ok(Done::Finished) };
+        let Some(frame) = st.frames.last_mut() else { return Ok(Done::Finished) };
         let program = Arc::clone(&frame.program);
         let mut pc = frame.pc as usize;
+        let update = std::mem::take(&mut frame.pending_update);
         st.recent = frame.recent;
-        rt.activate(&frame.code, &frame.scope).map_err(VmError::Runtime)?;
+        activate(rt, frame, &st.none)?;
+        if update && let Err(error) = rt.after_macro() {
+            unwind_error(st, rt, error)?;
+            continue;
+        }
         let action = match execute(&program, &mut pc, st, rt) {
             Ok(action) => action,
             Err(VmError::Runtime(error)) => {
@@ -739,23 +1522,29 @@ pub fn run<R: Runtime>(st: &mut VmState<R::Value>, rt: &mut R) -> Result<Done<R:
             Err(e) => return Err(e),
         };
         match action {
-            Action::Push(call, return_pc, on_return) => {
-                if let Some(caller) = st.frames.last_mut() {
-                    caller.pc = return_pc;
-                    caller.recent = st.recent;
-                }
-                if st.frames.len() >= MAX_FRAMES {
-                    let error = rt.recursion_error();
-                    unwind_error(st, rt, error)?;
-                    continue;
-                }
-                let unwind_base = st.unwind.len();
-                st.frames.push(Frame::new(call.program, call.code, call.scope, on_return, unwind_base));
-            }
+            Action::Partial(call, return_pc, on_return) => push_partial(st, rt, call, return_pc, on_return)?,
+            Action::Push(pushed) => push_frame(st, rt, pushed)?,
             Action::Pop => {
-                let done = st.pop_frame();
-                if let (Some(Frame { on_return: Some(text), .. }), Some(caller)) = (done, st.frames.last()) {
-                    st.out.push(caller.program.text(text).ok_or(VmError::Internal("text out of range"))?);
+                let Some(done) = st.frames.last() else { return Err(VmError::Internal("pop without a frame")) };
+                let on_return = done.on_return;
+                let fill =
+                    if done.kind == Kind::Fill { done.extra.as_ref().map(|e| (e.stream, e.start)) } else { None };
+                st.pop_frame();
+                match on_return {
+                    OnReturn::Nothing => {}
+                    OnReturn::Text(text) => {
+                        if let Some(caller) = st.frames.last() {
+                            st.out.push(caller.program.text(text).ok_or(VmError::Internal("text out of range"))?);
+                        }
+                    }
+                    OnReturn::Update => {
+                        if let Some(caller) = st.frames.last_mut() {
+                            caller.pending_update = true;
+                        }
+                    }
+                }
+                if let Some((stream, start)) = fill {
+                    st.move_to_stream(stream, start);
                 }
             }
             Action::Suspend(value, at) => {
@@ -770,15 +1559,118 @@ pub fn run<R: Runtime>(st: &mut VmState<R::Value>, rt: &mut R) -> Result<Done<R:
     }
 }
 
+/// Room for a frame at nesting `depth` ([`Errors::frame_budget`]); the recursion error if not.
+#[inline]
+fn check_depth<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, depth: usize) -> Result<bool, VmError<Err<R>>> {
+    if depth <= SHALLOW && st.frames.len() < MAX_FRAMES {
+        return Ok(true);
+    }
+    deep(st, rt, depth)
+}
+
+#[cold]
+#[inline(never)]
+fn deep<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, depth: usize) -> Result<bool, VmError<Err<R>>> {
+    let too_deep = st.frames.len() >= MAX_FRAMES
+        || (depth > SHALLOW && depth > *st.budget.get_or_insert_with(|| rt.frame_budget()));
+    if too_deep {
+        let error = rt.recursion_error();
+        unwind_error(st, rt, error)?;
+    }
+    Ok(!too_deep)
+}
+
+/// Pushes a native partial's frame: its main function, no i18n settings, no slots.
+fn push_partial<R: Runtime>(
+    st: &mut VmState<Val<R>>,
+    rt: &mut R,
+    call: Call<Val<R>>,
+    return_pc: u32,
+    on_return: OnReturn,
+) -> Result<(), VmError<Err<R>>> {
+    let recent = st.recent;
+    let Some(caller) = st.frames.last_mut() else { return Err(VmError::Internal("call without a caller")) };
+    caller.pc = return_pc;
+    caller.recent = recent;
+    let depth = caller.depth + usize::from(PARTIAL_COST);
+    if !check_depth(st, rt, depth)? {
+        return Ok(());
+    }
+    let serial = st.next_serial();
+    st.frames.push(Frame {
+        program: call.program,
+        pc: 0,
+        code: call.code,
+        scope: call.scope,
+        kind: Kind::Render,
+        on_return,
+        unwind_base: st.unwind.len(),
+        recent: 0,
+        fallback: Mark::default(),
+        serial,
+        pending_update: false,
+        depth,
+        extra: None,
+    });
+    Ok(())
+}
+
+/// Pushes a frame for a macro or a slot body.
+fn push_frame<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, pushed: Pushed<Val<R>>) -> Result<(), VmError<Err<R>>> {
+    let Pushed { call, entry, cost, return_pc, on_return, kind, slots, fill, reset_token } = pushed;
+    if reset_token {
+        st.recent = 0;
+    }
+    let recent = st.recent;
+    let Some(caller) = st.frames.last_mut() else { return Err(VmError::Internal("call without a caller")) };
+    caller.pc = return_pc;
+    caller.recent = recent;
+    let depth = caller.depth + usize::from(cost);
+    if !check_depth(st, rt, depth)? {
+        return Ok(());
+    }
+    let Some(caller) = st.frames.last() else { return Err(VmError::Internal("call without a caller")) };
+    let (i18n, stream) = if let Some((i18n, stream)) = fill {
+        (i18n, stream)
+    } else {
+        let i18n = caller.i18n(&st.none);
+        let i18n = I18n {
+            domain: i18n.domain.clone(),
+            context: i18n.context.clone(),
+            target_language: i18n.target_language.as_ref().map(|t| rt.clone_value(t)),
+        };
+        (i18n, None)
+    };
+    let extra = if kind == Kind::Fill || !is_plain(&i18n) || !slots.is_empty() {
+        let start = st.out.mark();
+        Some(st.extra(i18n, slots, stream, start))
+    } else {
+        None
+    };
+    let serial = st.next_serial();
+    st.frames.push(Frame {
+        program: call.program,
+        pc: entry,
+        code: call.code,
+        scope: call.scope,
+        kind,
+        on_return,
+        unwind_base: st.unwind.len(),
+        recent: 0,
+        fallback: Mark::default(),
+        serial,
+        pending_update: false,
+        depth,
+        extra,
+    });
+    Ok(())
+}
+
 /// Resumes a suspended render by raising `error` at the instruction it suspended on (Phase
 /// 11: the awaited value failed, or the task was cancelled through `throw()`). The error
 /// unwinds exactly as if that instruction had raised it: an enclosing `tal:on-error` that
 /// catches it renders its fallback and the render continues; otherwise it is returned.
-pub fn throw<R: Runtime>(
-    st: &mut VmState<R::Value>,
-    rt: &mut R,
-    error: R::Error,
-) -> Result<Done<R::Value>, VmError<R::Error>> {
+pub fn throw<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, error: Err<R>) -> Result<Done<Val<R>>, VmError<Err<R>>> {
     if !st.suspended {
         return Err(VmError::Internal("throw on a render that is not suspended"));
     }
@@ -786,26 +1678,24 @@ pub fn throw<R: Runtime>(
     st.resume = None;
     if let Some(frame) = st.frames.last() {
         st.recent = frame.recent;
-        rt.activate(&frame.code, &frame.scope).map_err(VmError::Runtime)?;
+        activate(rt, frame, &st.none)?;
     }
     unwind_error(st, rt, error)?;
     run(st, rt)
 }
 
 /// An error raised in the active frame (D3 item 2): the innermost `tal:on-error` of the frame
-/// that catches it gets it, or the frame ends (recording the error) and its caller is tried.
+/// that catches it gets it, or the frame ends (recording the error, unless it is a slot
+/// body) and its caller is tried.
 ///
 /// Catching drops every unwind entry above the handler's own, without restoring anything:
 /// Chameleon's generated code has no `try/finally`, so a failed body's `tal:define` and loop
-/// names keep their values, while cached values, omit tests, switches and attribute marks
-/// simply go. The output is truncated to the frame's fallback mark.
+/// names (and i18n settings) keep their values, while cached values, omit tests, switches,
+/// attribute marks and translation streams simply go. The output is truncated to the frame's
+/// fallback mark.
 #[cold]
 #[inline(never)]
-fn unwind_error<R: Runtime>(
-    st: &mut VmState<R::Value>,
-    rt: &mut R,
-    mut error: R::Error,
-) -> Result<(), VmError<R::Error>> {
+fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err<R>) -> Result<(), VmError<Err<R>>> {
     loop {
         let Some(frame) = st.frames.last_mut() else { return Err(VmError::Runtime(error)) };
         let base = frame.unwind_base;
@@ -819,11 +1709,27 @@ fn unwind_error<R: Runtime>(
             let Some(&Unwind::Try { handler, name }) = st.unwind.get(at) else {
                 return Err(VmError::Internal("handler vanished"));
             };
+            // Settings changed inside keep their values (no `finally`): the runtime must see
+            // the frame's settings as they are now.
+            let changed = st.unwind[at..].iter().any(|e| matches!(e, Unwind::I18n(_)));
+            unfinished_names(&mut st.unwind, at, &st.out);
+            let abandoned = st.unwind[at..].iter().find_map(|e| match e {
+                Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } => Some(*mark),
+                _ => None,
+            });
             st.unwind.truncate(at);
             frame.pc = handler;
+            if changed {
+                rt.i18n_changed(frame.i18n(&st.none)).map_err(VmError::Runtime)?;
+            }
             match rt.catch(&error, name, ErrorSite::unpack(st.recent)) {
                 Ok(()) => {
-                    st.out.truncate(frame.fallback);
+                    // `del __stream[__fallback:]` on the stream of the handler's site: the
+                    // translation streams opened inside the body are abandoned, whatever the
+                    // register says (it may have been set inside one of them, as a length of
+                    // that stream).
+                    let cut = abandoned.map_or(frame.fallback, |m| m.min(frame.fallback));
+                    st.out.truncate(cut);
                     frame.recent = st.recent;
                     return Ok(());
                 }
@@ -834,11 +1740,14 @@ fn unwind_error<R: Runtime>(
                 }
             }
         }
-        rt.record_error(&error, ErrorSite::unpack(st.recent));
+        if frame.kind == Kind::Render {
+            rt.record_error(&error, ErrorSite::unpack(st.recent));
+        }
         st.pop_frame();
-        let Some(caller) = st.frames.last() else { return Err(VmError::Runtime(error)) };
+        let Some(caller) = st.frames.last_mut() else { return Err(VmError::Runtime(error)) };
+        caller.pending_update = false;
         st.recent = caller.recent;
-        rt.activate(&caller.code, &caller.scope).map_err(VmError::Runtime)?;
+        activate(rt, caller, &st.none)?;
     }
 }
 
@@ -865,9 +1774,9 @@ macro_rules! eval_or_leave {
 fn execute<R: Runtime>(
     program: &Program,
     pc: &mut usize,
-    st: &mut VmState<R::Value>,
+    st: &mut VmState<Val<R>>,
     rt: &mut R,
-) -> Result<Action<R::Value>, VmError<R::Error>> {
+) -> Result<Action<Val<R>>, VmError<Err<R>>> {
     let rt_err = VmError::Runtime;
     let no_call = |_| Err(VmError::Internal("frame call where a value is needed"));
     loop {
@@ -878,7 +1787,7 @@ fn execute<R: Runtime>(
                 let value = match value_of(st, rt, expr, true)? {
                     Step::Ready(v) => v,
                     Step::Suspend(v) => return Ok(Action::Suspend(v, *pc as u32)),
-                    Step::Call(call) => return Ok(Action::Push(call, *pc as u32 + 1, None)),
+                    Step::Call(call) => return Ok(Action::Partial(call, *pc as u32 + 1, OnReturn::Nothing)),
                 };
                 rt.emit(value, esc, stage, &mut st.out).map_err(rt_err)?;
             }
@@ -894,7 +1803,7 @@ fn execute<R: Runtime>(
                     Step::Suspend(v) => return Ok(Action::Suspend(v, *pc as u32)),
                     Step::Call(call) => {
                         st.out.push(text(program, prefix)?);
-                        return Ok(Action::Push(call, *pc as u32 + 1, Some(suffix)));
+                        return Ok(Action::Partial(call, *pc as u32 + 1, OnReturn::Text(suffix)));
                     }
                 };
                 let mark = st.out.mark();
@@ -905,7 +1814,8 @@ fn execute<R: Runtime>(
                 }
             }
             Op::Content { expr, esc, end } => {
-                let value = eval_or_leave!(st, rt, pc, expr, true, |call| Ok(Action::Push(call, end, None)));
+                let value =
+                    eval_or_leave!(st, rt, pc, expr, true, |call| Ok(Action::Partial(call, end, OnReturn::Nothing)));
                 if !rt.is_default(&value) {
                     rt.emit(value, esc, Stage::Content, &mut st.out).map_err(rt_err)?;
                     *pc = end as usize;
@@ -1042,7 +1952,7 @@ fn execute<R: Runtime>(
                     Step::Suspend(v) => return Ok(Action::Suspend(v, *pc as u32)),
                     Step::Call(call) => {
                         st.out.push(text(program, a.prefix)?);
-                        return Ok(Action::Push(call, *pc as u32 + 1, Some(a.suffix)));
+                        return Ok(Action::Partial(call, *pc as u32 + 1, OnReturn::Text(a.suffix)));
                     }
                 };
                 let mark = st.out.mark();
@@ -1181,6 +2091,32 @@ fn execute<R: Runtime>(
             Op::Exec { expr } => {
                 let _ = eval_or_leave!(st, rt, pc, expr, false, no_call);
             }
+            Op::DefineText { .. }
+            | Op::ContentTranslate { .. }
+            | Op::PopSlots { .. }
+            | Op::DefineSlot { .. }
+            | Op::FillSlot { .. }
+            | Op::UseMacro { .. }
+            | Op::CallMacro { .. }
+            | Op::I18nSet { .. }
+            | Op::Target { .. }
+            | Op::I18nRestore
+            | Op::TranslateBegin { .. }
+            | Op::TranslateEnd { .. }
+            | Op::NameBegin { .. }
+            | Op::NameEnd { .. }
+            | Op::TrValue { .. }
+            | Op::CaptureBegin
+            | Op::CaptureEnd { .. }
+            | Op::AttrTranslate { .. }
+            | Op::InterpTranslate { .. } => match execute_rare(program, op, *pc, st, rt)? {
+                Flow::Next => {}
+                Flow::Jump(to) => {
+                    *pc = to;
+                    continue;
+                }
+                Flow::Leave(action) => return Ok(action),
+            },
             Op::End => {
                 if st.unwind.len() != st.frame_base() {
                     return Err(VmError::Internal("frame ended with entries on the unwind stack"));
@@ -1190,6 +2126,396 @@ fn execute<R: Runtime>(
         }
         *pc += 1;
     }
+}
+
+/// Stores an `i18n:name`'s value in its translation: the innermost open one of this program
+/// with that index (a slot body's names belong to its defining function's).
+fn set_name<V>(unwind: &mut [Unwind<V>], program: &Arc<Program>, n: &NameInfo, value: NameValue) {
+    let entry = unwind.iter_mut().rev().find_map(|e| match e {
+        Unwind::Translate { translation: t, .. } if Arc::ptr_eq(&t.program, program) && t.info == n.translate => {
+            Some(&mut t.names)
+        }
+        _ => None,
+    });
+    if let Some(slot) = entry.and_then(|names| names.get_mut(n.index as usize)) {
+        *slot = value;
+    }
+}
+
+/// An error caught above unfinished `i18n:name` streams (the entries from `from` up): each
+/// name's mapping value becomes its stream, a list of what was appended to it (its text up
+/// to the next stream opened inside it).
+fn unfinished_names<V>(unwind: &mut [Unwind<V>], from: usize, out: &Output) {
+    let Some(dropped) = unwind.get(from..) else { return };
+    let marks: Vec<Mark> = dropped
+        .iter()
+        .filter_map(|e| match e {
+            Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } => Some(*mark),
+            _ => None,
+        })
+        .collect();
+    let mut names = Vec::new();
+    for (i, e) in dropped.iter().filter(|e| matches!(e, Unwind::Translate { .. } | Unwind::Name { .. })).enumerate() {
+        if let Unwind::Name { mark, program, info, .. } = e {
+            let end = marks.get(i + 1).copied().unwrap_or_else(|| out.mark());
+            let text = out.as_bytes().get(mark.position()..end.position()).unwrap_or_default();
+            let pieces = if text.is_empty() { Vec::new() } else { vec![String::from_utf8_lossy(text).into_owned()] };
+            names.push((Arc::clone(program), *info, pieces));
+        }
+    }
+    let (kept, _) = unwind.split_at_mut(from);
+    for (program, info, pieces) in names {
+        if let Some(n) = program.tables.names.get(info as usize) {
+            set_name(kept, &program, n, NameValue::Pieces(pieces));
+        }
+    }
+}
+
+/// What [`execute_rare`] did.
+enum Flow<V> {
+    /// Go on with the next instruction.
+    Next,
+    /// Go on at this instruction. (`pc` is passed by value: taking its address would keep
+    /// it in memory in [`execute`]'s loop, measured +10 ns per listing item.)
+    Jump(usize),
+    Leave(Action<V>),
+}
+
+/// [`eval_or_leave`] for [`execute_rare`] (`pc` by value).
+macro_rules! eval_or_leave_rare {
+    ($st:expr, $rt:expr, $pc:expr, $expr:expr, $emitted:expr, $call:expr) => {
+        match value_of($st, $rt, $expr, $emitted)? {
+            Step::Ready(v) => v,
+            Step::Suspend(v) => return Ok(Flow::Leave(Action::Suspend(v, $pc as u32))),
+            Step::Call(call) => return $call(call),
+        }
+    };
+}
+
+/// The instructions of macros, slots and translation, out of [`execute`]'s loop: with them
+/// inline, the loop's code got worse for every instruction (measured: +6 ns per listing item
+/// on the toy runtime).
+#[cold]
+#[inline(never)]
+#[allow(clippy::cast_possible_truncation)] // instruction indices fit in u32 (checked at build)
+#[allow(clippy::too_many_lines)] // one arm per instruction
+fn execute_rare<R: Runtime>(
+    program: &Program,
+    op: &Op,
+    pc: usize,
+    st: &mut VmState<Val<R>>,
+    rt: &mut R,
+) -> Result<Flow<Val<R>>, VmError<Err<R>>> {
+    // The running program, for the instructions that keep a reference to it.
+    let shared = &st.frames.last().map(|f| Arc::clone(&f.program)).ok_or(VmError::Internal("no frame"))?;
+    let rt_err = VmError::Runtime;
+    let no_call = |_| Err(VmError::Internal("frame call where a value is needed"));
+    match *op {
+        Op::DefineText { info, text: t } => {
+            let d = program.tables.defines.get(info as usize).ok_or(VmError::Internal("bad define"))?;
+            let mut backups = Vec::with_capacity(d.names.len());
+            for &name in &d.names {
+                backups.push(rt.lookup(name).map_err(rt_err)?);
+            }
+            let value = rt.text_value(Some(program.text_str(t)));
+            rt.define(&d.names, value, Visibility::Local).map_err(rt_err)?;
+            st.unwind.push(Unwind::Define { backups });
+        }
+        Op::ContentTranslate { expr, esc, end } => {
+            let value = eval_or_leave_rare!(st, rt, pc, expr, false, no_call);
+            if !rt.is_default(&value) {
+                let value = rt.translate(Translation::Content(value)).map_err(rt_err)?;
+                rt.emit(value, esc, Stage::Content, &mut st.out).map_err(rt_err)?;
+                return Ok(Flow::Jump(end as usize));
+            }
+        }
+        Op::PopSlots { info } => {
+            let names = program.tables.slot_sets.get(info as usize).ok_or(VmError::Internal("bad slot set"))?;
+            let slots = names.iter().map(|n| rt.pop_slot(n)).collect();
+            if let Some(extra) = st.active_extra() {
+                extra.slots = slots;
+            }
+        }
+        Op::DefineSlot { slot, end } => {
+            let Some(frame) = st.frames.last() else { return Err(VmError::Internal("no frame")) };
+            if let Some(Some(fill)) = frame.slots().get(slot as usize) {
+                let fill = rt.slot_call(fill, &mut st.out).map_err(rt_err)?;
+                let Some(fill) = fill else {
+                    return Ok(Flow::Jump(end as usize));
+                };
+                let scope = rt.copy_scope().map_err(rt_err)?;
+                let call = Call { program: fill.program, code: fill.code, scope };
+                return Ok(Flow::Leave(Action::Push(Pushed {
+                    call,
+                    entry: fill.entry,
+                    cost: 1,
+                    return_pc: end,
+                    on_return: OnReturn::Nothing,
+                    kind: Kind::Fill,
+                    slots: fill.slots,
+                    fill: Some((fill.i18n, fill.stream)),
+                    reset_token: false,
+                })));
+            }
+        }
+        Op::FillSlot { info } => {
+            let f = program.tables.fills.get(info as usize).ok_or(VmError::Internal("bad fill"))?;
+            let stream = st.current_stream();
+            let Some(frame) = st.frames.last() else { return Err(VmError::Internal("no frame")) };
+            let i18n = frame.i18n(&st.none);
+            let fill = Fill {
+                program: Arc::clone(shared),
+                code: rt.clone_value(&frame.code),
+                entry: f.entry,
+                i18n: I18n {
+                    domain: i18n.domain.clone(),
+                    context: i18n.context.clone(),
+                    target_language: i18n.target_language.as_ref().map(|t| rt.clone_value(t)),
+                },
+                slots: frame.slots().iter().map(|s| s.as_ref().map(|v| rt.clone_value(v))).collect(),
+                stream,
+            };
+            rt.fill_slot(&f.name, fill, f.extend).map_err(rt_err)?;
+        }
+        Op::UseMacro { expr } => {
+            let value = eval_or_leave_rare!(st, rt, pc, expr, false, no_call);
+            match rt.macro_call(value, &mut st.out).map_err(rt_err)? {
+                MacroStep::Frame { call, entry, cost } => {
+                    let pushed = Pushed::call(call, entry, cost, pc as u32 + 1, OnReturn::Update);
+                    return Ok(Flow::Leave(Action::Push(pushed)));
+                }
+                MacroStep::Done => rt.after_macro().map_err(rt_err)?,
+            }
+        }
+        Op::CallMacro { entry } => {
+            let Some(frame) = st.frames.last() else { return Err(VmError::Internal("no frame")) };
+            let code = rt.clone_value(&frame.code);
+            let scope = rt.copy_scope().map_err(rt_err)?;
+            let call = Call { program: Arc::clone(shared), code, scope };
+            let mut pushed = Pushed::call(call, entry, 1, pc as u32 + 1, OnReturn::Update);
+            pushed.reset_token = true;
+            return Ok(Flow::Leave(Action::Push(pushed)));
+        }
+        Op::I18nSet { key, value } => {
+            let name = program.tables.strings.get(value as usize).ok_or(VmError::Internal("bad i18n name"))?;
+            let Some(extra) = st.active_extra() else { return Err(VmError::Internal("no frame")) };
+            let i18n = &mut extra.i18n;
+            let backup = match key {
+                I18nKey::Domain => Backup::Domain(i18n.domain.replace(Arc::clone(name))),
+                I18nKey::Context => Backup::Context(i18n.context.replace(Arc::clone(name))),
+            };
+            rt.i18n_changed(i18n).map_err(rt_err)?;
+            st.unwind.push(Unwind::I18n(backup));
+        }
+        Op::Target { expr } => {
+            let value = eval_or_leave_rare!(st, rt, pc, expr, false, no_call);
+            let Some(extra) = st.active_extra() else { return Err(VmError::Internal("no frame")) };
+            let i18n = &mut extra.i18n;
+            let backup = i18n.target_language.replace(value);
+            rt.i18n_changed(i18n).map_err(rt_err)?;
+            st.unwind.push(Unwind::I18n(Backup::Target(backup)));
+        }
+        Op::I18nRestore => {
+            let Some(Unwind::I18n(backup)) = st.unwind.pop() else {
+                return Err(VmError::Internal("i18n_restore without its setting"));
+            };
+            let Some(extra) = st.active_extra() else { return Err(VmError::Internal("no frame")) };
+            let i18n = &mut extra.i18n;
+            match backup {
+                Backup::Domain(d) => i18n.domain = d,
+                Backup::Context(c) => i18n.context = c,
+                Backup::Target(t) => i18n.target_language = t,
+            }
+            rt.i18n_changed(i18n).map_err(rt_err)?;
+        }
+        Op::TranslateBegin { info } => {
+            let t = program.tables.translates.get(info as usize).ok_or(VmError::Internal("bad translation"))?;
+            let id = st.next_serial();
+            st.unwind.push(Unwind::Translate {
+                mark: st.out.mark(),
+                id,
+                translation: Box::new(OpenTranslation {
+                    program: Arc::clone(shared),
+                    info,
+                    names: vec![NameValue::Text(String::new()); t.names.len()],
+                }),
+            });
+        }
+        Op::TranslateEnd { info } => {
+            let t = program.tables.translates.get(info as usize).ok_or(VmError::Internal("bad translation"))?;
+            let Some(Unwind::Translate { mark, translation, .. }) = st.unwind.pop() else {
+                return Err(VmError::Internal("translate_end without its translation"));
+            };
+            let content = st.take_text(mark)?;
+            let default = normalize_space(&content);
+            let msgid = match t.msgid {
+                Some(m) => program.text_str(m),
+                // `if msgid:` around the call.
+                None if default.is_empty() => return Ok(Flow::Next),
+                None => default.as_str(),
+            };
+            let mapping = (!t.names.is_empty())
+                .then(|| t.names.iter().map(|n| program.text_str(*n)).zip(translation.names).collect::<Vec<_>>());
+            let value = rt.translate(Translation::Block { msgid, mapping, default: &default }).map_err(rt_err)?;
+            rt.emit(value, Escape::Structure, Stage::Append, &mut st.out).map_err(rt_err)?;
+        }
+        Op::NameBegin { info } => {
+            let id = st.next_serial();
+            st.unwind.push(Unwind::Name { mark: st.out.mark(), id, program: Arc::clone(shared), info });
+        }
+        Op::NameEnd { info } => {
+            let n = program.tables.names.get(info as usize).ok_or(VmError::Internal("bad name"))?;
+            let Some(Unwind::Name { mark, .. }) = st.unwind.pop() else {
+                return Err(VmError::Internal("name_end without its name"));
+            };
+            let content = st.take_text(mark)?;
+            set_name(&mut st.unwind, shared, n, NameValue::Text(content));
+            st.out.push(b"${");
+            st.out.push(text(program, n.name)?);
+            st.out.push(b"}");
+        }
+        Op::TrValue { info } => {
+            let v = program.tables.tr_values.get(info as usize).ok_or(VmError::Internal("bad value"))?;
+            let value = match *v {
+                TrValue::Static(t) => rt.text_value(Some(program.text_str(t))),
+                TrValue::Subst { expr, esc, default } => {
+                    let value = eval_or_leave_rare!(st, rt, pc, expr, false, no_call);
+                    let default = default.map(|d| program.text_str(d));
+                    rt.quote_value(value, esc, default).map_err(rt_err)?
+                }
+                TrValue::Boolean { expr, name, default } => {
+                    let value = eval_or_leave_rare!(st, rt, pc, expr, false, no_call);
+                    if rt.is_default(&value) {
+                        rt.text_value(default.map(|d| program.text_str(d)))
+                    } else if rt.truthy(&value).map_err(rt_err)? {
+                        rt.text_value(Some(program.text_str(name)))
+                    } else {
+                        rt.text_value(None)
+                    }
+                }
+                TrValue::Lone { expr, esc, boolean } => {
+                    let value = eval_or_leave_rare!(st, rt, pc, expr, false, no_call);
+                    // `literal_false=False` (a boolean attribute): a false value, and a
+                    // false result, are `None`; a true result becomes the name (`Replace`).
+                    let boolean_false = |rt: &mut R, v: &Val<R>| -> Result<bool, VmError<Err<R>>> {
+                        Ok(boolean.is_some() && !rt.truthy(v).map_err(VmError::Runtime)?)
+                    };
+                    if boolean_false(rt, &value)? {
+                        rt.text_value(None)
+                    } else {
+                        let quoted = rt.quote_value(value, esc, None).map_err(rt_err)?;
+                        if boolean_false(rt, &quoted)? {
+                            rt.text_value(None)
+                        } else {
+                            let converted = rt.convert_value(quoted).map_err(rt_err)?;
+                            match boolean {
+                                Some(name) if rt.truthy(&converted).map_err(rt_err)? => {
+                                    rt.text_value(Some(program.text_str(name)))
+                                }
+                                _ => converted,
+                            }
+                        }
+                    }
+                }
+                TrValue::Part { expr, esc } => {
+                    let value = eval_or_leave_rare!(st, rt, pc, expr, false, no_call);
+                    rt.quote_value(value, esc, None).map_err(rt_err)?
+                }
+            };
+            st.unwind.push(Unwind::Value(value));
+        }
+        Op::CaptureBegin => st.unwind.push(Unwind::Capture(st.out.mark())),
+        Op::CaptureEnd { boolean } => {
+            let Some(Unwind::Capture(mark)) = st.unwind.pop() else {
+                return Err(VmError::Internal("capture_end without its capture"));
+            };
+            let content = st.take_text(mark)?;
+            let value = match boolean {
+                // `Replace`: a true (non-empty) result is the attribute's name.
+                Some(name) if !content.is_empty() => rt.text_value(Some(program.text_str(name))),
+                Some(_) => rt.text_value(None),
+                None => rt.text_value(Some(&content)),
+            };
+            st.unwind.push(Unwind::Value(value));
+        }
+        Op::AttrTranslate { info, cached } => {
+            let t = program.tables.attr_translates.get(info as usize).ok_or(VmError::Internal("bad attribute"))?;
+            let a = program.tables.attrs.get(t.attr as usize).ok_or(VmError::Internal("bad attribute"))?;
+            let Some(Unwind::Value(value)) = st.unwind.pop() else {
+                return Err(VmError::Internal("attr_translate without its value"));
+            };
+            let msgid = t.msgid.map(|m| program.text_str(m));
+            let value = rt.translate(Translation::Attr { msgid, value }).map_err(rt_err)?;
+            write_attr(program, st, rt, a, value, Stage::Format, cached)?;
+        }
+        Op::InterpTranslate { info, cached } => {
+            let t = program.tables.interp_translates.get(info as usize).ok_or(VmError::Internal("bad translation"))?;
+            let at = st.unwind.len().checked_sub(t.keys.len()).ok_or(VmError::Internal("missing values"))?;
+            let mut values = Vec::with_capacity(t.keys.len());
+            for entry in st.unwind.drain(at..) {
+                let Unwind::Value(v) = entry else { return Err(VmError::Internal("missing value")) };
+                values.push(v);
+            }
+            let mapping =
+                t.mapping.then(|| t.keys.iter().map(|k| program.text_str(*k)).zip(values).collect::<Vec<_>>());
+            let msgid = program.text_str(t.msgid);
+            let value = rt.translate(Translation::Interp { msgid, mapping }).map_err(rt_err)?;
+            match t.attr {
+                Some(attr) => {
+                    let a = program.tables.attrs.get(attr as usize).ok_or(VmError::Internal("bad attribute"))?;
+                    let value = rt.convert_value(value).map_err(rt_err)?;
+                    write_attr(program, st, rt, a, value, Stage::Format, cached)?;
+                }
+                None => {
+                    rt.emit(value, Escape::Structure, Stage::Content, &mut st.out).map_err(rt_err)?;
+                }
+            }
+        }
+        _ => return Err(VmError::Internal("not a rare instruction")),
+    }
+    Ok(Flow::Next)
+}
+
+/// `__re_whitespace(text).strip()`: runs of Python whitespace become one space, then the
+/// ends are stripped.
+fn normalize_space(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut space = false;
+    for c in s.chars() {
+        if crate::pychars::is_space(c) {
+            space = true;
+        } else {
+            if space && !out.is_empty() {
+                out.push(' ');
+            }
+            space = false;
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// A translated attribute's value: `if value is not None [and name not in chain(...)]:
+/// __append(prefix + '%s' % value + suffix)`.
+fn write_attr<R: Runtime>(
+    program: &Program,
+    st: &mut VmState<Val<R>>,
+    rt: &mut R,
+    a: &AttrInfo,
+    value: Val<R>,
+    stage: Stage,
+    cached: u32,
+) -> Result<(), VmError<Err<R>>> {
+    let mark = st.out.mark();
+    st.out.push(text(program, a.prefix)?);
+    if rt.emit(value, Escape::Structure, stage, &mut st.out).map_err(VmError::Runtime)? == Emitted::Nothing
+        || filtered(program, st, rt, program.text_str(a.name), a.filters, cached)?
+    {
+        st.out.truncate(mark);
+    } else {
+        st.out.push(text(program, a.suffix)?);
+    }
+    Ok(())
 }
 
 /// How [`finish_attr`] treats a written attribute value.
@@ -1209,14 +2535,14 @@ enum Finish {
 #[allow(clippy::too_many_arguments)]
 fn finish_attr<R: Runtime>(
     program: &Program,
-    st: &mut VmState<R::Value>,
+    st: &mut VmState<Val<R>>,
     rt: &mut R,
     a: &AttrInfo,
     start: Mark,
     value: Mark,
     finish: Finish,
     cached: u32,
-) -> Result<(), VmError<R::Error>> {
+) -> Result<(), VmError<Err<R>>> {
     // `if __attr is not None and name not in chain(...)`: the filter is only consulted for a
     // value that is not `None`. The boolean engine (`literal_false=False`) turns a false
     // *result* into `None`, which drops the attribute.
@@ -1249,12 +2575,12 @@ fn cached_value<V, E>(unwind: &[Unwind<V>], cached: u32, index: u32) -> Result<&
 /// `name in chain(*dicts)` for an attribute's filters.
 fn filtered<R: Runtime>(
     program: &Program,
-    st: &VmState<R::Value>,
+    st: &VmState<Val<R>>,
     rt: &mut R,
     name: &str,
     filters: (u32, u32),
     cached: u32,
-) -> Result<bool, VmError<R::Error>> {
+) -> Result<bool, VmError<Err<R>>> {
     let (start, len) = (filters.0 as usize, filters.1 as usize);
     let list = program.tables.filters.get(start..start + len).ok_or(VmError::Internal("bad filters"))?;
     for &k in list {
@@ -1276,11 +2602,11 @@ fn set_index<V>(st: &mut VmState<V>, new: Countdown<V>) {
 #[inline(always)]
 #[allow(clippy::inline_always)] // measured: see docs/plan.md, Phase 4
 fn value_of<R: Runtime>(
-    st: &mut VmState<R::Value>,
+    st: &mut VmState<Val<R>>,
     rt: &mut R,
     expr: ExprId,
     emitted: bool,
-) -> Result<Step<R::Value>, VmError<R::Error>> {
+) -> Result<Step<Val<R>>, VmError<Err<R>>> {
     if let Some(v) = st.resume.take() {
         return Ok(Step::Ready(v));
     }
@@ -1293,13 +2619,13 @@ fn value_of<R: Runtime>(
 /// in order, and returns `exit`. A global loop has nothing to restore: Chameleon's restore
 /// code refers to backups it never made, a `NameError` for the first name.
 fn bind_or_exit<R: Runtime>(
-    st: &mut VmState<R::Value>,
+    st: &mut VmState<Val<R>>,
     rt: &mut R,
     li: &LoopInfo,
-    item: Option<R::Value>,
+    item: Option<Val<R>>,
     body: usize,
     exit: usize,
-) -> Result<usize, VmError<R::Error>> {
+) -> Result<usize, VmError<Err<R>>> {
     if let Some(item) = item {
         rt.assign(&li.names, item, li.visibility).map_err(VmError::Runtime)?;
         return Ok(body);
