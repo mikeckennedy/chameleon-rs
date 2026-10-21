@@ -103,12 +103,24 @@ test-upstream:
 test-upstream-rust: build
 	CHAMELEON_ENGINE=rust $(PYTEST) tests/upstream
 
-# Each suite runs from its own checkout (its own rootdir and conftest), unmodified.
+# Each suite runs from its own checkout (its own rootdir and conftest), unmodified: first the
+# original packages on the compat alias, then (BUILTIN_SUITES) the same suites against
+# chameleon-rs's built-in chameleon_partials and chameleon_flask (compat.install()'s mapping).
+BUILTIN_SUITES := chameleon-flask chameleon_partials
+
 test-integration: integration
 	set -e; for suite in $(INTEGRATION_SUITES); do \
-		echo "== $$suite"; \
+		echo "== $$suite (original)"; \
 		cd $(CURDIR)/temp/$$suite; \
+		INTEGRATION_MODE=original \
 		PYTHONPATH=$(CURDIR)/tests/integration:$(CURDIR)/temp/$$suite:$(CURDIR)/temp/chameleon_partials \
+			$(INTEGRATION_VENV)/bin/python -m pytest -q -c pyproject.toml --rootdir . \
+			-p chameleon_compat_plugin -p no:cacheprovider tests; \
+	done
+	set -e; for suite in $(BUILTIN_SUITES); do \
+		echo "== $$suite (built-in)"; \
+		cd $(CURDIR)/temp/$$suite; \
+		INTEGRATION_MODE=builtin PYTHONPATH=$(CURDIR)/tests/integration:$(CURDIR)/temp/$$suite \
 			$(INTEGRATION_VENV)/bin/python -m pytest -q -c pyproject.toml --rootdir . \
 			-p chameleon_compat_plugin -p no:cacheprovider tests; \
 	done

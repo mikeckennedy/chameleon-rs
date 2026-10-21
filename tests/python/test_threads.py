@@ -109,3 +109,36 @@ def test_many_threads_render_macros_slots_and_translations() -> None:
         results = list(pool.map(render, range(4000)))
     for n, out in results:
         assert out == expected[n % 8]
+
+
+def test_many_threads_render_nested_partials(tmp_path: Path) -> None:
+    # Built-in partials (Phase 9): resolution caches, per-render units and auto_reload checks
+    # shared by threads; a failing partial's formatted error in some renders.
+    (tmp_path / 'shared').mkdir()
+    (tmp_path / 'shared' / 'card.pt').write_text(
+        '<div tal:define="d n * 2">${render_partial("shared/_img.pt", n=d)}${1 // (n % 9)}</div>'
+    )
+    (tmp_path / 'shared' / '_img.pt').write_text('<img tal:repeat="i range(n % 3)" alt="${n}-${repeat.i.index}"/>')
+    (tmp_path / 'page.pt').write_text(
+        '<p tal:repeat="n ns"><b tal:on-error="string:E">${render_partial("shared/card.pt", n=n)}</b></p>'
+    )
+    loader = chameleon_rs.PageTemplateLoader(str(tmp_path), auto_reload=True)
+
+    def expected(n: int) -> str:
+        items = []
+        for k in range(n, n + 3):
+            if k % 9 == 0:
+                items.append('<p><b>E</b></p>')
+            else:
+                d = k * 2
+                imgs = '\n'.join(f'<img alt="{d}-{i}"/>' for i in range(d % 3))
+                items.append(f'<p><b><div>{imgs}{1 // (k % 9)}</div></b></p>')
+        return '\n'.join(items)
+
+    def render(n: int) -> tuple[int, str]:
+        return n, loader['page.pt'](ns=range(n, n + 3))
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        results = list(pool.map(render, range(3000)))
+    for n, out in results:
+        assert out == expected(n), n
