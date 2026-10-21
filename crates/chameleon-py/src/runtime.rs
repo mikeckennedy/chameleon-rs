@@ -318,7 +318,9 @@ impl PyRuntime<'_, '_> {
 
 /// Python's sequence unpacking for `a, b = item`, with CPython's messages.
 fn unpack<'py>(item: &Bound<'py, PyAny>, n: usize) -> PyResult<Vec<Bound<'py, PyAny>>> {
-    let sized = item.is_exact_instance_of::<PyTuple>() || item.is_exact_instance_of::<PyList>();
+    // CPython 3.14 added "got N" to the too-many message for exact tuples and lists.
+    let sized = item.py().version_info() >= (3, 14)
+        && (item.is_exact_instance_of::<PyTuple>() || item.is_exact_instance_of::<PyList>());
     let mut values = Vec::with_capacity(n);
     let iterator = item.try_iter().map_err(|e| {
         // CPython's message for a type that is not iterable at all (no `__iter__`, no

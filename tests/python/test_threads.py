@@ -8,6 +8,11 @@ from concurrent.futures import ThreadPoolExecutor
 import chameleon_rs
 import pytest
 
+try:
+    1 // 0  # noqa: B018 - the running Python's own message ("division by zero" on 3.14+)
+except ZeroDivisionError as error:
+    ZERO_DIVISION = str(error)
+
 LISTING = '<ul>\n  <li tal:repeat="v videos" class="${v[0]}">${v[1]} ${repeat.v.index}</li>\n</ul>'
 
 
@@ -63,5 +68,5 @@ def test_many_threads_render_errors_and_code_blocks() -> None:
         if n % 5:
             assert other == f'<p>{n}{1 // (n % 5)}</p>'
         else:
-            assert other.startswith('division by zero\n\n - Expression: "1 // (n % 5)"')
+            assert other.startswith(f'{ZERO_DIVISION}\n\n - Expression: "1 // (n % 5)"')
             assert f'x: {n}' in other
