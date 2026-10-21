@@ -1,0 +1,406 @@
+"""`chameleon_rs.flask` (Phase 9): chameleon-flask's API built in. Each case runs the same view
+through the original chameleon-flask (pinned clone in temp/, on stock Chameleon) and through
+`chameleon_rs.flask`, and compares the response (body, status, headers) or the exception."""
+
+from __future__ import annotations
+
+import asyncio
+import dataclasses
+import importlib
+import re
+import sys
+from collections.abc import Callable
+from pathlib import Path
+from types import ModuleType
+from typing import Any
+
+import pytest
+
+flask = pytest.importorskip('flask')
+
+import chameleon_rs
+import chameleon_rs.flask as ours
+import chameleon_rs.web
+
+ORIGINAL = Path(__file__).resolve().parents[2] / 'temp' / 'chameleon-flask'
+
+
+def load_original() -> ModuleType | None:
+    if not (ORIGINAL / 'chameleon_flask').is_dir():
+        return None
+    sys.path.insert(0, str(ORIGINAL))
+    try:
+        return importlib.import_module('chameleon_flask')
+    finally:
+        sys.path.remove(str(ORIGINAL))
+
+
+ORIGINAL_MODULE = load_original()
+
+
+@pytest.fixture
+def theirs() -> ModuleType:
+    if ORIGINAL_MODULE is None:
+        pytest.skip('temp/chameleon-flask is not checked out (make integration)')
+    return ORIGINAL_MODULE
+
+
+TEMPLATES = {
+    'home/index.pt': '<h1>Hello ${a} ${b|"-"}!</h1>${render_partial("shared/_p.pt", v=a) if 0 else ""}',
+    'errors/404.pt': '<h1>Not here ${what | "?"}</h1>',
+    'errors/500.pt': '<h1>Broken ${code | 0}</h1>',
+    'test_flask/bare.pt': '<p>bare ${a}</p>',
+    'test_flask/both.html': '<p>html ${a}</p>',
+    'test_flask/both.pt': '<p>pt ${a}</p>',
+    'shared/_p.pt': '<i>${v}</i>',
+}
+
+
+@pytest.fixture
+def folder(tmp_path: Path) -> Any:
+    for name, body in TEMPLATES.items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body)
+    if ORIGINAL_MODULE is not None:
+        ORIGINAL_MODULE.global_init(str(tmp_path), cache_init=False)
+    ours.global_init(str(tmp_path), cache_init=False)
+    yield tmp_path
+    if ORIGINAL_MODULE is not None:
+        ORIGINAL_MODULE.engine.clear()
+    ours.clear()
+
+
+def result(module: ModuleType, make_view: Callable[[ModuleType], Callable[..., Any]], *args: Any) -> tuple[Any, ...]:
+    try:
+        view = make_view(module)
+        resp = view(*args)
+        if asyncio.iscoroutine(resp):
+            resp = asyncio.run(resp)
+    except Exception as e:  # noqa: BLE001 - comparing exceptions across implementations
+        return ('raise', type(e).__name__, re.sub(r'0x[0-9a-f]+', '0x?', str(e)))
+    return ('ok', type(resp).__name__, resp.status_code, resp.headers.get('Content-Type'), resp.get_data(as_text=True))
+
+
+def same(make_view: Callable[[ModuleType], Callable[..., Any]], theirs: ModuleType, *args: Any) -> tuple[Any, ...]:
+    want = result(theirs, make_view, *args)
+    got = result(ours, make_view, *args)
+    assert got == want
+    return got
+
+
+def explicit(fc: ModuleType) -> Callable[..., Any]:
+    @fc.template('home/index.pt')
+    def view(a: Any) -> Any:
+        return {'a': a}
+
+    return view
+
+
+def options(fc: ModuleType) -> Callable[..., Any]:
+    @fc.template('home/index.pt', content_type='text/plain', status_code=201)
+    def view(a: Any) -> Any:
+        return {'a': a, 'b': 2}
+
+    return view
+
+
+def async_view(fc: ModuleType) -> Callable[..., Any]:
+    @fc.template('home/index.pt', status_code=202)
+    async def view(a: Any) -> Any:
+        return {'a': a}
+
+    return view
+
+
+def not_found_default(fc: ModuleType) -> Callable[..., Any]:
+    @fc.template('home/index.pt', status_code=201)
+    def view(a: Any) -> Any:
+        fc.not_found()
+
+    return view
+
+
+def not_found_keyword(fc: ModuleType) -> Callable[..., Any]:
+    @fc.template('home/index.pt')
+    async def view(a: Any) -> Any:
+        fc.not_found(four04template_file='errors/500.pt')
+
+    return view
+
+
+def not_found_positional_blank(fc: ModuleType) -> Callable[..., Any]:
+    @fc.template('home/index.pt')
+    def view(a: Any) -> Any:
+        fc.not_found('  ')
+
+    return view
+
+
+def passthrough(fc: ModuleType) -> Callable[..., Any]:
+    @fc.template('home/index.pt')
+    def view(a: Any) -> Any:
+        return flask.Response(response='abc', status=418)
+
+    return view
+
+
+def redirect(fc: ModuleType) -> Callable[..., Any]:
+    @fc.template('home/index.pt')
+    def view(a: Any) -> Any:
+        return flask.redirect('/elsewhere')
+
+    return view
+
+
+def invalid(fc: ModuleType) -> Callable[..., Any]:
+    @fc.template('home/index.pt')
+    def view(a: Any) -> Any:
+        return [a]
+
+    return view
+
+
+def missing_template(fc: ModuleType) -> Callable[..., Any]:
+    @fc.template('home/missing.pt')
+    def view(a: Any) -> Any:
+        return {}
+
+    return view
+
+
+def bare(fc: ModuleType) -> Callable[..., Any]:
+    @fc.template
+    def bare(a: Any) -> Any:
+        return {'a': a}
+
+    bare.__module__ = 'tests.test_flask'
+    return fc.template(bare.__wrapped__)
+
+
+def bare_called(fc: ModuleType) -> Callable[..., Any]:
+    def both(a: Any) -> Any:
+        return {'a': a}
+
+    both.__module__ = 'pkg.test_flask'
+    return fc.template()(both)
+
+
+def response_call(fc: ModuleType) -> Callable[..., Any]:
+    return lambda a: fc.response('home/index.pt', status_code=203, a=a)
+
+
+def render_call(fc: ModuleType) -> Callable[..., Any]:
+    def view(a: Any) -> Any:
+        return flask.Response(fc.engine.render('home/index.pt', a=a))
+
+    return view
+
+
+def error_in_template(fc: ModuleType) -> Callable[..., Any]:
+    @fc.template('home/index.pt')
+    def view(a: Any) -> Any:
+        return {}
+
+    return view
+
+
+CASES = [
+    explicit,
+    options,
+    async_view,
+    not_found_default,
+    not_found_keyword,
+    not_found_positional_blank,
+    passthrough,
+    redirect,
+    invalid,
+    missing_template,
+    bare,
+    bare_called,
+    response_call,
+    render_call,
+    error_in_template,
+]
+
+
+@pytest.mark.parametrize('make_view', CASES, ids=[c.__name__ for c in CASES])
+def test_same_as_chameleon_flask(folder: Path, theirs: ModuleType, make_view: Callable[..., Any]) -> None:
+    got = same(make_view, theirs, '<x>')
+    if make_view is error_in_template:
+        assert got[:2] == ('raise', 'NameError')
+
+
+def test_uninitialized_render_is_an_error(theirs: ModuleType) -> None:
+    theirs.engine.clear()
+    ours.clear()
+    got = same(explicit, theirs, 1)
+    assert got == ('raise', 'FlaskChameleonException', 'You must call global_init() before rendering templates.')
+
+
+def test_global_init_checks_the_folder(tmp_path: Path, theirs: ModuleType) -> None:
+    for module in (theirs, ours):
+        for bad in ('', str(tmp_path / 'missing')):
+            with pytest.raises(module.FlaskChameleonException) as info:
+                module.global_init(bad, cache_init=False)
+            assert 'template_folder' in str(info.value) or 'must be a folder' in str(info.value)
+    with pytest.raises(chameleon_rs.web.TemplateError):
+        ours.configure(str(tmp_path / 'missing'))
+
+
+def test_global_init_cache_init(folder: Path, tmp_path_factory: pytest.TempPathFactory) -> None:
+    other = tmp_path_factory.mktemp('other')
+    ours.global_init(str(other))  # ignored: already configured
+    assert ours.template_path == str(folder)
+    ours.global_init(str(other), cache_init=False)
+    assert ours.template_path == str(other)
+    ours.configure(str(folder))  # always applies
+    assert ours.template_path == str(folder)
+
+
+# --- what chameleon-flask does not have -----------------------------------------------------
+
+
+def call(view: Callable[..., Any], *args: Any) -> Any:
+    resp = view(*args)
+    return asyncio.run(resp) if asyncio.iscoroutine(resp) else resp
+
+
+def test_not_found_and_error_take_data(folder: Path) -> None:
+    @ours.template('home/index.pt')
+    def missing() -> Any:
+        ours.not_found(what='the page')
+
+    @ours.template('home/index.pt')
+    async def broken() -> Any:
+        ours.error('errors/500.pt', 503, code=7)
+
+    @ours.template('home/index.pt')
+    def legacy() -> Any:
+        ours.generic_error('errors/500.pt', 401, {'code': 8})
+
+    @ours.template('home/index.pt')
+    def named() -> Any:
+        ours.not_found(template_file='errors/500.pt')
+
+    resp = call(missing)
+    assert (resp.status_code, resp.get_data(as_text=True)) == (404, '<h1>Not here the page</h1>')
+    resp = call(broken)
+    assert (resp.status_code, resp.get_data(as_text=True)) == (503, '<h1>Broken 7</h1>')
+    resp = call(legacy)
+    assert (resp.status_code, resp.get_data(as_text=True)) == (401, '<h1>Broken 8</h1>')
+    resp = call(named)
+    assert (resp.status_code, resp.get_data(as_text=True)) == (404, '<h1>Broken 0</h1>')
+
+
+@dataclasses.dataclass
+class Model:
+    a: Any
+    b: Any = 'dc'
+
+
+class PydanticLike:
+    def model_dump(self) -> dict[str, Any]:
+        return {'a': 'pyd'}
+
+
+@pytest.mark.parametrize(
+    ('value', 'text'),
+    [
+        (Model('x'), '<h1>Hello x dc!</h1>'),
+        (PydanticLike(), '<h1>Hello pyd -!</h1>'),
+        (__import__('types').MappingProxyType({'a': 'mp'}), '<h1>Hello mp -!</h1>'),
+    ],
+)
+def test_views_may_return_models(folder: Path, value: Any, text: str) -> None:
+    @ours.template('home/index.pt')
+    def view() -> Any:
+        return value
+
+    assert call(view).get_data(as_text=True) == text
+
+
+def test_pydantic_model(folder: Path) -> None:
+    pydantic = pytest.importorskip('pydantic')
+
+    class Page(pydantic.BaseModel):
+        a: str
+
+    @ours.template('home/index.pt', mimetype='text/x-test')
+    def view() -> Any:
+        return Page(a='p')
+
+    resp = call(view)
+    assert (resp.get_data(as_text=True), resp.content_type) == ('<h1>Hello p -!</h1>', 'text/x-test')
+
+
+def test_exceptions_share_a_base() -> None:
+    assert issubclass(ours.FlaskChameleonException, chameleon_rs.web.TemplateError)
+    assert issubclass(ours.FlaskChameleonNotFoundException, chameleon_rs.web.NotFound)
+    assert issubclass(ours.FlaskChameleonNotFoundException, ours.FlaskChameleonException)
+    assert issubclass(chameleon_rs.partials.PartialsException, chameleon_rs.web.TemplateError)
+    e = ours.FlaskChameleonNotFoundException('m', 'x.pt')
+    assert (e.template_file, e.message, e.status_code) == ('x.pt', 'm', 404)
+
+
+def test_partials_in_flask_views(folder: Path) -> None:
+    (folder / 'home' / 'list.pt').write_text(
+        '<ul><li tal:repeat="v vs">${render_partial("shared/_p.pt", v=v)}</li></ul>'
+    )
+
+    @ours.template('home/list.pt')
+    def view() -> Any:
+        return {'vs': [1, 2]}
+
+    assert call(view).get_data(as_text=True) == '<ul><li><i>1</i></li>\n<li><i>2</i></li></ul>'
+
+
+def test_per_app_configuration(folder: Path, tmp_path_factory: pytest.TempPathFactory) -> None:
+    other = tmp_path_factory.mktemp('app')
+    (other / 'home').mkdir()
+    (other / 'home' / 'index.pt').write_text('<p>app ${a}</p>')
+    app = flask.Flask('a')
+    ours.configure(str(other), app=app)
+    assert app.extensions['chameleon_rs'].template_folder == str(other)
+
+    @app.get('/')
+    @ours.template('home/index.pt')
+    def index() -> Any:
+        return {'a': 1}
+
+    assert app.test_client().get('/').get_data(as_text=True) == '<p>app 1</p>'
+    # Outside the app: the process-wide folder.
+    assert ours.render('home/index.pt', a=1) == '<h1>Hello 1 -!</h1>'
+
+
+def test_flask_app_with_async_view(folder: Path) -> None:
+    app = flask.Flask('b')
+
+    @app.get('/<int:n>')
+    @ours.template('home/index.pt')
+    async def index(n: int) -> Any:
+        await asyncio.sleep(0)
+        if n == 0:
+            ours.not_found()
+        return {'a': n}
+
+    client = app.test_client()
+    assert client.get('/3').get_data(as_text=True) == '<h1>Hello 3 -!</h1>'
+    resp = client.get('/0')
+    assert (resp.status_code, resp.get_data(as_text=True)) == (404, '<h1>Not here ?</h1>')
+
+
+def test_quart(folder: Path) -> None:
+    quart = pytest.importorskip('quart')
+    app = quart.Quart('q')
+
+    @app.get('/')
+    @ours.template('home/index.pt')
+    async def index() -> Any:
+        return {'a': 'q'}
+
+    async def get() -> tuple[int, str]:
+        resp = await app.test_client().get('/')
+        return resp.status_code, await resp.get_data(as_text=True)
+
+    assert asyncio.run(get()) == (200, '<h1>Hello q -!</h1>')
