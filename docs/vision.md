@@ -136,7 +136,43 @@ real workloads and keep making it faster, without giving up any compatibility.
 - **The rule:** every optimisation must keep all differential tests and the real-site diff
   identical. Speed never buys a difference in output.
 
-## 5. Documentation
+## 5. A `markdown:` expression type
+
+The idea: `${markdown: episode.notes}`, or `tal:content="markdown: episode.notes"`, converts
+the value from Markdown to HTML at render time and inserts it as markup.
+
+- **It fits an existing mechanism.** Chameleon already lets apps register custom expression
+  types, and Phase 5 builds that bridge. `markdown:` could be a built-in one, opt-in because
+  Chameleon has nothing like it.
+- **Speed.** A Rust Markdown library (pulldown-cmark or comrak) would convert in-process with
+  no Python calls. If a value hasn't changed, its HTML could be cached, keyed by the string.
+- **Matching the site's existing output.** Talk Python's pages may already convert Markdown in
+  Python with a particular library and particular extensions. Switching libraries could change
+  the HTML, so the converter and its options need to be chosen deliberately, maybe made
+  pluggable.
+- **One-time configuration.** Michael's picture is a single setup call at app startup, and
+  every `markdown:` expression uses those settings. The settings would cover:
+  - **Features:** tables, footnotes, strikethrough, task lists, autolinks, heading IDs,
+    smart punctuation.
+  - **Styles:** CSS classes added to the generated elements (for example `table`, `pre`,
+    `code`), a wrapper element, and code highlighting.
+  - **Pass-through options:** handed unchanged to the chosen converter, so a site can mirror
+    the configuration of the Python Markdown setup it already has.
+  - **Named profiles** (maybe): several configurations selected in the template, for example
+    `markdown[comments]: text`.
+
+  Configuration is read once, so rendering never parses settings. This fits the
+  configuration story in section 1: loader keyword arguments or a module-level `configure()`,
+  plus environment variables.
+- **Safety.** Markdown can contain raw HTML. Decide whether the output is trusted like
+  `structure:` or sanitised. That could be one opt-in for trusted content and another for
+  untrusted input, such as comments.
+- **Open questions:**
+  - A prefix (`markdown:`) or a filter-style syntax?
+  - Is inline Markdown (no wrapping `<p>`) a separate mode?
+  - How does it combine with `|` fallbacks and `structure`?
+
+## 6. Documentation
 
 We'll need real docs, built with Great Docs and hosted on Michael's site. A first outline:
 
@@ -151,7 +187,7 @@ We'll need real docs, built with Great Docs and hosted on Michael's site. A firs
 Open: the docs site's URL, whether the docs live in this repo (`docs/site/`) or on their own,
 and when to start. The API is stable enough to document after Phase 7.
 
-## 6. Icon and logo
+## 7. Icon and logo
 
 We want one for the README, the docs site and PyPI. Directions to explore:
 

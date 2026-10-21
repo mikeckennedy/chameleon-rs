@@ -235,10 +235,12 @@ def test_compile_error_matches(source: str, options: dict[str, Any]) -> None:
 
 
 def test_non_strict_mode_defers_syntax_errors() -> None:
-    # Chameleon raises the error when the expression is reached; until rendering supports
-    # that (Phase 5), compiling stops with UnsupportedError, never a wrong render.
-    with pytest.raises(chameleon_rs.exc.UnsupportedError):
-        chameleon_rs.PageTemplate("<tal:block replace='bad /// ' />", strict=False)
+    # Chameleon raises the error when the expression is reached (the upstream test).
+    body = "<tal:block replace='bad /// ' />"
+    template = chameleon_rs.PageTemplate(body, strict=False)
+    with pytest.raises(chameleon_rs.exc.ExpressionError) as error:
+        template()
+    assert body[error.value.offset :].startswith('bad ///')
 
 
 class Html:

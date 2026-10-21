@@ -245,3 +245,60 @@ pub(crate) fn parse_count(py: Python<'_>, body: &str) -> PyResult<usize> {
 pub(crate) fn token_count(body: &str) -> usize {
     tokenize(body).len()
 }
+
+/// `[(text, reads, writes), ...]`: each expression site of `body` in tree order with the
+/// names it reads and writes (D9), as the resolve table records them; `reads` and `writes`
+/// are `None` when the expression is dynamic (it uses `econtext`, a custom type, ...). The
+/// keywords are `Program`'s options (`PageTemplate`'s expression types).
+#[pyfunction]
+#[pyo3(signature = (body, **options))]
+#[allow(clippy::type_complexity)] // the Python shape
+pub(crate) fn free_variables(
+    py: Python<'_>,
+    body: &str,
+    options: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Vec<(String, Option<Vec<String>>, Option<Vec<String>>)>> {
+    let options = crate::program::options(options)?;
+    let marker = crate::program::marker(py)?;
+    let mut compiler =
+        crate::compiler::PyExprCompiler::new(py, marker, crate::compiler::Config::page_template(), body, "<string>")?;
+    let sites = chameleon_core::testing::free_variables(body, &mut compiler, &options)
+        .map_err(|e| compile_error(py, e, body, "<string>"))?;
+    let names = |v: Vec<Box<str>>| v.into_iter().map(String::from).collect();
+    Ok(sites
+        .into_iter()
+        .map(|(text, free)| match free {
+            chameleon_core::FreeVars::Dynamic => (text, None, None),
+            chameleon_core::FreeVars::Known { reads, writes } => (text, Some(names(reads)), Some(names(writes))),
+        })
+        .collect())
+}
+
+/// `(fast, fallback)`: how many of the compiled expressions of `body` run entirely on the
+/// native fast path, and how many contain a fallback function or a custom type (D4's
+/// coverage). `load` adds file templates' `load:` type. Compiles only (no lowering), so
+/// templates with features the VM does not run yet are counted too.
+#[pyfunction]
+#[pyo3(signature = (body, load = false, **options))]
+pub(crate) fn fast_path_coverage(
+    py: Python<'_>,
+    body: &str,
+    load: bool,
+    options: Option<&Bound<'_, PyDict>>,
+) -> PyResult<(usize, usize)> {
+    let options = crate::program::options(options)?;
+    let marker = crate::program::marker(py)?;
+    let mut config = crate::compiler::Config::page_template();
+    if load {
+        config.types.insert(
+            "load".to_owned(),
+            crate::compiler::TypeSpec::Proxy { name: "__loader".to_owned(), ignore_prefix: false },
+        );
+        config.template_builtins.push("__loader".to_owned());
+    }
+    let mut compiler = crate::compiler::PyExprCompiler::new(py, marker, config, body, "<string>")?;
+    chameleon_core::testing::free_variables(body, &mut compiler, &options)
+        .map_err(|e| compile_error(py, e, body, "<string>"))?;
+    let fallback = compiler.exprs.iter().filter(|e| e.uses_fallback()).count();
+    Ok((compiler.exprs.len() - fallback, fallback))
+}

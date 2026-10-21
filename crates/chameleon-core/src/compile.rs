@@ -6,8 +6,8 @@
 //! Lowering the program tree to bytecode: static text coalesced into one instruction per
 //! run, attribute prefixes and suffixes precomputed.
 //!
-//! Node kinds the VM does not run yet (macros, slots, i18n, `on-error`, code blocks,
-//! non-strict deferred errors) stop compilation with `UnsupportedError`.
+//! Node kinds the VM does not run yet (macros, slots, i18n, `on-error`, code blocks) stop
+//! compilation with `UnsupportedError`.
 
 use std::convert::Infallible;
 
@@ -49,6 +49,21 @@ pub fn build_tree(src: &str, options: &Options) -> LResult<Tree> {
         ParseOptions { namespaces: Namespaces::zpt(), restricted_namespace: options.restricted_namespace };
     let items = parse(src, &tokens, &parse_options)?;
     build(src, &items, options)
+}
+
+/// Each expression site's source text and the names it reads and writes (D9), in tree order:
+/// what the resolve table records, for tests and later analyses.
+pub fn free_variables<C: ExprCompiler>(
+    src: &str,
+    compiler: &mut C,
+    options: &Options,
+) -> std::result::Result<Vec<(String, crate::expr::FreeVars)>, CompileError<C::Error>> {
+    let tree = build_tree(src, options).map_err(widen)?;
+    let table = resolve(&tree, compiler, options)?;
+    Ok(crate::nodes::value_sites(&tree, src)
+        .into_iter()
+        .map(|(id, text)| (text, table.free_vars(id).cloned().unwrap_or_default()))
+        .collect())
 }
 
 pub(crate) fn widen<E>(e: CompileError<Infallible>) -> CompileError<E> {
@@ -106,10 +121,6 @@ impl Lower<'_> {
     fn expr(&self, v: &Value) -> LResult<ExprId> {
         match self.table.get(v.id) {
             Some(Resolved::Expr(id)) => Ok(*id),
-            Some(Resolved::Deferred { .. }) => Err(CompileError::unsupported(
-                "Rendering an expression with a syntax error in non-strict mode",
-                &v.source,
-            )),
             _ => Err(CompileError::new(ErrorKind::Unsupported, "internal: expression not compiled", &v.source)),
         }
     }
@@ -117,10 +128,6 @@ impl Lower<'_> {
     fn parts(&self, i: &Interp) -> LResult<&[Part]> {
         match self.table.get(i.id) {
             Some(Resolved::Parts(parts)) => Ok(parts),
-            Some(Resolved::Deferred { .. }) => Err(CompileError::unsupported(
-                "Rendering an interpolation with a syntax error in non-strict mode",
-                &i.source,
-            )),
             _ => Err(CompileError::new(ErrorKind::Unsupported, "internal: interpolation not compiled", &i.source)),
         }
     }

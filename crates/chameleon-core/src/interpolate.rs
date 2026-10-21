@@ -147,6 +147,10 @@ mod tests {
         fn compile_code(&mut self, _: &Tok) -> Result<ExprId, ExprCompileError<()>> {
             Ok(ExprId(0))
         }
+
+        fn deferred(&mut self, _: &str, _: &Tok) -> Result<ExprId, ExprCompileError<()>> {
+            Ok(ExprId(0))
+        }
     }
 
     fn tok(text: &str) -> Tok {

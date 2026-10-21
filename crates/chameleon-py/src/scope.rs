@@ -5,8 +5,11 @@
 
 use pyo3::exceptions::{PyKeyError, PyNameError};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyString, PyTuple};
+use pyo3::sync::PyOnceLock;
+use pyo3::types::{PyDict, PyString, PyTuple};
 use pyo3::{PyTraverseError, PyVisit};
+
+static SCOPE_ITER: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 #[pyclass(extends = PyDict, frozen, module = "chameleon_rs._native")]
 pub(crate) struct Scope {
@@ -65,28 +68,21 @@ impl Scope {
     }
 
     fn __getitem__<'py>(slf: &Bound<'py, Self>, key: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-        Self::lookup(slf, key)?.ok_or_else(|| PyKeyError::new_err(key.clone().unbind()))
+        Self::lookup(slf, key)?.ok_or_else(|| PyKeyError::new_err((key.clone().unbind(),)))
     }
 
     fn __contains__(slf: &Bound<'_, Self>, key: &Bound<'_, PyAny>) -> PyResult<bool> {
         Ok(Self::lookup(slf, key)?.is_some())
     }
 
-    /// Local keys, then root keys not shadowed locally.
+    /// Local keys, then root keys not shadowed locally, lazily (`chameleon_rs.utils.scope_iter`,
+    /// Chameleon's generator): changing the scope while iterating it raises `RuntimeError`.
     fn __iter__<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
-        let keys = PyList::empty(slf.py());
-        let local = slf.as_super();
-        for key in local.keys() {
-            keys.append(key)?;
-        }
-        if let Some(root) = &slf.get().root {
-            for key in root.bind(slf.py()).keys() {
-                if !local.contains(&key)? {
-                    keys.append(key)?;
-                }
-            }
-        }
-        Ok(keys.as_any().try_iter()?.into_any())
+        let py = slf.py();
+        let iter = SCOPE_ITER
+            .get_or_try_init(py, || Ok::<_, PyErr>(py.import("chameleon_rs.utils")?.getattr("scope_iter")?.unbind()))?;
+        let root = slf.get().root.as_ref().map(|r| r.bind(py).clone());
+        iter.bind(py).call1((slf, root))
     }
 
     #[pyo3(signature = (key, default = None))]
@@ -102,7 +98,7 @@ impl Scope {
     }
 
     fn get_name<'py>(slf: &Bound<'py, Self>, key: &Bound<'py, PyString>) -> PyResult<Bound<'py, PyAny>> {
-        Self::lookup(slf, key.as_any())?.ok_or_else(|| PyNameError::new_err(key.clone().unbind()))
+        Self::lookup(slf, key.as_any())?.ok_or_else(|| PyNameError::new_err((key.clone().unbind(),)))
     }
 
     #[getter]

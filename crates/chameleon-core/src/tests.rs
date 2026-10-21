@@ -66,6 +66,16 @@ impl ExprCompiler for Toy {
     fn compile_code(&mut self, _: &Tok) -> Result<ExprId, ExprCompileError<String>> {
         Err(ExprCompileError::Other("code blocks are not supported by the toy".into()))
     }
+
+    fn deferred(&mut self, message: &str, token: &Tok) -> Result<ExprId, ExprCompileError<String>> {
+        self.exprs.push(Expr {
+            src: format!("raise:{message} @ {:?}", token.text),
+            default: DefaultAlias::Name,
+            attrs: None,
+            emitted: false,
+        });
+        Ok(ExprId(u32::try_from(self.exprs.len() - 1).unwrap()))
+    }
 }
 
 struct World {
@@ -105,6 +115,9 @@ impl World {
     }
 
     fn plain(&self, s: &str, cx: &Expr) -> Result<V, String> {
+        if let Some(message) = s.strip_prefix("raise:") {
+            return Err(format!("ExpressionError: {message}"));
+        }
         Ok(if s == "none" {
             V::None
         } else if s == "true" || s == "false" {
@@ -156,7 +169,7 @@ impl Runtime for World {
 
     fn eval(&mut self, expr: ExprId, emitted: bool) -> Result<Step<V>, String> {
         let e = self.programs[self.code].1[expr.0 as usize].clone();
-        assert_eq!(e.emitted, emitted, "{}", e.src);
+        assert!(e.emitted == emitted || e.src.starts_with("raise:"), "{}", e.src);
         self.value(&e.src.clone(), &e)
     }
 
@@ -437,6 +450,27 @@ fn suspend_and_resume() {
         ),
         "<p a=\"q\">z<b>1</b>\n           <b>2</b><i>c</i></p>"
     );
+}
+
+#[test]
+fn non_strict_mode_defers_syntax_errors_to_the_site() {
+    let lax = Options { strict: false, ..options() };
+    let run = |src: &str, vars: &[(&str, V)]| {
+        let mut toy = Toy::default();
+        let p = compile(src, &mut toy, &lax).unwrap();
+        let mut w = world(&["x"], vars);
+        w.programs[0] = (Arc::new(p), toy.exprs);
+        let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0));
+        run(&mut st, &mut w).map(|_| String::from_utf8(st.out.as_bytes().to_vec()).unwrap())
+    };
+    // Not reached: renders.
+    assert_eq!(run("<p tal:condition=\"false\" tal:content=\"'\">x</p>ok", &[]).unwrap(), "ok");
+    // Reached: the deferred error, about the whole site's token, and nothing of the
+    // interpolation (`a`, `missing`) is evaluated first.
+    let err = run("<p>${a} ${ }</p>", &[]).unwrap_err();
+    assert!(matches!(&err, VmError::Runtime(m) if m.starts_with("ExpressionError: invalid")), "{err:?}");
+    let err = run("<p tal:content=\"'\">x</p>", &[]).unwrap_err();
+    assert!(matches!(&err, VmError::Runtime(m) if m.contains("@ \"'\"")), "{err:?}");
 }
 
 #[test]

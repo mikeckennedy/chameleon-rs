@@ -1,20 +1,25 @@
 // `lookup_attr` and the name rules are ported from Chameleon's src/chameleon/utils.py
-// (`lookup_attr`) and compiler.py (`NameTransform`), modified: evaluated natively over a
-// Rust expression tree instead of generated Python code.
+// (`lookup_attr`) and compiler.py (`NameTransform`); the TALES expression types from
+// tales.py (`TalesExpr`, `ExistsExpr`, `NotExpr`, `StructureExpr`, `ImportExpr`, `StringExpr`,
+// `ProxyExpr`); modified: evaluated natively over a Rust expression tree instead of generated
+// Python code.
 
 //! The fast-path expression tree (D4) and its evaluation.
 
 use std::cell::OnceCell;
+use std::collections::BTreeSet;
 
 use pyo3::exceptions::{PyAttributeError, PyKeyError, PyLookupError, PyNameError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pyclass::CompareOp;
-use pyo3::types::{PyBool, PyDict, PyList, PyString, PyTuple};
+use pyo3::sync::PyOnceLock;
+use pyo3::types::{PyBool, PyDict, PyInt, PyList, PySlice, PyString, PyTuple};
 use pyo3::{PyTraverseError, PyVisit};
 
-use chameleon_core::{Call, Step};
+use chameleon_core::{Call, Escape, FreeVars, Step};
 
+use crate::custom::Custom;
 use crate::program::Program;
 use crate::scope::Scope;
 
@@ -51,14 +56,22 @@ pub(crate) enum CmpOp {
     NotIn,
 }
 
-/// A Python expression lowered from CPython's `ast` (the census's node types), or the exact
-/// fallback: a Python function built from the rewritten `ast`.
+/// An expression: a Python expression lowered from CPython's `ast` (the census's node
+/// types), a TALES expression type, or the exact fallback (a Python function built from the
+/// rewritten `ast`).
 #[derive(Debug)]
 pub(crate) enum Expr {
     /// An ordinary name: local scope, then root, else `NameError`.
     Name(Py<PyString>),
     /// A builtin name: `econtext.get(name, builtin)`, so a render keyword overrides it.
     Builtin(Py<PyString>, Py<PyAny>),
+    /// A template builtin (`template`, `macros`, `nothing`, `extra_builtins`): like
+    /// [`Expr::Builtin`], with the value the render supplies (the template is never stored
+    /// in the program, D4).
+    TemplateBuiltin(Py<PyString>),
+    /// A template builtin whose name starts with `__` (`__loader`): `NameTransform` leaves
+    /// such names alone, so it is the render's value itself, never looked up in the scope.
+    RenderBuiltin(Py<PyString>),
     Const(Py<PyAny>),
     /// An attribute of an original constant, resolved at compile time (one level, D4).
     Folded(Py<PyAny>),
@@ -75,6 +88,7 @@ pub(crate) enum Expr {
         args: Vec<Expr>,
         kwargs: Vec<(Py<PyString>, Expr)>,
     },
+    /// Python's `not x`, and the `not:` expression type (`target = not target`).
     Not(Box<Expr>),
     Unary(UnaryOp, Box<Expr>),
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
@@ -83,12 +97,23 @@ pub(crate) enum Expr {
     Compare(Box<Expr>, Vec<(CmpOp, Expr)>),
     IfExp(Box<Expr>, Box<Expr>, Box<Expr>),
     Subscript(Box<Expr>, Box<Expr>),
+    /// `lower:upper:step` in a subscript: `slice(lower, upper, step)`, as `BINARY_SLICE` /
+    /// `BUILD_SLICE` build it (missing parts are `None`).
+    Slice(Box<[Option<Expr>; 3]>),
     Tuple(Vec<Expr>),
     List(Vec<Expr>),
     Dict(Vec<(Expr, Expr)>),
     /// TALES `a | b`: the first alternative that does not raise one of Chameleon's
     /// `TalesExpr.exceptions`.
     Pipe(Vec<Expr>),
+    /// `exists:`: `1`, or `0` if evaluating raised one of `ExistsExpr.exceptions`.
+    Exists(Box<Expr>),
+    /// `structure:`: the value wrapped in `Markup`.
+    Structure(Box<Expr>),
+    /// `import:`: `resolve_dotted(name)`, at every evaluation (it caches imports).
+    Import(Py<PyString>),
+    /// `string:` and each path of `load:` (Chameleon's `Interpolator`, braces optional).
+    Interp(Box<StrInterp>),
     /// A top-level `render_partial(path, **kw)` in an emitted position: a native frame when
     /// no `render_partial` is bound in the scope, else the ordinary call (`call`).
     Partial {
@@ -96,19 +121,60 @@ pub(crate) enum Expr {
         kwargs: Vec<(Py<PyString>, Expr)>,
         call: Box<Expr>,
     },
-    /// `f(econtext, rcontext, default_marker)` built by `chameleon_rs._rewrite`.
-    Fallback(Py<PyAny>),
+    /// `f(econtext, rcontext, default_marker, template_builtins)` built by
+    /// `chameleon_rs._rewrite`.
+    Fallback(Box<Fallback>),
+    /// A user-registered expression type, through the AST bridge (`chameleon_rs._bridge`).
+    Custom(Box<Custom>),
+    /// Non-strict mode: raises `ExpressionError(*args)` (a syntax error deferred to render
+    /// time, raised fresh each time, as Chameleon unpickles a new copy).
+    Raise(Py<PyTuple>),
+}
+
+/// The exact fallback: a Python function, and the names its rewritten code reads and writes.
+#[derive(Debug)]
+pub(crate) struct Fallback {
+    pub(crate) func: Py<PyAny>,
+    pub(crate) free: FreeVars,
+}
+
+/// How an expression type converts a sub-expression to text: the engine settings of the site
+/// (`chameleon_core::Engine`), with the default as a Python string.
+#[derive(Debug)]
+pub(crate) struct TextConv {
+    pub(crate) escape: Option<Escape>,
+    pub(crate) marker: bool,
+    pub(crate) default: Option<Py<PyString>>,
+    pub(crate) literal_false: bool,
+}
+
+/// An interpolated string: `string:` and the paths of `load:`.
+#[derive(Debug)]
+pub(crate) struct StrInterp {
+    pub(crate) parts: Vec<StrPart>,
+    pub(crate) conv: TextConv,
+}
+
+#[derive(Debug)]
+pub(crate) enum StrPart {
+    Text(Py<PyString>),
+    Expr(Expr),
 }
 
 impl Expr {
     pub(crate) fn traverse(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
         match self {
-            Self::Name(n) | Self::ScopeKey(n) => visit.call(n),
+            Self::Name(n) | Self::ScopeKey(n) | Self::TemplateBuiltin(n) | Self::RenderBuiltin(n) | Self::Import(n) => {
+                visit.call(n)
+            }
             Self::Builtin(n, v) => {
                 visit.call(n)?;
                 visit.call(v)
             }
-            Self::Const(v) | Self::Folded(v) | Self::Fallback(v) => visit.call(v),
+            Self::Const(v) | Self::Folded(v) => visit.call(v),
+            Self::Raise(v) => visit.call(v),
+            Self::Fallback(f) => visit.call(&f.func),
+            Self::Custom(c) => c.traverse(visit),
             Self::Econtext | Self::Rcontext => Ok(()),
             Self::Attr(e, n) => {
                 e.traverse(visit)?;
@@ -122,11 +188,12 @@ impl Expr {
                     v.traverse(visit)
                 })
             }
-            Self::Not(e) | Self::Unary(_, e) => e.traverse(visit),
+            Self::Not(e) | Self::Unary(_, e) | Self::Exists(e) | Self::Structure(e) => e.traverse(visit),
             Self::Binary(_, a, b) | Self::Subscript(a, b) => {
                 a.traverse(visit)?;
                 b.traverse(visit)
             }
+            Self::Slice(parts) => parts.iter().flatten().try_for_each(|e| e.traverse(visit)),
             Self::And(v) | Self::Or(v) | Self::Tuple(v) | Self::List(v) | Self::Pipe(v) => {
                 v.iter().try_for_each(|e| e.traverse(visit))
             }
@@ -143,6 +210,7 @@ impl Expr {
                 k.traverse(visit)?;
                 v.traverse(visit)
             }),
+            Self::Interp(s) => s.traverse(visit),
             Self::Partial { path, kwargs, call } => {
                 path.traverse(visit)?;
                 kwargs.iter().try_for_each(|(k, v)| {
@@ -151,6 +219,155 @@ impl Expr {
                 })?;
                 call.traverse(visit)
             }
+        }
+    }
+
+    /// Whether any part runs as Python code (the fallback or a custom type).
+    pub(crate) fn uses_fallback(&self) -> bool {
+        match self {
+            Self::Fallback(_) | Self::Custom(_) => true,
+            Self::Name(_)
+            | Self::Builtin(..)
+            | Self::TemplateBuiltin(_)
+            | Self::RenderBuiltin(_)
+            | Self::Const(_)
+            | Self::Folded(_)
+            | Self::Econtext
+            | Self::Rcontext
+            | Self::ScopeKey(_)
+            | Self::Import(_)
+            | Self::Raise(_) => false,
+            Self::Attr(e, _) | Self::Not(e) | Self::Unary(_, e) | Self::Exists(e) | Self::Structure(e) => {
+                e.uses_fallback()
+            }
+            Self::Call { func, args, kwargs } => {
+                func.uses_fallback()
+                    || args.iter().any(Self::uses_fallback)
+                    || kwargs.iter().any(|(_, v)| v.uses_fallback())
+            }
+            Self::Binary(_, a, b) | Self::Subscript(a, b) => a.uses_fallback() || b.uses_fallback(),
+            Self::Slice(parts) => parts.iter().flatten().any(Self::uses_fallback),
+            Self::And(v) | Self::Or(v) | Self::Tuple(v) | Self::List(v) | Self::Pipe(v) => {
+                v.iter().any(Self::uses_fallback)
+            }
+            Self::Compare(left, ops) => left.uses_fallback() || ops.iter().any(|(_, e)| e.uses_fallback()),
+            Self::IfExp(a, b, c) => a.uses_fallback() || b.uses_fallback() || c.uses_fallback(),
+            Self::Dict(items) => items.iter().any(|(k, v)| k.uses_fallback() || v.uses_fallback()),
+            Self::Interp(s) => s.parts.iter().any(|p| matches!(p, StrPart::Expr(e) if e.uses_fallback())),
+            Self::Partial { path, kwargs, call } => {
+                path.uses_fallback() || kwargs.iter().any(|(_, v)| v.uses_fallback()) || call.uses_fallback()
+            }
+        }
+    }
+
+    /// The scope names this expression reads and writes (D9).
+    pub(crate) fn free_vars(&self) -> FreeVars {
+        let mut free = Free::default();
+        self.collect(&mut free);
+        free.finish()
+    }
+
+    fn collect(&self, f: &mut Free) {
+        let py_name = |n: &Py<PyString>| Python::attach(|py| n.bind(py).to_string());
+        match self {
+            Self::Name(n) | Self::Builtin(n, _) | Self::TemplateBuiltin(n) | Self::ScopeKey(n) => {
+                f.reads.insert(py_name(n));
+            }
+            Self::RenderBuiltin(_) | Self::Const(_) | Self::Folded(_) | Self::Import(_) | Self::Raise(_) => {}
+            Self::Econtext | Self::Rcontext | Self::Custom(_) => f.dynamic = true,
+            Self::Fallback(fb) => match &fb.free {
+                FreeVars::Dynamic => f.dynamic = true,
+                FreeVars::Known { reads, writes } => {
+                    f.reads.extend(reads.iter().map(ToString::to_string));
+                    f.writes.extend(writes.iter().map(ToString::to_string));
+                }
+            },
+            Self::Attr(e, _) | Self::Not(e) | Self::Unary(_, e) | Self::Exists(e) | Self::Structure(e) => e.collect(f),
+            Self::Call { func, args, kwargs } => {
+                func.collect(f);
+                for a in args {
+                    a.collect(f);
+                }
+                for (_, v) in kwargs {
+                    v.collect(f);
+                }
+            }
+            Self::Binary(_, a, b) | Self::Subscript(a, b) => {
+                a.collect(f);
+                b.collect(f);
+            }
+            Self::Slice(parts) => parts.iter().flatten().for_each(|e| e.collect(f)),
+            Self::And(v) | Self::Or(v) | Self::Tuple(v) | Self::List(v) | Self::Pipe(v) => {
+                for e in v {
+                    e.collect(f);
+                }
+            }
+            Self::Compare(left, ops) => {
+                left.collect(f);
+                for (_, e) in ops {
+                    e.collect(f);
+                }
+            }
+            Self::IfExp(a, b, c) => {
+                a.collect(f);
+                b.collect(f);
+                c.collect(f);
+            }
+            Self::Dict(items) => items.iter().for_each(|(k, v)| {
+                k.collect(f);
+                v.collect(f);
+            }),
+            Self::Interp(s) => {
+                let mut any = false;
+                for part in &s.parts {
+                    if let StrPart::Expr(e) = part {
+                        e.collect(f);
+                        any = true;
+                    }
+                }
+                if any {
+                    // Converting a sub-expression's value reads the template's helpers.
+                    f.reads.extend(["__decode", "__translate", "target_language"].map(String::from));
+                }
+            }
+            Self::Partial { path, kwargs, call } => {
+                path.collect(f);
+                for (_, v) in kwargs {
+                    v.collect(f);
+                }
+                call.collect(f);
+            }
+        }
+    }
+}
+
+impl StrInterp {
+    fn traverse(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
+        if let Some(d) = &self.conv.default {
+            visit.call(d)?;
+        }
+        self.parts.iter().try_for_each(|p| match p {
+            StrPart::Text(t) => visit.call(t),
+            StrPart::Expr(e) => e.traverse(visit),
+        })
+    }
+}
+
+#[derive(Default)]
+struct Free {
+    reads: BTreeSet<String>,
+    writes: BTreeSet<String>,
+    dynamic: bool,
+}
+
+impl Free {
+    fn finish(self) -> FreeVars {
+        if self.dynamic {
+            return FreeVars::Dynamic;
+        }
+        FreeVars::Known {
+            reads: self.reads.into_iter().map(String::into_boxed_str).collect(),
+            writes: self.writes.into_iter().map(String::into_boxed_str).collect(),
         }
     }
 }
@@ -163,6 +380,8 @@ pub(crate) struct RenderCtx<'py> {
     /// The template's default `__translate`, `__decode`, ... for scopes that lack them
     /// (native partial frames).
     pub(crate) defaults: Option<Bound<'py, PyDict>>,
+    /// The template builtins' values (`template`, `macros`, `nothing`, `__loader`, ...).
+    pub(crate) builtins: Bound<'py, PyDict>,
     /// `rcontext`, created on first use.
     pub(crate) rcontext: OnceCell<Bound<'py, PyDict>>,
 }
@@ -189,6 +408,10 @@ impl<'py> Cx<'_, 'py> {
             Some(defaults) => defaults.get_item(key),
             None => Ok(None),
         }
+    }
+
+    fn builtin(&self, name: &Bound<'py, PyString>) -> PyResult<Bound<'py, PyAny>> {
+        self.render.builtins.get_item(name)?.ok_or_else(|| PyNameError::new_err(name.clone().unbind()))
     }
 }
 
@@ -234,7 +457,31 @@ fn pipe_catches(py: Python<'_>, e: &PyErr) -> bool {
         || e.is_instance_of::<PyValueError>(py)
 }
 
-#[allow(clippy::too_many_lines)] // one arm per node type
+/// The exceptions `exists:` turns into `0` (`ExistsExpr.exceptions`; not `ValueError`).
+fn exists_catches(py: Python<'_>, e: &PyErr) -> bool {
+    e.is_instance_of::<PyAttributeError>(py)
+        || e.is_instance_of::<PyLookupError>(py)
+        || e.is_instance_of::<PyTypeError>(py)
+        || e.is_instance_of::<PyNameError>(py)
+}
+
+static MARKUP: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+static RESOLVE_DOTTED: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+static EXPRESSION_ERROR: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+
+fn utils_attr<'py>(
+    py: Python<'py>,
+    cell: &'static PyOnceLock<Py<PyAny>>,
+    module: &str,
+    name: &str,
+) -> PyResult<Bound<'py, PyAny>> {
+    Ok(cell.get_or_try_init(py, || Ok::<_, PyErr>(py.import(module)?.getattr(name)?.unbind()))?.bind(py).clone())
+}
+
+/// Evaluates an expression. The kinds the census ranks first (names, attributes, constants,
+/// calls with up to two positional arguments, `not`, subscripts) are handled here; the rest
+/// go through [`eval_more`], so this function's stack frame and prologue, which every
+/// recursive call pays, stay small (912 bytes when every kind was inline).
 pub(crate) fn eval<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
     let py = cx.scope.py();
     match e {
@@ -246,35 +493,68 @@ pub(crate) fn eval<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny
             Ok(Scope::lookup(cx.scope, name.bind(py).as_any())?.unwrap_or_else(|| builtin.bind(py).clone()))
         }
         Expr::Const(v) | Expr::Folded(v) => Ok(v.bind(py).clone()),
+        Expr::Attr(obj, name) => lookup_attr(&eval(obj, cx)?, name.bind(py)),
+        // Fixed arities go through vectorcall without building a tuple first.
+        Expr::Call { func, args, kwargs } if kwargs.is_empty() && args.len() <= 2 => {
+            let func = eval(func, cx)?;
+            match args.as_slice() {
+                [] => func.call0(),
+                [a] => func.call1((eval(a, cx)?,)),
+                [a, b, ..] => {
+                    let a = eval(a, cx)?;
+                    func.call1((a, eval(b, cx)?))
+                }
+            }
+        }
+        Expr::Not(v) => Ok(PyBool::new(py, !eval(v, cx)?.is_truthy()?).to_owned().into_any()),
+        Expr::Subscript(obj, key) => {
+            let obj = eval(obj, cx)?;
+            obj.get_item(eval(key, cx)?)
+        }
+        // `[]` is common (`' '.join(classes or [])`): no intermediate vector.
+        Expr::List(items) if items.is_empty() => Ok(PyList::empty(py).into_any()),
         Expr::Econtext => Ok(cx.scope.clone().into_any()),
+        Expr::Partial { call, .. } => eval(call, cx),
+        Expr::Fallback(f) => {
+            let rcontext = cx.render.rcontext(py);
+            f.func.bind(py).call1((cx.scope, rcontext, &cx.render.marker, &cx.render.builtins))
+        }
+        _ => eval_more(e, cx),
+    }
+}
+
+/// The other common kinds (comparisons, boolean and conditional expressions, arithmetic,
+/// displays, pipes, general calls, names that are not plain scope lookups).
+#[inline(never)]
+#[allow(clippy::too_many_lines)] // one arm per node type
+fn eval_more<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
+    let py = cx.scope.py();
+    match e {
+        Expr::TemplateBuiltin(name) => {
+            let name = name.bind(py);
+            match Scope::lookup(cx.scope, name.as_any())? {
+                Some(v) => Ok(v),
+                None => cx.builtin(name),
+            }
+        }
+        Expr::RenderBuiltin(name) => cx.builtin(name.bind(py)),
         Expr::Rcontext => Ok(cx.render.rcontext(py).clone().into_any()),
         Expr::ScopeKey(key) => {
             let key = key.bind(py);
-            cx.scope_or_default(key)?.ok_or_else(|| PyKeyError::new_err(key.clone().unbind()))
+            cx.scope_or_default(key)?.ok_or_else(|| PyKeyError::new_err((key.clone().unbind(),)))
         }
-        Expr::Attr(obj, name) => lookup_attr(&eval(obj, cx)?, name.bind(py)),
         Expr::Call { func, args, kwargs } => {
             let func = eval(func, cx)?;
-            if kwargs.is_empty() {
-                // Fixed arities go through vectorcall without building a list first.
-                return match args.as_slice() {
-                    [] => func.call0(),
-                    [a] => func.call1((eval(a, cx)?,)),
-                    [a, b] => {
-                        let a = eval(a, cx)?;
-                        func.call1((a, eval(b, cx)?))
-                    }
-                    _ => func.call1(PyTuple::new(py, eval_all(args, cx)?)?),
-                };
-            }
             let args = PyTuple::new(py, eval_all(args, cx)?)?;
+            if kwargs.is_empty() {
+                return func.call1(args);
+            }
             let kw = PyDict::new(py);
             for (k, v) in kwargs {
                 kw.set_item(k.bind(py), eval(v, cx)?)?;
             }
             func.call(args, Some(&kw))
         }
-        Expr::Not(v) => Ok(PyBool::new(py, !eval(v, cx)?.is_truthy()?).to_owned().into_any()),
         Expr::Unary(op, v) => {
             let v = eval(v, cx)?;
             match op {
@@ -345,12 +625,7 @@ pub(crate) fn eval<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny
                 eval(orelse, cx)
             }
         }
-        Expr::Subscript(obj, key) => {
-            let obj = eval(obj, cx)?;
-            obj.get_item(eval(key, cx)?)
-        }
         Expr::Tuple(items) => Ok(PyTuple::new(py, eval_all(items, cx)?)?.into_any()),
-        Expr::List(items) => Ok(PyList::new(py, eval_all(items, cx)?)?.into_any()),
         Expr::Dict(items) => {
             let d = PyDict::new(py);
             for (k, v) in items {
@@ -370,15 +645,85 @@ pub(crate) fn eval<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny
             }
             eval(last, cx)
         }
-        Expr::Partial { call, .. } => eval(call, cx),
-        Expr::Fallback(func) => {
-            let rcontext = cx.render.rcontext(py);
-            func.bind(py).call1((cx.scope, rcontext, &cx.render.marker))
-        }
+        Expr::List(items) => Ok(PyList::new(py, eval_all(items, cx)?)?.into_any()),
+        Expr::Slice(_)
+        | Expr::Exists(_)
+        | Expr::Structure(_)
+        | Expr::Import(_)
+        | Expr::Interp(_)
+        | Expr::Custom(_)
+        | Expr::Raise(_) => eval_rare(e, cx),
+        _ => eval(e, cx),
     }
 }
 
-fn eval_all<'py>(items: &[Expr], cx: &Cx<'_, 'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
+/// The TALES types and rare node kinds, out of line, so `eval`'s stack frame and prologue
+/// (paid by every recursive call on the hot path) stay what the census types need.
+#[cold]
+#[inline(never)]
+fn eval_rare<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
+    let py = cx.scope.py();
+    match e {
+        Expr::Slice(parts) => {
+            let mut values = [py.None().into_bound(py), py.None().into_bound(py), py.None().into_bound(py)];
+            for (value, part) in values.iter_mut().zip(parts.iter()) {
+                if let Some(e) = part {
+                    *value = eval(e, cx)?;
+                }
+            }
+            let [lower, upper, step] = values;
+            py.get_type::<PySlice>().call1((lower, upper, step))
+        }
+        Expr::Exists(inner) => {
+            let found = match eval(inner, cx) {
+                Ok(_) => 1,
+                Err(err) if exists_catches(py, &err) => 0,
+                Err(err) => return Err(err),
+            };
+            Ok(PyInt::new(py, found).into_any())
+        }
+        Expr::Structure(inner) => {
+            let value = eval(inner, cx)?;
+            utils_attr(py, &MARKUP, "chameleon_rs.utils", "Markup")?.call1((value,))
+        }
+        Expr::Import(name) => utils_attr(py, &RESOLVE_DOTTED, "chameleon_rs.utils", "resolve_dotted")?.call1((name,)),
+        Expr::Interp(s) => eval_interp(s, cx),
+        Expr::Custom(c) => c.eval(cx),
+        Expr::Raise(args) => {
+            let exc = utils_attr(py, &EXPRESSION_ERROR, "chameleon_rs.exc", "ExpressionError")?.call1(args.bind(py))?;
+            Err(PyErr::from_value(exc))
+        }
+        _ => eval(e, cx),
+    }
+}
+
+/// Chameleon's `Interpolator` result: one node is the value itself (a sub-expression's may be
+/// `None` or not a `str`); otherwise `'%s' * n % (...)`, with `None` as `''`.
+fn eval_interp<'py>(s: &StrInterp, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
+    let py = cx.scope.py();
+    if let [only] = s.parts.as_slice() {
+        return match only {
+            StrPart::Text(t) => Ok(t.bind(py).clone().into_any()),
+            StrPart::Expr(e) => crate::convert::convert_text(cx, &eval(e, cx)?, &s.conv),
+        };
+    }
+    // Joined by Python, so strings with lone surrogates work as they do in Chameleon.
+    let pieces = PyList::empty(py);
+    for part in &s.parts {
+        match part {
+            StrPart::Text(t) => pieces.append(t.bind(py))?,
+            StrPart::Expr(e) => {
+                let value = crate::convert::convert_text(cx, &eval(e, cx)?, &s.conv)?;
+                if !value.is_none() {
+                    pieces.append(value.str()?)?;
+                }
+            }
+        }
+    }
+    intern!(py, "").call_method1(intern!(py, "join"), (pieces,))
+}
+
+pub(crate) fn eval_all<'py>(items: &[Expr], cx: &Cx<'_, 'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
     items.iter().map(|e| eval(e, cx)).collect()
 }
 
@@ -426,4 +771,13 @@ pub(crate) fn lookup_attr<'py>(obj: &Bound<'py, PyAny>, name: &Bound<'py, PyStri
 #[pyo3(name = "lookup_attr")]
 pub(crate) fn py_lookup_attr<'py>(obj: &Bound<'py, PyAny>, name: &Bound<'py, PyString>) -> PyResult<Bound<'py, PyAny>> {
     lookup_attr(obj, name)
+}
+
+#[cfg(test)]
+mod size_tests {
+    #[test]
+    fn expr_stays_small() {
+        // The hot loop walks these trees; keep the node at Phase 4's size.
+        assert_eq!(std::mem::size_of::<super::Expr>(), 56);
+    }
 }

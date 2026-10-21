@@ -66,7 +66,8 @@ def test_corpus_compiles_or_is_unsupported(capsys: pytest.CaptureFixture[str]) -
     reasons: collections.Counter[str] = collections.Counter()
     for path in FILES:
         try:
-            chameleon_rs.PageTemplate(path.read_bytes(), filename=str(path))
+            # A file template, as the sites use them (it has the `load:` expression type).
+            chameleon_rs.PageTemplateFile(path).cook_check()
         except exc.UnsupportedError as e:
             # The feature named in the message, never template content.
             reasons[re.sub(r' is not supported yet.*', '', e.msg, flags=re.DOTALL)] += 1
@@ -77,3 +78,20 @@ def test_corpus_compiles_or_is_unsupported(capsys: pytest.CaptureFixture[str]) -
         print(f'\ncorpus: {len(FILES)} templates, {compiled} compile fully, {len(FILES) - compiled} unsupported')
         for reason, n in reasons.most_common():
             print(f'  {n:4} {reason}')
+
+
+@needs_corpus
+def test_corpus_expressions_compile_and_fast_path_coverage(capsys: pytest.CaptureFixture[str]) -> None:
+    """Every expression of every template compiles (the expression types the sites use are
+    all supported), and most run entirely on the native fast path (D4)."""
+    from chameleon_rs._native import _testing
+
+    fast = fallback = 0
+    for path in FILES:
+        body, options = fixture_options(path)
+        f, s = _testing.fast_path_coverage(body, load=True, **options)
+        fast += f
+        fallback += s
+    assert fast > 0
+    with capsys.disabled():
+        print(f'\ncorpus expressions: {fast + fallback}, fast path {fast}, with fallback code {fallback}')

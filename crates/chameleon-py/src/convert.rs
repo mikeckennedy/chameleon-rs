@@ -217,3 +217,91 @@ pub(crate) fn write_str(s: &Bound<'_, PyString>, esc: Escape, out: &mut Output) 
     out.set_has_surrogates();
     Ok(())
 }
+
+/// A sub-expression's value converted to text the way its site's engine does (`assign_text`,
+/// used by `string:`, `load:` and custom types): `__quote` with the site's escaping, or
+/// `emit_convert` without escaping; the marker becomes the engine's default when the engine
+/// has the marker; with `literal_false` unset, a false value is `None` first.
+pub(crate) fn convert_text<'py>(
+    cx: &Cx<'_, 'py>,
+    value: &Bound<'py, PyAny>,
+    conv: &crate::expr::TextConv,
+) -> PyResult<Bound<'py, PyAny>> {
+    let py = value.py();
+    if (!conv.literal_false && !value.is_truthy()?) || value.is_none() {
+        return Ok(py.None().into_bound(py));
+    }
+    if conv.marker && value.is(&cx.render.marker) {
+        return Ok(match &conv.default {
+            Some(d) => d.bind(py).clone().into_any(),
+            None => py.None().into_bound(py),
+        });
+    }
+    let Some(esc) = conv.escape else {
+        // `emit_convert`.
+        return if value.is_exact_instance_of::<PyBytes>() {
+            decode(cx, value)
+        } else if value.is_exact_instance_of::<PyString>() {
+            Ok(value.clone())
+        } else if value.is_exact_instance_of::<PyInt>() || value.is_exact_instance_of::<PyFloat>() {
+            Ok(value.str()?.into_any())
+        } else if let Some(html) = value.getattr_opt(intern!(py, "__html__"))? {
+            html.call0()
+        } else {
+            translate(cx, value)
+        };
+    };
+    // `__quote(target, quote, quote_entity, default, default_marker)`.
+    let target = if value.is_exact_instance_of::<PyBytes>() {
+        decode(cx, value)?
+    } else if value.is_exact_instance_of::<PyString>() {
+        value.clone()
+    } else if value.is_exact_instance_of::<PyInt>() || value.is_exact_instance_of::<PyFloat>() {
+        return Ok(value.str()?.into_any());
+    } else if let Some(html) = value.getattr_opt(intern!(py, "__html__"))? {
+        return html.call0();
+    } else {
+        translate(cx, value)?
+    };
+    // `__re_needs_escape(target)` raises TypeError for a non-str, which skips escaping.
+    match target.cast::<PyString>() {
+        Ok(s) => escape_py(s, esc),
+        Err(_) => Ok(target),
+    }
+}
+
+/// Chameleon's escaping of a Python `str`, returning a `str` (the same object when the gate
+/// does not match, as `__quote` returns it).
+fn escape_py<'py>(s: &Bound<'py, PyString>, esc: Escape) -> PyResult<Bound<'py, PyAny>> {
+    let py = s.py();
+    if let Ok(text) = s.to_str() {
+        if !chameleon_core::needs_escape(text.as_bytes()) || !esc.escapes() {
+            return Ok(s.clone().into_any());
+        }
+        let mut out = Output::with_capacity(text.len() + 16);
+        escape_into(text.as_bytes(), esc, &mut out);
+        return Ok(PyString::from_bytes(py, out.as_bytes())?.into_any());
+    }
+    // Lone surrogates: Chameleon's `str.replace` calls.
+    let gate = ["&", "<", ">", "\"", "'"];
+    let mut any = false;
+    for g in gate {
+        any |= s.contains(g)?;
+    }
+    if !any || !esc.escapes() {
+        return Ok(s.clone().into_any());
+    }
+    let quote = match esc {
+        Escape::Text => Some(("\0", "&#0;")),
+        Escape::Attr(chameleon_core::Quote::Double) => Some(("\"", "&quot;")),
+        Escape::Attr(chameleon_core::Quote::Single) => Some(("'", "&#39;")),
+        Escape::Attr(chameleon_core::Quote::Bare) => Some(("", "&#0;")),
+        Escape::Content | Escape::Structure => None,
+    };
+    let replace = intern!(py, "replace");
+    let mut target = s.clone().into_any();
+    for (from, to) in [("&", "&amp;"), ("<", "&lt;"), (">", "&gt;")].into_iter().chain(quote) {
+        target = target.call_method1(replace, (from, to))?;
+    }
+    Ok(target)
+}

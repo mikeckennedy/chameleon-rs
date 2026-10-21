@@ -15,7 +15,8 @@
 //! attributes, a `use-macro` element's slots before its macro expression.
 
 use crate::error::{CompileError, ErrorKind};
-use crate::expr::{DefaultAlias, ExprCompileError, ExprCompiler, ExprContext, ExprId};
+use crate::escape::Escape;
+use crate::expr::{DefaultAlias, Engine, ExprCompileError, ExprCompiler, ExprContext, ExprId, FreeVars};
 use crate::interpolate::{Part, interpolate};
 use crate::nodes::{Attr, AttrValue, AttrsId, Interp, Node, Translation, Tree, Value, ValueId};
 use crate::options::Options;
@@ -24,29 +25,40 @@ use crate::tok::Tok;
 /// Names a template may not assign (`COMPILER_INTERNALS_OR_DISALLOWED`).
 const DISALLOWED_NAMES: [&str; 2] = ["econtext", "rcontext"];
 
-/// What an expression compiled to.
+/// What an expression compiled to. A syntax error in non-strict mode compiles to an
+/// expression that raises it ([`ExprCompiler::deferred`]); for an interpolation that is its
+/// only part, so nothing of it is evaluated, as in Chameleon.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Resolved {
     Expr(ExprId),
     /// An interpolation's parts.
     Parts(Vec<Part>),
-    /// A syntax error in non-strict mode: raised when the expression is reached.
-    Deferred {
-        message: String,
-        token: Tok,
-    },
 }
 
-/// The compiled expressions of a tree, indexed by [`ValueId`].
+/// The compiled expressions of a tree and their analyses, indexed by [`ValueId`].
 #[derive(Debug, Default)]
 pub(crate) struct Table {
     pub(crate) values: Vec<Option<Resolved>>,
+    /// The names each expression site reads and writes (D9): an interpolation's is the union
+    /// of its parts'. Kept here, by site, for the analyses that need them (concurrent
+    /// evaluation, last use), not in the tree.
+    pub(crate) free: Vec<Option<FreeVars>>,
 }
 
 impl Table {
     pub(crate) fn get(&self, id: ValueId) -> Option<&Resolved> {
         self.values.get(id.0 as usize).and_then(Option::as_ref)
     }
+
+    pub(crate) fn free_vars(&self, id: ValueId) -> Option<&FreeVars> {
+        self.free.get(id.0 as usize).and_then(Option::as_ref)
+    }
+}
+
+/// The engine of `${...}` interpolation with escape `escape` (`char_escape` is empty for
+/// CDATA and text mode).
+fn interp_escape(escape: Escape) -> Option<Escape> {
+    (escape != Escape::Structure).then_some(escape)
 }
 
 type Result<T, E> = std::result::Result<T, CompileError<E>>;
@@ -59,9 +71,10 @@ pub(crate) fn resolve<C: ExprCompiler>(tree: &Tree, compiler: &mut C, options: &
         strict: options.strict,
         default: DefaultAlias::Name,
         attrs: None,
+        engine: Engine::default(),
         cached: vec![false; tree.values as usize],
         translations: Vec::new(),
-        table: Table { values: vec![None; tree.values as usize] },
+        table: Table { values: vec![None; tree.values as usize], free: vec![None; tree.values as usize] },
     };
     for (_, node) in &tree.macros {
         r.node(node)?;
@@ -76,6 +89,8 @@ struct Resolver<'t, C: ExprCompiler> {
     strict: bool,
     default: DefaultAlias,
     attrs: Option<AttrsId>,
+    /// The engine settings of the site being compiled (attributes set them).
+    engine: Engine<'t>,
     /// Chameleon's `_expression_cache`: values a `Cache` node has evaluated (never cleared,
     /// shared by all macros).
     cached: Vec<bool>,
@@ -94,7 +109,16 @@ impl<'t, C: ExprCompiler> Resolver<'t, C> {
             }),
             emitted,
             candidate: false,
+            engine: self.engine,
         }
+    }
+
+    /// Runs `f` with the engine settings of an attribute or interpolation site.
+    fn with_engine<T>(&mut self, engine: Engine<'t>, f: impl FnOnce(&mut Self) -> T) -> T {
+        let saved = std::mem::replace(&mut self.engine, engine);
+        let result = f(self);
+        self.engine = saved;
+        result
     }
 
     /// Runs `f` with `default` aliased to `alias` (a `Define` with `Alias(["default"], ...)`).
@@ -106,10 +130,31 @@ impl<'t, C: ExprCompiler> Resolver<'t, C> {
     }
 
     fn store(&mut self, id: ValueId, value: Resolved) {
+        let free = match &value {
+            Resolved::Expr(e) => self.compiler.free_vars(*e),
+            Resolved::Parts(parts) => parts.iter().fold(FreeVars::none(), |acc, p| match p {
+                Part::Text(_) => acc,
+                Part::Expr(e) => acc.union(self.compiler.free_vars(*e)),
+            }),
+        };
         if let Some(slot) = self.table.values.get_mut(id.0 as usize)
             && slot.is_none()
         {
             *slot = Some(value);
+            if let Some(f) = self.table.free.get_mut(id.0 as usize) {
+                *f = Some(free);
+            }
+        }
+    }
+
+    /// `ExpressionTransform` in non-strict mode: the error is raised when the site is reached.
+    fn defer(&mut self, message: &str, token: &Tok) -> Result<ExprId, C::Error> {
+        match self.compiler.deferred(message, token) {
+            Ok(id) => Ok(id),
+            Err(ExprCompileError::Invalid { message, token }) => {
+                Err(CompileError::new(ErrorKind::Expression, message, token.unwrap_or_else(|| Tok::plain(""))))
+            }
+            Err(ExprCompileError::Other(e)) => Err(CompileError::Expr(e)),
         }
     }
 
@@ -125,7 +170,7 @@ impl<'t, C: ExprCompiler> Resolver<'t, C> {
                 if self.strict {
                     return Err(CompileError::new(ErrorKind::Expression, message, token));
                 }
-                Resolved::Deferred { message, token }
+                Resolved::Expr(self.defer(&message, &token)?)
             }
             Err(ExprCompileError::Other(e)) => return Err(CompileError::Expr(e)),
         };
@@ -142,7 +187,7 @@ impl<'t, C: ExprCompiler> Resolver<'t, C> {
             Ok(parts) => Resolved::Parts(parts),
             Err(CompileError::Template { kind: ErrorKind::Expression, message, token }) if !self.strict => {
                 let (text, pos) = token.resolve("");
-                Resolved::Deferred { message, token: Tok { text, pos } }
+                Resolved::Parts(vec![Part::Expr(self.defer(&message, &Tok { text, pos })?)])
             }
             Err(e) => return Err(e),
         };
@@ -163,10 +208,13 @@ impl<'t, C: ExprCompiler> Resolver<'t, C> {
     }
 
     #[allow(clippy::too_many_lines)] // one arm per node kind
-    fn node(&mut self, node: &Node) -> Result<(), C::Error> {
+    fn node(&mut self, node: &'t Node) -> Result<(), C::Error> {
         match node {
             Node::Text(_) | Node::Empty | Node::UseInternalMacro(_) => {}
-            Node::Interpolation(i) => self.interp(i, i.translate == Translation::Plain)?,
+            Node::Interpolation(i) => {
+                let engine = Engine { escape: interp_escape(i.escape), ..Engine::default() };
+                self.with_engine(engine, |r| r.interp(i, i.translate == Translation::Plain))?;
+            }
             Node::Sequence(items) => {
                 for item in items {
                     self.node(item)?;
@@ -177,16 +225,18 @@ impl<'t, C: ExprCompiler> Resolver<'t, C> {
                     self.cache(omit, false)?;
                 }
                 for dict in e.start.dicts() {
-                    self.cache(dict, false)?;
+                    let engine = Engine { marker: true, ..Engine::default() };
+                    self.with_engine(engine, |r| r.cache(dict, false))?;
                 }
                 for attr in &e.start.attrs {
                     match attr {
                         Attr::Static { .. } | Attr::Dict { .. } => {}
-                        Attr::Dynamic { value, filters, .. } => {
+                        Attr::Dynamic { value, filters, default, .. } => {
                             // A filtered value is checked before it is written, so it is not
                             // emitted directly (no native frame call).
                             let emitted = filters.is_empty();
-                            self.with_default(DefaultAlias::Marker, |r| r.attr_value(value, emitted))?;
+                            let default = default.as_deref();
+                            self.with_default(DefaultAlias::Marker, |r| r.attr_value(value, emitted, default))?;
                         }
                     }
                 }
@@ -296,15 +346,26 @@ impl<'t, C: ExprCompiler> Resolver<'t, C> {
         Ok(())
     }
 
-    fn attr_value(&mut self, value: &AttrValue, emitted: bool) -> Result<(), C::Error> {
+    /// A dynamic attribute's value. `default` is the attribute's static value, which the
+    /// marker converts to in `tal:attributes` (Chameleon passes no default to an
+    /// interpolated attribute's engine).
+    fn attr_value(&mut self, value: &'t AttrValue, emitted: bool, default: Option<&'t str>) -> Result<(), C::Error> {
+        let engine = Engine { marker: true, default, ..Engine::default() };
         match value {
-            AttrValue::Subst { expr, .. } => self.value(expr, emitted),
-            AttrValue::Boolean { expr, .. } => self.value(expr, false),
+            AttrValue::Subst { expr, .. } => self.with_engine(engine, |r| r.value(expr, emitted)),
+            AttrValue::Boolean { expr, .. } => self.with_engine(engine, |r| r.value(expr, false)),
             AttrValue::Interp { interp, boolean, .. } => {
-                self.interp(interp, emitted && !boolean && interp.translate == Translation::Plain)
+                let engine = Engine {
+                    escape: interp_escape(interp.escape),
+                    marker: true,
+                    default: None,
+                    literal_false: !boolean,
+                };
+                let emitted = emitted && !boolean && interp.translate == Translation::Plain;
+                self.with_engine(engine, |r| r.interp(interp, emitted))
             }
             AttrValue::Static(_) => Ok(()),
-            AttrValue::Translate { value, .. } => self.attr_value(value, false),
+            AttrValue::Translate { value, .. } => self.attr_value(value, false, default),
         }
     }
 }

@@ -1,7 +1,7 @@
 # Ported from Chameleon's src/chameleon/utils.py (callablestr, callableint, descriptorstr,
-# descriptorint, and the encoding sniffing: xml_prefixes, read_encoded, read_bytes,
-# detect_encoding, read_xml_encoding), modified: only the helpers chameleon-rs needs so far,
-# with type annotations.
+# descriptorint, Markup, _resolve_dotted / resolve_dotted, and the encoding sniffing:
+# xml_prefixes, read_encoded, read_bytes, detect_encoding, read_xml_encoding), modified: only
+# the helpers chameleon-rs needs so far, with type annotations.
 """Small helpers shared by the template runtime, and template encoding sniffing.
 
 The sniffing stays in Python on purpose (see docs/architecture.md, "Phase 3 amendments"):
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import codecs
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any
 
 
@@ -134,3 +134,65 @@ class descriptorint:
 
     def __get__(self, context: object, cls: type[object]) -> callableint:
         return callableint(self.function(context))
+
+
+class Markup(str):
+    """Wraps a string to always render as structure (what ``structure:`` returns).
+
+    >>> Markup('<br />')
+    s'<br />'
+    """
+
+    def __html__(self) -> str:
+        return str(self)
+
+    def __repr__(self) -> str:
+        return f"s'{self}'"
+
+
+module_cache: dict[str, Any] = {}
+
+
+# Taken from zope.dottedname (via Chameleon)
+def _resolve_dotted(name: str, module: str | None = None) -> Any:
+    name_parts = name.split('.')
+    if not name_parts[0]:
+        if module is None:
+            raise ValueError('relative name without base module')
+        module_parts = module.split('.')
+        name_parts.pop(0)
+        while not name[0]:
+            module_parts.pop()
+            name_parts.pop(0)
+        name_parts = module_parts + name_parts
+
+    used = name_parts.pop(0)
+    found = __import__(used)
+    for n in name_parts:
+        used += '.' + n
+        try:
+            found = getattr(found, n)
+        except AttributeError:
+            __import__(used)
+            found = getattr(found, n)
+
+    return found
+
+
+def resolve_dotted(dotted: str) -> Any:
+    """``import:``: the object a dotted name refers to, imported once and cached."""
+    if dotted not in module_cache:
+        resolved = _resolve_dotted(dotted)
+        module_cache[dotted] = resolved
+    return module_cache[dotted]
+
+
+def scope_iter(scope: dict[str, Any], root: dict[str, Any] | None) -> Iterator[str]:
+    """`Scope.__iter__` (the native `Scope` calls this): the local keys, then the root's keys
+    not shadowed locally, lazily, so changing the scope while iterating it raises
+    ``RuntimeError`` as with Chameleon's generator."""
+    yield from dict.__iter__(scope)
+    if root is not None:
+        for key in root:
+            if not dict.__contains__(scope, key):
+                yield key

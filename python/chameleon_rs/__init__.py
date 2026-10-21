@@ -8,8 +8,15 @@ and is filled in phase by phase; see docs/plan.md.
 from importlib.metadata import version as _version
 
 from chameleon_rs._native import core_version
-from chameleon_rs.template import PageTemplate, PageTextTemplate
+from chameleon_rs.template import PageTemplate, PageTemplateFile, PageTextTemplate, PageTextTemplateFile
 
 __version__ = _version('chameleon-rs')
 
-__all__ = ['PageTemplate', 'PageTextTemplate', '__version__', 'core_version']
+__all__ = [
+    'PageTemplate',
+    'PageTemplateFile',
+    'PageTextTemplate',
+    'PageTextTemplateFile',
+    '__version__',
+    'core_version',
+]

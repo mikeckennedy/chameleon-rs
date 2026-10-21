@@ -1,5 +1,7 @@
 # Developer commands for chameleon-rs. Everything runs against ./venv (Python 3.15).
 PY := venv/bin/python
+# maturin develop finds the venv through VIRTUAL_ENV; CI never activates it.
+MATURIN := VIRTUAL_ENV=$(CURDIR)/venv venv/bin/maturin
 PYTEST := $(PY) -m pytest -q
 
 # Reference implementations, cloned into temp/ (gitignored) at pinned commits so every
@@ -28,13 +30,13 @@ temp/chameleon_partials:
 
 # Fast optimized build for the test loop; release (fat LTO) for benchmarks and wheels.
 build:
-	venv/bin/maturin develop --profile dev-opt
+	$(MATURIN) develop --profile dev-opt
 
 build-release:
-	venv/bin/maturin develop --release
+	$(MATURIN) develop --release
 
 build-profiling:
-	venv/bin/maturin develop --profile profiling
+	$(MATURIN) develop --profile profiling
 
 test: test-rust test-python test-upstream
 

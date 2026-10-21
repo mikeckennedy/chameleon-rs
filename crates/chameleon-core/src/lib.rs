@@ -34,7 +34,7 @@ mod zpt;
 pub use compile::compile;
 pub use error::{CompileError, ErrToken, ErrorKind};
 pub use escape::{Escape, Quote, escape_into, needs_escape};
-pub use expr::{DefaultAlias, ExprCompileError, ExprCompiler, ExprContext, ExprId, StaticAttrs};
+pub use expr::{DefaultAlias, Engine, ExprCompileError, ExprCompiler, ExprContext, ExprId, FreeVars, StaticAttrs};
 pub use options::{Mode, Options};
 pub use output::{Mark, Output};
 pub use pychars::is_space as is_python_space;
@@ -49,7 +49,7 @@ pub use vm::{
 /// `chameleon_rs._native._testing` (compared against Chameleon's `iter_xml` and
 /// `ElementParser`). Not part of the rendering API.
 pub mod testing {
-    pub use crate::compile::build_tree;
+    pub use crate::compile::{build_tree, free_variables};
     pub use crate::nodes::{Tree, dump as dump_tree, inventory};
     pub use crate::parser::{
         Attr, AttrKind, Element, Item, Namespaces, NsAttr, NsValue, ParseError, ParseErrorKind, ParseOptions, Tag,

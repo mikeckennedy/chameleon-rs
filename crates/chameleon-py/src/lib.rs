@@ -6,11 +6,14 @@
 
 mod compiler;
 mod convert;
+mod custom;
 mod errors;
 mod expr;
+mod lower;
 mod program;
 mod runtime;
 mod scope;
+mod strexpr;
 mod testing;
 
 use pyo3::prelude::*;
@@ -21,6 +24,8 @@ use pyo3::prelude::*;
 mod _native {
     use pyo3::prelude::*;
 
+    #[pymodule_export]
+    use super::custom::SubEval;
     #[pymodule_export]
     use super::expr::py_lookup_attr;
     #[pymodule_export]
@@ -38,11 +43,21 @@ mod _native {
     #[pymodule(gil_used = false)]
     mod _testing {
         #[pymodule_export]
-        use crate::testing::{char_class, inventory, parse, parse_count, token_count, tokenizer_pattern, tokens, tree};
+        use crate::testing::{
+            char_class, fast_path_coverage, free_variables, inventory, parse, parse_count, token_count,
+            tokenizer_pattern, tokens, tree,
+        };
     }
 
     #[pymodule_init]
     fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        // CPython names a type in messages (`unsupported operand type(s) for +: 'Scope' and
+        // 'int'`) by its `tp_name`, which for a native class includes the module. Setting
+        // `__name__` rewrites it to what Chameleon's classes print (its scope is the Python
+        // class `Scope`, its marker an `ImportableMarker`); `__module__` and `__qualname__`
+        // are unchanged.
+        m.getattr("Scope")?.setattr("__name__", "Scope")?;
+        m.getattr("DefaultMarker")?.setattr("__name__", "ImportableMarker")?;
         m.add("DEFAULT_MARKER", super::program::marker(m.py())?)
     }
 }

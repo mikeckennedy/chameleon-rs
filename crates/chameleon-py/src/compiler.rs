@@ -1,85 +1,236 @@
 // The TALES handling is ported from Chameleon's src/chameleon/tales.py (`TalesExpr.__call__`,
-// `PythonExpr.translate`, `ExpressionParser.__call__`, `match_prefix`, `split_parts`,
-// `re_continuation`), modified: rewritten in Rust, lowering CPython's `ast` to the fast-path
-// tree instead of generating Python code.
+// `PythonExpr.translate`, `ProxyExpr.translate_proxy`, `NotExpr`, `ExistsExpr`,
+// `StructureExpr`, `ImportExpr`, `StringExpr`, `ExpressionParser.__call__`, `match_prefix`,
+// `split_parts`, `re_continuation`) and compiler.py (`ExpressionTransform.__call__`'s
+// non-strict deferral), modified: rewritten in Rust, producing the native expression tree
+// instead of generating Python code.
 
-//! The real [`ExprCompiler`] (D1, D4): CPython's own parser, a native fast path for the
-//! census's node types, and an exact fallback for everything else.
+//! The real [`ExprCompiler`] (D1, D4): TALES prefixes and pipes, the expression types, and
+//! CPython's own parser for `python:` with a native fast path (`lower.rs`) and an exact
+//! fallback.
 
-use pyo3::exceptions::{PyLookupError, PySyntaxError};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use pyo3::exceptions::{PyLookupError, PySyntaxError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::pyclass::CompareOp;
-use pyo3::types::{PyBool, PyBytes, PyComplex, PyDict, PyEllipsis, PyFloat, PyInt, PyList, PyNone, PyString};
+use pyo3::types::{PyDict, PyList, PyString, PyTuple};
 
-use chameleon_core::{DefaultAlias, ExprCompileError, ExprCompiler, ExprContext, ExprId, Tok, is_python_space};
+use chameleon_core::{
+    DefaultAlias, Escape, ExprCompileError, ExprCompiler, ExprContext, ExprId, FreeVars, Quote, Source, Tok,
+    is_python_space,
+};
 
+use crate::custom::{Custom, Sub, SubKind};
 use crate::errors::unsupported_error;
-use crate::expr::{BinaryOp, CmpOp, Expr, UnaryOp, lookup_attr};
+use crate::expr::{Expr, Fallback, TextConv};
 
-type CompileResult<T> = Result<T, ExprCompileError<PyErr>>;
+pub(crate) type CompileResult<T> = Result<T, ExprCompileError<PyErr>>;
 
-/// TALES expression types Chameleon's `PageTemplate` knows, not yet supported here.
-const OTHER_TYPES: [&str; 6] = ["string", "not", "exists", "import", "structure", "load"];
-
-pub(crate) struct PyExprCompiler<'py> {
-    py: Python<'py>,
-    pub(crate) exprs: Vec<Expr>,
-    /// Whether any expression mentions `repeat` (so native partial frames provide it).
-    pub(crate) mentions_repeat: bool,
-    /// The `attrs` dict of each element, by `StaticAttrs::id`.
-    attrs_dicts: std::collections::HashMap<u32, Bound<'py, PyDict>>,
-    ast_parse: Bound<'py, PyAny>,
-    eval_mode: Bound<'py, PyDict>,
-    builtins: Bound<'py, PyDict>,
-    build_fallback: Bound<'py, PyAny>,
-    lookup_attr: Bound<'py, PyAny>,
-    marker: Bound<'py, PyAny>,
+/// An entry of a template's `expression_types`, as `chameleon_rs.tales.native_types`
+/// classifies it: one of Chameleon's own types, compiled natively, or a user's factory.
+pub(crate) enum TypeSpec<'py> {
+    Python,
+    String {
+        braces_required: bool,
+    },
+    Not,
+    Exists,
+    Import,
+    Structure,
+    /// `ProxyExpr(name, expression, ignore_prefix)` (`load:` is `ProxyExpr('__loader',
+    /// ignore_prefix=False)`): each alternative is an interpolated string passed to `name`.
+    Proxy {
+        name: String,
+        ignore_prefix: bool,
+    },
+    Custom(Bound<'py, PyAny>),
 }
 
-impl<'py> PyExprCompiler<'py> {
-    pub(crate) fn new(py: Python<'py>, marker: Bound<'py, PyAny>) -> PyResult<Self> {
+/// Compile-time configuration from the template class.
+pub(crate) struct Config<'py> {
+    pub(crate) types: HashMap<String, TypeSpec<'py>>,
+    pub(crate) default_type: String,
+    /// The template builtins' names (`template`, `macros`, `nothing`, `__loader`, ...).
+    pub(crate) template_builtins: Vec<String>,
+    /// `false` compiles every Python expression to the fallback (benchmarks, D4 revisit).
+    pub(crate) fast_path: bool,
+}
+
+impl<'py> Config<'py> {
+    /// Chameleon's `PageTemplate` defaults.
+    pub(crate) fn page_template() -> Self {
+        let types = [
+            ("python", TypeSpec::Python),
+            ("string", TypeSpec::String { braces_required: false }),
+            ("not", TypeSpec::Not),
+            ("exists", TypeSpec::Exists),
+            ("import", TypeSpec::Import),
+            ("structure", TypeSpec::Structure),
+        ];
+        Self {
+            types: types.into_iter().map(|(k, v)| (k.to_owned(), v)).collect(),
+            default_type: "python".to_owned(),
+            template_builtins: ["macros", "nothing", "template"].map(String::from).to_vec(),
+            fast_path: true,
+        }
+    }
+
+    /// Reads the `(prefix, spec)` pairs `chameleon_rs.tales.native_types` returns: `spec` is
+    /// `('python',)`, `('string', braces_required)`, `('not',)`, `('exists',)`, `('import',)`,
+    /// `('structure',)`, `('proxy', name, ignore_prefix)` or `('custom', factory)`.
+    pub(crate) fn set_types(&mut self, specs: &Bound<'py, PyAny>) -> PyResult<()> {
+        self.types.clear();
+        for item in specs.try_iter()? {
+            let item = item?;
+            let (prefix, spec): (String, Bound<'py, PyTuple>) = item.extract()?;
+            let kind: String = spec.get_item(0)?.extract()?;
+            let spec = match kind.as_str() {
+                "python" => TypeSpec::Python,
+                "string" => TypeSpec::String { braces_required: spec.get_item(1)?.is_truthy()? },
+                "not" => TypeSpec::Not,
+                "exists" => TypeSpec::Exists,
+                "import" => TypeSpec::Import,
+                "structure" => TypeSpec::Structure,
+                "proxy" => TypeSpec::Proxy {
+                    name: spec.get_item(1)?.extract()?,
+                    ignore_prefix: spec.get_item(2)?.is_truthy()?,
+                },
+                "custom" => TypeSpec::Custom(spec.get_item(1)?),
+                other => return Err(PyValueError::new_err(format!("unknown expression type kind {other:?}"))),
+            };
+            self.types.insert(prefix, spec);
+        }
+        Ok(())
+    }
+}
+
+/// Which `TalesExpr` subclass splits the alternatives.
+#[derive(Clone, Copy)]
+enum Alt<'a> {
+    Python,
+    Proxy(&'a str),
+}
+
+pub(crate) struct PyExprCompiler<'a, 'py> {
+    pub(crate) py: Python<'py>,
+    pub(crate) exprs: Vec<Expr>,
+    pub(crate) free: Vec<FreeVars>,
+    /// Whether any expression mentions `repeat` (so native partial frames provide it).
+    pub(crate) mentions_repeat: bool,
+    pub(crate) config: Config<'py>,
+    /// The `attrs` dict of each element, by `StaticAttrs::id`.
+    pub(crate) attrs_dicts: HashMap<u32, Bound<'py, PyDict>>,
+    ast_parse: Bound<'py, PyAny>,
+    eval_mode: Bound<'py, PyDict>,
+    pub(crate) builtins: Bound<'py, PyDict>,
+    rewrite: Bound<'py, PyAny>,
+    /// `chameleon_rs._rewrite.constant` and the template's constant cache: equal constants
+    /// are one object template-wide, as in Chameleon's single generated module.
+    constant: Bound<'py, PyAny>,
+    fold: Bound<'py, PyAny>,
+    pub(crate) constants: Bound<'py, PyDict>,
+    bridge: Option<Bound<'py, PyAny>>,
+    pub(crate) lookup_attr: Bound<'py, PyAny>,
+    pub(crate) marker: Bound<'py, PyAny>,
+    /// The template source and filename, for the position of a deferred error.
+    source: &'a str,
+    filename: &'a str,
+}
+
+impl<'a, 'py> PyExprCompiler<'a, 'py> {
+    pub(crate) fn new(
+        py: Python<'py>,
+        marker: Bound<'py, PyAny>,
+        config: Config<'py>,
+        source: &'a str,
+        filename: &'a str,
+    ) -> PyResult<Self> {
         let eval_mode = PyDict::new(py);
         // `mode` must be a keyword: ast.parse's second positional parameter is `filename`.
         eval_mode.set_item(intern!(py, "mode"), intern!(py, "eval"))?;
+        let rewrite = py.import(intern!(py, "chameleon_rs._rewrite"))?;
         Ok(Self {
             py,
             exprs: Vec::new(),
+            free: Vec::new(),
             mentions_repeat: false,
-            attrs_dicts: std::collections::HashMap::new(),
+            config,
+            attrs_dicts: HashMap::new(),
             ast_parse: py.import(intern!(py, "ast"))?.getattr(intern!(py, "parse"))?,
             eval_mode,
             builtins: py.import(intern!(py, "builtins"))?.dict(),
-            build_fallback: py.import(intern!(py, "chameleon_rs._rewrite"))?.getattr(intern!(py, "build"))?,
+            constant: rewrite.getattr(intern!(py, "constant"))?,
+            fold: rewrite.getattr(intern!(py, "fold"))?,
+            constants: PyDict::new(py),
+            rewrite: rewrite.getattr(intern!(py, "compile_expression"))?,
+            bridge: None,
             lookup_attr: wrap_pyfunction!(crate::expr::py_lookup_attr, py)?.into_any(),
             marker,
+            source,
+            filename,
         })
     }
 
-    /// `ExpressionParser.__call__`: an optional `type:` prefix selects the expression type.
-    /// Sources are `Tok`s so syntax errors carry the position Chameleon's slicing gives.
-    fn typed(&mut self, source: &Tok, cx: ExprContext<'_>, top: bool) -> CompileResult<Expr> {
-        if let Some((prefix, rest)) = match_prefix(&source.text) {
-            let rest = source.slice_from(source.text.len() - rest.len());
-            return match prefix {
-                "python" => self.tales(&rest, cx, top),
-                p if OTHER_TYPES.contains(&p) => {
-                    Err(ExprCompileError::Other(unsupported_error(self.py, &format!("The '{p}:' expression type"))))
-                }
-                p => Err(ExprCompileError::Other(PyLookupError::new_err(format!("Unknown expression type: '{p}'.")))),
-            };
-        }
-        self.tales(source, cx, top)
+    /// `ExpressionParser.__call__`: an optional `type:` prefix selects the expression type,
+    /// else the default type. Sources are `Tok`s so syntax errors carry the position
+    /// Chameleon's slicing gives. `top`: the whole emitted expression (where a native
+    /// `render_partial` frame is possible).
+    pub(crate) fn typed(&mut self, source: &Tok, cx: ExprContext<'_>, top: bool) -> CompileResult<Expr> {
+        let (prefix, expression) = match match_prefix(&source.text) {
+            Some((prefix, rest)) => (prefix.to_owned(), source.slice_from(source.text.len() - rest.len())),
+            None => (self.config.default_type.clone(), source.clone()),
+        };
+        let spec = match self.config.types.get(&prefix) {
+            Some(TypeSpec::Python) => Spec::Python,
+            Some(TypeSpec::String { braces_required }) => Spec::String(*braces_required),
+            Some(TypeSpec::Not) => Spec::Not,
+            Some(TypeSpec::Exists) => Spec::Exists,
+            Some(TypeSpec::Import) => Spec::Import,
+            Some(TypeSpec::Structure) => Spec::Structure,
+            Some(TypeSpec::Proxy { name, ignore_prefix }) => Spec::Proxy(name.clone(), *ignore_prefix),
+            Some(TypeSpec::Custom(factory)) => Spec::Custom(factory.clone()),
+            // `LookupError("Unknown expression type: %s." % str(KeyError(prefix)))`.
+            None => {
+                let message = format!("Unknown expression type: '{prefix}'.");
+                return Err(ExprCompileError::Other(PyLookupError::new_err(message)));
+            }
+        };
+        let inner = ExprContext { emitted: false, ..cx };
+        Ok(match spec {
+            Spec::Python => self.tales(&expression, cx, top, true, Alt::Python)?,
+            Spec::Proxy(name, ignore_prefix) => self.tales(&expression, cx, false, ignore_prefix, Alt::Proxy(&name))?,
+            Spec::String(braces_required) => Expr::Interp(Box::new(self.string(&expression, braces_required, cx)?)),
+            // `engine.parse(self.expression)`: the rest may have a prefix of its own.
+            Spec::Not => Expr::Not(Box::new(self.typed(&expression, inner, false)?)),
+            Spec::Exists => Expr::Exists(Box::new(self.typed(&expression, inner, false)?)),
+            Spec::Structure => Expr::Structure(Box::new(self.typed(&expression, inner, false)?)),
+            // `self.expression.strip().replace('\n', ' ')`.
+            Spec::Import => {
+                let name = expression.text.trim_matches(is_python_space).replace('\n', " ");
+                Expr::Import(PyString::intern(self.py, &name).unbind())
+            }
+            Spec::Custom(factory) => self.custom(&factory, &expression, inner)?,
+        })
     }
 
-    /// `TalesExpr.__call__`: alternatives separated by unescaped `|`; a part with a type
-    /// prefix takes the rest of the expression.
-    fn tales(&mut self, expression: &Tok, cx: ExprContext<'_>, top: bool) -> CompileResult<Expr> {
+    /// `TalesExpr.__call__`: alternatives separated by unescaped `|`; with `ignore_prefix`, a
+    /// part with a type prefix takes the rest of the expression.
+    fn tales(
+        &mut self,
+        expression: &Tok,
+        cx: ExprContext<'_>,
+        top: bool,
+        ignore_prefix: bool,
+        alt: Alt<'_>,
+    ) -> CompileResult<Expr> {
         let mut alternatives = Vec::new();
         let mut remaining = expression.clone();
         while !remaining.is_empty() {
-            if match_prefix(&remaining.text).is_some() {
-                alternatives.push(self.typed(&remaining, cx, false)?);
+            if ignore_prefix && match_prefix(&remaining.text).is_some() {
+                alternatives.push(self.typed(&remaining, ExprContext { emitted: false, ..cx }, false)?);
+                remaining = remaining.slice_from(remaining.text.len());
                 break;
             }
             let (part, rest) = split_pipe(&remaining.text);
@@ -88,7 +239,10 @@ impl<'py> PyExprCompiler<'py> {
             let part = part.with_text(part.text.replace("\\|", "|"));
             remaining = remaining.slice_from(rest_at);
             let only = top && remaining.is_empty() && alternatives.is_empty();
-            alternatives.push(self.python(&part, cx, only)?);
+            alternatives.push(match alt {
+                Alt::Python => self.python(&part, cx, only)?,
+                Alt::Proxy(name) => self.proxy(&part, name, cx)?,
+            });
         }
         match alternatives.len() {
             0 => Err(ExprCompileError::Invalid { message: "No input:".to_owned(), token: Some(remaining) }),
@@ -126,6 +280,9 @@ impl<'py> PyExprCompiler<'py> {
             {
                 return Ok(Some(partial));
             }
+            if !self.config.fast_path {
+                return Ok(None);
+            }
             self.lower(&body, cx)
         })()
         .map_err(ExprCompileError::Other)?;
@@ -135,228 +292,129 @@ impl<'py> PyExprCompiler<'py> {
         if cx.default == DefaultAlias::TargetLanguage && string.contains("default") {
             return Err(ExprCompileError::Other(unsupported_error(self.py, "`default` inside i18n:target")));
         }
-        let attrs = self.attrs_dict(cx).map_err(ExprCompileError::Other)?;
-        let func = self
-            .build_fallback
-            .call1((tree, cx.default == DefaultAlias::Marker, attrs, &self.lookup_attr))
-            .map_err(ExprCompileError::Other)?;
-        Ok(Expr::Fallback(func.unbind()))
+        self.fallback(&tree, cx).map_err(ExprCompileError::Other)
     }
 
-    /// `render_partial(path, name=value, ...)` as a native frame call.
-    fn partial(&mut self, node: &Bound<'py, PyAny>, cx: ExprContext<'_>) -> PyResult<Option<Expr>> {
-        let py = self.py;
-        if kind(node)? != "Call" {
-            return Ok(None);
-        }
-        let func = node.getattr(intern!(py, "func"))?;
-        if kind(&func)? != "Name" || func.getattr(intern!(py, "id"))?.extract::<String>()? != "render_partial" {
-            return Ok(None);
-        }
-        let args = node.getattr(intern!(py, "args"))?;
-        let args = args.cast::<PyList>()?;
-        let keywords = node.getattr(intern!(py, "keywords"))?;
-        let keywords = keywords.cast::<PyList>()?;
-        if args.len() != 1 || kind(&args.get_item(0)?)? == "Starred" {
-            return Ok(None);
-        }
-        let Some(call) = self.lower(node, cx)? else { return Ok(None) };
-        let Some(path) = self.lower(&args.get_item(0)?, cx)? else { return Ok(None) };
-        let mut kwargs = Vec::with_capacity(keywords.len());
-        for kw in keywords.iter() {
-            let arg = kw.getattr(intern!(py, "arg"))?;
-            if arg.is_none() {
-                return Ok(None);
+    /// The exact fallback: Chameleon's rewriting applied to the tree, compiled to a function.
+    fn fallback(&mut self, tree: &Bound<'py, PyAny>, cx: ExprContext<'_>) -> PyResult<Expr> {
+        let attrs = self.attrs_dict(cx)?;
+        let kwargs = PyDict::new(self.py);
+        kwargs
+            .set_item(intern!(self.py, "template_builtins"), PyTuple::new(self.py, &self.config.template_builtins)?)?;
+        kwargs.set_item(intern!(self.py, "constants"), &self.constants)?;
+        let result =
+            self.rewrite.call((tree, cx.default == DefaultAlias::Marker, attrs, &self.lookup_attr), Some(&kwargs))?;
+        let (func, reads, writes, dynamic): (Bound<'py, PyAny>, Vec<String>, Vec<String>, bool) = result.extract()?;
+        let free = if dynamic {
+            FreeVars::Dynamic
+        } else {
+            FreeVars::Known {
+                reads: reads.into_iter().map(String::into_boxed_str).collect(),
+                writes: writes.into_iter().map(String::into_boxed_str).collect(),
             }
-            let Some(value) = self.lower(&kw.getattr(intern!(py, "value"))?, cx)? else { return Ok(None) };
-            kwargs.push((intern_str(&arg)?, value));
-        }
-        Ok(Some(Expr::Partial { path: Box::new(path), kwargs, call: Box::new(call) }))
+        };
+        Ok(Expr::Fallback(Box::new(Fallback { func: func.unbind(), free })))
     }
 
-    /// Lowers an `ast` node to the fast-path tree; `None` if any part is not on the whitelist.
-    #[allow(clippy::too_many_lines)] // one arm per node type
-    fn lower(&mut self, node: &Bound<'py, PyAny>, cx: ExprContext<'_>) -> PyResult<Option<Expr>> {
+    /// `ProxyExpr.translate_proxy`: the alternative as an interpolated string (braces
+    /// optional), passed to the function bound to `name` (resolved like a Python name).
+    fn proxy(&mut self, part: &Tok, name: &str, cx: ExprContext<'_>) -> CompileResult<Expr> {
+        let path = Expr::Interp(Box::new(self.string(part, false, cx)?));
+        let inner = ExprContext { emitted: false, candidate: false, ..cx };
+        let func = match self.name_expr(name, inner).map_err(ExprCompileError::Other)? {
+            Some(func) => func,
+            None => self.python(&Tok::plain(name), inner, false)?,
+        };
+        Ok(Expr::Call { func: Box::new(func), args: vec![path], kwargs: Vec::new() })
+    }
+
+    /// `StringExpr` / the paths of `ProxyExpr`: Chameleon's `Interpolator` with `translate`
+    /// and entity decoding off, each `${...}` or `$name` compiled as a full TALES expression
+    /// and converted to text as the site's engine converts text.
+    fn string(
+        &mut self,
+        expression: &Tok,
+        braces_required: bool,
+        cx: ExprContext<'_>,
+    ) -> CompileResult<crate::expr::StrInterp> {
+        let inner = ExprContext { emitted: false, ..cx };
         let py = self.py;
-        macro_rules! sub {
-            ($node:expr) => {
-                match self.lower(&$node, cx)? {
-                    Some(e) => Box::new(e),
-                    None => return Ok(None),
-                }
-            };
-        }
-        macro_rules! field {
-            ($name:literal) => {
-                node.getattr(intern!(py, $name))?
-            };
-        }
-        let kind = kind(node)?;
-        Ok(Some(match kind.as_str() {
-            "Name" => {
-                if !is_load(&field!("ctx"))? {
-                    return Ok(None);
-                }
-                let id = field!("id");
-                let name: String = id.extract()?;
-                if name.starts_with("__") {
-                    return Ok(None);
-                }
-                match name.as_str() {
-                    "econtext" => Expr::Econtext,
-                    "rcontext" => Expr::Rcontext,
-                    "translate" | "decode" | "on_error_handler" => {
-                        Expr::ScopeKey(PyString::intern(py, &format!("__{name}")).unbind())
-                    }
-                    // Compile-time aliases (`Alias` in a `Define`) come before builtins.
-                    "default" if cx.default == DefaultAlias::Marker => Expr::Const(self.marker.clone().unbind()),
-                    "default" if cx.default == DefaultAlias::TargetLanguage => return Ok(None),
-                    "attrs" if cx.attrs.is_some() => match self.attrs_dict(cx)? {
-                        Some(d) => Expr::Const(d.into_any().unbind()),
-                        None => return Ok(None),
-                    },
-                    _ => match self.builtins.get_item(&id)? {
-                        Some(builtin) => Expr::Builtin(intern_str(&id)?, builtin.unbind()),
-                        None => Expr::Name(intern_str(&id)?),
-                    },
-                }
-            }
-            "Constant" => Expr::Const(field!("value").unbind()),
-            "Attribute" => {
-                if !is_load(&field!("ctx"))? {
-                    return Ok(None);
-                }
-                let value = field!("value");
-                let attr = intern_str(&field!("attr"))?;
-                // An attribute of an original constant of an immutable builtin type resolves
-                // to the same object every render (`'{:,}'.format`); a failed lookup stays a
-                // runtime lookup so the error is raised at render time.
-                if self::kind(&value)? == "Constant" {
-                    let constant = value.getattr(intern!(py, "value"))?;
-                    if is_immutable_constant(&constant)
-                        && let Ok(resolved) = lookup_attr(&constant, attr.bind(py))
-                    {
-                        return Ok(Some(Expr::Folded(resolved.unbind())));
-                    }
-                }
-                Expr::Attr(sub!(value), attr)
-            }
-            "Call" => {
-                let func = sub!(field!("func"));
-                let mut args = Vec::new();
-                for arg in field!("args").cast::<PyList>()?.iter() {
-                    if self::kind(&arg)? == "Starred" {
-                        return Ok(None);
-                    }
-                    args.push(*sub!(arg));
-                }
-                let mut kwargs = Vec::new();
-                for kw in field!("keywords").cast::<PyList>()?.iter() {
-                    let arg = kw.getattr(intern!(py, "arg"))?;
-                    if arg.is_none() {
-                        return Ok(None);
-                    }
-                    kwargs.push((intern_str(&arg)?, *sub!(kw.getattr(intern!(py, "value"))?)));
-                }
-                Expr::Call { func, args, kwargs }
-            }
-            "UnaryOp" => {
-                let operand = sub!(field!("operand"));
-                match self::kind(&field!("op"))?.as_str() {
-                    "Not" => Expr::Not(operand),
-                    "USub" => Expr::Unary(UnaryOp::Neg, operand),
-                    "UAdd" => Expr::Unary(UnaryOp::Pos, operand),
-                    "Invert" => Expr::Unary(UnaryOp::Invert, operand),
-                    _ => return Ok(None),
-                }
-            }
-            "BinOp" => {
-                let op = match self::kind(&field!("op"))?.as_str() {
-                    "Add" => BinaryOp::Add,
-                    "Sub" => BinaryOp::Sub,
-                    "Mult" => BinaryOp::Mul,
-                    "MatMult" => BinaryOp::MatMul,
-                    "Div" => BinaryOp::Div,
-                    "FloorDiv" => BinaryOp::FloorDiv,
-                    "Mod" => BinaryOp::Mod,
-                    "Pow" => BinaryOp::Pow,
-                    "LShift" => BinaryOp::LShift,
-                    "RShift" => BinaryOp::RShift,
-                    "BitOr" => BinaryOp::BitOr,
-                    "BitXor" => BinaryOp::BitXor,
-                    "BitAnd" => BinaryOp::BitAnd,
-                    _ => return Ok(None),
-                };
-                Expr::Binary(op, sub!(field!("left")), sub!(field!("right")))
-            }
-            "BoolOp" => {
-                let values = self.lower_all(&field!("values"), cx)?;
-                let Some(values) = values else { return Ok(None) };
-                match self::kind(&field!("op"))?.as_str() {
-                    "And" => Expr::And(values),
-                    "Or" => Expr::Or(values),
-                    _ => return Ok(None),
-                }
-            }
-            "Compare" => {
-                let left = sub!(field!("left"));
-                let ops = field!("ops");
-                let comparators = field!("comparators");
-                let mut pairs = Vec::new();
-                for (op, right) in ops.cast::<PyList>()?.iter().zip(comparators.cast::<PyList>()?.iter()) {
-                    let op = match self::kind(&op)?.as_str() {
-                        "Eq" => CmpOp::Rich(CompareOp::Eq),
-                        "NotEq" => CmpOp::Rich(CompareOp::Ne),
-                        "Lt" => CmpOp::Rich(CompareOp::Lt),
-                        "LtE" => CmpOp::Rich(CompareOp::Le),
-                        "Gt" => CmpOp::Rich(CompareOp::Gt),
-                        "GtE" => CmpOp::Rich(CompareOp::Ge),
-                        "Is" => CmpOp::Is,
-                        "IsNot" => CmpOp::IsNot,
-                        "In" => CmpOp::In,
-                        "NotIn" => CmpOp::NotIn,
-                        _ => return Ok(None),
+        let parts = crate::strexpr::interpolate(py, expression, braces_required, |s, candidate| {
+            self.typed(s, ExprContext { candidate, ..inner }, false)
+        })?;
+        let engine = cx.engine;
+        let conv = TextConv {
+            escape: engine.escape,
+            marker: engine.marker,
+            default: engine.default.map(|d| PyString::new(self.py, d).unbind()),
+            literal_false: engine.literal_false,
+        };
+        Ok(crate::expr::StrInterp { parts, conv })
+    }
+
+    /// A custom expression type through the AST bridge (`chameleon_rs._bridge.build`).
+    fn custom(&mut self, factory: &Bound<'py, PyAny>, expression: &Tok, cx: ExprContext<'_>) -> CompileResult<Expr> {
+        let py = self.py;
+        let other = ExprCompileError::Other;
+        let bridge = if let Some(b) = &self.bridge {
+            b.clone()
+        } else {
+            let b = py.import(intern!(py, "chameleon_rs._bridge")).and_then(|m| m.getattr(intern!(py, "build")));
+            let b = b.map_err(other)?;
+            self.bridge = Some(b.clone());
+            b
+        };
+        let attrs = self.attrs_dict(cx).map_err(other)?;
+        let kwargs = PyDict::new(py);
+        let set = |k: &Bound<'py, PyString>, v: Bound<'py, PyAny>| kwargs.set_item(k, v);
+        set(
+            intern!(py, "default_is_marker"),
+            pyo3::types::PyBool::new(py, cx.default == DefaultAlias::Marker).to_owned().into_any(),
+        )
+        .map_err(other)?;
+        set(intern!(py, "attrs"), attrs.map_or_else(|| py.None().into_bound(py), Bound::into_any)).map_err(other)?;
+        set(intern!(py, "lookup_attr"), self.lookup_attr.clone()).map_err(other)?;
+        let builtins = PyTuple::new(py, &self.config.template_builtins).map_err(other)?;
+        set(intern!(py, "template_builtins"), builtins.into_any()).map_err(other)?;
+        let result = match bridge.call((factory, expression.text.as_str()), Some(&kwargs)) {
+            Ok(r) => r,
+            Err(e) => return Err(expression_error(py, e, expression)),
+        };
+        let (func, requests): (Bound<'py, PyAny>, Bound<'py, PyList>) = result.extract().map_err(other)?;
+        let mut subs = Vec::with_capacity(requests.len());
+        for request in requests.iter() {
+            let (string, kind, char_escape, s): (String, String, Bound<'py, PyAny>, Bound<'py, PyAny>) =
+                request.extract().map_err(other)?;
+            let expr = self.typed(&Tok::plain(string), cx, false)?;
+            let engine = cx.engine;
+            let default = engine.default.map(|d| PyString::new(py, d).unbind());
+            let kind = match kind.as_str() {
+                "value" => SubKind::Value,
+                "bool" => SubKind::Bool { s: s.unbind(), marker: engine.marker, default },
+                _ => {
+                    let escape = if char_escape.is_none() {
+                        engine.escape
+                    } else {
+                        char_escape_of(&char_escape).map_err(other)?
                     };
-                    pairs.push((op, *sub!(right)));
+                    SubKind::Text(TextConv {
+                        escape,
+                        marker: engine.marker,
+                        default,
+                        literal_false: engine.literal_false,
+                    })
                 }
-                Expr::Compare(left, pairs)
-            }
-            "IfExp" => Expr::IfExp(sub!(field!("test")), sub!(field!("body")), sub!(field!("orelse"))),
-            "Subscript" => {
-                let slice = field!("slice");
-                if !is_load(&field!("ctx"))? || self::kind(&slice)? == "Slice" {
-                    return Ok(None);
-                }
-                Expr::Subscript(sub!(field!("value")), sub!(slice))
-            }
-            "Tuple" | "List" => {
-                if !is_load(&field!("ctx"))? {
-                    return Ok(None);
-                }
-                let Some(items) = self.lower_all(&field!("elts"), cx)? else { return Ok(None) };
-                if kind == "Tuple" { Expr::Tuple(items) } else { Expr::List(items) }
-            }
-            "Dict" => {
-                let keys = field!("keys");
-                let values = field!("values");
-                let mut items = Vec::new();
-                for (k, v) in keys.cast::<PyList>()?.iter().zip(values.cast::<PyList>()?.iter()) {
-                    if k.is_none() {
-                        return Ok(None); // `**mapping`
-                    }
-                    items.push((*sub!(k), *sub!(v)));
-                }
-                Expr::Dict(items)
-            }
-            _ => return Ok(None),
-        }))
+            };
+            subs.push(Sub { expr, kind });
+        }
+        Ok(Expr::Custom(Box::new(Custom { func: func.unbind(), subs: Arc::from(subs) })))
     }
 
     /// The `attrs` alias: the element's static attributes as a dict. One object per element,
     /// shared by its expressions and across renders, like Chameleon's compile-time `Static`
     /// (a template may mutate it: `attrs.setdefault(...)` persists into the next render). The
     /// expressions and fallback functions that use it keep it alive.
-    fn attrs_dict(&mut self, cx: ExprContext<'_>) -> PyResult<Option<Bound<'py, PyDict>>> {
+    pub(crate) fn attrs_dict(&mut self, cx: ExprContext<'_>) -> PyResult<Option<Bound<'py, PyDict>>> {
         let Some(attrs) = cx.attrs else { return Ok(None) };
         if let Some(d) = self.attrs_dicts.get(&attrs.id) {
             return Ok(Some(d.clone()));
@@ -369,34 +427,106 @@ impl<'py> PyExprCompiler<'py> {
         Ok(Some(d))
     }
 
-    fn lower_all(&mut self, list: &Bound<'py, PyAny>, cx: ExprContext<'_>) -> PyResult<Option<Vec<Expr>>> {
-        let mut out = Vec::new();
-        for item in list.cast::<PyList>()?.iter() {
-            if kind(&item)? == "Starred" {
-                return Ok(None);
-            }
-            match self.lower(&item, cx)? {
-                Some(e) => out.push(e),
-                None => return Ok(None),
-            }
-        }
-        Ok(Some(out))
+    /// The template's one object for a constant value.
+    pub(crate) fn constant(&self, value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+        self.constant.call1((&self.constants, value))
+    }
+
+    /// CPython's own constant folding of `node`, whose operands lowered to literals: the folded
+    /// constant if the running interpreter's compiler folds it (see `_rewrite.fold`).
+    pub(crate) fn fold(&self, node: &Bound<'py, PyAny>) -> PyResult<Option<Expr>> {
+        let (folded, value): (bool, Bound<'py, PyAny>) = self.fold.call1((&self.constants, node))?.extract()?;
+        Ok(folded.then(|| Expr::Const(value.unbind())))
+    }
+
+    fn register(&mut self, expr: Expr) -> CompileResult<ExprId> {
+        let id = u32::try_from(self.exprs.len())
+            .map_err(|_| ExprCompileError::Other(unsupported_error(self.py, "More than 2**32 expressions")))?;
+        self.free.push(expr.free_vars());
+        self.exprs.push(expr);
+        Ok(ExprId(id))
     }
 }
 
-impl ExprCompiler for PyExprCompiler<'_> {
+/// `typed`'s choice, owned so the compiler can be borrowed mutably while building.
+enum Spec<'py> {
+    Python,
+    String(bool),
+    Not,
+    Exists,
+    Import,
+    Structure,
+    Proxy(String, bool),
+    Custom(Bound<'py, PyAny>),
+}
+
+/// A custom type's `ExpressionError` drives the Interpolator's retry like any other;
+/// anything else aborts compilation.
+fn expression_error(py: Python<'_>, e: PyErr, expression: &Tok) -> ExprCompileError<PyErr> {
+    let is_expression_error = py
+        .import(intern!(py, "chameleon_rs.exc"))
+        .and_then(|m| m.getattr(intern!(py, "ExpressionError")))
+        .is_ok_and(|cls| e.value(py).is_instance(&cls).unwrap_or(false));
+    if !is_expression_error {
+        return ExprCompileError::Other(e);
+    }
+    let value = e.value(py);
+    let message = value.getattr(intern!(py, "msg")).and_then(|m| m.extract::<String>()).unwrap_or_default();
+    let token = value.getattr(intern!(py, "token")).and_then(|t| t.extract::<String>()).ok();
+    let token = token.map_or_else(|| expression.clone(), Tok::plain);
+    ExprCompileError::Invalid { message, token: Some(token) }
+}
+
+/// `char_escape` passed to `engine.parse`: how `_convert_text` picks the quote.
+fn char_escape_of(chars: &Bound<'_, PyAny>) -> PyResult<Option<Escape>> {
+    let chars: Vec<String> = chars.try_iter()?.map(|c| c?.extract()).collect::<PyResult<_>>()?;
+    if chars.is_empty() {
+        return Ok(None);
+    }
+    let other: Vec<&str> = chars.iter().map(String::as_str).filter(|c| !["&", "<", ">"].contains(c)).collect();
+    if other.is_empty() {
+        return Ok(Some(Escape::Text));
+    }
+    for (quote, escape) in [("\"", Quote::Double), ("'", Quote::Single), ("", Quote::Bare)] {
+        if chars.iter().any(|c| c == quote) {
+            return Ok(Some(Escape::Attr(escape)));
+        }
+    }
+    Err(PyTypeError::new_err(format!("Unsupported escape set: {chars:?}.")))
+}
+
+impl ExprCompiler for PyExprCompiler<'_, '_> {
     type Error = PyErr;
 
     fn compile(&mut self, source: &Tok, cx: ExprContext<'_>) -> Result<ExprId, ExprCompileError<PyErr>> {
         let expr = self.typed(source, cx, true)?;
-        let id = u32::try_from(self.exprs.len())
-            .map_err(|_| ExprCompileError::Other(unsupported_error(self.py, "More than 2**32 expressions")))?;
-        self.exprs.push(expr);
-        Ok(ExprId(id))
+        self.register(expr)
     }
 
     fn compile_code(&mut self, _source: &Tok) -> Result<ExprId, ExprCompileError<PyErr>> {
         Err(ExprCompileError::Other(unsupported_error(self.py, "A <?python ?> code block")))
+    }
+
+    /// `ExpressionError(message, token)` raised at render time, with the token's code-point
+    /// offset and location computed now.
+    fn deferred(&mut self, message: &str, token: &Tok) -> Result<ExprId, ExprCompileError<PyErr>> {
+        let py = self.py;
+        let (offset, (line, column), filename) = match token.pos {
+            Some(p) => {
+                let source = Source::new(self.source);
+                let offset = p.offset(&source);
+                (offset, source.location_of_offset(offset), self.filename)
+            }
+            None => (0, (0, 0), ""),
+        };
+        let args = (message, token.text.as_str(), offset, (line, column), filename)
+            .into_pyobject(py)
+            .map_err(ExprCompileError::Other)?;
+        self.register(Expr::Raise(args.unbind()))
+    }
+
+    fn free_vars(&self, id: ExprId) -> FreeVars {
+        self.free.get(id.0 as usize).cloned().unwrap_or_default()
     }
 }
 
@@ -407,33 +537,8 @@ fn strip_tok(t: &Tok) -> Tok {
     Tok { text: t.text.trim_matches(is_python_space).to_owned(), pos: t.pos.map(|p| p.plus(chars)) }
 }
 
-fn kind(node: &Bound<'_, PyAny>) -> PyResult<String> {
-    Ok(node.get_type().name()?.to_str()?.to_owned())
-}
-
-fn is_load(ctx: &Bound<'_, PyAny>) -> PyResult<bool> {
-    Ok(kind(ctx)? == "Load")
-}
-
-fn intern_str(s: &Bound<'_, PyAny>) -> PyResult<Py<PyString>> {
-    let s = s.cast::<PyString>()?;
-    Ok(PyString::intern(s.py(), s.to_str()?).unbind())
-}
-
-/// Constants `ast.parse` produces, all immutable builtins.
-fn is_immutable_constant(v: &Bound<'_, PyAny>) -> bool {
-    v.is_exact_instance_of::<PyString>()
-        || v.is_exact_instance_of::<PyBytes>()
-        || v.is_exact_instance_of::<PyInt>()
-        || v.is_exact_instance_of::<PyFloat>()
-        || v.is_exact_instance_of::<PyComplex>()
-        || v.is_exact_instance_of::<PyBool>()
-        || v.is_exact_instance_of::<PyNone>()
-        || v.is_exact_instance_of::<PyEllipsis>()
-}
-
 /// `match_prefix`: `^\s*([a-z][a-z0-9\-_]*):`. Returns the prefix and the text after `:`.
-fn match_prefix(s: &str) -> Option<(&str, &str)> {
+pub(crate) fn match_prefix(s: &str) -> Option<(&str, &str)> {
     let t = s.trim_start_matches(is_python_space);
     let first = t.chars().next()?;
     if !first.is_ascii_lowercase() {

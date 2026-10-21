@@ -439,6 +439,89 @@ Tests: expression-level differential tests (same expression, same scope, both en
 value or same exception type), Hypothesis-generated expressions, the doctests in `tales.py`
 and `compiler.py` ported.
 
+**Done (2026-10-20).** The real `ExprCompiler` in `chameleon-py`: TALES prefixes and pipes
+with Chameleon's `exceptions` tuples, `python` (fast path plus the exact fallback), `string`
+(a port of `Interpolator` with braces optional), `not`, `exists`, `import`, `structure`, and
+`load` (`ProxyExpr('__loader')`) for file templates; the template builtins (`template`,
+`macros`, `nothing`, `__loader`, `extra_builtins`); non-strict mode raising `ExpressionError`
+at the site with Chameleon's token, offset and location; free-variable sets per site in the
+resolve table (D9); the custom expression-type bridge (`chameleon_rs._bridge`, D11); a
+minimal `PageTemplateFile` with Chameleon's `TemplateLoader` ported (needed by `load:`).
+Decisions, the interface changes (`ExprContext.engine`, `ExprCompiler::deferred` /
+`free_vars`) and the deliberate deviations: architecture.md, "Phase 5 amendments".
+
+Results:
+
+- **Expression differential** (`tests/python/test_expressions.py`, value or exception type
+  and arguments compared): 137 hand-picked expressions (every type, pipe fall-through per
+  exception class, `string:` quirks, names and builtins, fast-path/fallback boundaries); every
+  expression type and pipe combination in 15 kinds of site (27 expressions x 7 scopes per
+  site: text, attributes, `tal:content` / `replace` / `structure`, `tal:attributes`, boolean
+  attributes, conditions, defines, repeats, switch, CDATA, comments); 16 non-strict cases
+  (type, token, offset, location, message); 22 custom-type renders (value, text, bool
+  sub-expressions, scope stores, Chameleon's `Symbol`, an `ExpressionError` driving the
+  retry, a custom default type); `load:` (relative, interpolated, pipes, missing, nested,
+  absolute, package resources, caching). The tales.py / compiler.py doctests about
+  expressions are ported (24 cases plus the JavaScript, `braces_required` and NameTransform
+  ones); `ExpressionEvaluator`'s waits for Phase 7.
+- **Hypothesis:** generated expressions biased to the fast path's node types and the
+  fallback boundaries (comprehensions, lambdas, walrus, starred and `**`, f-strings, slices,
+  chained compares, keyword arguments, attribute versus item lookup, shadowed builtins,
+  `econtext`, `__` names, prefixes and pipes). Runs of 50,000 found seven differences, each
+  fixed or explained: `__builtins__` is the builtins dict in Chameleon's module; lazy `Scope`
+  iteration (`RuntimeError` when a comprehension writes the scope it iterates); `KeyError`
+  arguments; template-wide constant merging and folding (`${x is 1.5}`); a literal-tuple fold
+  that must skip aliases (`(True, attrs)`); the scope's type name in messages and binary
+  constant folding (both fixed after the architect's review); and, normalized in the harness
+  until Phase 6a, Chameleon's `rcontext['__error__']`. The final generator ran **100,000
+  examples with zero differences**, and after the review fixes (identity checks widened from
+  atoms to any sub-expression) 30,000 more; the suite runs 600.
+- **Corpus (229 Talk Python templates, as `PageTemplateFile`):** every expression compiles;
+  4,836 expressions, 4,821 (99.7%) entirely on the fast path, 15 with fallback code. **75
+  templates compile fully** (65 in Phase 4); the other 154 stop only at macros (152
+  `metal:use-macro`, 2 `metal:define-macro`, Phase 6b). Phase 4's `load:` 120, `structure:`
+  35 and `string:` 7 are gone.
+- **Tests:** 82 Rust (76 core, 6 `chameleon-py`), 1,211 pytest passed, 3 skipped (deferred
+  probes), 1 strict xfail (Phase 4's boolean-attribute gap), the upstream suite on the
+  reference engine 227 passed, 6 xfailed; `make lint` clean; corpus variable set.
+- **D4 revisit criterion, re-measured** (`bench/bench_d4.py`, release, two runs,
+  fallback-only via the private `_fast_path=False` option): a fallback-only build renders the
+  listing in 783-845 ns per item and the partial listing in 963-1,067 ns, missing both
+  targets (0.6 / 0.8 us); the fast path saves 31-59 ns per expression on the benchmark mix
+  (median 33-38 ns; `"{:,}".format` 57-59 ns), above the 20 ns floor. The first run was taken
+  at load average 8-12, the second at 7. **D4 stands.** The fast path covers 99.7% of the
+  corpus's expressions.
+- **Speed** (release): `bench/bench_ab.py 9293cbe`, 8 interleaved rounds, two runs: Phase 4
+  478-516 ns, Phase 5 477-515 ns, median difference **-1.2 and -3.2 ns** (tolerance +5), 6.4-6.5x
+  Chameleon in the same run; after the review fixes, **-4.1 ns** (load average 6.7-8.7), 6.5x. `bench_skeleton.py`, three runs: listing 492-498 ns (medians
+  497-499) against Chameleon's 2,915-2,931 ns (5.9x); partial listing 627-633 ns against
+  6,793-6,833 ns (10.8x). The machine was shared (load average 6-25 from other work); earlier
+  A/B runs at load 20+ gave +10 to +15 ns with ranges up to +139, and are not counted.
+  The first complete build measured +4.6 to +9 ns: the new node kinds had grown `eval`'s stack
+  frame to 912 bytes, which every recursive call pays. `eval` now handles only the census's
+  first kinds (names, attributes, constants, short calls, `not`, subscripts, `[]`) and passes
+  the rest to an out-of-line `eval_more` (and the TALES types to a cold `eval_rare`): a
+  288-byte frame, and slightly faster than Phase 4 on expression-dense templates. Compile
+  (`bench_parse.py`, release, load average 7-10, corpus as `PageTemplateFile`): Chameleon's
+  full compile (cook) median 10.64 ms (max 93 ms); ours, tree plus every expression for all
+  229 templates, median 0.103 ms (max 1.1 ms), and full compile of the 75 it supports median
+  0.074 ms (max 1.5 ms); tokenize plus parse 10.0x faster than Chameleon's.
+
+Carried forward:
+
+- **Phase 6a:** `<?python ?>` code blocks (render-function locals; see the amendments), and
+  the render-error tracking that makes Chameleon's `rcontext['__error__']` visible.
+- **Phase 6b, low priority:** `yield` in an expression makes Chameleon's render function (or,
+  inside a macro, only that macro's function) a generator, which renders `''`; ours evaluates
+  to a generator object.
+- **Phase 7:** tighten `PageTemplateFile.cook_check` / `auto_reload` locking (the mtime check
+  runs outside the lock).
+- **Later:** a custom expression type returning malformed statements raises different
+  exception types than Chameleon's code generator does.
+- **Phase 7:** `ExpressionEvaluator`, the full loader surface, compat aliases for the scope's
+  and marker's module names.
+- A rendered template's `macros` builtin is a stub until Phase 6b.
+
 ## Phase 6a: VM, core semantics
 
 Lower the node tree to bytecode (D3) and run it (D2, D5, D6): static text coalescing,

@@ -3,8 +3,8 @@ Tokenizer and element parser time, Chameleon (`iter_xml` + `ElementParser`) vs c
 (the core's tokenizer and parser, no Python objects built), per template, over the upstream
 fixtures and the real-template corpus (the directories in CHAMELEON_RS_CORPUS, separated
 by ':', set in your own shell or an ignored `.envrc`; skipped when unset). Also the full
-compile (`PageTemplate(body)`) of each corpus template chameleon_rs supports so far, against
-Chameleon's full compile (cook) of the same.
+compile (`PageTemplateFile(path)`) of each corpus template chameleon_rs supports so far,
+and the tree plus every expression of all of them, against Chameleon's full compile (cook).
 
 Build first:  make build-release
 Run:          venv/bin/python bench/bench_parse.py
@@ -61,19 +61,36 @@ def report(name: str, docs: list[str]) -> None:
         )
 
 
-def full_compile(docs: list[str]) -> None:
-    ref, ours = [], []
-    for b in docs:
+def full_compile(paths: list[Path]) -> None:
+    """Each corpus template compiled from scratch as a file template (a new `PageTemplateFile`
+    each time, as `bench_compile.py` does; files have the `load:` expression type)."""
+    ref, ours, resolved = [], [], []
+    for path in paths:
         try:
-            chameleon_rs.PageTemplate(b)
-        except (exc.UnsupportedError, exc.TemplateError, NameError, SyntaxError):
+            chameleon.PageTemplateFile(str(path)).cook_check()
+        except Exception:  # noqa: BLE001, S112 - only templates Chameleon compiles are timed
             continue
-        ours.append(best(lambda b=b: chameleon_rs.PageTemplate(b), 20))
-        ref.append(best(lambda b=b: chameleon.PageTemplate(b).cook_check(), 3))
+        ref.append(best(lambda p=path: chameleon.PageTemplateFile(str(p)).cook_check(), 3))
+        # Up to and including every expression (also for templates that stop at macros).
+        body = read_encoded(path.read_bytes())
+        resolved.append(best(lambda b=body: _testing.fast_path_coverage(b, load=True), 20))
+        try:
+            chameleon_rs.PageTemplateFile(path).cook_check()
+        except exc.UnsupportedError:
+            continue
+        ours.append(best(lambda p=path: chameleon_rs.PageTemplateFile(p).cook_check(), 20))
+    print(
+        f'  Chameleon full compile (cook), {len(ref)} templates: median {statistics.median(ref) * 1e3:.2f} ms, '
+        f'max {max(ref) * 1e3:.2f} ms'
+    )
+    print(
+        f'  chameleon_rs tree + every expression, same templates: median '
+        f'{statistics.median(resolved) * 1e3:.3f} ms, max {max(resolved) * 1e3:.3f} ms'
+    )
     if ours:
         print(
-            f'  full compile of the {len(ours)} templates chameleon_rs supports: Chameleon median '
-            f'{statistics.median(ref) * 1e3:.2f} ms, chameleon_rs median {statistics.median(ours) * 1e3:.3f} ms'
+            f'  chameleon_rs full compile, the {len(ours)} templates it supports: median '
+            f'{statistics.median(ours) * 1e3:.3f} ms, max {max(ours) * 1e3:.3f} ms'
         )
 
 
@@ -86,7 +103,7 @@ def main() -> None:
         return
     docs = bodies(corpus)
     report('corpus', docs)
-    full_compile(docs)
+    full_compile(corpus)
 
 
 if __name__ == '__main__':

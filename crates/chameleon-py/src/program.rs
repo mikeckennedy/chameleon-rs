@@ -11,7 +11,7 @@ use pyo3::{PyTraverseError, PyVisit, intern};
 
 use chameleon_core::{Done, Mode, Options, Output, VmState, run};
 
-use crate::compiler::PyExprCompiler;
+use crate::compiler::{Config, PyExprCompiler};
 use crate::errors::{catch_panics, compile_error, internal_error, vm_error};
 use crate::expr::{Expr, RenderCtx};
 use crate::runtime::PyRuntime;
@@ -61,13 +61,40 @@ pub(crate) struct Program {
 #[pymethods]
 impl Program {
     /// Compiles `source`. The keywords are Chameleon's template-level settings that change
-    /// the program (see [`options`]).
+    /// the program (see [`options`]), plus the expression configuration: `expression_types`
+    /// (what `chameleon_rs.tales.native_types` returns), `default_expression`, `builtins`
+    /// (the template builtins' names) and `fast_path` (`False` sends every Python expression
+    /// to the fallback, for measurements).
     #[new]
-    #[pyo3(signature = (source, filename = "<string>", **options))]
-    fn new(py: Python<'_>, source: &str, filename: &str, options: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+    #[pyo3(signature = (
+        source, filename = "<string>", *, expression_types = None, default_expression = None, builtins = None,
+        fast_path = true, **options
+    ))]
+    #[allow(clippy::too_many_arguments)] // Python keyword arguments
+    fn new(
+        py: Python<'_>,
+        source: &str,
+        filename: &str,
+        expression_types: Option<&Bound<'_, PyAny>>,
+        default_expression: Option<String>,
+        builtins: Option<Vec<String>>,
+        fast_path: bool,
+        options: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
         let options = self::options(options)?;
+        let mut config = Config::page_template();
+        if let Some(types) = expression_types {
+            config.set_types(types)?;
+        }
+        if let Some(default) = default_expression {
+            config.default_type = default;
+        }
+        if let Some(builtins) = builtins {
+            config.template_builtins = builtins;
+        }
+        config.fast_path = fast_path;
         catch_panics(py, || {
-            let mut compiler = PyExprCompiler::new(py, marker(py)?)?;
+            let mut compiler = PyExprCompiler::new(py, marker(py)?, config, source, filename)?;
             let core = chameleon_core::compile(source, &mut compiler, &options)
                 .map_err(|e| compile_error(py, e, source, filename))?;
             let names = core.names().iter().map(|n| PyString::intern(py, n).unbind()).collect();
@@ -83,19 +110,22 @@ impl Program {
 
     /// Renders with `variables` as the scope. `partials` is the prototype registry for the
     /// built-in `render_partial` (name -> `Program`); `defaults` holds the template's
-    /// `__translate`/`__decode`/... for frames whose scope lacks them.
-    #[pyo3(signature = (variables, partials = None, defaults = None))]
+    /// `__translate`/`__decode`/... for frames whose scope lacks them; `builtins` the template
+    /// builtins' values (`template`, `macros`, `nothing`, ...).
+    #[pyo3(signature = (variables, partials = None, defaults = None, builtins = None))]
     fn render<'py>(
         slf: &Bound<'py, Self>,
         variables: &Bound<'py, PyDict>,
         partials: Option<Bound<'py, PyDict>>,
         defaults: Option<Bound<'py, PyDict>>,
+        builtins: Option<Bound<'py, PyDict>>,
     ) -> PyResult<Bound<'py, PyString>> {
         let py = slf.py();
         catch_panics(py, || {
             let program = slf.get();
             let scope = Scope::new_root(py, variables)?;
-            let render = RenderCtx { marker: marker(py)?, partials, defaults, rcontext: OnceCell::new() };
+            let builtins = builtins.unwrap_or_else(|| PyDict::new(py));
+            let render = RenderCtx { marker: marker(py)?, partials, defaults, builtins, rcontext: OnceCell::new() };
             let mut st = VmState::new(
                 Arc::clone(&program.core),
                 slf.clone().into_any().unbind(),

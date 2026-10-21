@@ -297,6 +297,135 @@ these are the decisions that shaped it and the places where it changes earlier i
   against the previous phase's build (`bench/bench_ab.py`), because run-to-run noise exceeded
   the effects; the speed targets themselves are unchanged.
 
+## Phase 5 amendments (2026-10-20)
+
+The expression layer is real; these are the decisions it pinned down, and the places where
+it changes earlier interfaces. Every behaviour below was checked by running the reference.
+
+- **D1, `ExprContext.engine`.** Chameleon compiles each site with an `ExpressionEngine`
+  configured by the node (`char_escape`, `default`, `default_marker`, `literal_false`), and
+  expression types that convert their sub-expressions to text (`string:`, `load:`, a custom
+  type's `assign_text`) use that engine's conversion. So `${string:${x}}` in text escapes `x`
+  twice, `tal:attributes="title string:a${default}b"` puts the static attribute value in the
+  middle, and in an interpolated boolean attribute a false sub-expression becomes `None`. The
+  core now passes `Engine { escape, marker, default, literal_false }`: `escape` is the
+  interpolation's `Escape` (none for CDATA and text mode, and for every non-interpolation
+  site), `marker`/`default` are set for attribute values (`default` is the static value in
+  `tal:attributes`, none for interpolated attributes), `literal_false` is false only in
+  interpolated boolean attributes.
+- **D1, new trait methods.** `deferred(message, token)`: in non-strict mode a syntax error
+  compiles to an expression that raises `ExpressionError` with Chameleon's token, code-point
+  offset and location when evaluated (a fresh exception each time); for an interpolation it
+  is the only part, so nothing of the interpolation is evaluated first. `Resolved::Deferred`
+  is gone and nothing stops at `UnsupportedError` for it any more. `free_vars(id)`: see D9.
+- **D9, free variables, as built.** `FreeVars::{Dynamic, Known { reads, writes }}`, recorded
+  per site by `ValueId` in the resolve `Table` (an interpolation's is the union of its
+  parts'). `chameleon-py` computes them: fast-path trees by walking them (template builtins
+  and `__translate`-style keys count as reads, the `__loader` builtin does not), fallback
+  functions in the Python rewriter (every `getname`/`get` is a read, every rewritten store a
+  write, `econtext`/`rcontext` used as values make it `Dynamic`), custom types are `Dynamic`,
+  and `string:` with sub-expressions also reads `__decode`, `__translate` and
+  `target_language` (its conversion calls them). The table is dropped after lowering; Phase 11
+  copies what concurrent evaluation needs into the `Program`, and last-use analysis can walk
+  the tree with the table. `chameleon_core::testing::free_variables` and
+  `_native._testing.free_variables` expose them for tests.
+- **TALES as built** (`chameleon-py`: `compiler.rs`, `lower.rs`, `strexpr.rs`, `custom.rs`).
+  `ExpressionParser` uses the template's `expression_types` and `default_expression`, which
+  `chameleon_rs.tales.native_types` classifies: Chameleon's own types (ours or, by qualified
+  name, `chameleon.tales`'s; `partial(StringExpr, braces_required=...)`,
+  `partial(ProxyExpr, name, ignore_prefix=...)`) compile natively, anything else is a custom
+  type. Pipes split at unescaped `|` (`\|` is a literal), a prefixed part takes the rest
+  (unless `ignore_prefix` is off, as for `load:`), an empty expression is
+  `ExpressionError("No input:")`. Pipes fall through on `AttributeError`, `NameError`,
+  `LookupError`, `TypeError`, `ValueError`; `exists:` catches the same minus `ValueError` and
+  returns the int `1` or `0`; `not:` returns a bool; `structure:` wraps in
+  `chameleon_rs.utils.Markup`; `import:` calls `resolve_dotted` (cached) at render time;
+  `string:` is a port of `Interpolator` with braces optional and no entity decoding,
+  including its retry quirk (a failed `${...}` candidate is searched again minus its last
+  character, which can match a later `$name`: `string:${1 + $b}` with `b='B'` is `'B1 + B}'`);
+  `load:` is `ProxyExpr('__loader', ignore_prefix=False)`: each alternative is such a string,
+  passed to whatever the name resolves to.
+- **Template builtins.** `template`, `macros` and `nothing` (plus `__loader` in file
+  templates and the class's `extra_builtins`) are names known at compile time whose values the
+  render passes in (never stored in the program or in fallback globals, D4). As in
+  Chameleon's render function, where they are parameters, they shadow Python builtins of the
+  same name and a render keyword overrides them (`get(name, builtin)`); a `__` one is the
+  value itself. Phase 4 had none of them (`${nothing}` was a `NameError`).
+- **The fallback, refined.** A `def` taking `(econtext, rcontext, default marker, template
+  builtins)`. It binds `translate`, `decode` and `on_error_handler` as locals from
+  `econtext['__...']` when it uses them, as Chameleon's render function does, so a
+  comprehension may rebind them; its globals have `__builtins__` as the builtins *dict* and
+  `__default` as `'__default__'`, as Chameleon's generated module does. When CPython rejects
+  the rewritten tree (a walrus whose target became `econtext['y']`), the code is unparsed and
+  compiled from source, which raises the same `SyntaxError` Chameleon raises at compile time
+  (Phase 2 raised `TypeError`).
+- **Constants are merged template-wide.** Chameleon compiles a template into one module, and
+  CPython's compiler keeps one object per equal constant (`_PyCode_ConstantKey`), folds unary
+  operations on constants: `${x is 1.5}` with `x` defined as `1.5` elsewhere in the template
+  is `True`, and so is `${'ab' * 2 is 'abab'}`. A per-template constant cache
+  (`_rewrite.constant`, tuple items included) is shared by the fast path and the fallback.
+  For folding, the fast path does not reimplement CPython's rules and size limits: a unary or
+  binary operation, subscript or tuple whose operands lowered to literals is compiled (never
+  run) with the running interpreter, and if the code is a single constant load, that
+  constant is used (`_rewrite.fold`). So `10 ** 10 ** 10` and `1 / 0`, which CPython leaves
+  unfolded, stay runtime operations, and the result is exact for each Python version. Found
+  by the expression fuzzer.
+- **`eval` split by frequency.** With every node kind inline, `eval`'s stack frame reached
+  912 bytes, paid by every recursive call (the listing measured 5-9 ns slower than Phase 4).
+  `eval` now handles the census's first kinds (names, builtins, attributes, constants, calls
+  with up to two positional arguments, `not`, subscripts, `[]`, the fallback) with a 288-byte
+  frame; the rest go to an out-of-line `eval_more`, and the TALES types to a cold `eval_rare`.
+  A test pins `Expr` at 56 bytes.
+- **D4 revisit, re-measured with the real expression layer** (`bench/bench_d4.py`): a
+  fallback-only build renders the listing in 783-845 ns per item and the partial listing in
+  963-1,067 ns (both targets missed); the fast path saves 31-59 ns per expression (median
+  33-38). D4 stands; its criterion is unchanged.
+- **Fast path additions:** slices (`slice(lower, upper, step)`, as `BINARY_SLICE` builds it),
+  template builtins, the folding above. Comprehensions, lambdas, f-strings, starred arguments,
+  `**` in calls and dicts, walrus and `__` names other than template builtins still take the
+  fallback: 15 of the corpus's 4,836 expressions (0.3%).
+- **Custom expression types (D11), the bridge** (`chameleon_rs._bridge`). The type runs at
+  compile time exactly as Chameleon calls it, with an engine whose
+  `parse(s).assign_value` / `assign_text` / `assign_bool(target)` emit a call to a
+  sub-expression the Rust compiler compiles natively (full TALES, the site's engine conversion,
+  `char_escape` honoured). The statements get Chameleon's name rewriting (including its
+  scoping: a `def` or an import binds for good, nested lambdas do not see outer parameters)
+  and are compiled into a function at fallback speed. Chameleon's node types `Symbol`,
+  `Builtin`, `Static`, `Comment` and `TokenRef` are recognized by class name. The code goes
+  through source like Chameleon's codegen, so expression contexts in the type's AST do not
+  matter. An `ExpressionError` from the type drives the Interpolator's retry. Types that
+  subclass Chameleon's classes to override `translate` are still out of scope (D11).
+- **`Scope`, two fixes found by the fuzzer:** iteration is lazy, like Chameleon's generator
+  (`[q for q in econtext]` raises `RuntimeError: dictionary changed size during iteration`;
+  ours iterated a snapshot), and `KeyError`/`NameError` carry the key as their one argument
+  (`econtext[None]` raised `KeyError()`).
+- **`PageTemplateFile`, minimal** (for `load:` and the corpus): compiled on first use under a
+  lock, `auto_reload` by mtime, the template's directory prepended to `search_path`, package
+  resources, and Chameleon's `TemplateLoader` ported verbatim (`chameleon_rs.loader`). Phase 7
+  completes the loader surface (`PageTemplateLoader`, `default_extension` across classes,
+  `CHAMELEON_*` settings).
+- **Known deviations, by design:**
+  - Messages that print a type *fully qualified* (`cannot use 'chameleon.utils.Scope' as a
+    dict key`) name ours `chameleon_rs._native.Scope`. The usual short form matches: module init
+    sets the native classes' `__name__` to `Scope` and `ImportableMarker` (what Chameleon's
+    scope and default marker are called), which rewrites `tp_name` (`unsupported operand
+    type(s) for +: 'Scope' and 'int'`) and leaves `__module__` / `__qualname__` alone; a test
+    pins it.
+  - A `SyntaxError` from a fallback names `<template expression>`, not Chameleon's generated
+    module.
+  - `yield` / `await` in an expression: Chameleon's whole render function becomes a generator
+    and renders nothing; ours evaluates to a generator. Not worth reproducing.
+  - `__` names other than template builtins, `__builtins__` and `__default` are
+    `NameError`s: Chameleon's generated locals (`__stream`, `__append`, ...) are not exposed.
+    The fallback function's own names (`__rs_*` parameters and globals, `__lookup_attr`) are
+    rewritten to raise `NameError` when read, as they do in Chameleon (an assignment to one,
+    which only a walrus can make, is not guarded).
+- **`<?python ?>` code blocks stay `UnsupportedError`, moved to Phase 6a.** They are not
+  expressions: they bind render-function locals, and Chameleon's visitor then treats every name
+  a block defines (including a `def`'s parameters) as local in all expressions compiled after
+  it. That needs per-render local state in the VM, which Phase 6a builds for `on-error`. One
+  upstream fixture uses them, no corpus template does.
+
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
 ```

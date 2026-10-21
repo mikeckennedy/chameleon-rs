@@ -534,7 +534,8 @@ pub fn inventory(tree: &Tree, src: &str) -> Vec<(&'static str, String, Option<us
     let source = Source::new(src);
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    let mut walk = Inventory { tree, source: &source, seen: &mut seen, out: &mut out };
+    let mut ids = Vec::new();
+    let mut walk = Inventory { tree, source: &source, seen: &mut seen, out: &mut out, ids: &mut ids };
     for (_, node) in &tree.macros {
         walk.node(node);
     }
@@ -542,11 +543,28 @@ pub fn inventory(tree: &Tree, src: &str) -> Vec<(&'static str, String, Option<us
     out
 }
 
+/// Every expression site once, in tree order: its id and source text.
+pub(crate) fn value_sites(tree: &Tree, src: &str) -> Vec<(ValueId, String)> {
+    let source = Source::new(src);
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    let mut ids = Vec::new();
+    let mut walk = Inventory { tree, source: &source, seen: &mut seen, out: &mut out, ids: &mut ids };
+    for (_, node) in &tree.macros {
+        walk.node(node);
+    }
+    walk.node(&tree.body);
+    let texts = out.into_iter().filter(|(kind, ..)| *kind == "value").map(|(_, text, _)| text);
+    ids.into_iter().zip(texts).collect()
+}
+
 struct Inventory<'a, 's> {
     tree: &'a Tree,
     source: &'a Source<'s>,
     seen: &'a mut std::collections::HashSet<ValueId>,
     out: &'a mut Vec<(&'static str, String, Option<usize>)>,
+    /// The id of each `value` entry of `out`, in order.
+    ids: &'a mut Vec<ValueId>,
 }
 
 impl Inventory<'_, '_> {
@@ -557,12 +575,14 @@ impl Inventory<'_, '_> {
     fn value(&mut self, v: &Value) {
         if self.seen.insert(v.id) {
             self.tok("value", &v.source);
+            self.ids.push(v.id);
         }
     }
 
     fn interp(&mut self, i: &Interp) {
         if self.seen.insert(i.id) {
             self.tok("value", &i.source);
+            self.ids.push(i.id);
         }
     }
 
