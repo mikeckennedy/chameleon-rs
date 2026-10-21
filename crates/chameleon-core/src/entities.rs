@@ -19,7 +19,13 @@ pub(crate) struct EntityError {
 /// Chameleon's `decode_htmlentities`: replaces every match of `&(#?)(x?)(\d{1,5}|\w{1,8});`
 /// with its character. Named references use Python's HTML 4 table (`&apos;` is not in it);
 /// unknown names are kept as they are.
-pub(crate) fn decode_htmlentities(s: &str) -> Result<std::borrow::Cow<'_, str>, EntityError> {
+///
+/// A reference to a lone surrogate, which Python decodes to one, decodes into the private-use
+/// block at `surrogate_base` ([`crate::surrogates`]); without one it is an error.
+pub(crate) fn decode_htmlentities(
+    s: &str,
+    surrogate_base: Option<u32>,
+) -> Result<std::borrow::Cow<'_, str>, EntityError> {
     if !s.contains('&') {
         return Ok(std::borrow::Cow::Borrowed(s));
     }
@@ -29,7 +35,7 @@ pub(crate) fn decode_htmlentities(s: &str) -> Result<std::borrow::Cow<'_, str>, 
         out.push_str(rest.get(..amp).unwrap_or_default());
         let after = rest.get(amp + 1..).unwrap_or_default();
         if let Some(m) = match_reference(after) {
-            out.push_str(&substitute(&m, rest.get(amp..amp + 1 + m.len).unwrap_or_default())?);
+            out.push_str(&substitute(&m, rest.get(amp..amp + 1 + m.len).unwrap_or_default(), surrogate_base)?);
             rest = after.get(m.len..).unwrap_or_default();
         } else {
             out.push('&');
@@ -91,7 +97,7 @@ fn run_then_semicolon(s: &str, max: usize, pred: impl Fn(char) -> bool) -> Optio
 }
 
 /// `substitute_entity`: `chr(int(ent))`, `chr(int('0x' + ent, 16))`, or the HTML 4 name.
-fn substitute(m: &Reference<'_>, whole: &str) -> Result<String, EntityError> {
+fn substitute(m: &Reference<'_>, whole: &str, surrogate_base: Option<u32>) -> Result<String, EntityError> {
     if m.hash {
         let (literal, base) = if m.x { (format!("0x{}", m.body), 16) } else { (m.body.to_owned(), 10) };
         let value = py_int(&literal, base).ok_or_else(|| EntityError {
@@ -102,7 +108,13 @@ fn substitute(m: &Reference<'_>, whole: &str) -> Result<String, EntityError> {
             return Err(EntityError { message: "chr() arg not in range(0x110000)".to_owned(), surrogate: false });
         }
         #[allow(clippy::cast_possible_truncation)] // checked above
-        return char::from_u32(value as u32).map(String::from).ok_or_else(|| EntityError {
+        let value = value as u32;
+        if let Some(base) = surrogate_base
+            && (0xD800..0xE000).contains(&value)
+        {
+            return Ok(char::from_u32(base + (value - 0xD800)).map(String::from).unwrap_or_default());
+        }
+        return char::from_u32(value).map(String::from).ok_or_else(|| EntityError {
             message: format!("the character reference {whole} is a lone surrogate"),
             surrogate: true,
         });
@@ -169,7 +181,7 @@ mod tests {
     use super::*;
 
     fn decode(s: &str) -> String {
-        decode_htmlentities(s).unwrap().into_owned()
+        decode_htmlentities(s, None).unwrap().into_owned()
     }
 
     #[test]
@@ -184,12 +196,14 @@ mod tests {
     #[test]
     fn numeric_references_follow_python_int_and_chr() {
         assert_eq!(decode("&#x1_0;&#x_1;&#\u{663};&#x\u{663};&#1_0;&#00065;"), "\u{10}\u{1}\u{3}\u{3}\n\u{41}");
-        let err = |s: &str| decode_htmlentities(s).unwrap_err().message;
+        let err = |s: &str| decode_htmlentities(s, None).unwrap_err().message;
         assert_eq!(err("&#xzz;"), "invalid literal for int() with base 16: '0xzz'");
         assert_eq!(err("&#x;"), "invalid literal for int() with base 10: 'x'");
         assert_eq!(err("&#x1__0;"), "invalid literal for int() with base 16: '0x1__0'");
         assert_eq!(err("&#x110000;"), "chr() arg not in range(0x110000)");
-        assert!(decode_htmlentities("&#xD800;").unwrap_err().surrogate);
+        assert!(decode_htmlentities("&#xD800;", None).unwrap_err().surrogate);
+        // With a private-use block for the source's lone surrogates, into that block.
+        assert_eq!(decode_htmlentities("a&#xDFFF;&#55296;", Some(0xE800)).unwrap(), "a\u{EFFF}\u{E800}");
         // U+1D7CE..U+1D7FF are five runs of mathematical digits 0-9.
         assert_eq!(decode("&#\u{1d7d9};"), "\u{1}");
     }

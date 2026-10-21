@@ -192,6 +192,9 @@ pub(crate) struct PyExprCompiler<'a, 'py> {
     /// Its line index, for error tokens.
     index: Source<'a>,
     filename: &'a str,
+    /// The private-use block the source's lone surrogates were mapped to
+    /// (`chameleon_core::surrogates`): source text given to Python gets them back.
+    pub(crate) surrogate_base: Option<u32>,
 }
 
 impl<'a, 'py> PyExprCompiler<'a, 'py> {
@@ -234,6 +237,7 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
             source,
             index: Source::new(source),
             filename,
+            surrogate_base: None,
         })
     }
 
@@ -275,7 +279,11 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
             // `self.expression.strip().replace('\n', ' ')`.
             Spec::Import => {
                 let name = expression.text.trim_matches(is_python_space).replace('\n', " ");
-                Expr::Import(PyString::intern(self.py, &name).unbind())
+                if self.has_mapped(&name) {
+                    Expr::Import(self.source_str(&name).map_err(ExprCompileError::Other)?.unbind())
+                } else {
+                    Expr::Import(PyString::intern(self.py, &name).unbind())
+                }
             }
             Spec::Custom(factory) => self.custom(&factory, &expression, inner)?,
         })
@@ -293,6 +301,16 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         let site = u32::try_from(self.exprs.len() + 1).unwrap_or(u32::MAX);
         self.nested = true;
         Ok(Expr::Token(site, token, Box::new(expr)))
+    }
+
+    /// Whether `text` holds a lone surrogate (mapped to the private-use block).
+    fn has_mapped(&self, text: &str) -> bool {
+        self.surrogate_base.is_some_and(|base| chameleon_core::surrogates::to_wtf8(text, base).is_some())
+    }
+
+    /// A `str` for a piece of the source, its lone surrogates mapped back.
+    fn source_str(&self, text: &str) -> PyResult<Bound<'py, PyString>> {
+        crate::convert::source_str(self.py, text, self.surrogate_base)
     }
 
     /// Records an error token (`0` for a plain string without a position).
@@ -346,6 +364,15 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         let stripped = strip_tok(expression);
         let string = continuation_to_spaces(&stripped.text);
         let invalid = |message: String| ExprCompileError::Invalid { message, token: Some(stripped.clone()) };
+        if self.has_mapped(&string) {
+            // A lone surrogate: Python's parser raises `UnicodeEncodeError` on the source, as
+            // in Chameleon.
+            let source = self.source_str(&string).map_err(ExprCompileError::Other)?;
+            return match self.ast_parse.call((source,), Some(&self.eval_mode)) {
+                Err(e) => Err(ExprCompileError::Other(e)),
+                Ok(_) => Err(ExprCompileError::Other(PyValueError::new_err("a lone surrogate parsed"))),
+            };
+        }
         if cx.candidate && obviously_invalid(&string) {
             return Err(invalid("invalid syntax".to_owned()));
         }
@@ -437,7 +464,8 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
     ) -> CompileResult<crate::expr::StrInterp> {
         let inner = ExprContext { emitted: false, ..cx };
         let py = self.py;
-        let parts = crate::strexpr::interpolate(py, expression, braces_required, |s, candidate| {
+        let base = self.surrogate_base;
+        let parts = crate::strexpr::interpolate(py, expression, braces_required, base, |s, candidate| {
             self.typed_ref(s, ExprContext { candidate, ..inner })
         })?;
         let engine = cx.engine;
@@ -470,7 +498,8 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         set(intern!(py, "lookup_attr"), self.lookup_attr.clone()).map_err(other)?;
         let builtins = PyTuple::new(py, &self.config.template_builtins).map_err(other)?;
         set(intern!(py, "template_builtins"), builtins.into_any()).map_err(other)?;
-        let result = match bridge.call((factory, expression.text.as_str()), Some(&kwargs)) {
+        let text = self.source_str(&expression.text).map_err(other)?;
+        let result = match bridge.call((factory, text), Some(&kwargs)) {
             Ok(r) => r,
             Err(e) => return Err(expression_error(py, e, expression)),
         };
@@ -557,7 +586,8 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         let bound_names = self.bound_names()?;
         let compile = py.import(intern!(py, "chameleon_rs._rewrite"))?.getattr(intern!(py, "compile_code"))?;
         let builtins = PyTuple::new(py, &self.config.template_builtins)?;
-        let code = compile.call1((source.text.as_str(), local_names, &bound_names, builtins, &self.constants))?;
+        let text = self.source_str(&source.text)?;
+        let code = compile.call1((text, local_names, &bound_names, builtins, &self.constants))?;
         if code.is_none() {
             // A `yield`: the function this block belongs to never runs.
             self.generator = true;
@@ -654,9 +684,9 @@ impl ExprCompiler for PyExprCompiler<'_, '_> {
         let token_obj = match token.pos {
             Some(p) => {
                 let offset = p.offset(&Source::new(self.source));
-                crate::errors::make_token(py, &token.text, offset, self.source, self.filename)
+                crate::errors::make_token(py, &token.text, offset, self.source, self.filename, self.surrogate_base)
             }
-            None => Ok(PyString::new(py, &token.text).into_any()),
+            None => self.source_str(&token.text).map(Bound::into_any),
         }
         .map_err(ExprCompileError::Other)?;
         let args = (message, token_obj).into_pyobject(py).map_err(ExprCompileError::Other)?;

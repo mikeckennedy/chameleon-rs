@@ -14,9 +14,10 @@ use pyo3::pyclass::CompareOp;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyBool, PyDict, PyInt, PyIterator, PyList, PySet, PyString, PyTuple};
 
+use chameleon_core::surrogates::Wtf8Buf;
 use chameleon_core::{
     Active, Attrs, Countdown, Emitted, ErrorSite, Errors, Escape, Eval, ExprId, Fill, I18n, Loops, MacroStep, Macros,
-    NameId, NameValue, Names, Output, Quote, Stage, Step, Translate, Translation, Values, Visibility,
+    Msgid, NameId, NameValue, Names, Output, Quote, Stage, Step, Translate, Translation, Values, Visibility,
 };
 
 use crate::convert;
@@ -49,19 +50,29 @@ impl<'a, 'py> PyRuntime<'a, 'py> {
         Cx { scope: &self.scope, render: self.render, frame: &self.frame }
     }
 
+    /// The active program's private-use block for lone surrogates, if its source had any.
+    fn surrogate_base(&self) -> Option<u32> {
+        self.code.get().core.surrogate_base()
+    }
+
+    /// A `str` for a piece of the active program's source text.
+    fn source_str(&self, text: &str) -> PyResult<Bound<'py, PyString>> {
+        convert::source_str(self.py, text, self.surrogate_base())
+    }
+
     fn name(&self, name: NameId) -> PyResult<&Py<PyString>> {
         self.code.get().names.get(name.0 as usize).ok_or_else(|| PyValueError::new_err("unknown name id"))
     }
 
     /// The i18n settings as Python values.
     #[cold]
-    fn set_i18n(&mut self, i18n: &I18n<Py<PyAny>>) {
+    fn set_i18n(&mut self, i18n: &I18n<Py<PyAny>>) -> PyResult<()> {
         let py = self.py;
         if self.frame.domain.is_some() || i18n.domain.is_some() {
-            self.frame.domain = i18n.domain.as_deref().map(|d| PyString::new(py, d));
+            self.frame.domain = i18n.domain.as_deref().map(|d| self.source_str(d)).transpose()?;
         }
         if self.frame.context.is_some() || i18n.context.is_some() {
-            self.frame.context = i18n.context.as_deref().map(|c| PyString::new(py, c));
+            self.frame.context = i18n.context.as_deref().map(|c| self.source_str(c)).transpose()?;
         }
         match &i18n.target_language {
             Some(target) => {
@@ -76,6 +87,7 @@ impl<'a, 'py> PyRuntime<'a, 'py> {
                 }
             }
         }
+        Ok(())
     }
 
     /// The domain, context and `target_language` arguments of a foreign `include` call.
@@ -88,8 +100,8 @@ impl<'a, 'py> PyRuntime<'a, 'py> {
     }
 
     /// The key of slot `name` in the scope (`__slot_<mangled name>`).
-    fn slot_key(&self, name: &str) -> Bound<'py, PyString> {
-        PyString::new(self.py, &format!("__slot_{name}"))
+    fn slot_key(&self, name: &str) -> PyResult<Bound<'py, PyString>> {
+        self.source_str(&format!("__slot_{name}"))
     }
 
     /// Calls a foreign callable with a fresh stream (`f(stream, *args)`) and writes what it
@@ -157,7 +169,7 @@ impl Eval for PyRuntime<'_, '_> {
             None => self.frame.target_language.is_none(),
         };
         if !(plain && same_target) {
-            self.set_i18n(i18n);
+            self.set_i18n(i18n)?;
         }
         // Nested tokens name sites of the frame that set them.
         self.render.nested.set((0, 0));
@@ -232,8 +244,15 @@ impl Names for PyRuntime<'_, '_> {
 
     fn text_value(&mut self, text: Option<&str>) -> Py<PyAny> {
         match text {
-            Some(t) => PyString::new(self.py, t).into_any().unbind(),
+            Some(t) => self.source_str(t).unwrap_or_else(|_| PyString::new(self.py, t)).into_any().unbind(),
             None => self.py.None(),
+        }
+    }
+
+    fn stream_value(&mut self, text: &Wtf8Buf) -> Py<PyAny> {
+        match convert::wtf8_str(self.py, text) {
+            Ok(s) => s.into_any().unbind(),
+            Err(_) => PyString::new(self.py, &text.to_string()).into_any().unbind(),
         }
     }
 }
@@ -375,7 +394,7 @@ impl Attrs for PyRuntime<'_, '_> {
     /// `name in __chain(dict)`: iterate and compare with `==`, as `in` on an iterator does.
     fn yields_name(&mut self, container: &Py<PyAny>, name: &str) -> PyResult<bool> {
         let py = self.py;
-        let name = PyString::new(py, name);
+        let name = self.source_str(name)?;
         for item in container.bind(py).try_iter()? {
             if item?.eq(&name)? {
                 return Ok(true);
@@ -391,8 +410,9 @@ impl Attrs for PyRuntime<'_, '_> {
     /// hashed and an unhashable name raises `TypeError`, as in Chameleon.
     fn attr_dict(&mut self, dict: &Py<PyAny>, exclude: &[&str], bool_names: &[&str], out: &mut Output) -> PyResult<()> {
         let py = self.py;
-        let bool_set = (!bool_names.is_empty()).then(|| PySet::new(py, bool_names)).transpose()?;
-        let exclude_set = PySet::new(py, exclude)?;
+        let strs = |names: &[&str]| names.iter().map(|n| self.source_str(n)).collect::<PyResult<Vec<_>>>();
+        let bool_set = (!bool_names.is_empty()).then(|| PySet::new(py, strs(bool_names)?)).transpose()?;
+        let exclude_set = PySet::new(py, strs(exclude)?)?;
         let items = dict.bind(py).call_method0(intern!(py, "items"))?;
         for item in items.try_iter()? {
             let item = item?;
@@ -536,7 +556,7 @@ impl Macros for PyRuntime<'_, '_> {
 
     fn fill_slot(&mut self, name: &str, fill: Fill<Py<PyAny>>, extend: bool) -> PyResult<()> {
         let py = self.py;
-        let key = self.slot_key(name);
+        let key = self.slot_key(name)?;
         let fill = Py::new(py, SlotFill::new(fill))?;
         if extend && let Some(stack) = Scope::lookup(&self.scope, key.as_any())? {
             // `_slots = getname(KEY)` succeeded: `_slots.appendleft(fill)`.
@@ -553,7 +573,7 @@ impl Macros for PyRuntime<'_, '_> {
     /// `try: __slot_x = econtext['__slot_x'].pop() except: __slot_x = None`.
     fn pop_slot(&mut self, name: &str) -> Option<Py<PyAny>> {
         let py = self.py;
-        let key = self.slot_key(name);
+        let key = self.slot_key(name).ok()?;
         let stack = Scope::lookup(&self.scope, key.as_any()).ok().flatten()?;
         stack.call_method0(intern!(py, "pop")).ok().map(Bound::unbind)
     }
@@ -574,8 +594,7 @@ impl Macros for PyRuntime<'_, '_> {
 
 impl Translate for PyRuntime<'_, '_> {
     fn i18n_changed(&mut self, i18n: &I18n<Py<PyAny>>) -> PyResult<()> {
-        self.set_i18n(i18n);
-        Ok(())
+        self.set_i18n(i18n)
     }
 
     /// The render function's `translate` (`econtext['__translate']`), called with exactly the
@@ -598,9 +617,13 @@ impl Translate for PyRuntime<'_, '_> {
                     Some(items) => {
                         let d = PyDict::new(py);
                         for (k, v) in items {
+                            let k = self.source_str(k)?;
                             match v {
-                                NameValue::Text(t) => d.set_item(k, t)?,
-                                NameValue::Pieces(p) => d.set_item(k, PyList::new(py, p)?)?,
+                                NameValue::Text(t) => d.set_item(k, convert::wtf8_str(py, &t)?)?,
+                                NameValue::Pieces(p) => {
+                                    let p = p.iter().map(|t| convert::wtf8_str(py, t)).collect::<PyResult<Vec<_>>>()?;
+                                    d.set_item(k, PyList::new(py, p)?)?;
+                                }
                             }
                         }
                         d.into_any()
@@ -608,9 +631,12 @@ impl Translate for PyRuntime<'_, '_> {
                     None => none(),
                 };
                 kwargs.set_item(intern!(py, "mapping"), mapping)?;
-                kwargs.set_item(intern!(py, "default"), default)?;
+                kwargs.set_item(intern!(py, "default"), convert::wtf8_str(py, default)?)?;
                 i18n(&kwargs, self.frame.target_language.clone())?;
-                PyString::new(py, msgid).into_any()
+                match msgid {
+                    Msgid::Source(m) => self.source_str(m)?.into_any(),
+                    Msgid::Stream(m) => convert::wtf8_str(py, m)?.into_any(),
+                }
             }
             Translation::Content(value) => {
                 kwargs.set_item(intern!(py, "default"), none())?;
@@ -622,7 +648,7 @@ impl Translate for PyRuntime<'_, '_> {
                 kwargs.set_item(intern!(py, "default"), &value)?;
                 i18n(&kwargs, cx.scope_target_language()?)?;
                 match msgid {
-                    Some(m) => PyString::new(py, m).into_any(),
+                    Some(m) => self.source_str(m)?.into_any(),
                     None => value,
                 }
             }
@@ -630,12 +656,12 @@ impl Translate for PyRuntime<'_, '_> {
                 if let Some(items) = mapping {
                     let d = PyDict::new(py);
                     for (k, v) in items {
-                        d.set_item(k, v)?;
+                        d.set_item(self.source_str(k)?, v)?;
                     }
                     kwargs.set_item(intern!(py, "mapping"), d)?;
                 }
                 i18n(&kwargs, cx.scope_target_language()?)?;
-                PyString::new(py, msgid).into_any()
+                self.source_str(msgid)?.into_any()
             }
         };
         Ok(translate.call((msgid,), Some(&kwargs))?.unbind())
@@ -643,7 +669,7 @@ impl Translate for PyRuntime<'_, '_> {
 
     fn quote_value(&mut self, value: Py<PyAny>, esc: Escape, default: Option<&str>) -> PyResult<Py<PyAny>> {
         let value = value.into_bound(self.py);
-        Ok(convert::quote_value(&self.cx(), &value, esc, default)?.unbind())
+        Ok(convert::quote_value(&self.cx(), &value, esc, default, self.surrogate_base())?.unbind())
     }
 
     fn convert_value(&mut self, value: Py<PyAny>) -> PyResult<Py<PyAny>> {

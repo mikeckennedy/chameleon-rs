@@ -58,25 +58,31 @@ pub(crate) fn interpolate<F>(
     py: Python<'_>,
     expression: &Tok,
     braces_required: bool,
+    surrogate_base: Option<u32>,
     mut compile: F,
 ) -> CompileResult<Vec<StrPart>>
 where
     F: FnMut(&Tok, bool) -> CompileResult<Expr>,
 {
     let mut parts = Vec::new();
-    let text_part = |parts: &mut Vec<StrPart>, s: &str| parts.push(StrPart::Text(PyString::new(py, s).unbind()));
+    // Static text, its lone surrogates (mapped to the private-use block) mapped back.
+    let text_part = |parts: &mut Vec<StrPart>, s: &str| -> CompileResult<()> {
+        let s = crate::convert::source_str(py, s, surrogate_base).map_err(ExprCompileError::Other)?;
+        parts.push(StrPart::Text(s.unbind()));
+        Ok(())
+    };
     let mut text = expression.clone();
     while !text.is_empty() {
         let mut matched = text.clone();
         let Some(mut m) = search(&matched.text, braces_required) else {
-            text_part(&mut parts, &text.text.replace("$$", "$"));
+            text_part(&mut parts, &text.text.replace("$$", "$"))?;
             break;
         };
         let part = text.text.get(..m.start).unwrap_or_default().to_owned();
         text = text.slice_from(m.start);
         if !part.is_empty() {
             let dollars = part.bytes().rev().take_while(|&b| b == b'$').count();
-            text_part(&mut parts, &part.replace("$$", "$"));
+            text_part(&mut parts, &part.replace("$$", "$"))?;
             if dollars % 2 == 1 {
                 // An odd run of `$` escapes this one: drop it and carry on after it.
                 text = text.slice_from(1);
@@ -87,7 +93,7 @@ where
             let string = matched.slice(m.group.0, m.group.1);
             if string.is_empty() {
                 // `${}`: the match itself, as text.
-                text_part(&mut parts, matched.text.get(m.start..m.end).unwrap_or_default());
+                text_part(&mut parts, matched.text.get(m.start..m.end).unwrap_or_default())?;
                 break;
             }
             match compile(&string, true) {
@@ -121,9 +127,11 @@ where
 fn merge(py: Python<'_>, parts: Vec<StrPart>) -> Vec<StrPart> {
     let mut merged: Vec<StrPart> = Vec::with_capacity(parts.len());
     for part in parts {
-        if let (Some(StrPart::Text(prev)), StrPart::Text(s)) = (merged.last_mut(), &part) {
-            let joined = format!("{}{}", prev.bind(py), s.bind(py));
-            *prev = PyString::new(py, &joined).unbind();
+        if let (Some(StrPart::Text(prev)), StrPart::Text(s)) = (merged.last_mut(), &part)
+            // Joined by Python, so lone surrogates survive.
+            && let Ok(joined) = prev.bind(py).add(s.bind(py)).and_then(|j| Ok(j.cast_into::<PyString>()?))
+        {
+            *prev = joined.unbind();
             continue;
         }
         merged.push(part);

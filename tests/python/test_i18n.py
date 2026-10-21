@@ -217,3 +217,21 @@ def test_fallback_register_set_inside_a_closed_translation(result: str | None) -
     kw: dict[str, Any] = {} if result is None else {'translate': lambda msgid, **_: result}
     assert chameleon.PageTemplate(source)(**kw) == '<div>abc<div>E</div>'
     assert chameleon_rs.PageTemplate(source)(**kw) == '<div>abc<p><div>E</div>'
+
+
+@pytest.mark.xfail(strict=True, reason="known difference: conversion in a slot body uses the slot body's i18n settings")
+def test_conversion_in_a_slot_body_ignores_its_i18n_context() -> None:
+    """Chameleon's conversion helpers (`__convert`, which calls `translate` for a value that is
+    not a string, a number or `__html__`) are closures of the render function, so in a slot
+    body they see the defining function's `__i18n_context`, not one set inside the body;
+    chameleon-rs uses the body's (architecture.md, Phase 8 amendments)."""
+    body = (
+        '<div metal:use-macro="macros[\'m\']"><b metal:fill-slot="s"><p i18n:context="c1" tal:content="xs"></p></b></div>'
+        '<p metal:define-macro="m"><s metal:define-slot="s"/></p>'
+    )
+
+    def tr(msgid: Any, **kw: Any) -> str:
+        return f'[{msgid}|{kw.get("context")}]'
+
+    results = [engine.PageTemplate(body)(xs=[1], translate=tr) for engine in (chameleon, chameleon_rs)]
+    assert results[0] == results[1]

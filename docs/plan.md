@@ -895,6 +895,109 @@ Compatibility is goal #1, so this comes before performance work.
 
 Exit gate: level 5, zero differences (or each one explained and fixed).
 
+**Done (2026-10-21).** Level 5: both of the owner's production applications render
+byte-identical pages on both engines. Details: architecture.md, "Phase 8 amendments".
+
+- **Harness** (`scripts/realsite.py`): one engine per process, a private adapter per
+  application (kept with the application, not here: app setup, routing table, parameter
+  values, an in-process GET client), everything non-deterministic pinned rather than masked
+  (`PYTHONHASHSEED=0`, frozen clock, `random`/`os.urandom` seeded per URL so CSRF tokens and
+  uuids repeat, outbound network refused, fixed run directory), byte-for-byte comparison with
+  minimal diffs written outside the repository. Rendered pages, diffs and timings stay in a
+  scratch directory.
+- **How the applications ran:** two production Flask/Quart applications, each copied into a
+  scratch directory with its own Python 3.14 venv (its pinned requirements, stock Chameleon at
+  the reference commit, chameleon-rs built into it), on local fixture databases, with dummy
+  secrets and no outbound traffic. Templates, partials (chameleon_partials) and the Flask/Quart
+  integration (chameleon-flask) went through the compat aliases unchanged.
+- **Coverage:** every GET rule of both routing tables, with parameter values from the
+  databases (every instance of the main entity of one application, samples of the rest),
+  query-string variants and not-found values, anonymous and signed-in (several account
+  states, admin). **10,145 URLs, 5,289 template renders; all responses byte-identical.** The
+  first runs found 10 differing pages, none from the engine: run-directory paths, live process
+  figures (pinned in the adapters), and one template printing a function instead of calling it
+  (its repr holds an address; pinned with a stable repr; worth fixing in the application).
+- **Shadow mode** (`chameleon_rs.shadow`, opt-in, zero cost when off): stock Chameleon serves
+  and each sampled render is repeated with a chameleon-rs twin (partials and template arguments
+  included), differences reported; or `serve='rust'`. Crawling both applications with it on:
+  0 renders differed. Each sample doubles the render's latency (blocking an asyncio loop for
+  both renders), so `sample_rate` should stay well below 1. Tests: `test_shadow.py` (13).
+- **Lone surrogates in the source** (carried from Phase 7): rendered as in Chameleon through
+  a private-use window, Python expressions failing with Chameleon's `UnicodeEncodeError`;
+  character references to surrogates too; text taken back from the output (translations,
+  names, captures) stays WTF-8 to the translation function. `test_surrogates.py`: 76 cases,
+  all compared with Chameleon. A source using its private-use characters so densely that no
+  2,048 free code points remain is still refused.
+- **Slot streams** (the Phase 6b known difference, a strict xfail): now as in Chameleon (a
+  macro or slot called inside a slot body writes to the define-slot site's stream; a handler in
+  the body cuts only that stream). The xfail is a passing test, plus 19 variations compared
+  with Chameleon. Two narrower differences remain, pinned by strict xfails (architecture.md,
+  Phase 8 amendments): in such a slot body, a handler keeps the text before a failing
+  expression (Chameleon appends a text node at once), and conversions use the body's
+  `i18n:context` (Chameleon: the defining function's; also at Phase 7). Render fuzz,
+  macros/slots/i18n (now generating macros whose slot sits in a translation, and slot bodies
+  that define slots or call macros) and the Phase 6a generator: 15,000 examples each, zero
+  differences.
+- **Review fixes (2026-10-21, after the Rust Architect's review; each checked against
+  Chameleon first):** **blocker:** the first slot-stream fix restarted a slot body's output
+  after every call, also when nothing had been flushed (the body had its own translation open,
+  or called a partial), orphaning its earlier output (garbled pages; a case that matched
+  Chameleon before): the restart now follows only a flush (`Extra::flushed`), on return or
+  error; slots called from a slot body flush too, which also fixed three nested-define-slot
+  cases that differed at Phase 7. Stream text no longer round-trips through the surrogate
+  window (a value's private-use character came back as a surrogate, a macro of a surrogate
+  template inside a translation gave U+FFFD, a value's surrogate in a translation gave U+FFFD
+  even at Phase 7): it stays WTF-8 to the runtime. Shadow mode can no longer raise into the
+  request (a Rust panic is a `BaseException`; a failing `str()` or report is logged), and logs
+  capped, deduplicated diffs with each output's length and hash. Numeric references are read
+  as Chameleon reads them (Unicode digits). Conversion errors in the runtime are propagated
+  instead of swallowed where the signatures allow. The harness refuses to write inside the
+  repository; this block names no private infrastructure. All page comparisons re-run after
+  the fixes: still 10,145 of 10,145 identical.
+- **Real-page render time** (release build, outermost template render only, median of 15
+  re-renders inside the request, same arguments, on a busy machine). With the applications'
+  development-mode cache busting, which re-reads and hashes static files from inside templates
+  on every call: 1.39x and 1.03x Chameleon in total. With production's memoized cache ids:
+  **1.90x and 2.51x in total** (per-page medians 2.08x and 2.41x; p10 1.32x/1.68x, p90
+  2.54x/2.75x; the heavier application's median page 4.1 ms against 2.0 ms). The rest of each
+  page's time is the applications' own Python called from templates (markdown, view models,
+  formatting), which both engines pay alike, so request-level gains are smaller than these
+  outermost-render ratios (a request also routes, loads data and builds the view model).
+  Repeated renders were identical on every page.
+- **Speed (A/B, release):** `bench/bench_ab.py 6f0caae`, 16 rounds. Before the review fixes,
+  twice at load average 13-24: -0.1 ns (range -67..+119) and +1.3 ns (range -20..+69). After
+  them, three runs each started at load average 4.7-4.9 (rising to 7-8 while the machine's
+  other work resumed): **+4.8 ns** (range -7..+34), **-4.6 ns** (range -106..+100), **-5.4 ns**
+  (range -91..+61) per listing item, 5.9-6.0x Chameleon: no detectable change, on a noisy
+  machine (the tolerance is +5 ns).
+- **Tests:** 98 Rust (92 core, with the surrogate module's; 6 `chameleon-py`); 2,470 pytest
+  passed, 2 skipped, 2 strict xfails (the two known differences above), with
+  `CHAMELEON_RS_CORPUS` set and `CHAMELEON_EAGER` unset (`test_surrogates.py` 76,
+  `test_shadow.py` 13, 19 slot-stream variations); upstream 227 passed on each engine (6
+  environmental xpassed); `make lint test` green; `make test-integration` green
+  (fastapi-chameleon 40, chameleon-flask 16, chameleon-robyn 39, chameleon_partials 6).
+
+Carried forward:
+
+- **Known differences** (architecture.md, Phases 6b, 7 and 8): the `__fallback` register cut
+  by item count across a translation stream, an unfinished name as one piece, a translation
+  function returning a non-`str` in a translated element, a custom `default_marker` per
+  render, a user `tokenizer`'s error positions, `ExpressionEvaluator` ignoring `rcontext`,
+  class names in messages; new in Phase 8: a handler in a slot body bound to another stream
+  keeps the text before a failing expression, and conversions in a slot body use its own
+  `i18n:context`/`domain` (strict xfails; the latter would need the runtime's conversions to
+  read the slot's defining-function settings).
+- **Phase 10, priorities (the architect's, after Phase 8):** (1) profile real pages first
+  (`make build-profiling`, py-spy, `scripts/realsite.py --timing`), attributing time to engine
+  glue against application code; (2) the Python wrapper per render (`template.py`: `Scope(**kw)`,
+  the `cook_check` stat, the defaults key, `output_stream_factory`) into one native render fast
+  path; (3) partials: a native partial call reusing the caller's VM and buffer (overlaps
+  Phase 9); (4) calls and attribute lookups: vectorcall with interned names, no tuple or dict
+  for 0-1 arguments, `__html__` presence cached per type keyed by the type version tag;
+  (5) conversion fast paths: exact `str`/`int`/`Markup` before the generic `convert_text`, no
+  escape pass when nothing needs escaping; (6) macro and slot overhead: copy-on-write
+  `copy_scope` and `econtext.update(rcontext)`.
+
 ## Phase 9: Built-in partials
 
 D10: `render_partial` built in, path resolution, native frames writing into the caller's

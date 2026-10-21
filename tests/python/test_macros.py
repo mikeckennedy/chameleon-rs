@@ -379,12 +379,11 @@ def test_yield_makes_its_function_render_nothing(source: str) -> None:
     same(source)
 
 
-@pytest.mark.xfail(strict=True, reason='Phase 8: a macro called in a slot body writes to the slot stream')
 def test_macro_called_inside_a_slot_body_writes_to_the_define_slot_stream() -> None:
     """Chameleon's fill function appends its own text through its defining function's
     `__append`, but passes the define-slot site's `__stream` to a macro it calls: here the
-    translation's stream, so `<a>K</a>` lands inside the translated text. chameleon_rs moves
-    the slot body's whole output (architecture.md, Phase 6b amendments)."""
+    translation's stream, so `<a>K</a>` lands inside the translated text while the slot body's
+    own text moves before it (architecture.md, Phase 8 amendments)."""
     source = (
         hidden(
             '<div metal:define-macro="m"><b i18n:translate="">F<s metal:define-slot="s"/>G</b></div>'
@@ -393,3 +392,110 @@ def test_macro_called_inside_a_slot_body_writes_to_the_define_slot_stream() -> N
         + """<x metal:use-macro="macros['m']"><y metal:fill-slot="s">T <z metal:use-macro="macros['k']"/> U</y></x>"""
     )
     same(source, translate=lambda msgid, **kw: msgid)
+
+
+SLOT_STREAM_MACROS = hidden(
+    '<div metal:define-macro="m"><b i18n:translate="">F<s metal:define-slot="s"/>G</b></div>'
+    '<div metal:define-macro="n"><b i18n:translate="">F<i i18n:name="x"><s metal:define-slot="s"/></i>G</b></div>'
+    '<div metal:define-macro="plain">F<s metal:define-slot="s"/>G</div>'
+    '<a metal:define-macro="k">K<em metal:define-slot="t">t</em></a>'
+    '<a metal:define-macro="bad">B${1/0}</a>'
+    '<div metal:define-macro="ext" metal:use-macro="macros[\'m\']"><y metal:fill-slot="s">P '
+    '<e metal:define-slot="s2">d</e> Q</y></div>'
+    '<div metal:define-macro="extk" metal:use-macro="macros[\'m\']"><y metal:fill-slot="s">P '
+    '<z metal:use-macro="macros[\'k\']"/> <e metal:define-slot="s2">d</e> Q</y></div>'
+)
+
+
+@pytest.mark.parametrize(
+    'use',
+    [
+        # Two macro calls, text around and between them.
+        (
+            """<x metal:use-macro="macros['m']"><y metal:fill-slot="s">T <z metal:use-macro="macros['k']"/> U """
+            """<z metal:use-macro="macros['k']"/> V</y></x>"""
+        ),
+        # The macro's own slot filled inside the slot body.
+        (
+            """<x metal:use-macro="macros['m']"><y metal:fill-slot="s">T <z metal:use-macro="macros['k']">"""
+            """<w metal:fill-slot="t">W${'w'}</w></z> U</y></x>"""
+        ),
+        # The define-slot inside an `i18n:name` of the translation.
+        """<x metal:use-macro="macros['n']"><y metal:fill-slot="s">T <z metal:use-macro="macros['k']"/> U</y></x>""",
+        # No translation around the define-slot: nothing moves.
+        """<x metal:use-macro="macros['plain']"><y metal:fill-slot="s">T <z metal:use-macro="macros['k']"/> U</y></x>""",
+        # Through `template.macros`.
+        (
+            """<x metal:use-macro="template.macros['m']"><y metal:fill-slot="s">T """
+            """<z metal:use-macro="template.macros['k']"/> U</y></x>"""
+        ),
+        # The macro fails and a handler in the slot body catches it.
+        (
+            """<x metal:use-macro="macros['m']"><y metal:fill-slot="s" tal:on-error="string:E">T """
+            """<z metal:use-macro="macros['bad']"/> U</y></x>"""
+        ),
+        (
+            """<x metal:use-macro="macros['m']"><y metal:fill-slot="s">T <q tal:on-error="string:E">"""
+            """<z metal:use-macro="macros['bad']"/></q> U</y></x>"""
+        ),
+        # A macro of the slot body inside a macro of the slot body.
+        (
+            """<x metal:use-macro="macros['m']"><y metal:fill-slot="s">T <z metal:use-macro="macros['k']">"""
+            """<w metal:fill-slot="t"><v metal:use-macro="macros['k']"/></w></z> U</y></x>"""
+        ),
+        # A slot defined inside a slot body, filled by the caller (a slot call, like a macro call).
+        """<x metal:use-macro="macros['ext']"><w metal:fill-slot="s2">W</w></x>""",
+        """<x metal:use-macro="macros['ext']"><w metal:fill-slot="s2">W <z metal:use-macro="macros['k']"/> V</w></x>""",
+        """<x metal:use-macro="macros['extk']"><w metal:fill-slot="s2">W</w></x>""",
+        """<x metal:use-macro="macros['ext']"/>""",
+        # Repeated macro calls; a macro inside a fill of a macro the body called.
+        (
+            """<x metal:use-macro="macros['m']"><y metal:fill-slot="s">T """
+            """<z tal:repeat="i range(2)" metal:use-macro="macros['k']"/> U</y></x>"""
+        ),
+        (
+            """<x metal:use-macro="macros['m']"><y metal:fill-slot="s">T <z metal:use-macro="macros['k']">"""
+            """<w metal:fill-slot="t">a<v metal:use-macro="macros['k']"/>b</w></z> U</y></x>"""
+        ),
+        # A translation of the body's own around the macro call: the macro writes into it.
+        (
+            """<x metal:use-macro="macros['n']"><y metal:fill-slot="s">T <i18n:x i18n:translate="">in"""
+            """<z metal:use-macro="macros['k']"/>w</i18n:x> U</y></x>"""
+        ),
+        (
+            """<x metal:use-macro="macros['m']"><y metal:fill-slot="s">T <c tal:define="v structure: 1">"""
+            """<z metal:use-macro="macros['k']"/></c> U</y></x>"""
+        ),
+        # A handler in the slot body: Chameleon cuts only the define-slot site's stream, so the
+        # body's own output stays and what streams opened inside the handler's body held goes.
+        (
+            """<x metal:use-macro="macros['m']"><y metal:fill-slot="s">T <q tal:on-error="string:E">"""
+            """<i i18n:translate="">a${1/0}</i></q> U</y></x>"""
+        ),
+        (
+            """<x metal:use-macro="macros['m']"><y metal:fill-slot="s"><i i18n:translate="">T """
+            """<q tal:on-error="string:E">Q${1/0}</q></i> U</y></x>"""
+        ),
+        (
+            """<x metal:use-macro="macros['m']"><y metal:fill-slot="s">T <q tal:on-error="string:E">"""
+            """<z metal:use-macro="macros['bad']"/>${1/0}</q> U</y></x>"""
+        ),
+    ],
+)
+def test_slot_body_macro_streams_like_chameleon(use: str) -> None:
+    same(SLOT_STREAM_MACROS + use, translate=lambda msgid, **kw: f'<{msgid}|{kw.get("mapping")}>')
+
+
+@pytest.mark.xfail(strict=True, reason='known difference: Chameleon appends a text node and its expressions at once')
+def test_handler_in_a_slot_body_drops_the_failing_text_node() -> None:
+    """Chameleon appends static text and the expressions in it as one string, so when the
+    expression fails the text before it was never appended; chameleon-rs writes the text
+    first. Only visible in a slot body whose output belongs to another stream than the
+    define-slot site's, where the handler does not cut the body's own output (architecture.md,
+    Phase 8 amendments)."""
+    same(
+        SLOT_STREAM_MACROS
+        + """<x metal:use-macro="macros['m']"><y metal:fill-slot="s">T <q tal:on-error="string:E">Q${1/0}</q>"""
+        + """ U</y></x>""",
+        translate=lambda msgid, **kw: f'<{msgid}|{kw.get("mapping")}>',
+    )

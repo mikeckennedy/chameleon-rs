@@ -489,7 +489,9 @@ impl Translate for World {
                     .into_iter()
                     .map(|(k, v)| match v {
                         NameValue::Text(t) => format!("{k}={t}"),
-                        NameValue::Pieces(p) => format!("{k}={p:?}"),
+                        NameValue::Pieces(p) => {
+                            format!("{k}={:?}", p.iter().map(ToString::to_string).collect::<Vec<_>>())
+                        }
                     })
                     .collect();
                 format!("tr({msgid}|{}|{default}|{})", mapping.join(","), self.i18n)

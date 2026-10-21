@@ -11,7 +11,7 @@ use pyo3::{PyTraverseError, PyVisit, intern};
 use chameleon_core::{Done, ErrorSite, Mode, Options, Output, VmError, VmState, run};
 
 use crate::compiler::{Config, PyExprCompiler, TokenSpan};
-use crate::errors::{catch_panics, compile_error, internal_error, vm_error};
+use crate::errors::{catch_panics, compile_error_mapped, internal_error, vm_error};
 use crate::expr::{RenderCtx, Site};
 use crate::runtime::PyRuntime;
 use crate::scope::Scope;
@@ -107,7 +107,7 @@ impl Program {
     #[new]
     #[pyo3(signature = (
         source, filename = "<string>", *, expression_types = None, default_expression = None, builtins = None,
-        fast_path = true, default_marker = None, token_lengths = None, **options
+        fast_path = true, default_marker = None, token_lengths = None, surrogate_base = None, **options
     ))]
     #[allow(clippy::too_many_arguments)] // Python keyword arguments
     fn new(
@@ -120,9 +120,14 @@ impl Program {
         fast_path: bool,
         default_marker: Option<Bound<'_, PyAny>>,
         token_lengths: Option<Vec<usize>>,
+        surrogate_base: Option<u32>,
         options: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
-        let options = self::options(options)?;
+        if surrogate_base.is_some_and(|b| !chameleon_core::surrogates::is_block(b)) {
+            return Err(pyo3::exceptions::PyValueError::new_err("surrogate_base is not a private-use block"));
+        }
+        let mut options = self::options(options)?;
+        options.surrogate_base = surrogate_base;
         let mut config = Config::page_template();
         if let Some(types) = expression_types {
             config.set_types(types)?;
@@ -141,8 +146,12 @@ impl Program {
         let tokens = token_lengths.map(|lengths| crate::elements::spans_from_lengths(source, &lengths)).transpose()?;
         catch_panics(py, || {
             let mut compiler = PyExprCompiler::new(py, marker.clone(), config, source, filename)?;
-            let core = chameleon_core::compile_tokens(source, tokens, &mut compiler, &options)
-                .map_err(|e| compile_error(py, e, source, filename))?;
+            compiler.surrogate_base = surrogate_base;
+            let mut core = chameleon_core::compile_tokens(source, tokens, &mut compiler, &options)
+                .map_err(|e| compile_error_mapped(py, e, source, filename, surrogate_base))?;
+            if let Some(base) = surrogate_base {
+                core.set_surrogate_base(base);
+            }
             let names = core.names().iter().map(|n| PyString::intern(py, n).unbind()).collect();
             let has_loops = core.ops().iter().any(|op| matches!(op, chameleon_core::Op::LoopStart { .. }));
             Ok(Self {
@@ -292,6 +301,7 @@ pub(crate) fn record_error(
     error: &PyErr,
 ) -> PyResult<()> {
     let Some((text, line, column)) = program.token_info(token) else { return Ok(()) };
+    let text = crate::convert::source_str(py, text, program.core.surrogate_base())?;
     let key = intern!(py, "__error__");
     let list = if let Some(list) = rcontext.get_item(key)? {
         list

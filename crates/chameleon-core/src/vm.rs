@@ -26,6 +26,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::escape::Escape;
 use crate::expr::ExprId;
 use crate::output::{Mark, Output};
+use crate::surrogates::Wtf8Buf;
 
 /// A slice of a program's static text arena.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -468,7 +469,15 @@ pub struct MacroEntry {
 #[derive(Debug)]
 pub struct Program {
     pub(crate) ops: Vec<Op>,
+    /// The static text arena, as written to the output: UTF-8, or WTF-8 (`surrogatepass`
+    /// bytes) when the source had lone surrogates.
     pub(crate) text: Box<[u8]>,
+    /// The arena as UTF-8 when it differs from `text` (lone surrogates still in their
+    /// private-use block): what [`Program::text_str`] slices.
+    text_utf8: Option<Box<str>>,
+    /// The private-use block the source's lone surrogates were mapped to
+    /// ([`crate::surrogates`]).
+    surrogate_base: Option<u32>,
     pub(crate) names: Vec<Box<str>>,
     pub(crate) tables: Tables,
     pub(crate) macros: Vec<MacroEntry>,
@@ -484,7 +493,40 @@ impl Program {
         tables: Tables,
         macros: Vec<MacroEntry>,
     ) -> Self {
-        Self { ops, text: text.into_boxed_slice(), names, tables, macros, capacity: AtomicUsize::new(0) }
+        Self {
+            ops,
+            text: text.into_boxed_slice(),
+            text_utf8: None,
+            surrogate_base: None,
+            names,
+            tables,
+            macros,
+            capacity: AtomicUsize::new(0),
+        }
+    }
+
+    /// Records that the source's lone surrogates were mapped to the private-use block at
+    /// `base` ([`crate::surrogates`]): the output arena gets their `surrogatepass` bytes,
+    /// while [`Program::text_str`] keeps the mapped text.
+    pub fn set_surrogate_base(&mut self, base: u32) {
+        self.surrogate_base = Some(base);
+        let mut bytes = self.text.to_vec();
+        if crate::surrogates::block_to_surrogates(&mut bytes, base) {
+            let utf8 = std::mem::replace(&mut self.text, bytes.into_boxed_slice());
+            self.text_utf8 = String::from_utf8(utf8.into_vec()).ok().map(String::into_boxed_str);
+        }
+    }
+
+    /// The private-use block the source's lone surrogates were mapped to, if any.
+    #[must_use]
+    pub fn surrogate_base(&self) -> Option<u32> {
+        self.surrogate_base
+    }
+
+    /// Whether the static text holds lone surrogates (`surrogatepass` bytes).
+    #[must_use]
+    pub fn has_surrogate_text(&self) -> bool {
+        self.text_utf8.is_some()
     }
 
     #[must_use]
@@ -515,6 +557,10 @@ impl Program {
     /// [`Program::text`] as a `str` (the arena holds UTF-8 pieces of the template).
     #[must_use]
     pub fn text_str(&self, r: TextRef) -> &str {
+        if let Some(utf8) = &self.text_utf8 {
+            let start = r.start as usize;
+            return utf8.get(start..start + r.len as usize).unwrap_or_default();
+        }
         self.text(r).and_then(|b| std::str::from_utf8(b).ok()).unwrap_or_default()
     }
 
@@ -794,7 +840,7 @@ pub type Loop<V> = (V, Countdown<V>);
 pub enum Translation<'a, V> {
     /// `i18n:translate`: `translate(msgid, mapping=mapping, default=default, domain=...,
     /// context=..., target_language=<local>)`.
-    Block { msgid: &'a str, mapping: Option<Vec<(&'a str, NameValue)>>, default: &'a str },
+    Block { msgid: Msgid<'a>, mapping: Option<Vec<(&'a str, NameValue)>>, default: &'a Wtf8Buf },
     /// `tal:content` with `i18n:translate=""`: `translate(value, default=None, domain=...,
     /// context=..., target_language=<local>)`.
     Content(V),
@@ -806,13 +852,31 @@ pub enum Translation<'a, V> {
     Interp { msgid: &'a str, mapping: Option<Vec<(&'a str, V)>> },
 }
 
+/// A translated block's message id: the `i18n:translate` attribute's (source text), or its
+/// normalized content (taken from the output, so it may hold lone surrogates).
+#[derive(Debug, Clone, Copy)]
+pub enum Msgid<'a> {
+    Source(&'a str),
+    Stream(&'a Wtf8Buf),
+}
+
+impl std::fmt::Display for Msgid<'_> {
+    /// Lossy for a stream's lone surrogates.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Source(s) => f.write_str(s),
+            Self::Stream(w) => w.fmt(f),
+        }
+    }
+}
+
 /// An `i18n:name`'s value in its translation's mapping: its text, or, when an error left
 /// the name unfinished (and a `tal:on-error` inside the translation caught it), the stream
 /// itself (Chameleon's list of the pieces appended so far, here the text so far as one piece).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NameValue {
-    Text(String),
-    Pieces(Vec<String>),
+    Text(Wtf8Buf),
+    Pieces(Vec<Wtf8Buf>),
 }
 
 /// The values a runtime works with (D2). The VM is generic over the sub-traits below; a
@@ -854,6 +918,10 @@ pub trait Names: Values {
     fn restore(&mut self, name: NameId, backup: Option<Self::Value>) -> Result<(), Self::Error>;
     /// A string value (`None` gives the runtime's null value).
     fn text_value(&mut self, text: Option<&str>) -> Self::Value;
+    /// A string value taken from the output (a capture), which may hold lone surrogates.
+    fn stream_value(&mut self, text: &Wtf8Buf) -> Self::Value {
+        self.text_value(Some(&text.to_string()))
+    }
 }
 
 /// `tal:repeat`.
@@ -1069,14 +1137,17 @@ struct Extra<V> {
     /// translation stream's id, or `None` for the render's output), wherever it is called
     /// from. (Other functions write to the stream open when they were called.)
     stream: Option<u64>,
-    /// For a slot body: the output length when it started (its output moves to `stream` when
-    /// it returns).
+    /// For a slot body: where its own output not yet moved to `stream` starts (it moves when
+    /// the body calls a macro or a slot, and when it returns).
     start: Mark,
+    /// For a slot body: its output was moved for the call in progress, so its own output
+    /// starts again when that call returns.
+    flushed: bool,
 }
 
 impl<V> Extra<V> {
     fn new(i18n: I18n<V>) -> Self {
-        Self { i18n, slots: Vec::new(), stream: None, start: Mark::default() }
+        Self { i18n, slots: Vec::new(), stream: None, start: Mark::default(), flushed: false }
     }
 
     /// Drops the values it holds (it goes back to the spare boxes). `stream` and `start` are
@@ -1334,20 +1405,15 @@ impl<V> VmState<V> {
     /// active frame's fallback mark, if it pointed into the stream, moves to its start: the
     /// stream's text is gone (Chameleon's register then indexes the inner stream's items in
     /// the outer stream, which is not modelled: see architecture.md, Phase 6b amendments).
-    fn take_text<E>(&mut self, mark: Mark) -> Result<String, VmError<E>> {
+    fn take_text<E>(&mut self, mark: Mark) -> Result<Wtf8Buf, VmError<E>> {
         if let Some(frame) = self.frames.last_mut()
             && frame.fallback > mark
         {
             frame.fallback = mark;
         }
         let bytes = self.out.take_since(mark);
-        match String::from_utf8(bytes) {
-            Ok(text) => Ok(text),
-            // Lone surrogates (written with `surrogatepass`) cannot be a Rust `str`: they
-            // become U+FFFD in the translated text.
-            Err(e) if self.out.has_surrogates() => Ok(String::from_utf8_lossy(e.as_bytes()).into_owned()),
-            Err(_) => Err(VmError::Internal("translation stream is not UTF-8")),
-        }
+        // Lone surrogates (written with `surrogatepass`) stay as they are, for the runtime.
+        Wtf8Buf::from_bytes(bytes).ok_or(VmError::Internal("translation stream is not UTF-8"))
     }
 
     /// A box for a frame's `extra`, reused when one is spare.
@@ -1363,9 +1429,10 @@ impl<V> VmState<V> {
                 }
                 extra.stream = stream;
                 extra.start = start;
+                extra.flushed = false;
                 extra
             }
-            None => Box::new(Extra { i18n, slots, stream, start }),
+            None => Box::new(Extra { i18n, slots, stream, start, flushed: false }),
         }
     }
 
@@ -1394,37 +1461,112 @@ impl<V> VmState<V> {
         innermost(own).or(if frame.kind == Kind::Fill { stream } else { innermost(below) })
     }
 
-    /// A slot body returned: Chameleon's fill function writes with its defining function's
-    /// `__append`, so if translation streams were opened since (around the
-    /// `metal:define-slot`), its output belongs before the first of them.
-    fn move_to_stream(&mut self, stream: Option<u64>, start: Mark) {
+    /// Where a slot body's output bound for `stream` goes: before the first translation stream
+    /// opened since; `None` if there is none (it is already in place).
+    fn move_target(&self, stream: Option<u64>) -> Option<Mark> {
         let base = match stream {
             None => 0,
             Some(id) => {
-                let Some(at) = self.unwind.iter().rposition(
+                let at = self.unwind.iter().rposition(
                     |e| matches!(e, Unwind::Translate { id: i, .. } | Unwind::Name { id: i, .. } if *i == id),
-                ) else {
-                    return;
-                };
+                )?;
                 at + 1
             }
         };
-        let Some(first) = self.unwind.get(base..).and_then(|rest| {
-            rest.iter().find_map(|e| match e {
-                Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } => Some(*mark),
-                _ => None,
-            })
-        }) else {
+        self.unwind.get(base..)?.iter().find_map(|e| match e {
+            Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } => Some(*mark),
+            _ => None,
+        })
+    }
+
+    /// A handler in a slot body caught an error (its own entries above it already dropped).
+    /// When the body's output belongs to another stream than the define-slot site's,
+    /// Chameleon's `del __stream[__fallback:]` cuts only the latter: what streams opened in the
+    /// handler's body held is dropped (`abandoned`), the body's own output is kept (moved to its
+    /// stream), and then the define-slot site's stream is cut at the fallback. Returns whether
+    /// it did that; otherwise the caller cuts as for any function.
+    fn fill_catch(&mut self, abandoned: Option<Mark>) -> bool {
+        let Some(frame) = self.frames.last() else { return false };
+        if frame.kind != Kind::Fill {
+            return false;
+        }
+        let Some(stream) = frame.extra.as_ref().map(|e| e.stream) else { return false };
+        let own = self.unwind.get(frame.unwind_base..).unwrap_or_default();
+        if own.iter().any(|e| matches!(e, Unwind::Translate { .. } | Unwind::Name { .. } | Unwind::Capture(_))) {
+            return false;
+        }
+        if self.move_target(stream).is_none() {
+            return false;
+        }
+        if let Some(mark) = abandoned {
+            self.out.truncate(mark);
+        }
+        self.flush_fill();
+        let Some(frame) = self.frames.last_mut() else { return false };
+        let cut = frame.fallback;
+        self.out.truncate(cut);
+        if let Some(extra) = frame.extra.as_mut() {
+            extra.flushed = false;
+            extra.start = extra.start.min(cut);
+        }
+        true
+    }
+
+    /// A slot body is about to call a macro. Chameleon passes the macro the define-slot site's
+    /// `__stream` (the innermost stream open there), while the body itself writes with its
+    /// defining function's `__append`: the body's output so far moves to its stream now, and
+    /// the macro's output stays where it is written. Not when the body has a stream of its own
+    /// open (a translation or capture inside it), which the macro then writes to.
+    fn flush_fill(&mut self) {
+        let Some(frame) = self.frames.last() else { return };
+        if frame.kind != Kind::Fill {
             return;
-        };
+        }
+        let own = self.unwind.get(frame.unwind_base..).unwrap_or_default();
+        if own.iter().any(|e| matches!(e, Unwind::Translate { .. } | Unwind::Name { .. } | Unwind::Capture(_))) {
+            return;
+        }
+        let Some((stream, start)) = frame.extra.as_ref().map(|e| (e.stream, e.start)) else { return };
+        self.move_to_stream(stream, start);
+        let at = self.out.mark();
+        if let Some(extra) = self.frames.last_mut().and_then(|f| f.extra.as_mut()) {
+            extra.start = at;
+            extra.flushed = true;
+        }
+    }
+
+    /// The call a slot body made after [`VmState::flush_fill`] returned: the body's own output
+    /// starts again here (what the call wrote is not the body's). Nothing if no flush happened
+    /// (the call writes into a stream of the body's own, or the active frame is no slot body).
+    fn restart_fill(&mut self) {
+        let at = self.out.mark();
+        if let Some(frame) = self.frames.last_mut()
+            && frame.kind == Kind::Fill
+            && let Some(extra) = &mut frame.extra
+            && std::mem::take(&mut extra.flushed)
+        {
+            extra.start = at;
+        }
+    }
+
+    /// A slot body's output (since `start`) moves to its stream: Chameleon's fill function
+    /// writes with its defining function's `__append`, so if translation streams were opened
+    /// since (around the `metal:define-slot`), it belongs before the first of them. Marks in
+    /// the moved output end up at the end: they belong to the define-slot site's stream
+    /// (`tal:on-error` in the body truncates `__stream`, not what the body appended).
+    fn move_to_stream(&mut self, stream: Option<u64>, start: Mark) {
+        let Some(first) = self.move_target(stream) else { return };
         let bytes = self.out.take_since(start);
         if bytes.is_empty() {
             return;
         }
         self.out.insert_at(first, &bytes);
         let n = bytes.len();
+        let end = self.out.mark();
         let shift = |m: &mut Mark| {
-            if *m >= first {
+            if *m >= start {
+                *m = end;
+            } else if *m >= first {
                 *m = m.shifted(n);
             }
         };
@@ -1505,6 +1647,9 @@ pub fn run<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R) -> Result<Done<Val<
     loop {
         let Some(frame) = st.frames.last_mut() else { return Ok(Done::Finished) };
         let program = Arc::clone(&frame.program);
+        if program.has_surrogate_text() {
+            st.out.set_has_surrogates();
+        }
         let mut pc = frame.pc as usize;
         let update = std::mem::take(&mut frame.pending_update);
         st.recent = frame.recent;
@@ -1530,6 +1675,7 @@ pub fn run<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R) -> Result<Done<Val<
                 let fill =
                     if done.kind == Kind::Fill { done.extra.as_ref().map(|e| (e.stream, e.start)) } else { None };
                 st.pop_frame();
+                st.restart_fill();
                 match on_return {
                     OnReturn::Nothing => {}
                     OnReturn::Text(text) => {
@@ -1723,13 +1869,26 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
                 rt.i18n_changed(frame.i18n(&st.none)).map_err(VmError::Runtime)?;
             }
             match rt.catch(&error, name, ErrorSite::unpack(st.recent)) {
+                Ok(()) if st.fill_catch(abandoned) => {
+                    if let Some(frame) = st.frames.last_mut() {
+                        frame.recent = st.recent;
+                    }
+                    return Ok(());
+                }
                 Ok(()) => {
+                    let Some(frame) = st.frames.last_mut() else { return Err(VmError::Internal("no frame")) };
                     // `del __stream[__fallback:]` on the stream of the handler's site: the
                     // translation streams opened inside the body are abandoned, whatever the
                     // register says (it may have been set inside one of them, as a length of
                     // that stream).
                     let cut = abandoned.map_or(frame.fallback, |m| m.min(frame.fallback));
                     st.out.truncate(cut);
+                    // A slot body's own output may start past the cut (a call's output was cut).
+                    if let Some(extra) = frame.extra.as_mut()
+                        && extra.start > cut
+                    {
+                        extra.start = cut;
+                    }
                     frame.recent = st.recent;
                     return Ok(());
                 }
@@ -1744,6 +1903,8 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
             rt.record_error(&error, ErrorSite::unpack(st.recent));
         }
         st.pop_frame();
+        // A call from a slot body failed: as when it returns (see `flush_fill`).
+        st.restart_fill();
         let Some(caller) = st.frames.last_mut() else { return Err(VmError::Runtime(error)) };
         caller.pending_update = false;
         st.recent = caller.recent;
@@ -2159,7 +2320,7 @@ fn unfinished_names<V>(unwind: &mut [Unwind<V>], from: usize, out: &Output) {
         if let Unwind::Name { mark, program, info, .. } = e {
             let end = marks.get(i + 1).copied().unwrap_or_else(|| out.mark());
             let text = out.as_bytes().get(mark.position()..end.position()).unwrap_or_default();
-            let pieces = if text.is_empty() { Vec::new() } else { vec![String::from_utf8_lossy(text).into_owned()] };
+            let pieces = Wtf8Buf::from_bytes(text.to_vec()).filter(|t| !t.is_empty()).into_iter().collect();
             names.push((Arc::clone(program), *info, pieces));
         }
     }
@@ -2237,10 +2398,16 @@ fn execute_rare<R: Runtime>(
             }
         }
         Op::DefineSlot { slot, end } => {
+            let filled = st.frames.last().is_some_and(|f| matches!(f.slots().get(slot as usize), Some(Some(_))));
+            if filled {
+                // A slot called from a slot body: like a macro call (see `flush_fill`).
+                st.flush_fill();
+            }
             let Some(frame) = st.frames.last() else { return Err(VmError::Internal("no frame")) };
             if let Some(Some(fill)) = frame.slots().get(slot as usize) {
                 let fill = rt.slot_call(fill, &mut st.out).map_err(rt_err)?;
                 let Some(fill) = fill else {
+                    st.restart_fill();
                     return Ok(Flow::Jump(end as usize));
                 };
                 let scope = rt.copy_scope().map_err(rt_err)?;
@@ -2279,12 +2446,16 @@ fn execute_rare<R: Runtime>(
         }
         Op::UseMacro { expr } => {
             let value = eval_or_leave_rare!(st, rt, pc, expr, false, no_call);
+            st.flush_fill();
             match rt.macro_call(value, &mut st.out).map_err(rt_err)? {
                 MacroStep::Frame { call, entry, cost } => {
                     let pushed = Pushed::call(call, entry, cost, pc as u32 + 1, OnReturn::Update);
                     return Ok(Flow::Leave(Action::Push(pushed)));
                 }
-                MacroStep::Done => rt.after_macro().map_err(rt_err)?,
+                MacroStep::Done => {
+                    st.restart_fill();
+                    rt.after_macro().map_err(rt_err)?;
+                }
             }
         }
         Op::CallMacro { entry } => {
@@ -2294,6 +2465,7 @@ fn execute_rare<R: Runtime>(
             let call = Call { program: Arc::clone(shared), code, scope };
             let mut pushed = Pushed::call(call, entry, 1, pc as u32 + 1, OnReturn::Update);
             pushed.reset_token = true;
+            st.flush_fill();
             return Ok(Flow::Leave(Action::Push(pushed)));
         }
         Op::I18nSet { key, value } => {
@@ -2337,7 +2509,7 @@ fn execute_rare<R: Runtime>(
                 translation: Box::new(OpenTranslation {
                     program: Arc::clone(shared),
                     info,
-                    names: vec![NameValue::Text(String::new()); t.names.len()],
+                    names: vec![NameValue::Text(Wtf8Buf::default()); t.names.len()],
                 }),
             });
         }
@@ -2347,12 +2519,12 @@ fn execute_rare<R: Runtime>(
                 return Err(VmError::Internal("translate_end without its translation"));
             };
             let content = st.take_text(mark)?;
-            let default = normalize_space(&content);
+            let default = content.normalize_space();
             let msgid = match t.msgid {
-                Some(m) => program.text_str(m),
+                Some(m) => Msgid::Source(program.text_str(m)),
                 // `if msgid:` around the call.
                 None if default.is_empty() => return Ok(Flow::Next),
-                None => default.as_str(),
+                None => Msgid::Stream(&default),
             };
             let mapping = (!t.names.is_empty())
                 .then(|| t.names.iter().map(|n| program.text_str(*n)).zip(translation.names).collect::<Vec<_>>());
@@ -2434,7 +2606,7 @@ fn execute_rare<R: Runtime>(
                 // `Replace`: a true (non-empty) result is the attribute's name.
                 Some(name) if !content.is_empty() => rt.text_value(Some(program.text_str(name))),
                 Some(_) => rt.text_value(None),
-                None => rt.text_value(Some(&content)),
+                None => rt.stream_value(&content),
             };
             st.unwind.push(Unwind::Value(value));
         }
@@ -2474,25 +2646,6 @@ fn execute_rare<R: Runtime>(
         _ => return Err(VmError::Internal("not a rare instruction")),
     }
     Ok(Flow::Next)
-}
-
-/// `__re_whitespace(text).strip()`: runs of Python whitespace become one space, then the
-/// ends are stripped.
-fn normalize_space(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut space = false;
-    for c in s.chars() {
-        if crate::pychars::is_space(c) {
-            space = true;
-        } else {
-            if space && !out.is_empty() {
-                out.push(' ');
-            }
-            space = false;
-            out.push(c);
-        }
-    }
-    out
 }
 
 /// A translated attribute's value: `if value is not None [and name not in chain(...)]:

@@ -28,6 +28,7 @@ import importlib.metadata
 import logging
 import os
 import pathlib
+import re
 import tempfile
 import threading
 import types
@@ -586,6 +587,9 @@ class PageTemplate(BaseTemplate):
             token_lengths = [len(t) for t in tokens]
         marker = _marker_value(self.default_marker)
         options = {name: getattr(self, name) for name in PROGRAM_OPTIONS}
+        body, surrogate_base = _map_surrogates(body)
+        if surrogate_base is not None:
+            options['surrogate_base'] = surrogate_base
         try:
             return Program(
                 body,
@@ -704,12 +708,65 @@ class PageTemplate(BaseTemplate):
         return digest.hexdigest()[:32]
 
 
+_LONE_SURROGATE = re.compile('[\ud800-\udfff]')
+_PRIVATE_USE = re.compile('[\ue000-\uf8ff]')
+# Numeric character references as Chameleon decodes them (`&#` and `\d{1,5}`, or `&#x` and
+# `\w{1,8}`, then `int()`, which takes any Unicode digit and underscores between digits).
+_NUMERIC_REFERENCE = re.compile(r'&#(x?)(\w{1,8});')
+_SURROGATE_TABLES: dict[int, dict[int, int]] = {}
+
+
+def _reference_codes(body: str) -> list[int]:
+    codes = []
+    if '&#' in body:
+        for x, digits in _NUMERIC_REFERENCE.findall(body):
+            try:
+                codes.append(int(digits, 16) if x else int(digits))
+            except ValueError:
+                continue
+    return codes
+
+
+def _map_surrogates(body: str) -> tuple[str, int | None]:
+    """A source's lone surrogates, which the Rust core's UTF-8 text cannot hold, mapped one
+    to one onto 2,048 code points of the Private Use Area (U+E000-U+F8FF) that the source
+    (its characters and its numeric character references) does not use; the native program
+    maps them back wherever source text leaves it, and decodes character references to lone
+    surrogates into the same block (architecture.md, Phase 8 amendments). Returns the body and
+    the block's first code point, or the body unchanged and ``None`` when there is nothing to
+    map (or no free block: compiling then refuses it)."""
+    codes = _reference_codes(body)
+    if _LONE_SURROGATE.search(body) is None and not any(0xD800 <= c < 0xE000 for c in codes):
+        return body, None
+    used_codes = {ord(c) for c in _PRIVATE_USE.findall(body)}
+    used_codes.update(c for c in codes if 0xE000 <= c < 0xF900)
+    start = 0xE000
+    base = None
+    for used in sorted(used_codes) + [0xF900]:
+        if used - start >= 0x800:
+            base = start
+            break
+        start = used + 1
+    if base is None:
+        return body, None
+    table = _SURROGATE_TABLES.get(base)
+    if table is None:
+        table = {code: base + code - 0xD800 for code in range(0xD800, 0xE000)}
+        if len(_SURROGATE_TABLES) < 64:
+            _SURROGATE_TABLES[base] = table
+    return body.translate(table), base
+
+
 def _surrogate_error(body: str, at: int) -> UnsupportedError:
-    """A template source with a lone surrogate cannot become the Rust core's UTF-8 text:
-    Chameleon renders it, chameleon-rs refuses it at compile time (docs/architecture.md,
-    Phase 7 amendments)."""
+    """A template source with lone surrogates and characters in every private-use block
+    they could be mapped to (architecture.md, Phase 8 amendments) is refused at compile
+    time."""
     code = ord(body[at])
-    return UnsupportedError(f'A lone surrogate (U+{code:04X}) in the template source', Token(body[at], at, body))
+    return UnsupportedError(
+        f'A lone surrogate (U+{code:04X}) in a template source whose private-use characters leave no 2,048 '
+        'code points of U+E000-U+F8FF free',
+        Token(body[at], at, body),
+    )
 
 
 class PageTemplateFile(PageTemplate, BaseTemplateFile):

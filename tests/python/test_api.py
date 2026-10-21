@@ -113,16 +113,11 @@ def test_template_error_api() -> None:
     assert repr(pickle.loads(pickle.dumps(error, -1))) == repr(error)
 
 
-def test_lone_surrogates_in_the_source_are_refused() -> None:
-    # Chameleon renders them; a Rust `str` cannot hold them (docs/architecture.md, Phase 7).
+def test_lone_surrogates_in_the_source_render() -> None:
+    # Chameleon renders them; chameleon-rs maps them through a private-use block (Phase 8;
+    # every position is compared with Chameleon in test_surrogates.py).
     body = '<p>ab\ud800c ${x}</p>'
-    with pytest.raises(exc.UnsupportedError) as e:
-        chameleon_rs.PageTemplate(body)
-    assert e.value.offset == 5
-    assert e.value.location == (1, 5)
-    assert 'U+D800' in str(e.value)
-    # Lone surrogates in values still render (`surrogatepass`, D6).
-    assert chameleon_rs.PageTemplate('<p>${x}</p>')(x='a\udc80') == '<p>a\udc80</p>'
+    assert chameleon_rs.PageTemplate(body)(x='a\udc80') == chameleon.PageTemplate(body)(x='a\udc80')
 
 
 # --- configuration -----------------------------------------------------------------------

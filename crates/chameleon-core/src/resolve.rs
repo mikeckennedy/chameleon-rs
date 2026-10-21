@@ -76,6 +76,7 @@ pub(crate) fn resolve<C: ExprCompiler>(tree: &Tree, compiler: &mut C, options: &
         tree,
         compiler,
         strict: options.strict,
+        surrogate_base: options.surrogate_base,
         default: DefaultAlias::Name,
         attrs: None,
         engine: Engine::default(),
@@ -98,6 +99,7 @@ struct Resolver<'t, C: ExprCompiler> {
     tree: &'t Tree,
     compiler: &'t mut C,
     strict: bool,
+    surrogate_base: Option<u32>,
     default: DefaultAlias,
     attrs: Option<AttrsId>,
     /// The engine settings of the site being compiled (attributes set them).
@@ -203,7 +205,7 @@ impl<'t, C: ExprCompiler> Resolver<'t, C> {
             return Ok(());
         }
         let cx = self.cx(emitted);
-        let resolved = match interpolate_full(&i.source, cx, self.compiler) {
+        let resolved = match interpolate_full(&i.source, cx, self.compiler, self.surrogate_base) {
             Ok((parts, implicit)) => Resolved::Parts(parts, implicit),
             Err(CompileError::Template { kind: ErrorKind::Expression, message, token }) if !self.strict => {
                 let (text, pos) = token.resolve("");

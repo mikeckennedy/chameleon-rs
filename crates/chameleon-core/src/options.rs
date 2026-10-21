@@ -42,6 +42,10 @@ pub struct Options {
     /// Expression syntax errors raise at compile time (`strict`); otherwise they raise when
     /// the expression is reached at render time.
     pub strict: bool,
+    /// The private-use block the source's lone surrogates were mapped to
+    /// ([`crate::surrogates`]); a character reference to a lone surrogate decodes into it.
+    /// `None`: such a reference is refused.
+    pub surrogate_base: Option<u32>,
 }
 
 impl Default for Options {
@@ -57,6 +61,7 @@ impl Default for Options {
             enable_comment_interpolation: true,
             restricted_namespace: true,
             strict: true,
+            surrogate_base: None,
         }
     }
 }

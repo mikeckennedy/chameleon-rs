@@ -611,7 +611,8 @@ reference (the differential tests and the fuzzer compare whole outputs and messa
   and in a translation function returning a non-`str` for an `i18n:translate` element
   (Chameleon fails at the final `''.join` with the item's index; we raise the `TypeError` at
   once, as Phase 6a already does for `tal:content`). A macro called from inside a slot body
-  writes to the slot's stream here, to the define-slot site's stream in Chameleon.
+  writes to the slot's stream here, to the define-slot site's stream in Chameleon (Phase 8:
+  now as in Chameleon, see the Phase 8 amendments).
 - **`yield`** (the Phase 5 deviation, now reproduced): an expression or code block whose
   code yields (outside nested functions; in a comprehension, only its first iterable counts)
   makes its function, main, macro or slot body, a generator in Chameleon, so the function
@@ -678,7 +679,8 @@ The Python API and the compat layer. Every behaviour below was checked against t
   message including the `- Source:` lines (the Phase 6a item), for strings, files and
   non-strict render-time `ExpressionError`s. `msg` is no longer an attribute (Chameleon has
   none; it is `args[0]`).
-- **Lone surrogates in the template source (the Phase 3 item): refused, for now.** Chameleon
+- **Lone surrogates in the template source (the Phase 3 item): refused, for now** (superseded:
+  rendered since Phase 8, see the Phase 8 amendments). Chameleon
   renders them in text, attribute values and `string:` expressions (a Python expression with
   one fails there too, `UnicodeEncodeError` from `compile`); the core's source is UTF-8 text
   and cannot hold them. Compiling raises `UnsupportedError` (a `CompilationError`) with a
@@ -755,6 +757,111 @@ The Python API and the compat layer. Every behaviour below was checked against t
   either engine: the six "environmental" upstream failures on the maintainer's Mac were
   `CHAMELEON_EAGER=1` in the shell, and they now pass on both engines (still non-strict
   xfails, as their outcome depends on the environment).
+
+## Phase 8 amendments (2026-10-21)
+
+Real-site verification. Every behaviour below was checked against the reference.
+
+- **Lone surrogates in the template source: rendered, as in Chameleon** (the Phase 3 and Phase 7
+  item; `tests/python/test_surrogates.py`, 68 cases, all compared with Chameleon). As built:
+  - `chameleon_rs.template` maps each lone surrogate one to one onto a window of 2,048 code
+    points of the BMP Private Use Area (U+E000-U+F8FF) that neither the source's characters nor
+    its numeric character references use (any window, not three fixed blocks, so a source with
+    one or two private-use characters always has one), and passes the window's start as
+    `Program(surrogate_base=...)`. Both take 3 UTF-8 bytes, so byte and code-point offsets are
+    unchanged. A source that also has a numeric reference that may name a surrogate gets a
+    window too. With no free window, compiling raises `UnsupportedError` as before.
+  - The core (`chameleon_core::surrogates`): `Program::set_surrogate_base` rewrites the static
+    text arena, in place, to the surrogates' `surrogatepass` bytes (WTF-8), which is what the
+    VM writes; `text_str` reads a UTF-8 copy kept only for such programs (the mapped text, for
+    names, message ids and defaults). The VM sets the output's surrogate flag when a frame of
+    such a program becomes active (so the final `str`, and a translation stream, are decoded
+    with `surrogatepass`). Text taken back from the output (a translation's content and
+    default, an `i18n:name`'s value, a capture) stays WTF-8 (`surrogates::Wtf8Buf`, normalized
+    as such) and the runtime decodes it with `surrogatepass` (`Msgid::Stream`, `NameValue`,
+    `Names::stream_value`), so values' lone surrogates and private-use characters, and static
+    text of other programs, reach the translation function unchanged (this replaced a first
+    version that round-tripped stream text through the window, and the earlier U+FFFD; the
+    architect's review found both wrong). A character reference to a surrogate
+    (`string:a&#xD800;`) decodes into the window (`Options::surrogate_base`); the Python side
+    reads numeric references as Chameleon does (`\d`/`\w` and `int()`, Unicode digits and
+    underscores included) both to detect them and to keep the window clear of their code points.
+  - The runtime converts every piece of *static* source text it hands to Python through
+    `convert::source_str`, which maps the window back: `text_value` (`macroname`), message ids
+    from `i18n:translate` and `i18n:attributes`, mapping keys, `i18n:domain`/`context`, slot keys,
+    attribute filters and dictionary exclusions, `tal:attributes` defaults. The compiler does
+    the same for `string:` text parts (joined by Python, so the surrogates survive), custom
+    expression sources, code blocks, `import:` names, and error tokens (compile errors,
+    deferred `ExpressionError`s, `rcontext['__error__']`).
+  - Python expressions: a source with a lone surrogate is parsed from the restored string, so
+    `ast.parse` raises Chameleon's exact `UnicodeEncodeError` ("'utf-8' codec can't encode
+    character '\ud800' in position N: surrogates not allowed", N within the stripped
+    expression), at compile time, unwrapped; the structural pre-check is skipped for it.
+  - Cost: none for templates without lone surrogates (one flag test per frame activation;
+    `text_str` tests an `Option`). The A/B is in plan.md.
+- **Slot bodies and macro streams: the Phase 6b deviation is gone.** Chameleon's fill
+  function writes with its defining function's `__append` but passes the define-slot site's
+  `__stream` to the macros and slots it calls, and its `tal:on-error` truncates that
+  `__stream`. The VM now moves a slot body's own output to its stream not only when the body
+  returns but also just before it calls a macro or a slot (`flush_fill`, unless the body has a
+  translation, name or capture stream of its own open, which the callee then writes to), and
+  restarts the body's output when that call returns or fails (`Extra::flushed`: only after a
+  flush that happened; the architect's review found an unconditional restart orphaning output
+  when no flush had happened). A handler in the body that cuts the output also clamps the
+  body's start. The callee's output stays in the define-slot site's stream, so a slot defined
+  inside a slot body and filled by the caller orders as in Chameleon too.
+  Marks inside the moved output move to the end of the output (they belong to the define-slot
+  site's stream), so a handler in the body keeps what the body already appended, as in
+  Chameleon (`<q><q>E</q>`). Pinned by the former strict xfail and 17 variations in
+  `test_macros.py` (two calls, repeated calls, fills inside the called macro, `i18n:name`, no
+  translation, `template.macros`, handlers on and inside the body, nested macros, slots
+  defined in slot bodies, the body's own translation or capture around the call); the render
+  fuzzer now generates macros whose slot sits inside a translation and fill bodies that
+  define slots or call macros. Nothing on the hot path
+  changed: the work happens at macro calls made from a slot body.
+- **Slot bodies: two known differences remain** (strict xfails). A handler in a slot body
+  whose output belongs to another stream than the define-slot site's cuts only that site's
+  stream (as Chameleon; the body's own output is kept, what streams opened in the handler's
+  body held is dropped: `fill_catch`), but Chameleon appends a text node and the expressions in
+  it as one string, so when such an expression fails the text before it was never appended;
+  chameleon-rs writes it first (`test_handler_in_a_slot_body_drops_the_failing_text_node`; the
+  fuzzer keeps handlers out of slot bodies whose slot is inside a translation). And Chameleon's
+  conversion helpers (`__convert`, which calls `translate` for a value that is not a string,
+  a number or `__html__`) are closures of the render function, so in a slot body they use the
+  defining function's i18n domain and context, not ones set inside the body; chameleon-rs uses
+  the body's (`test_conversion_in_a_slot_body_ignores_its_i18n_context`, present at Phase 7
+  too, found by the extended fuzzer; the fuzzer keeps `i18n:domain`/`context` out of slot
+  bodies).
+- **Shadow mode** (`chameleon_rs.shadow`, opt-in): `install(serve='chameleon' | 'rust',
+  sample_rate=1.0, report=None)` wraps stock Chameleon's `PageTemplate.render` (and
+  `PageTextTemplateFile.render`), so it needs stock Chameleon importable as `chameleon` (not the
+  compat alias). An outermost render of a sampled stock template is repeated with a
+  chameleon-rs twin (same file or source, same settings; built once per template, weakly
+  keyed), and the served engine's outcome is returned or raised. Inside the twin's render,
+  stock templates rendered by `render_partial` are rendered by their own twins, and stock
+  templates passed as render arguments are replaced by their twins, so the twin's output is
+  chameleon-rs's throughout. A difference in output, or in the exception (type and message,
+  object addresses and the package name aside), goes to `report` as a `ShadowDifference`
+  (whose fields hold both full outputs: personal data). The default report logs a warning per
+  distinct (file, diff) at most once per `log_interval` (600 s) with a count of suppressed
+  repeats, the diff's lines cut at 200 characters and the diff at 4 KB, and each output's length
+  and SHA-256. Nothing from the shadow reaches the request: the other engine's failure, a Rust
+  panic (`PanicException` is a `BaseException`) or an exception whose `str()` fails included,
+  and a failing report is logged; `KeyboardInterrupt` and `SystemExit` propagate. Zero cost
+  when off (nothing is patched until `install`); `uninstall()` restores the originals. Limits,
+  documented in the module: each sample doubles the render's latency in the request's thread
+  (under one-thread asyncio servers such as Granian ST the loop is blocked for both), so
+  `sample_rate` should stay well below 1; arguments are used twice (an iterator is exhausted by
+  the first render, callables run twice); string templates cooked before `install` are not
+  shadowed, and those cooked after have their source kept while they live.
+- **Real-site harness** (`scripts/realsite.py`): crawls an application through a private
+  *adapter* (outside this repository: app setup, routing table, parameter values, an
+  in-process GET client), one engine per process, with `PYTHONHASHSEED=0`, the clock frozen
+  (freezegun), `random` and `os.urandom` (hence `secrets`, `uuid4`, CSRF tokens) seeded per URL,
+  and every outbound connection refused; then compares pages byte for byte and writes minimal
+  diffs. `--timing N` re-renders each request's outermost template N times in place
+  (median), `--shadow` crawls stock Chameleon with shadow mode on. It refuses to write pages or
+  reports inside this repository.
 
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 

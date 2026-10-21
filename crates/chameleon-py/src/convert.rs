@@ -342,19 +342,45 @@ pub(crate) fn convert_text<'py>(
     }
 }
 
+/// A `str` for a piece of template source: with lone surrogates mapped to the private-use
+/// block at `base` (`chameleon_core::surrogates`), mapped back.
+pub(crate) fn source_str<'py>(py: Python<'py>, text: &str, base: Option<u32>) -> PyResult<Bound<'py, PyString>> {
+    if let Some(base) = base
+        && let Some(bytes) = chameleon_core::surrogates::to_wtf8(text, base)
+    {
+        let bytes = PyBytes::new(py, &bytes);
+        return PyString::from_encoded_object(&bytes, Some(c"utf-8"), Some(c"surrogatepass"));
+    }
+    Ok(PyString::new(py, text))
+}
+
+/// A `str` for text taken from the output (WTF-8: lone surrogates as `surrogatepass` bytes).
+pub(crate) fn wtf8_str<'py>(
+    py: Python<'py>,
+    text: &chameleon_core::surrogates::Wtf8Buf,
+) -> PyResult<Bound<'py, PyString>> {
+    if let Some(s) = text.as_str() {
+        return Ok(PyString::new(py, s));
+    }
+    let bytes = PyBytes::new(py, text.as_bytes());
+    PyString::from_encoded_object(&bytes, Some(c"utf-8"), Some(c"surrogatepass"))
+}
+
 /// `__quote(value, quote, entity, default, marker)` as a value: the attribute engine (`esc`
-/// is an attribute's) converts the marker to `default`.
+/// is an attribute's) converts the marker to `default` (source text of a program whose lone
+/// surrogates were mapped to the block at `base`).
 pub(crate) fn quote_value<'py>(
     cx: &Cx<'_, 'py>,
     value: &Bound<'py, PyAny>,
     esc: Escape,
     default: Option<&str>,
+    base: Option<u32>,
 ) -> PyResult<Bound<'py, PyAny>> {
     let py = value.py();
     let conv = crate::expr::TextConv {
         escape: Some(esc),
         marker: esc.drops_default(),
-        default: default.map(|d| PyString::new(py, d).unbind()),
+        default: default.map(|d| source_str(py, d, base)).transpose()?.map(Bound::unbind),
         literal_false: true,
     };
     convert_text(cx, value, &conv)

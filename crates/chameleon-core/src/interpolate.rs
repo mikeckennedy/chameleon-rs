@@ -55,7 +55,7 @@ pub(crate) fn interpolate<C: ExprCompiler>(
     cx: ExprContext<'_>,
     compiler: &mut C,
 ) -> Result<Vec<Part>, CompileError<C::Error>> {
-    interpolate_full(text, cx, compiler).map(|(parts, _)| parts)
+    interpolate_full(text, cx, compiler, None).map(|(parts, _)| parts)
 }
 
 /// An interpolation's parts, and what implicit translation would translate.
@@ -63,10 +63,13 @@ pub(crate) type Interpolated = (Vec<Part>, Option<Implicit>);
 
 /// [`interpolate`], plus what implicit translation would translate (`None` when an expression
 /// is not a simple name, or the text is a single expression).
+/// `surrogate_base`: where character references to lone surrogates decode
+/// ([`crate::Options::surrogate_base`]).
 pub(crate) fn interpolate_full<C: ExprCompiler>(
     text: &Tok,
     cx: ExprContext<'_>,
     compiler: &mut C,
+    surrogate_base: Option<u32>,
 ) -> Result<Interpolated, CompileError<C::Error>> {
     let src = text.text.as_str();
     let mut parts = Vec::new();
@@ -122,7 +125,7 @@ pub(crate) fn interpolate_full<C: ExprCompiler>(
                 parts.push(Part::Text("${}".to_owned()));
                 break;
             }
-            let decoded = match decode_htmlentities(&expr.text) {
+            let decoded = match decode_htmlentities(&expr.text, surrogate_base) {
                 Ok(d) => expr.with_text(d.into_owned()),
                 Err(e) if e.surrogate => return Err(CompileError::unsupported(e.message, expr)),
                 Err(e) => return Err(CompileError::new(ErrorKind::Value, e.message, Tok::plain(""))),

@@ -5,7 +5,6 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use pyo3::exceptions::{PyAssertionError, PyAttributeError, PyKeyError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::PyString;
 
 use chameleon_core::{CompileError, ErrorKind, Source, VmError};
 
@@ -24,6 +23,18 @@ pub(crate) fn unsupported_error(py: Python<'_>, what: &str) -> PyErr {
 
 /// Converts a compile error, computing the code-point offset and `(line, column)` only now.
 pub(crate) fn compile_error(py: Python<'_>, err: CompileError<PyErr>, src: &str, filename: &str) -> PyErr {
+    compile_error_mapped(py, err, src, filename, None)
+}
+
+/// [`compile_error`] for a source whose lone surrogates were mapped to the private-use block
+/// at `base`: the token's text and source get them back.
+pub(crate) fn compile_error_mapped(
+    py: Python<'_>,
+    err: CompileError<PyErr>,
+    src: &str,
+    filename: &str,
+    base: Option<u32>,
+) -> PyErr {
     match err {
         CompileError::Expr(e) => e,
         CompileError::TooLarge => PyRuntimeError::new_err("template source is larger than 4 GiB"),
@@ -49,9 +60,9 @@ pub(crate) fn compile_error(py: Python<'_>, err: CompileError<PyErr>, src: &str,
             let token = match pos {
                 Some(p) => {
                     let offset = p.offset(&Source::new(src));
-                    make_token(py, &text, offset, src, filename)
+                    make_token(py, &text, offset, src, filename, base)
                 }
-                None => Ok(PyString::new(py, &text).into_any()),
+                None => crate::convert::source_str(py, &text, base).map(Bound::into_any),
             };
             match token.and_then(|token| exc_class(py, class)?.call1((message, token))) {
                 Ok(exc) => PyErr::from_value(exc),
@@ -68,7 +79,10 @@ pub(crate) fn make_token<'py>(
     pos: usize,
     source: &str,
     filename: &str,
+    base: Option<u32>,
 ) -> PyResult<Bound<'py, PyAny>> {
+    let text = crate::convert::source_str(py, text, base)?;
+    let source = crate::convert::source_str(py, source, base)?;
     py.import(intern!(py, "chameleon_rs.tokenize"))?.getattr(intern!(py, "Token"))?.call1((text, pos, source, filename))
 }
 

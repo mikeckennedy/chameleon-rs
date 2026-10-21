@@ -25,6 +25,7 @@ mod pychars_table;
 mod pyre;
 mod resolve;
 mod source;
+pub mod surrogates;
 mod tal;
 mod tok;
 mod tokenize;
@@ -42,8 +43,9 @@ pub use source::{Source, Span, char_offset, location};
 pub use tok::{Tok, TokPos};
 pub use vm::{
     Active, AttrKind, Attrs, Call, Countdown, DEFAULT_FRAME_BUDGET, Done, Emitted, ErrorSite, Errors, Eval, Fill, I18n,
-    I18nKey, Loop, Loops, MAX_CAPACITY_HINT, MAX_FRAMES, MacroEntry, MacroStep, Macros, NameId, NameValue, Names, Op,
-    Program, Runtime, Stage, Step, TextRef, Translate, Translation, Values, Visibility, VmError, VmState, run, throw,
+    I18nKey, Loop, Loops, MAX_CAPACITY_HINT, MAX_FRAMES, MacroEntry, MacroStep, Macros, Msgid, NameId, NameValue,
+    Names, Op, Program, Runtime, Stage, Step, TextRef, Translate, Translation, Values, Visibility, VmError, VmState,
+    run, throw,
 };
 
 /// Tokens, element trees and character classes, exposed for the differential tests in

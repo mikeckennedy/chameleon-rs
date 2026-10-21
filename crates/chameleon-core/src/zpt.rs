@@ -306,7 +306,8 @@ impl Builder<'_> {
         }
         for entry in &mut ns {
             if &*entry.ns == TAL_NS || &*entry.ns == METAL_NS {
-                let decoded = decode_htmlentities(&entry.value.text).map_err(|e| entity_error(e, &entry.value))?;
+                let decoded = decode_htmlentities(&entry.value.text, self.options.surrogate_base)
+                    .map_err(|e| entity_error(e, &entry.value))?;
                 if let std::borrow::Cow::Owned(decoded) = decoded {
                     entry.value = entry.value.with_text(decoded);
                 }
@@ -749,7 +750,7 @@ impl Builder<'_> {
                     let default = text.as_ref().map(|t| t.text.clone());
                     match &name {
                         None => {
-                            let decoded = decoded(expr)?;
+                            let decoded = decoded(expr, self.options.surrogate_base)?;
                             let exclude =
                                 prepared[i..].iter().filter_map(|q| q.name.as_ref().map(|n| n.text.clone())).collect();
                             out.push(Attr::Dict {
@@ -763,7 +764,7 @@ impl Builder<'_> {
                             (AttrValue::Boolean { expr: self.value(expr.clone()), name: n.clone() }, default)
                         }
                         Some(_) => {
-                            let decoded = decoded(expr)?;
+                            let decoded = decoded(expr, self.options.surrogate_base)?;
                             (AttrValue::Subst { expr: self.value(decoded), quote }, default)
                         }
                     }
@@ -794,8 +795,8 @@ impl Builder<'_> {
 }
 
 /// `decode_htmlentities(expr)` (a second decoding: TAL values are decoded once already).
-fn decoded(expr: &Tok) -> Result<Tok> {
-    let decoded = decode_htmlentities(&expr.text).map_err(|e| entity_error(e, expr))?;
+fn decoded(expr: &Tok, surrogate_base: Option<u32>) -> Result<Tok> {
+    let decoded = decode_htmlentities(&expr.text, surrogate_base).map_err(|e| entity_error(e, expr))?;
     Ok(expr.with_text(decoded.into_owned()))
 }
 
