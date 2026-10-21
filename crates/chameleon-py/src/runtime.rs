@@ -152,13 +152,9 @@ impl Eval for PyRuntime<'_, '_> {
         let code = frame.code.bind(py);
         // The frames of a native partial's render use its unit (builtins, defaults,
         // `rcontext`); there are none on the stack in most renders.
-        let unit = self.render.partials.top();
-        if !match (&unit, &self.frame.unit) {
-            (Some(a), Some(b)) => std::rc::Rc::ptr_eq(a, b),
-            (None, None) => true,
-            _ => false,
-        } {
+        if let Some((unit, target)) = self.render.partials.changed(self.frame.unit) {
             self.frame.unit = unit;
+            self.frame.target = target;
         }
         if let Ok(program) = code.cast::<Program>() {
             self.code = program.clone();
@@ -246,8 +242,7 @@ impl Names for PyRuntime<'_, '_> {
     fn define(&mut self, names: &[NameId], value: Py<PyAny>, visibility: Visibility) -> PyResult<()> {
         let py = self.py;
         if visibility == Visibility::Global {
-            let cx = self.cx();
-            let rcontext = cx.rcontext();
+            let rcontext = self.cx().rcontext();
             for name in names {
                 rcontext.set_item(self.name(*name)?.bind(py), value.bind(py))?;
             }
@@ -382,12 +377,11 @@ impl Errors for PyRuntime<'_, '_> {
     }
 
     fn record_error(&mut self, error: &PyErr, at: ErrorSite) {
-        let cx = self.cx();
-        let rcontext = cx.rcontext();
+        let rcontext = self.cx().rcontext();
         let program = self.code.get();
         let token = program.token_at(at, self.render.nested.get());
         // A failure to record (an odd `rcontext['__error__']`) must not replace the error.
-        let _ = record_error(self.py, rcontext, program, token, error);
+        let _ = record_error(self.py, &rcontext, program, token, error);
     }
 
     fn partial_failed(&mut self, error: PyErr) -> PyErr {
@@ -641,8 +635,7 @@ impl Macros for PyRuntime<'_, '_> {
     /// defined so far, and `__error__` once an error was recorded).
     fn after_macro(&mut self) -> PyResult<()> {
         // Nothing to copy while `rcontext` is empty (or not even made yet).
-        let cx = self.cx();
-        let Some(rcontext) = cx.rcontext_made() else { return Ok(()) };
+        let Some(rcontext) = self.cx().rcontext_made() else { return Ok(()) };
         if rcontext.is_empty() {
             return Ok(());
         }

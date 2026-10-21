@@ -154,7 +154,8 @@ def resolve(caller: Any, template_file: str) -> Any:
     if caller is None and not has_registered_extensions:
         msg = 'You must call register_extensions() before this function can be used.'
         raise PartialsException(msg)
-    generation = _settings.generation
+    # The flag too: code written for chameleon_partials resets it by hand.
+    generation = (_settings.generation, has_registered_extensions)
     cache = None if caller is None else caller.__dict__.get('_partial_cache')
     if cache is None:
         cache = _GLOBAL_CACHE if caller is None else caller.__dict__.setdefault('_partial_cache', {})
@@ -167,7 +168,7 @@ def resolve(caller: Any, template_file: str) -> Any:
     return template
 
 
-_GLOBAL_CACHE: dict[str, tuple[int, Any]] = {}
+_GLOBAL_CACHE: dict[str, tuple[tuple[int, bool], Any]] = {}
 
 # Templates found on a caller's search path or folders, shared by every caller that finds the
 # same file with the same template class and settings.

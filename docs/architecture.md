@@ -106,7 +106,9 @@ pinned down a detail. Each decision's text below still describes the intent.
   the `Markup` round trip, and putting `__translate` and `render_partial` into the partial's
   scope. Deferred: `rcontext` persistence across a suspended render and a `Mutex`-guarded
   awaitable (Phase 11); the redundancy of `Call { program, code }` (the `Arc` is reachable
-  from `code`); the partial registry (Phase 9).
+  from `code`); the partial registry (Phase 9). *(Superseded in Phase 9: the registry is
+  gone, the built-in and chameleon_partials' function both run natively, and the scope is
+  chameleon_partials' whenever the partial can observe it; see the Phase 9 amendments.)*
 
 ## Phase 3 amendments (2026-10-20)
 
@@ -933,6 +935,106 @@ back to that Python whenever its preconditions do not hold. Measurements: plan.m
   profile silently loses the gain), and its `RUSTFLAGS` replace any configured rustflags. Release wheels (Phase 12) should be built this way. No
   `chameleon-capi` crate was needed: no measured gap required `unsafe`.
 
+## Phase 9 amendments (2026-10-21)
+
+Built-in partials and the Flask/Quart integration. The reference for partials is
+chameleon_partials at `f54ca1a` on Chameleon (its `render_partial` calls
+`loader[path].render(encoding='utf-8', **kwargs)` with `render_partial` added to `kwargs`);
+`tests/python/test_partials.py` compares outputs and whole error messages with it, and
+`tests/python/test_flask.py` responses and exceptions with chameleon-flask at `326644f`.
+
+- **D10 as built: a partial is a render of its own, run as a frame.** `${render_partial(path,
+  k=v)}` as a whole emitted expression (`Expr::Partial`, the Phase 2 lowering) checks what
+  `render_partial` is (the scope, then the template builtins, as the name lookup would): the
+  built-in (`chameleon_rs.partials.PartialRenderer`, exact type) or chameleon_partials' own
+  function (a function named `render_partial` from module `chameleon_partials`, read through
+  its module state: registered flag and `__templates` loader) run natively; anything else is
+  called as before, and an unbound name is the `NameError` it always was. Evaluation order is
+  Python's: the name, the path, the keyword values, then resolution (so a failing keyword
+  value wins over a missing file). A native call pushes a frame (`Step::Call`, as the
+  prototype) whose *unit* is the partial's render: its template's builtins (`template`,
+  `macros`, `__loader`, its own `render_partial`), the render defaults of
+  `encoding='utf-8'` (`_encoded_defaults`, so `__decode` decodes bytes as chameleon_partials
+  does), and a fresh `rcontext`, all used by every frame the partial calls (macros, slot
+  bodies) until it returns. The core marks such frames `Kind::Partial` and tells the runtime
+  (`Eval::partial_entered`, `partial_returned`, `Errors::partial_failed`); the runtime keeps a
+  stack of units (`chameleon-py/src/partials.rs`), and an activation switches unit when the
+  innermost unit's serial changed (one integer compare otherwise). Consequences, each as in
+  chameleon_partials: a global define in a partial stays in its `rcontext` (it does not reach
+  the page through a later `econtext.update(rcontext)`); errors recorded in a partial are its
+  own, and an error that ends the partial is formatted there (`BaseTemplate.render`'s
+  handler: the partial's errors, its `econtext` and `rcontext`, its template's `value_repr`),
+  so the page's handler then extends that formatter with its own frames (a `RecursionError`
+  passes unformatted); a `tal:on-error` around the call catches the formatted error.
+- **The partial's scope.** chameleon_partials' scope is the keywords, `render_partial`, the
+  four defaults and a fresh `RepeatDict`. Building all of it costs about as much as the rest
+  of a small partial, so a program that cannot observe it gets only the keywords: a program
+  is `full_scope` if an expression mentions `repeat`, `econtext`, `rcontext`,
+  `target_language` or a `__` default, has unknown free variables (fallbacks that use the
+  scope as a value, code blocks, custom types), loops, or calls a macro (whose template may).
+  Otherwise the defaults are read from the unit (`scope_or_default`), and `render_partial`
+  from the builtins, where it is the same object chameleon_partials would put in the scope
+  (the partial template's own renderer). An error message's argument list is rebuilt in
+  chameleon_partials' order (keywords, `render_partial`, defaults, `repeat`, then defines).
+  A keyword named like a default or `repeat` wins, as `setdefault` does there.
+- **Path resolution** (`chameleon_rs.partials.resolve`, Python, cached per calling template
+  and path until the configuration changes): the configured folder (its loader, so `spec`
+  handling and the `Template not found: x.` `ValueError` are Chameleon's), then the calling
+  template's search path (the `search_path` it was created with, so a `PageTemplateLoader`'s
+  folders), then its own folder and each folder above it; package-resource entries are not
+  searched. A file found outside the configured folder becomes a template of the caller's
+  class with the caller's settings, shared by every caller with the same class and settings.
+  A string template (no folder) needs the configured folder. Called from Python
+  (`chameleon_rs.render_partial(path, **kw)`, or as a value in a template), the renderer
+  renders through `template.render(encoding='utf-8', ...)` and returns `HTML` (`html_text`,
+  `__html__`), chameleon_partials' class; without a configured folder the global one raises
+  chameleon_partials' `PartialsException`.
+- **Per render, once:** a call site's resolution (keyed by the site, the function object and
+  the path, identity first, then string equality for computed paths) and a template's
+  preparation (`_prepare`: the defaults, `cook_check()`, the compilation) are made on first
+  use in a render and reused for the rest of it, so `auto_reload` checks a partial's file once
+  per render, not per call. Templates that cannot run as frames (another engine's, a text file
+  template, which returns bytes, a `_render` function, an overridden `render`) are called as
+  Python, with the arguments already evaluated.
+- **Settings** (`chameleon_rs.configure(template_folder=..., auto_reload=...,
+  restricted_namespace=...)`, `_settings.py`): one process-wide immutable `Settings` (folder,
+  options, one `PageTemplateLoader`) swapped in whole under a lock, with a generation counter
+  that keys the resolution caches; settings left out keep their values. The old setup calls
+  are aliases: `chameleon_partials.register_extensions(folder, auto_reload, cache_init)` (a
+  second call ignored unless `cache_init` is false; `has_registered_extensions` and
+  `template_path` are module state that code may reset, as chameleon_partials' tests do) and
+  `chameleon_flask.global_init(...)`. Both libraries now share one loader, so a partial and a
+  page are one compiled template, and `restricted_namespace=False` given to Flask applies to
+  partials too (chameleon_partials' own loader never had it).
+- **`render_partial` is a template builtin** (`PageTemplate._builtins`, overridable by a render
+  keyword or `extra_builtins`), so `template.builtins` lists it. In chameleon_partials' setup
+  the page's `econtext` holds it (the model has it); with the unbound built-in it does not,
+  which only `econtext` listings and a page error's argument list show.
+- **Flask/Quart** (`chameleon_rs.flask`, chameleon-flask's code adapted): imports Flask only
+  when imported; `configure(..., app=app)` stores a `Settings` in `app.extensions
+  ['chameleon_rs']`, used while that app (Flask's `current_app`, or Quart's when Quart is
+  imported) handles a request; `template` keeps chameleon-flask's name lookup (decided when the
+  view is decorated, `templates` when nothing is configured) and response pass-through;
+  `not_found(template_file=..., **data)` (old keyword and positional kept), `error(template_file,
+  status_code=500, **data)` and fastapi-chameleon's `generic_error`; error pages render as
+  `text/html` with the page's status (chameleon-flask's 404 rule). Models: `dict`, any
+  `Mapping`, a dataclass instance (its fields, shallow) or an object with a callable
+  `model_dump()` (Pydantic, not imported). Exceptions: `chameleon_rs.web.TemplateError` (base),
+  `ErrorPage` and `NotFound`; `FlaskChameleonException`, `FlaskChameleonNotFoundException`,
+  `FlaskChameleonGenericException` and `PartialsException` are subclasses. Async views render
+  synchronously until Phase 11's `render_async`.
+- **compat** (D7): `install()` also maps `chameleon_partials` (at once) and `chameleon_flask`,
+  `chameleon_flask.engine`, `chameleon_flask.exceptions` (on first import, through a
+  meta-path finder, so Flask is imported only then) to the built-ins, evicting modules already
+  imported under those names with the same warning; `install(integrations=False)` maps only
+  `chameleon` (the original packages then run on chameleon-rs, and their `render_partial`
+  passed in a model still renders natively). `flask`, `partials` and `web` are chameleon-rs's
+  own modules, not aliased under `chameleon.`. The `partials=` prototype registry is removed.
+- **Not reproduced** (known differences): a partial uses the page's custom `default_marker`
+  (only custom markers differ, as for macros of other templates); `PartialRenderer` and `HTML`
+  have their own `repr`; the global `render_partial` called from Python does not know a
+  calling template, so it resolves only against the configured folder.
+
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
 ```
@@ -1230,7 +1332,9 @@ chameleon_partials' semantics (the partial sees only its keyword arguments plus
 `render_partial`). Path resolution: the loader's search path first, then walking up from the
 calling template's directory; resolved once and cached. A partial renders as a native frame
 writing straight into the caller's buffer. The old `chameleon_partials.render_partial` passed
-in a model is recognized and routed to the native path.
+in a model is recognized and routed to the native path. *(As built in Phase 9, with the
+configured folder first and settings through `chameleon_rs.configure()`: see the Phase 9
+amendments.)*
 
 ## D11. Known, deliberate differences
 

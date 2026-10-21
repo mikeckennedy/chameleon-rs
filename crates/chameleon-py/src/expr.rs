@@ -456,8 +456,10 @@ pub(crate) struct RenderCtx<'py> {
 pub(crate) struct FrameCx<'py> {
     /// A macro of another template: that template's builtins (`None`: the unit's).
     pub(crate) builtins: Option<Bound<'py, PyDict>>,
-    /// The native partial whose render the frame belongs to (`None`: the render's own).
-    pub(crate) unit: Option<std::rc::Rc<crate::partials::Unit<'py>>>,
+    /// The native partial whose render the frame belongs to: its serial (`0`: the render's
+    /// own) and its template.
+    pub(crate) unit: u64,
+    pub(crate) target: Option<std::rc::Rc<crate::partials::Target<'py>>>,
     pub(crate) serial: u64,
     pub(crate) domain: Option<Bound<'py, PyString>>,
     pub(crate) context: Option<Bound<'py, PyString>>,
@@ -467,7 +469,7 @@ pub(crate) struct FrameCx<'py> {
 impl<'py> FrameCx<'py> {
     /// A frame with no i18n domain or context.
     pub(crate) fn new(builtins: Option<Bound<'py, PyDict>>, serial: u64, target_language: Bound<'py, PyAny>) -> Self {
-        Self { builtins, unit: None, serial, domain: None, context: None, target_language }
+        Self { builtins, unit: 0, target: None, serial, domain: None, context: None, target_language }
     }
 }
 
@@ -516,35 +518,33 @@ impl<'py> Cx<'_, 'py> {
 
     /// The render defaults of the active frame's render (a native partial's own).
     pub(crate) fn defaults(&self) -> Option<&Bound<'py, PyDict>> {
-        match &self.frame.unit {
-            Some(unit) => Some(&unit.target.defaults),
+        match &self.frame.target {
+            Some(target) => Some(&target.defaults),
             None => self.render.defaults.as_ref(),
         }
     }
 
     /// The active frame's template builtins.
     pub(crate) fn builtins(&self) -> &Bound<'py, PyDict> {
-        match (&self.frame.builtins, &self.frame.unit) {
+        match (&self.frame.builtins, &self.frame.target) {
             (Some(builtins), _) => builtins,
-            (None, Some(unit)) => &unit.target.builtins,
+            (None, Some(target)) => &target.builtins,
             (None, None) => &self.render.builtins,
         }
     }
 
     /// `rcontext` of the active frame's render (a native partial has its own).
-    pub(crate) fn rcontext(&self) -> &Bound<'py, PyDict> {
-        match &self.frame.unit {
-            Some(unit) => unit.rcontext(),
-            None => self.render.rcontext(self.scope.py()),
+    pub(crate) fn rcontext(&self) -> Bound<'py, PyDict> {
+        if self.frame.unit == 0 {
+            self.render.rcontext(self.scope.py()).clone()
+        } else {
+            self.render.partials.rcontext(self.scope.py())
         }
     }
 
     /// `rcontext` if it was created.
-    pub(crate) fn rcontext_made(&self) -> Option<&Bound<'py, PyDict>> {
-        match &self.frame.unit {
-            Some(unit) => unit.rcontext.get(),
-            None => self.render.rcontext.get(),
-        }
+    pub(crate) fn rcontext_made(&self) -> Option<Bound<'py, PyDict>> {
+        if self.frame.unit == 0 { self.render.rcontext.get().cloned() } else { self.render.partials.rcontext_made() }
     }
 
     fn builtin(&self, name: &Bound<'py, PyString>) -> PyResult<Bound<'py, PyAny>> {

@@ -25,7 +25,7 @@ import chameleon_rs
 
 sys.path.insert(0, str(Path(__file__).parent))
 from bench_render import make_videos
-from bench_skeleton import LISTING, PARTIAL_LISTING, PARTIALS, TEMPLATES
+from bench_skeleton import LISTING, PARTIAL_LISTING, TEMPLATES
 
 N = 500
 
@@ -49,10 +49,10 @@ def listing(fast: bool) -> chameleon_rs.PageTemplate:
 
 
 def partial_listing(fast: bool) -> chameleon_rs.PageTemplate:
-    registry: dict[str, chameleon_rs.PageTemplate] = {}
-    for name in PARTIALS:
-        registry[name] = chameleon_rs.PageTemplate((TEMPLATES / name).read_text(), partials=registry, _fast_path=fast)
-    return chameleon_rs.PageTemplate(PARTIAL_LISTING, partials=registry, _fast_path=fast)
+    # The partials themselves come from the configured folder's loader (fast path on): only the
+    # listing's own expressions change between the builds.
+    chameleon_rs.configure(template_folder=str(TEMPLATES))
+    return chameleon_rs.PageTemplate(PARTIAL_LISTING, _fast_path=fast)
 
 
 def per_expression(expression: str, fast: bool, videos: list) -> float:

@@ -59,23 +59,26 @@ pub(crate) struct Target<'py> {
     pub(crate) builtins: Bound<'py, PyDict>,
     /// `__translate`, `__decode`, `__on_error_handler`, `target_language` (in this order).
     pub(crate) defaults: Bound<'py, PyDict>,
+    /// Its own `render_partial` builtin (resolving relative to it).
+    own: Option<Bound<'py, PyAny>>,
 }
 
 /// A native partial's render (see the module docs).
 pub(crate) struct Unit<'py> {
+    /// Unique within the render (frames compare it to notice a change of unit).
+    serial: u64,
     pub(crate) target: Rc<Target<'py>>,
     /// The partial's scope (its `econtext`), for its error message.
     scope: Bound<'py, Scope>,
     /// How many keys the scope started with (its model): an error message lists them first.
     initial: usize,
+    /// The value chameleon_partials adds to the model as `render_partial` when the scope does
+    /// not hold it (a partial that never reads its scope as a whole is not given it: its
+    /// builtin of the same name is the same object).
+    added: Option<Bound<'py, PyAny>>,
     pub(crate) rcontext: OnceCell<Bound<'py, PyDict>>,
 }
 
-impl<'py> Unit<'py> {
-    pub(crate) fn rcontext(&self) -> &Bound<'py, PyDict> {
-        self.rcontext.get_or_init(|| PyDict::new(self.scope.py()))
-    }
-}
 
 /// A call site's resolution in this render: the function called, the path, and the target
 /// (`None`: the function is called as Python, not as a native frame).
@@ -90,40 +93,61 @@ struct SiteEntry<'py> {
 #[derive(Default)]
 pub(crate) struct Partials<'py> {
     /// The units of the partial frames on the stack, innermost last.
-    units: RefCell<Vec<Rc<Unit<'py>>>>,
-    /// How many units are on the stack (read on every frame activation).
-    depth: Cell<usize>,
+    units: RefCell<Vec<Unit<'py>>>,
+    /// The innermost unit's serial (`0`: none), read on every frame activation.
+    top: Cell<u64>,
+    serials: Cell<u64>,
     /// The unit of the call just returned as [`Step::Call`], until its frame is pushed.
-    pending: RefCell<Option<Rc<Unit<'py>>>>,
+    pending: RefCell<Option<Unit<'py>>>,
     sites: RefCell<Vec<SiteEntry<'py>>>,
     /// Prepared templates, by object address.
     targets: RefCell<Vec<(usize, Rc<Target<'py>>)>>,
 }
 
 impl<'py> Partials<'py> {
-    /// The innermost partial's unit, if a partial frame is on the stack.
+    /// The innermost unit (its serial and target), if it is not the one with serial
+    /// `current`: `None` when nothing changes. The active frame always belongs to the
+    /// innermost unit (or to the render itself when there is none).
     #[inline]
-    pub(crate) fn top(&self) -> Option<Rc<Unit<'py>>> {
-        if self.depth.get() == 0 {
+    pub(crate) fn changed(&self, current: u64) -> Option<(u64, Option<Rc<Target<'py>>>)> {
+        let top = self.top.get();
+        if top == current {
             return None;
         }
-        self.units.borrow().last().cloned()
+        let target = self.units.borrow().last().map(|u| Rc::clone(&u.target));
+        Some((top, target))
+    }
+
+    /// `rcontext` of the innermost unit, created on first use.
+    pub(crate) fn rcontext(&self, py: Python<'py>) -> Bound<'py, PyDict> {
+        let units = self.units.borrow();
+        match units.last() {
+            Some(unit) => unit.rcontext.get_or_init(|| PyDict::new(py)).clone(),
+            None => PyDict::new(py),
+        }
+    }
+
+    /// `rcontext` of the innermost unit, if it was created.
+    pub(crate) fn rcontext_made(&self) -> Option<Bound<'py, PyDict>> {
+        self.units.borrow().last().and_then(|u| u.rcontext.get().cloned())
     }
 
     /// The pending unit's frame was pushed.
     pub(crate) fn entered(&self) {
-        if let Some(unit) = self.pending.borrow_mut().take() {
-            let mut units = self.units.borrow_mut();
-            units.push(unit);
-            self.depth.set(units.len());
+        if let Some(mut unit) = self.pending.borrow_mut().take() {
+            let serial = self.serials.get() + 1;
+            self.serials.set(serial);
+            unit.serial = serial;
+            self.units.borrow_mut().push(unit);
+            self.top.set(serial);
         }
     }
 
     /// The innermost partial frame ended.
-    pub(crate) fn left(&self) -> Option<Rc<Unit<'py>>> {
+    pub(crate) fn left(&self) -> Option<Unit<'py>> {
         let mut units = self.units.borrow_mut();
         let unit = units.pop();
-        self.depth.set(units.len());
+        self.top.set(units.last().map_or(0, |u| u.serial));
         unit
     }
 
@@ -179,7 +203,8 @@ impl<'py> Partials<'py> {
         }
         let (program, builtins, defaults): (Bound<'py, Program>, Bound<'py, PyDict>, Bound<'py, PyDict>) =
             prepared.extract()?;
-        let target = Rc::new(Target { _template: template.clone(), program, builtins, defaults });
+        let own = builtins.get_item(intern!(py, "render_partial"))?;
+        let target = Rc::new(Target { _template: template.clone(), program, builtins, defaults, own });
         self.targets.borrow_mut().push((key, Rc::clone(&target)));
         Ok(Some(target))
     }
@@ -223,12 +248,17 @@ pub(crate) fn partial_step(
     };
     // chameleon_partials: `template_data['render_partial'] = render_partial` unless given (the
     // built-in passes the partial template's own, which resolves relative to it).
-    if !locals.contains(name)? {
-        let own = if builtin { target.builtins.get_item(name)? } else { None };
-        locals.set_item(name, own.unwrap_or(func))?;
-    }
-    let initial = locals.len();
+    let initial = kwargs.len();
     let p = target.program.get();
+    let added = if kwargs.iter().any(|(key, _)| key.bind(py).is(name)) {
+        None
+    } else {
+        let value = if builtin { target.own.clone().unwrap_or(func) } else { func };
+        if p.full_scope || !builtin || target.own.is_none() {
+            locals.set_item(name, &value)?;
+        }
+        Some(value)
+    };
     if p.full_scope {
         // `page.render(encoding='utf-8', **template_data)`: the defaults it lacks, then a
         // fresh `repeat`.
@@ -243,8 +273,9 @@ pub(crate) fn partial_step(
         }
     }
     let core = p.core.clone();
-    let unit = Unit { target: Rc::clone(&target), scope: scope.clone(), initial, rcontext: OnceCell::new() };
-    *cx.render.partials.pending.borrow_mut() = Some(Rc::new(unit));
+    let unit =
+        Unit { serial: 0, target: Rc::clone(&target), scope: scope.clone(), initial, added, rcontext: OnceCell::new() };
+    *cx.render.partials.pending.borrow_mut() = Some(unit);
     Ok(Step::Call(Call {
         program: core,
         code: target.program.clone().into_any().unbind(),
@@ -291,6 +322,12 @@ fn error_econtext<'py>(unit: &Unit<'py>) -> PyResult<Bound<'py, PyDict>> {
             rest.push((key, value));
         }
     }
+    let name = intern!(py, "render_partial");
+    if let Some(added) = &unit.added
+        && !out.contains(name)?
+    {
+        out.set_item(name, added)?;
+    }
     for (key, value) in unit.target.defaults.iter() {
         if !locals.contains(&key)? {
             out.set_item(key, value)?;
@@ -301,7 +338,9 @@ fn error_econtext<'py>(unit: &Unit<'py>) -> PyResult<Bound<'py, PyDict>> {
         out.set_item(repeat, new_repeat_dict(py)?)?;
     }
     for (key, value) in rest {
-        out.set_item(key, value)?;
+        if !out.contains(&key)? {
+            out.set_item(key, value)?;
+        }
     }
     Ok(out)
 }

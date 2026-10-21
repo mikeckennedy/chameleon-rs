@@ -115,7 +115,8 @@ impl SubEval {
         let scope = self.scope.bind(py);
         let frame = FrameCx {
             builtins: Some(self.builtins.bind(py).clone()),
-            unit: None,
+            unit: 0,
+            target: None,
             serial: self.serial,
             domain: self.domain.as_ref().map(|d| d.bind(py).clone()),
             context: self.context.as_ref().map(|c| c.bind(py).clone()),

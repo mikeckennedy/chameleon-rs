@@ -9,6 +9,13 @@ Chameleon exactly, and new capabilities are opt-in.
 
 ## 1. Built-in partials, and settings to override their defaults
 
+> **Status (2026-10-21):** built in Phase 9 (architecture.md, Phase 9 amendments). Settings went
+> to a module-level `chameleon_rs.configure(template_folder=..., auto_reload=...,
+> restricted_namespace=...)`, process-wide, as an immutable object swapped whole (safe under
+> free-threading); `register_extensions` carries its settings over (it is an alias). Still open
+> below: a `partials/` prefix convention, a partials-only reload override, renaming or turning
+> off `render_partial`, `CHAMELEON_*` environment variables, and per-loader settings.
+
 Decided so far (D10, Phase 9): `render_partial(path, **kwargs)` works in every template with
 no setup, with chameleon_partials' semantics. A partial renders as a native frame straight into
 the caller's buffer. The Phase 2 prototype costs 618–640 ns per item against the 0.8 µs budget.
@@ -39,8 +46,10 @@ Open questions:
 
 ## 2. Built-in framework integrations: Flask/Quart, FastAPI and Robyn
 
-> **Status (2026-10-21):** the Flask/Quart part has moved into the plan as part of Phase 9, which runs right
-> after Phase 10 alongside built-in partials. FastAPI and Robyn remain vision items with the same API.
+> **Status (2026-10-21):** the Flask/Quart part is built (Phase 9, `chameleon_rs.flask`, per the table
+> below except `render_async`/`response_async`, which wait for Phase 11). FastAPI and Robyn remain
+> vision items with the same API; `chameleon_rs.web` already holds the shared exceptions and model
+> conversion.
 
 Same idea as partials: what chameleon-flask and fastapi-chameleon provide today becomes part of
 chameleon-rs, with no separate package and less setup. chameleon-robyn has the same shape and

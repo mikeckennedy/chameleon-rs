@@ -3,8 +3,7 @@ App-shaped page benchmark (Phase 10): a page that fills a layout macro's slots (
 `load:`), with a navigation loop, a signed-in user block, helper calls (`cache_id`,
 `format_date`), `structure:` and `__html__` values, and a list of 50 episode cards with
 nested loops and attribute chains. Two variants: the cards inline, and each card through
-`render_partial` (chameleon_partials for Chameleon; the native prototype registry for
-chameleon_rs until Phase 9 builds partials in). Outputs are asserted identical first.
+`render_partial` (chameleon_partials for Chameleon; the built-in for chameleon_rs). Outputs are asserted identical first.
 
 Build first:  make build-release
 Run:          venv/bin/python bench/bench_page.py [--runs 3] [--episodes 50]
@@ -196,9 +195,7 @@ def make_report_model(rows: int) -> dict:
 def engines(model: dict, report: dict | None = None) -> list[tuple[str, object, object]]:
     """(label, Chameleon render, chameleon_rs render) per variant."""
     chameleon_partials.register_extensions(str(TEMPLATES), auto_reload=False, cache_init=False)
-    registry: dict[str, chameleon_rs.PageTemplate] = {}
-    for name in (CARD, REPORT):
-        registry[name] = chameleon_rs.PageTemplate((TEMPLATES / name).read_text(), partials=registry)
+    chameleon_rs.configure(template_folder=str(TEMPLATES))
 
     def bound(template, kw):
         return lambda: template(**kw)
@@ -206,13 +203,13 @@ def engines(model: dict, report: dict | None = None) -> list[tuple[str, object, 
     pairs = []
     for label, name, partials, kw in (
         ('inline cards', 'app/episodes_inline.pt', None, model),
-        ('partial cards', 'app/episodes_partials.pt', registry, model),
-        ('report', 'app/report.pt', registry, report or make_report_model(1000)),
+        ('partial cards', 'app/episodes_partials.pt', True, model),
+        ('report', 'app/report.pt', True, report or make_report_model(1000)),
     ):
         path = str(TEMPLATES / name)
         ref_kw = kw if partials is None else {**kw, 'render_partial': chameleon_partials.render_partial}
         ref = bound(chameleon.zpt.template.PageTemplateFile(path), ref_kw)
-        ours = bound(chameleon_rs.PageTemplateFile(path, partials=partials), kw)
+        ours = bound(chameleon_rs.PageTemplateFile(path), kw)
         pairs.append((label, ref, ours))
     return pairs
 

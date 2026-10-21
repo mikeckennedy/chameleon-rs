@@ -108,12 +108,41 @@ def renders(scenario: str, chameleon, current, base) -> tuple[list, int]:
         path = str(TEMPLATES / 'app' / 'report.pt')
         ours = []
         for engine in (base, current):
-            registry: dict = {}
-            registry[REPORT] = engine.PageTemplate((TEMPLATES / REPORT).read_text(), partials=registry)
-            ours.append(bound(engine.PageTemplateFile(path, partials=registry), model))
+            if partial_registry(engine):
+                registry: dict = {}
+                registry[REPORT] = engine.PageTemplate((TEMPLATES / REPORT).read_text(), partials=registry)
+                ours.append(bound(engine.PageTemplateFile(path, partials=registry), model))
+            else:
+                engine.configure(template_folder=str(TEMPLATES))
+                ours.append(bound(engine.PageTemplateFile(path), model))
         ref = chameleon.zpt.template.PageTemplateFile(path)
         return [bound(ref, {**model, 'render_partial': chameleon_partials.render_partial}), *ours], 1
+    if scenario == 'partials':
+        import chameleon_partials
+        from bench_render import make_videos
+        from bench_skeleton import PARTIAL_LISTING, PARTIALS, TEMPLATES
+
+        chameleon_partials.register_extensions(str(TEMPLATES), auto_reload=False, cache_init=False)
+        videos = make_videos(N)
+        ours = []
+        for engine in (base, current):
+            if partial_registry(engine):
+                registry = {}
+                for name in PARTIALS:
+                    registry[name] = engine.PageTemplate((TEMPLATES / name).read_text(), partials=registry)
+                ours.append(bound(engine.PageTemplate(PARTIAL_LISTING, partials=registry), {'videos': videos}))
+            else:
+                engine.configure(template_folder=str(TEMPLATES))
+                ours.append(bound(engine.PageTemplate(PARTIAL_LISTING), {'videos': videos}))
+        ref = chameleon.PageTemplate(PARTIAL_LISTING)
+        return [bound(ref, {'videos': videos, 'render_partial': chameleon_partials.render_partial}), *ours], N
     raise SystemExit(f'unknown scenario {scenario!r}')
+
+
+def partial_registry(engine) -> bool:
+    """Whether a build has the Phase 2 prototype (`PageTemplate(partials={...})`) instead of
+    the built-in partials (`configure`, Phase 9)."""
+    return not hasattr(engine, 'configure')
 
 
 def main() -> int:
@@ -124,9 +153,10 @@ def main() -> int:
     parser.add_argument(
         '--scenario',
         default='listing',
-        choices=('listing', 'macro', 'page', 'report'),
+        choices=('listing', 'macro', 'page', 'report', 'partials'),
         help='listing (the gate, ns per item), macro (a macro call filling a slot, ns per item) or '
-        'page (bench_page.py inline cards, ns per render) or report (its 1,000-row report page)',
+        'page (bench_page.py inline cards, ns per render), report (its 1,000-row report page) or '
+        'partials (the partial listing, ns per item)',
     )
     parser.add_argument('--keep', help='build the baseline into this directory once and reuse it')
     args = parser.parse_args()
