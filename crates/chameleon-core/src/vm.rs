@@ -481,6 +481,9 @@ pub struct Program {
     pub(crate) names: Vec<Box<str>>,
     pub(crate) tables: Tables,
     pub(crate) macros: Vec<MacroEntry>,
+    /// The entries (sorted) of the functions that may run with their caller's scope instead
+    /// of a copy of it (see [`Program::mark_scope_sharing`]).
+    shares_scope: Vec<u32>,
     /// The last render's output size, used as the next buffer's capacity (D6).
     capacity: AtomicUsize,
 }
@@ -501,6 +504,7 @@ impl Program {
             names,
             tables,
             macros,
+            shares_scope: Vec::new(),
             capacity: AtomicUsize::new(0),
         }
     }
@@ -515,6 +519,109 @@ impl Program {
             let utf8 = std::mem::replace(&mut self.text, bytes.into_boxed_slice());
             self.text_utf8 = String::from_utf8(utf8.into_vec()).ok().map(String::into_boxed_str);
         }
+    }
+
+    /// Finds the functions (macros, slot bodies) that cannot tell whether they run with a
+    /// copy of their caller's scope (Chameleon's `econtext.copy()`) or with that scope itself:
+    /// no instruction writes the scope (no `tal:define`, `tal:repeat`, `tal:on-error`, code
+    /// block, macro call or slot fill) and every expression only reads names
+    /// (`expr_reads_only`: its free variables are known and it assigns none; `econtext` used
+    /// as a value or a custom expression type is not). Then the copy holds the same names,
+    /// lookups give the same values, and nothing is written to either, so a call can skip
+    /// the copy (Phase 10).
+    pub fn mark_scope_sharing(&mut self, expr_reads_only: impl Fn(ExprId) -> bool) {
+        let mut sharing = Vec::new();
+        let mut start = 0usize;
+        let mut pure = true;
+        for (pc, op) in self.ops.iter().enumerate() {
+            if matches!(op, Op::End) {
+                if pure && let Ok(entry) = u32::try_from(start) {
+                    sharing.push(entry);
+                }
+                start = pc + 1;
+                pure = true;
+            } else if pure {
+                pure = self.op_reads_only(op, &expr_reads_only);
+            }
+        }
+        self.shares_scope = sharing;
+    }
+
+    fn op_reads_only(&self, op: &Op, expr_reads_only: &impl Fn(ExprId) -> bool) -> bool {
+        match op {
+            Op::Text(_)
+            | Op::JumpIfOmitted { .. }
+            | Op::PopOmit
+            | Op::PopValues { .. }
+            | Op::AttrStatic { .. }
+            | Op::AttrBegin { .. }
+            | Op::AttrEnd { .. }
+            | Op::AttrDict { .. }
+            | Op::PopSwitch
+            | Op::PopSlots { .. }
+            | Op::DefineSlot { .. }
+            | Op::I18nSet { .. }
+            | Op::I18nRestore
+            | Op::TranslateBegin { .. }
+            | Op::TranslateEnd { .. }
+            | Op::NameBegin { .. }
+            | Op::NameEnd { .. }
+            | Op::CaptureBegin
+            | Op::CaptureEnd { .. }
+            | Op::AttrTranslate { .. }
+            | Op::InterpTranslate { .. }
+            | Op::End => true,
+            Op::Emit { expr, .. }
+            | Op::EmitIfTrue { expr, .. }
+            | Op::Attr { expr, .. }
+            | Op::Content { expr, .. }
+            | Op::ContentTranslate { expr, .. }
+            | Op::JumpIfNot { expr, .. }
+            | Op::OmitTest { expr }
+            | Op::CacheValue { expr }
+            | Op::AttrLone { expr, .. }
+            | Op::Switch { expr }
+            | Op::CaseTest { expr, .. }
+            | Op::CaseDefault { expr, .. }
+            | Op::Target { expr } => expr_reads_only(*expr),
+            Op::AttrValue { kind: AttrKind::Subst { expr, .. } | AttrKind::Boolean { expr }, .. } => {
+                expr_reads_only(*expr)
+            }
+            Op::TrValue { info } => match self.tables.tr_values.get(*info as usize) {
+                Some(TrValue::Static(_)) => true,
+                Some(
+                    TrValue::Subst { expr, .. }
+                    | TrValue::Boolean { expr, .. }
+                    | TrValue::Lone { expr, .. }
+                    | TrValue::Part { expr, .. },
+                ) => expr_reads_only(*expr),
+                None => false,
+            },
+            Op::LoopStart { .. }
+            | Op::LoopNext { .. }
+            | Op::Define { .. }
+            | Op::DefineText { .. }
+            | Op::Undefine { .. }
+            | Op::Try { .. }
+            | Op::EndTry { .. }
+            | Op::Exec { .. }
+            | Op::FillSlot { .. }
+            | Op::UseMacro { .. }
+            | Op::CallMacro { .. } => false,
+        }
+    }
+
+    /// The (mangled) slot names the program fills or resolves, possibly repeated.
+    pub fn slot_names(&self) -> impl Iterator<Item = &str> {
+        let fills = self.tables.fills.iter().map(|f| &*f.name);
+        fills.chain(self.tables.slot_sets.iter().flatten().map(|s| &**s))
+    }
+
+    /// Whether the function at `entry` may run with its caller's scope (see
+    /// [`Program::mark_scope_sharing`]).
+    #[must_use]
+    pub fn shares_scope(&self, entry: u32) -> bool {
+        self.shares_scope.binary_search(&entry).is_ok()
     }
 
     /// The private-use block the source's lone surrogates were mapped to, if any.
@@ -2413,7 +2520,13 @@ fn execute_rare<R: Runtime>(
                     st.restart_fill();
                     return Ok(Flow::Jump(end as usize));
                 };
-                let scope = rt.copy_scope().map_err(rt_err)?;
+                let scope = if fill.program.shares_scope(fill.entry)
+                    && let Some(frame) = st.frames.last()
+                {
+                    rt.clone_value(&frame.scope)
+                } else {
+                    rt.copy_scope().map_err(rt_err)?
+                };
                 let call = Call { program: fill.program, code: fill.code, scope };
                 return Ok(Flow::Leave(Action::Push(Pushed {
                     call,
@@ -2464,7 +2577,11 @@ fn execute_rare<R: Runtime>(
         Op::CallMacro { entry } => {
             let Some(frame) = st.frames.last() else { return Err(VmError::Internal("no frame")) };
             let code = rt.clone_value(&frame.code);
-            let scope = rt.copy_scope().map_err(rt_err)?;
+            let scope = if shared.shares_scope(entry) {
+                rt.clone_value(&frame.scope)
+            } else {
+                rt.copy_scope().map_err(rt_err)?
+            };
             let call = Call { program: Arc::clone(shared), code, scope };
             let mut pushed = Pushed::call(call, entry, 1, pc as u32 + 1, OnReturn::Update);
             pushed.reset_token = true;

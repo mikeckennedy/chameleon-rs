@@ -56,7 +56,11 @@ pub fn compile_tokens<C: ExprCompiler>(
 ) -> std::result::Result<Program, CompileError<C::Error>> {
     let tree = build_tree_with(src, tokens, options).map_err(widen)?;
     let table = resolve(&tree, compiler, options)?;
-    lower(&tree, &table).map_err(widen)
+    let mut program = lower(&tree, &table).map_err(widen)?;
+    program.mark_scope_sharing(
+        |id| matches!(compiler.free_vars(id), crate::expr::FreeVars::Known { writes, .. } if writes.is_empty()),
+    );
+    Ok(program)
 }
 
 /// Tokenizes, parses and builds the program tree of `src` (no expressions are compiled).

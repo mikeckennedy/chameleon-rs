@@ -101,7 +101,10 @@ impl<'a, 'py> PyRuntime<'a, 'py> {
 
     /// The key of slot `name` in the scope (`__slot_<mangled name>`).
     fn slot_key(&self, name: &str) -> PyResult<Bound<'py, PyString>> {
-        self.source_str(&format!("__slot_{name}"))
+        match self.code.get().slot_key(name) {
+            Some(key) => Ok(key.bind(self.py).clone()),
+            None => self.source_str(&format!("__slot_{name}")),
+        }
     }
 
     /// Calls a foreign callable with a fresh stream (`f(stream, *args)`) and writes what it
@@ -272,6 +275,9 @@ impl Loops for PyRuntime<'_, '_> {
             let keys = names.iter().map(|n| self.name(*n).map(|k| k.bind(py).clone())).collect::<PyResult<Vec<_>>>()?;
             PyTuple::new(py, keys)?.into_any()
         };
+        if repeat.get_type().is(crate::program::repeat_dict_type(py)?) {
+            return repeat_dict_call(&repeat, &key, iterable.bind(py));
+        }
         let result = repeat.call1((key, iterable))?;
         let mut pair = unpack(&result, 2)?.into_iter();
         let (Some(iterable), Some(length)) = (pair.next(), pair.next()) else {
@@ -478,10 +484,54 @@ impl PyRuntime<'_, '_> {
     }
 }
 
+static REPEAT_ITEM: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+
+/// `chameleon_rs.tal.RepeatDict.__call__` for an exact `RepeatDict`, natively (no Python frame,
+/// no result tuple to unpack):
+///
+/// ```python
+/// iterable = list(iterable) if iterable is not None else ()
+/// length = len(iterable)
+/// iterator = iter(iterable)
+/// self[key] = RepeatItem(iterator, length)
+/// return iterator, length
+/// ```
+fn repeat_dict_call(
+    repeat: &Bound<'_, PyAny>,
+    key: &Bound<'_, PyAny>,
+    iterable: &Bound<'_, PyAny>,
+) -> PyResult<(Py<PyAny>, Countdown<Py<PyAny>>)> {
+    let py = repeat.py();
+    let items =
+        if iterable.is_none() { PyTuple::empty(py).into_any() } else { py.get_type::<PyList>().call1((iterable,))? };
+    let length = items.len()?;
+    let iterator = items.try_iter()?.into_any();
+    let class = REPEAT_ITEM.get_or_try_init(py, || {
+        Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs.tal"))?.getattr(intern!(py, "RepeatItem"))?.unbind())
+    })?;
+    let item = class.bind(py).call1((&iterator, length))?;
+    repeat.set_item(key, item)?;
+    let index = match i64::try_from(length) {
+        Ok(n) => Countdown::Int(n),
+        Err(_) => Countdown::Value(length.into_pyobject(py)?.into_any().unbind()),
+    };
+    Ok((iterator.unbind(), index))
+}
+
+/// Whether this interpreter's "too many values" message has "got N" (CPython 3.14+).
+static UNPACK_SIZED: PyOnceLock<bool> = PyOnceLock::new();
+
 /// Python's sequence unpacking for `a, b = item`, with CPython's messages.
 fn unpack<'py>(item: &Bound<'py, PyAny>, n: usize) -> PyResult<Vec<Bound<'py, PyAny>>> {
+    let py = item.py();
+    // An exact tuple of the right size unpacks to its items.
+    if let Ok(tuple) = item.cast_exact::<PyTuple>()
+        && tuple.len() == n
+    {
+        return Ok(tuple.iter().collect());
+    }
     // CPython 3.14 added "got N" to the too-many message for exact tuples and lists.
-    let sized = item.py().version_info() >= (3, 14)
+    let sized = *UNPACK_SIZED.get_or_init(py, || py.version_info() >= (3, 14))
         && (item.is_exact_instance_of::<PyTuple>() || item.is_exact_instance_of::<PyList>());
     let mut values = Vec::with_capacity(n);
     let iterator = item.try_iter().map_err(|e| {
@@ -520,11 +570,16 @@ impl Macros for PyRuntime<'_, '_> {
     /// called with a fresh stream.
     fn macro_call(&mut self, value: Py<PyAny>, out: &mut Output) -> PyResult<MacroStep<Py<PyAny>>> {
         let py = self.py;
-        let include = value.bind(py).getattr(intern!(py, "include"))?;
+        let value = value.into_bound(py);
+        // A `Macro`'s `include` is the macro itself (the class cannot be subclassed).
+        let include = match value.cast::<Macro>() {
+            Ok(m) => m.clone().into_any(),
+            Err(_) => value.getattr(intern!(py, "include"))?,
+        };
         if let Ok(m) = include.cast::<Macro>() {
             let get = m.get();
             let program = Arc::clone(&get.program.bind(py).get().core);
-            let scope = Scope::copy(&self.scope)?;
+            let scope = if program.shares_scope(get.entry) { self.scope.clone() } else { Scope::copy(&self.scope)? };
             return Ok(MacroStep::Frame {
                 call: chameleon_core::Call {
                     program,

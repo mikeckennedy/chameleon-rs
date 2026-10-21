@@ -228,6 +228,52 @@ CASES: list[tuple[str, tuple[str, ...]]] = [
         + """<x tal:on-error="string:E" metal:use-macro="macros['r']"/>""",
         (),
     ),
+    # Phase 10: macros and slot bodies that only read their scope run without a copy of it;
+    # what they see must not change (caller's locals and root, the macro's locals in a slot
+    # body, names defined between calls, after-call globals, errors, nested slots).
+    (
+        hidden('<div metal:define-macro="c">${v}:${x}<b metal:define-slot="s">d${v}</b></div>')
+        + """<p tal:repeat="v [1, 2, 3]"><q tal:define="x v * 10" metal:use-macro="macros['c']">"""
+        + """<i metal:fill-slot="s">F${v}${x}${repeat.v.index}</i></q></p>${v | 'none'}""",
+        (),
+    ),
+    (
+        hidden('<div metal:define-macro="c">[${y}]<b metal:define-slot="s"/></div>')
+        + """<p tal:define="y 1" metal:use-macro="macros['c']"><i metal:fill-slot="s">${y}</i></p>"""
+        + """<p tal:define="y 2" metal:use-macro="macros['c']"><i metal:fill-slot="s">${y}</i></p>${y | 'none'}""",
+        (),
+    ),
+    (
+        hidden('<div metal:define-macro="c" tal:define="m 7">${m}<b metal:define-slot="s"/></div>')
+        + """<p metal:use-macro="macros['c']"><i metal:fill-slot="s">${m}${sorted(econtext)[:3]}</i></p>""",
+        (),
+    ),
+    (
+        hidden('<div metal:define-macro="c">${len([k for k in econtext if k.startswith("__slot")])}</div>')
+        + """<p metal:use-macro="macros['c']"><i metal:fill-slot="s">x</i></p>""",
+        (),
+    ),
+    (
+        hidden('<div metal:define-macro="c">${nope}<b metal:define-slot="s"/></div>')
+        + """<p tal:on-error="string:E${error.type.__name__}" metal:use-macro="macros['c']">"""
+        + """<i metal:fill-slot="s">x</i></p>${error | 'no error'}""",
+        (),
+    ),
+    (
+        hidden('<div metal:define-macro="c"><b metal:define-slot="s"><u metal:define-slot="t">T</u></b></div>')
+        + """<p metal:use-macro="macros['c']"><i metal:fill-slot="t">${q | 'noq'}</i></p>"""
+        + """<p tal:define="global q 4" metal:use-macro="macros['c']"><i metal:fill-slot="s">S${q}</i></p>${q}""",
+        (),
+    ),
+    (
+        """<p tal:define="w 2" metal:use-macro="others[0]"><x metal:fill-slot="s">${w}${n | 0}</x></p>${w}""",
+        ('<i>${w}<b metal:define-slot="s"/></i>',),
+    ),
+    (
+        hidden('<div metal:define-macro="c">${[v for v in range(2)]}${v}</div>')
+        + """<p tal:define="v 9" metal:use-macro="macros['c']"/>${v}""",
+        (),
+    ),
 ]
 
 
