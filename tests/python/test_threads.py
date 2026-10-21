@@ -4,6 +4,7 @@ import re
 import sys
 import sysconfig
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import chameleon_rs
 import pytest
@@ -16,9 +17,10 @@ except ZeroDivisionError as error:
 LISTING = '<ul>\n  <li tal:repeat="v videos" class="${v[0]}">${v[1]} ${repeat.v.index}</li>\n</ul>'
 
 
-def test_many_threads_render_the_same_templates() -> None:
-    inner = chameleon_rs.PageTemplate('<b title="${x}">${x}</b>')
-    page = chameleon_rs.PageTemplate(LISTING + '${render_partial("inner", x=n)}', partials={'inner': inner})
+def test_many_threads_render_the_same_templates(tmp_path: Path) -> None:
+    (tmp_path / 'inner.pt').write_text('<b title="${x}">${x}</b>')
+    (tmp_path / 'page.pt').write_text(LISTING + '${render_partial("inner.pt", x=n)}')
+    page = chameleon_rs.PageTemplateLoader(str(tmp_path))['page.pt']
 
     def render(n: int) -> tuple[int, str]:
         videos = [(f'c{n}', f'<{i}>') for i in range(n % 7)]

@@ -170,8 +170,9 @@ pub(crate) struct PyExprCompiler<'a, 'py> {
     local_names: Option<Bound<'py, PySet>>,
     /// The ones the render function itself binds.
     bound_names: Option<Bound<'py, PySet>>,
-    /// Whether any expression mentions `repeat` (so native partial frames provide it).
-    pub(crate) mentions_repeat: bool,
+    /// Whether any expression mentions `repeat`, `econtext`, `rcontext` or a render default
+    /// (so a native partial frame gets the whole scope a Python render would give it).
+    pub(crate) mentions_scope: bool,
     pub(crate) config: Config<'py>,
     /// The `attrs` dict of each element, by `StaticAttrs::id`.
     pub(crate) attrs_dicts: HashMap<u32, Bound<'py, PyDict>>,
@@ -197,6 +198,11 @@ pub(crate) struct PyExprCompiler<'a, 'py> {
     pub(crate) surrogate_base: Option<u32>,
 }
 
+/// Names whose mention makes a native partial frame build the whole scope (see
+/// `Program::full_scope`).
+const SCOPE_NAMES: [&str; 7] =
+    ["repeat", "econtext", "rcontext", "target_language", "__translate", "__decode", "__on_error_handler"];
+
 impl<'a, 'py> PyExprCompiler<'a, 'py> {
     pub(crate) fn new(
         py: Python<'py>,
@@ -221,7 +227,7 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
             free: Vec::new(),
             local_names: None,
             bound_names: None,
-            mentions_repeat: false,
+            mentions_scope: false,
             config,
             attrs_dicts: HashMap::new(),
             ast_parse: py.import(intern!(py, "ast"))?.getattr(intern!(py, "parse"))?,
@@ -376,8 +382,8 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         if cx.candidate && obviously_invalid(&string) {
             return Err(invalid("invalid syntax".to_owned()));
         }
-        if string.contains("repeat") {
-            self.mentions_repeat = true;
+        if SCOPE_NAMES.iter().any(|name| string.contains(name)) {
+            self.mentions_scope = true;
         }
         let tree = match self.ast_parse.call((string.as_str(),), Some(&self.eval_mode)) {
             Ok(tree) => tree,

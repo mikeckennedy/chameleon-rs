@@ -259,17 +259,14 @@ def test_file_templates_show_the_source_line(tmp_path: Path) -> None:
     assert ' - Source:     ' in got[2]
 
 
-def test_recursion_errors_are_not_formatted() -> None:
-    inner = chameleon_rs.PageTemplate('<b>${render_partial("me")}</b>')
-    inner._partials = {'me': inner}
+def test_recursion_errors_are_not_formatted(tmp_path: Path) -> None:
+    (tmp_path / 'me.pt').write_text('<b>${render_partial("me.pt")}</b>')
     with pytest.raises(RecursionError) as info:
-        inner()
+        chameleon_rs.PageTemplateFile(str(tmp_path / 'me.pt'))()
     assert '- Expression:' not in str(info.value)
     # An on-error handler can catch it.
-    page = chameleon_rs.PageTemplate(
-        '<p tal:on-error="string:deep">${render_partial("me")}</p>', partials={'me': inner}
-    )
-    assert page() == '<p>deep</p>'
+    (tmp_path / 'page.pt').write_text('<p tal:on-error="string:deep">${render_partial("me.pt")}</p>')
+    assert chameleon_rs.PageTemplateFile(str(tmp_path / 'page.pt'))() == '<p>deep</p>'
 
 
 GLOBAL_REPEAT = [
@@ -332,20 +329,19 @@ def test_code_block_namespaces_are_per_render() -> None:
         assert outcome(chameleon_rs, '') and template() == reference()
 
 
-def test_errors_inside_partials_record_each_frame() -> None:
+def test_errors_inside_partials_are_recorded_in_their_own_render(tmp_path: Path) -> None:
+    # As chameleon_partials' nested `render`: the partial's frames record into its own
+    # `rcontext`; the page's gets only the page's frames (none here: the error was caught).
     kept: list[dict[str, Any]] = []
-    inner = chameleon_rs.PageTemplate('<i>\n${1/0}</i>')
-    page = chameleon_rs.PageTemplate(
-        '<p tal:on-error="string:E">${render_partial("inner")}</p>${keep(rcontext)}', partials={'inner': inner}
-    )
+    (tmp_path / 'inner.pt').write_text('<i>\n${1/0}</i>')
+    (tmp_path / 'page.pt').write_text('<p tal:on-error="string:E">${render_partial("inner.pt")}</p>${keep(rcontext)}')
 
     def keep(r: dict[str, Any]) -> str:
         kept.append(r)
         return ''
 
-    assert page(keep=keep) == '<p>E</p>'
-    [(token, line, column, _, exc)] = kept[0]['__error__']
-    assert (token, line, column, type(exc)) == ('1/0', 2, 2, ZeroDivisionError)
+    assert chameleon_rs.PageTemplateFile(str(tmp_path / 'page.pt'))(keep=keep) == '<p>E</p>'
+    assert '__error__' not in kept[0]
 
 
 def test_deferred_syntax_errors_report_their_own_token() -> None:

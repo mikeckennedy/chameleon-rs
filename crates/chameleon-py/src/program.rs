@@ -67,8 +67,12 @@ pub(crate) struct Program {
     pub(crate) exprs: Vec<Site>,
     /// The core program's names, interned, indexed by `NameId`.
     pub(crate) names: Vec<Py<PyString>>,
-    /// Whether a native partial frame running this program needs a `repeat` variable.
-    pub(crate) needs_repeat: bool,
+    /// Whether a native partial frame running this program needs the scope a Python render
+    /// would give it (the render defaults and `repeat`): the program loops, names `repeat`,
+    /// `econtext`, `rcontext` or a default (`target_language`, `__translate`, ...), has
+    /// expressions whose names are unknown, or calls macros (whose code may). Otherwise its
+    /// scope holds just the model, and the defaults are read from the unit.
+    pub(crate) full_scope: bool,
     /// The scope key of each slot name the program uses (`__slot_<name>`), interned once.
     slot_keys: Vec<(Box<str>, Py<PyString>)>,
     pub(crate) token_table: Vec<TokenSpan>,
@@ -178,9 +182,14 @@ impl Program {
                     slot_keys.push((name.into(), key.unbind()));
                 }
             }
-            let has_loops = core.ops().iter().any(|op| matches!(op, chameleon_core::Op::LoopStart { .. }));
+            let full_scope = compiler.mentions_scope
+                || compiler.free.iter().any(|f| matches!(f, chameleon_core::FreeVars::Dynamic))
+                || core
+                    .ops()
+                    .iter()
+                    .any(|op| matches!(op, chameleon_core::Op::LoopStart { .. } | chameleon_core::Op::UseMacro { .. }));
             Ok(Self {
-                needs_repeat: has_loops || compiler.mentions_repeat,
+                full_scope,
                 slot_keys,
                 core: Arc::new(core),
                 exprs: compiler
@@ -199,21 +208,19 @@ impl Program {
         })
     }
 
-    /// Renders with `variables` as the scope. `partials` is the prototype registry for the
-    /// built-in `render_partial` (name -> `Program`); `defaults` holds the template's
+    /// Renders with `variables` as the scope. `defaults` holds the template's
     /// `__translate`/`__decode`/... for frames whose scope lacks them; `builtins` the template
-    /// builtins' values (`template`, `macros`, `nothing`, ...).
-    #[pyo3(signature = (variables, partials = None, defaults = None, builtins = None))]
+    /// builtins' values (`template`, `macros`, `nothing`, `render_partial`, ...).
+    #[pyo3(signature = (variables, defaults = None, builtins = None))]
     fn render<'py>(
         slf: &Bound<'py, Self>,
         variables: &Bound<'py, PyDict>,
-        partials: Option<Bound<'py, PyDict>>,
         defaults: Option<Bound<'py, PyDict>>,
         builtins: Option<Bound<'py, PyDict>>,
     ) -> PyResult<Bound<'py, PyString>> {
         let py = slf.py();
         let scope = Scope::new_root(py, variables)?;
-        render_in(slf, &scope, partials, defaults, builtins, false)
+        render_in(slf, &scope, defaults, builtins, false)
     }
 
     /// Renders with `scope` itself as the scope, so names the template assigns stay in it
@@ -224,7 +231,7 @@ impl Program {
         scope: &Bound<'py, Scope>,
         builtins: Option<Bound<'py, PyDict>>,
     ) -> PyResult<Bound<'py, PyString>> {
-        render_in(slf, scope, None, None, builtins, true)
+        render_in(slf, scope, None, builtins, true)
     }
 
     /// A readable listing of the bytecode.
@@ -278,7 +285,6 @@ impl Program {
 /// if '_render' in self.__dict__:
 ///     return self._render_protocol(kw, defaults)
 /// program, builtins = self._compiled
-/// partials = None if self._partials is None else self._partial_programs()
 /// scope = Scope(kw); scope.setdefault(...) for each default; scope['repeat'] = RepeatDict({})
 /// return program.render(...)
 /// ```
@@ -324,12 +330,6 @@ pub(crate) fn render_page<'py>(
     }
     let compiled = template.getattr(intern!(py, "_compiled"))?;
     let (program, builtins): (Bound<'py, Program>, Bound<'py, PyDict>) = compiled.extract()?;
-    let partials = if template.getattr(intern!(py, "_partials"))?.is_none() {
-        None
-    } else {
-        let programs = template.call_method0(intern!(py, "_partial_programs"))?;
-        if programs.is_none() { None } else { Some(programs.cast_into::<PyDict>()?) }
-    };
     let scope = Scope::new_root(py, kw)?;
     let locals = scope.as_super();
     for (name, value) in defaults.iter() {
@@ -341,14 +341,13 @@ pub(crate) fn render_page<'py>(
     if !locals.contains(repeat)? {
         locals.set_item(repeat, new_repeat_dict(py)?)?;
     }
-    Ok(render_in(&program, &scope, partials, Some(defaults), Some(builtins), false)?.into_any())
+    Ok(render_in(&program, &scope, Some(defaults), Some(builtins), false)?.into_any())
 }
 
 /// A render of `program` in `scope` (see [`Program::render`]).
 fn render_in<'py>(
     slf: &Bound<'py, Program>,
     scope: &Bound<'py, Scope>,
-    partials: Option<Bound<'py, PyDict>>,
     defaults: Option<Bound<'py, PyDict>>,
     builtins: Option<Bound<'py, PyDict>>,
     exposed: bool,
@@ -357,7 +356,7 @@ fn render_in<'py>(
     catch_panics(py, || {
         let program = slf.get();
         let builtins = builtins.unwrap_or_else(|| PyDict::new(py));
-        let render = RenderCtx::new(program.marker.bind(py).clone(), partials, defaults, builtins);
+        let render = RenderCtx::new(program.marker.bind(py).clone(), defaults, builtins);
         // A scope given by the caller (`render_scope`) is already in user code's hands.
         render.scope_exposed.set(exposed);
         // `render(..., target_language=__kw.get("target_language"))`.

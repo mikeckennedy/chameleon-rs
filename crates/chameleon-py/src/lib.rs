@@ -12,6 +12,7 @@ mod errors;
 mod expr;
 mod lower;
 mod macros;
+mod partials;
 mod program;
 mod repeat;
 mod runtime;

@@ -226,7 +226,7 @@ fn render_function<'py>(
             return Err(PyKeyError::new_err((key.clone().unbind(),)));
         }
     }
-    let render = RenderCtx::new(program.get().marker.bind(py).clone(), None, None, builtins);
+    let render = RenderCtx::new(program.get().marker.bind(py).clone(), None, builtins);
     // Called from outside: the scope came from user code.
     render.scope_exposed.set(true);
     let _ = render.rcontext.set(rcontext.cast::<PyDict>()?.clone());

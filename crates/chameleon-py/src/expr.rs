@@ -19,10 +19,9 @@ use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyFrozenSet, PyInt, PyList, PySet, PySlice, PyString, PyTuple};
 use pyo3::{PyTraverseError, PyVisit};
 
-use chameleon_core::{Call, Escape, FreeVars, Step};
+use chameleon_core::{Escape, FreeVars, Step};
 
 use crate::custom::Custom;
-use crate::program::Program;
 use crate::scope::Scope;
 
 #[derive(Clone, Copy, Debug)]
@@ -117,7 +116,8 @@ pub(crate) enum Expr {
     /// `string:` and each path of `load:` (Chameleon's `Interpolator`, braces optional).
     Interp(Box<StrInterp>),
     /// A top-level `render_partial(path, **kw)` in an emitted position: a native frame when
-    /// no `render_partial` is bound in the scope, else the ordinary call (`call`).
+    /// `render_partial` is the built-in or `chameleon_partials`' (see [`crate::partials`]), else
+    /// the ordinary call (`call`).
     Partial {
         path: Box<Expr>,
         kwargs: Vec<(Py<PyString>, Expr)>,
@@ -425,10 +425,10 @@ impl Free {
 /// Render-wide state shared by every frame.
 pub(crate) struct RenderCtx<'py> {
     pub(crate) marker: Bound<'py, PyAny>,
-    /// Prototype partial registry: name -> native `Program`.
-    pub(crate) partials: Option<Bound<'py, PyDict>>,
-    /// The template's default `__translate`, `__decode`, ... for scopes that lack them
-    /// (native partial frames).
+    /// Native partial frames: their units (builtins, defaults, `rcontext`) and the render's
+    /// resolutions.
+    pub(crate) partials: crate::partials::Partials<'py>,
+    /// The template's default `__translate`, `__decode`, ... for scopes that lack them.
     pub(crate) defaults: Option<Bound<'py, PyDict>>,
     /// The template builtins' values (`template`, `macros`, `nothing`, `__loader`, ...).
     pub(crate) builtins: Bound<'py, PyDict>,
@@ -454,8 +454,10 @@ pub(crate) struct RenderCtx<'py> {
 /// of the template it belongs to), its serial, and its i18n settings (Chameleon's
 /// `__i18n_domain`, `__i18n_context` and `target_language` locals).
 pub(crate) struct FrameCx<'py> {
-    /// A macro of another template: that template's builtins (`None`: the render's).
+    /// A macro of another template: that template's builtins (`None`: the unit's).
     pub(crate) builtins: Option<Bound<'py, PyDict>>,
+    /// The native partial whose render the frame belongs to (`None`: the render's own).
+    pub(crate) unit: Option<std::rc::Rc<crate::partials::Unit<'py>>>,
     pub(crate) serial: u64,
     pub(crate) domain: Option<Bound<'py, PyString>>,
     pub(crate) context: Option<Bound<'py, PyString>>,
@@ -465,20 +467,19 @@ pub(crate) struct FrameCx<'py> {
 impl<'py> FrameCx<'py> {
     /// A frame with no i18n domain or context.
     pub(crate) fn new(builtins: Option<Bound<'py, PyDict>>, serial: u64, target_language: Bound<'py, PyAny>) -> Self {
-        Self { builtins, serial, domain: None, context: None, target_language }
+        Self { builtins, unit: None, serial, domain: None, context: None, target_language }
     }
 }
 
 impl<'py> RenderCtx<'py> {
     pub(crate) fn new(
         marker: Bound<'py, PyAny>,
-        partials: Option<Bound<'py, PyDict>>,
         defaults: Option<Bound<'py, PyDict>>,
         builtins: Bound<'py, PyDict>,
     ) -> Self {
         Self {
             marker,
-            partials,
+            partials: crate::partials::Partials::default(),
             defaults,
             builtins,
             rcontext: OnceCell::new(),
@@ -507,15 +508,43 @@ impl<'py> Cx<'_, 'py> {
         if let Some(v) = Scope::lookup(self.scope, key.as_any())? {
             return Ok(Some(v));
         }
-        match &self.render.defaults {
+        match self.defaults() {
             Some(defaults) => defaults.get_item(key),
             None => Ok(None),
         }
     }
 
+    /// The render defaults of the active frame's render (a native partial's own).
+    pub(crate) fn defaults(&self) -> Option<&Bound<'py, PyDict>> {
+        match &self.frame.unit {
+            Some(unit) => Some(&unit.target.defaults),
+            None => self.render.defaults.as_ref(),
+        }
+    }
+
     /// The active frame's template builtins.
     pub(crate) fn builtins(&self) -> &Bound<'py, PyDict> {
-        self.frame.builtins.as_ref().unwrap_or(&self.render.builtins)
+        match (&self.frame.builtins, &self.frame.unit) {
+            (Some(builtins), _) => builtins,
+            (None, Some(unit)) => &unit.target.builtins,
+            (None, None) => &self.render.builtins,
+        }
+    }
+
+    /// `rcontext` of the active frame's render (a native partial has its own).
+    pub(crate) fn rcontext(&self) -> &Bound<'py, PyDict> {
+        match &self.frame.unit {
+            Some(unit) => unit.rcontext(),
+            None => self.render.rcontext(self.scope.py()),
+        }
+    }
+
+    /// `rcontext` if it was created.
+    pub(crate) fn rcontext_made(&self) -> Option<&Bound<'py, PyDict>> {
+        match &self.frame.unit {
+            Some(unit) => unit.rcontext.get(),
+            None => self.render.rcontext.get(),
+        }
     }
 
     fn builtin(&self, name: &Bound<'py, PyString>) -> PyResult<Bound<'py, PyAny>> {
@@ -534,34 +563,9 @@ impl<'py> Cx<'_, 'py> {
 /// Evaluates an expression whose value is emitted: may return a native frame call.
 pub(crate) fn eval_emitted(e: &Expr, cx: &Cx<'_, '_>) -> PyResult<Step<Py<PyAny>>> {
     if let Expr::Partial { path, kwargs, call } = e {
-        let py = cx.scope.py();
-        if Scope::lookup(cx.scope, intern!(py, "render_partial").as_any())?.is_some() {
-            return Ok(Step::Ready(eval(call, cx)?.unbind()));
-        }
-        return partial_call(path, kwargs, cx).map(Step::Call);
+        return crate::partials::partial_step(e, path, kwargs, call, cx);
     }
     Ok(Step::Ready(eval(e, cx)?.unbind()))
-}
-
-fn partial_call(path: &Expr, kwargs: &[(Py<PyString>, Expr)], cx: &Cx<'_, '_>) -> PyResult<Call<Py<PyAny>>> {
-    let py = cx.scope.py();
-    let path = eval(path, cx)?;
-    let Some(registry) = &cx.render.partials else {
-        // Without a registry the name is simply unbound, as in Chameleon.
-        return Err(PyNameError::new_err("render_partial"));
-    };
-    let target =
-        registry.get_item(&path)?.ok_or_else(|| PyValueError::new_err(format!("Partial not found: {path}")))?;
-    let program = target.cast_into::<Program>().map_err(PyErr::from)?;
-    let scope = Scope::empty(py)?;
-    for (key, value) in kwargs {
-        scope.as_super().set_item(key.bind(py), eval(value, cx)?)?;
-    }
-    let p = program.get();
-    if p.needs_repeat {
-        scope.as_super().set_item(intern!(py, "repeat"), crate::program::new_repeat_dict(py)?)?;
-    }
-    Ok(Call { program: p.core.clone(), code: program.into_any().unbind(), scope: scope.into_any().unbind() })
 }
 
 /// The exceptions a TALES pipe falls through on (`TalesExpr.exceptions`).
@@ -650,8 +654,7 @@ pub(crate) fn eval<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny
             if matches!(f.free, FreeVars::Dynamic) {
                 cx.render.scope_exposed.set(true);
             }
-            let rcontext = cx.render.rcontext(py);
-            f.func.bind(py).call1((cx.scope, rcontext, &cx.render.marker, cx.builtins()))
+            f.func.bind(py).call1((cx.scope, cx.rcontext(), &cx.render.marker, cx.builtins()))
         }
         _ => eval_more(e, cx),
     }
@@ -672,7 +675,7 @@ fn eval_more<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
             }
         }
         Expr::RenderBuiltin(name) => cx.builtin(name.bind(py)),
-        Expr::Rcontext => Ok(cx.render.rcontext(py).clone().into_any()),
+        Expr::Rcontext => Ok(cx.rcontext().clone().into_any()),
         Expr::ScopeKey(key) => {
             let key = key.bind(py);
             cx.scope_or_default(key)?.ok_or_else(|| PyKeyError::new_err((key.clone().unbind(),)))
@@ -868,7 +871,7 @@ fn eval_ns<'py>(code: &NsCode, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> 
         ns
     };
     ns.set_item(intern!(py, "econtext"), cx.scope)?;
-    ns.set_item(intern!(py, "rcontext"), cx.render.rcontext(py))?;
+    ns.set_item(intern!(py, "rcontext"), cx.rcontext())?;
     ns.set_item(intern!(py, "__rs_default"), &cx.render.marker)?;
     ns.set_item(intern!(py, "__rs_tpl"), cx.builtins())?;
     ns.set_item(intern!(py, "__rs_attrs"), code.attrs.as_ref().map(|a| a.bind(py)))?;
