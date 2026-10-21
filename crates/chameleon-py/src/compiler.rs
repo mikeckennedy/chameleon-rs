@@ -11,20 +11,60 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use pyo3::exceptions::{PyLookupError, PySyntaxError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyString, PyTuple};
+use pyo3::types::{PyDict, PyList, PySet, PyString, PyTuple};
 
 use chameleon_core::{
-    DefaultAlias, Escape, ExprCompileError, ExprCompiler, ExprContext, ExprId, FreeVars, Quote, Source, Tok,
+    DefaultAlias, Escape, ExprCompileError, ExprCompiler, ExprContext, ExprId, FreeVars, Quote, Source, Tok, TokPos,
     is_python_space,
 };
 
 use crate::custom::{Custom, Sub, SubKind};
 use crate::errors::unsupported_error;
-use crate::expr::{Expr, Fallback, TextConv};
+use crate::expr::{Expr, Fallback, NsCode, TextConv};
+
+/// Distinguishes programs' render namespaces (see [`NsCode`]).
+static NS_KEYS: AtomicU64 = AtomicU64::new(1);
+
+/// An entry of a program's token table, resolved at compile time so the error path costs
+/// a slice: Chameleon re-slices the template source at the token's position for its length
+/// (`start..end`, bytes; empty past the end of the source), and reports the line and column of
+/// that position (`Token.location`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct TokenSpan {
+    pub(crate) start: u32,
+    pub(crate) end: u32,
+    pub(crate) line: u32,
+    pub(crate) column: u32,
+}
+
+impl TokenSpan {
+    /// Resolves a token of `chars` code points at `pos` (code points past `pos.byte`, which
+    /// may run past the end of the source, as Chameleon's split arithmetic can).
+    fn new(source: &Source<'_>, pos: TokPos, chars: usize) -> Self {
+        let text = source.text();
+        let (start, beyond) = advance(text, pos.byte as usize, pos.chars as usize);
+        let end = if beyond > 0 { start } else { advance(text, start, chars).0 };
+        let (line, column) = source.location(start);
+        let n = |v: usize| u32::try_from(v).unwrap_or(u32::MAX);
+        Self { start: n(start), end: n(end), line: n(line), column: n(column + beyond) }
+    }
+}
+
+/// The byte offset `n` code points after byte `from`, and how many code points were left
+/// over at the end of `text`.
+fn advance(text: &str, from: usize, n: usize) -> (usize, usize) {
+    let Some(rest) = text.get(from..) else { return (text.len(), n) };
+    let mut chars = rest.char_indices();
+    match chars.nth(n) {
+        Some((i, _)) => (from + i, 0),
+        None => (text.len(), n - rest.chars().count()),
+    }
+}
 
 pub(crate) type CompileResult<T> = Result<T, ExprCompileError<PyErr>>;
 
@@ -116,7 +156,22 @@ enum Alt<'a> {
 pub(crate) struct PyExprCompiler<'a, 'py> {
     pub(crate) py: Python<'py>,
     pub(crate) exprs: Vec<Expr>,
+    /// Each expression's error token (index into `token_table` plus one; `0` for a source
+    /// without a position, which leaves the previous token in place, as in Chameleon).
+    pub(crate) tokens: Vec<u32>,
+    pub(crate) token_table: Vec<TokenSpan>,
+    /// Whether each expression contains nested tokens ([`Expr::Token`]).
+    pub(crate) has_nested: Vec<bool>,
+    /// Set while compiling an expression that gets nested tokens.
+    nested: bool,
     pub(crate) free: Vec<FreeVars>,
+    /// Names `<?python ?>` blocks defined so far (`def` names, their parameters, imports):
+    /// plain names in every later expression, which then runs in the render's namespace.
+    local_names: Option<Bound<'py, PySet>>,
+    /// The ones the render function itself binds.
+    bound_names: Option<Bound<'py, PySet>>,
+    /// This program's render-namespace key.
+    ns_key: u64,
     /// Whether any expression mentions `repeat` (so native partial frames provide it).
     pub(crate) mentions_repeat: bool,
     pub(crate) config: Config<'py>,
@@ -136,6 +191,8 @@ pub(crate) struct PyExprCompiler<'a, 'py> {
     pub(crate) marker: Bound<'py, PyAny>,
     /// The template source and filename, for the position of a deferred error.
     source: &'a str,
+    /// Its line index, for error tokens.
+    index: Source<'a>,
     filename: &'a str,
 }
 
@@ -154,7 +211,14 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         Ok(Self {
             py,
             exprs: Vec::new(),
+            tokens: Vec::new(),
+            token_table: Vec::new(),
+            has_nested: Vec::new(),
+            nested: false,
             free: Vec::new(),
+            local_names: None,
+            bound_names: None,
+            ns_key: NS_KEYS.fetch_add(1, Ordering::Relaxed),
             mentions_repeat: false,
             config,
             attrs_dicts: HashMap::new(),
@@ -169,6 +233,7 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
             lookup_attr: wrap_pyfunction!(crate::expr::py_lookup_attr, py)?.into_any(),
             marker,
             source,
+            index: Source::new(source),
             filename,
         })
     }
@@ -203,9 +268,11 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
             Spec::Proxy(name, ignore_prefix) => self.tales(&expression, cx, false, ignore_prefix, Alt::Proxy(&name))?,
             Spec::String(braces_required) => Expr::Interp(Box::new(self.string(&expression, braces_required, cx)?)),
             // `engine.parse(self.expression)`: the rest may have a prefix of its own.
-            Spec::Not => Expr::Not(Box::new(self.typed(&expression, inner, false)?)),
+            // `engine.parse(self.expression)` (a `TokenRef` to the stripped rest); `exists:`
+            // parses with `handle_errors=False`, so its token stays the outer one.
+            Spec::Not => Expr::Not(Box::new(self.typed_ref(&expression, inner)?)),
             Spec::Exists => Expr::Exists(Box::new(self.typed(&expression, inner, false)?)),
-            Spec::Structure => Expr::Structure(Box::new(self.typed(&expression, inner, false)?)),
+            Spec::Structure => Expr::Structure(Box::new(self.typed_ref(&expression, inner)?)),
             // `self.expression.strip().replace('\n', ' ')`.
             Spec::Import => {
                 let name = expression.text.trim_matches(is_python_space).replace('\n', " ");
@@ -213,6 +280,28 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
             }
             Spec::Custom(factory) => self.custom(&factory, &expression, inner)?,
         })
+    }
+
+    /// `engine.parse(source)` inside an expression type: [`typed`](Self::typed), with the
+    /// stripped source as the error token while it evaluates.
+    fn typed_ref(&mut self, source: &Tok, cx: ExprContext<'_>) -> CompileResult<Expr> {
+        let expr = self.typed(source, cx, false)?;
+        let token = self.token_id(&strip_tok(source));
+        if token == 0 {
+            return Ok(expr);
+        }
+        // The enclosing site is registered next (sub-expressions are not registered).
+        let site = u32::try_from(self.exprs.len() + 1).unwrap_or(u32::MAX);
+        self.nested = true;
+        Ok(Expr::Token(site, token, Box::new(expr)))
+    }
+
+    /// Records an error token (`0` for a plain string without a position).
+    fn token_id(&mut self, tok: &Tok) -> u32 {
+        let Some(pos) = tok.pos else { return 0 };
+        let span = TokenSpan::new(&self.index, pos, tok.text.chars().count());
+        self.token_table.push(span);
+        u32::try_from(self.token_table.len()).unwrap_or(0)
     }
 
     /// `TalesExpr.__call__`: alternatives separated by unescaped `|`; with `ignore_prefix`, a
@@ -229,7 +318,7 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         let mut remaining = expression.clone();
         while !remaining.is_empty() {
             if ignore_prefix && match_prefix(&remaining.text).is_some() {
-                alternatives.push(self.typed(&remaining, ExprContext { emitted: false, ..cx }, false)?);
+                alternatives.push(self.typed_ref(&remaining, ExprContext { emitted: false, ..cx })?);
                 remaining = remaining.slice_from(remaining.text.len());
                 break;
             }
@@ -280,7 +369,9 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
             {
                 return Ok(Some(partial));
             }
-            if !self.config.fast_path {
+            // Once a code block has defined names, expressions may read the render's locals:
+            // the fallback's rewriter decides.
+            if !self.config.fast_path || self.local_names.as_ref().is_some_and(|s| !s.is_empty()) {
                 return Ok(None);
             }
             self.lower(&body, cx)
@@ -302,9 +393,16 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         kwargs
             .set_item(intern!(self.py, "template_builtins"), PyTuple::new(self.py, &self.config.template_builtins)?)?;
         kwargs.set_item(intern!(self.py, "constants"), &self.constants)?;
+        kwargs.set_item(intern!(self.py, "local_names"), &self.local_names)?;
         let result =
-            self.rewrite.call((tree, cx.default == DefaultAlias::Marker, attrs, &self.lookup_attr), Some(&kwargs))?;
-        let (func, reads, writes, dynamic): (Bound<'py, PyAny>, Vec<String>, Vec<String>, bool) = result.extract()?;
+            self.rewrite.call((tree, cx.default == DefaultAlias::Marker, &attrs, &self.lookup_attr), Some(&kwargs))?;
+        let (func, reads, writes, dynamic, in_namespace): (Bound<'py, PyAny>, Vec<String>, Vec<String>, bool, bool) =
+            result.extract()?;
+        if in_namespace {
+            let attrs = attrs.map(Bound::unbind);
+            let bound = self.bound_names()?.unbind();
+            return Ok(Expr::Ns(Box::new(NsCode { code: func.unbind(), attrs, key: self.ns_key, exec: false, bound })));
+        }
         let free = if dynamic {
             FreeVars::Dynamic
         } else {
@@ -340,7 +438,7 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         let inner = ExprContext { emitted: false, ..cx };
         let py = self.py;
         let parts = crate::strexpr::interpolate(py, expression, braces_required, |s, candidate| {
-            self.typed(s, ExprContext { candidate, ..inner }, false)
+            self.typed_ref(s, ExprContext { candidate, ..inner })
         })?;
         let engine = cx.engine;
         let conv = TextConv {
@@ -439,12 +537,42 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         Ok(folded.then(|| Expr::Const(value.unbind())))
     }
 
-    fn register(&mut self, expr: Expr) -> CompileResult<ExprId> {
+    fn register(&mut self, expr: Expr, token: u32) -> CompileResult<ExprId> {
         let id = u32::try_from(self.exprs.len())
             .map_err(|_| ExprCompileError::Other(unsupported_error(self.py, "More than 2**32 expressions")))?;
         self.free.push(expr.free_vars());
         self.exprs.push(expr);
+        self.tokens.push(token);
+        self.has_nested.push(std::mem::take(&mut self.nested));
         Ok(ExprId(id))
+    }
+
+    /// `visit_CodeBlock` (see `chameleon_rs._rewrite.compile_code`).
+    fn code_block(&mut self, source: &Tok) -> PyResult<Expr> {
+        let py = self.py;
+        let local_names = if let Some(s) = &self.local_names {
+            s.clone()
+        } else {
+            let s = PySet::empty(py)?;
+            self.local_names = Some(s.clone());
+            s
+        };
+        let bound_names = self.bound_names()?;
+        let compile = py.import(intern!(py, "chameleon_rs._rewrite"))?.getattr(intern!(py, "compile_code"))?;
+        let builtins = PyTuple::new(py, &self.config.template_builtins)?;
+        let code =
+            compile.call1((source.text.as_str(), local_names, &bound_names, builtins, &self.constants))?.unbind();
+        let bound = bound_names.unbind();
+        Ok(Expr::Ns(Box::new(NsCode { code, attrs: None, key: self.ns_key, exec: true, bound })))
+    }
+
+    fn bound_names(&mut self) -> PyResult<Bound<'py, PySet>> {
+        if let Some(s) = &self.bound_names {
+            return Ok(s.clone());
+        }
+        let s = PySet::empty(self.py)?;
+        self.bound_names = Some(s.clone());
+        Ok(s)
     }
 }
 
@@ -498,13 +626,18 @@ fn char_escape_of(chars: &Bound<'_, PyAny>) -> PyResult<Option<Escape>> {
 impl ExprCompiler for PyExprCompiler<'_, '_> {
     type Error = PyErr;
 
+    /// The expression's error token is its stripped source (`TokenRef(string.strip())`).
     fn compile(&mut self, source: &Tok, cx: ExprContext<'_>) -> Result<ExprId, ExprCompileError<PyErr>> {
         let expr = self.typed(source, cx, true)?;
-        self.register(expr)
+        let token = self.token_id(&strip_tok(source));
+        self.register(expr, token)
     }
 
-    fn compile_code(&mut self, _source: &Tok) -> Result<ExprId, ExprCompileError<PyErr>> {
-        Err(ExprCompileError::Other(unsupported_error(self.py, "A <?python ?> code block")))
+    /// A code block's error token is its whole source, unstripped (`TokenRef(node.source)`).
+    fn compile_code(&mut self, source: &Tok) -> Result<ExprId, ExprCompileError<PyErr>> {
+        let expr = self.code_block(source).map_err(ExprCompileError::Other)?;
+        let token = self.token_id(source);
+        self.register(expr, token)
     }
 
     /// `ExpressionError(message, token)` raised at render time, with the token's code-point
@@ -522,7 +655,9 @@ impl ExprCompiler for PyExprCompiler<'_, '_> {
         let args = (message, token.text.as_str(), offset, (line, column), filename)
             .into_pyobject(py)
             .map_err(ExprCompileError::Other)?;
-        self.register(Expr::Raise(args.unbind()))
+        // `TokenRef(exc.token)` precedes the raise.
+        let token_id = self.token_id(token);
+        self.register(Expr::Raise(args.unbind()), token_id)
     }
 
     fn free_vars(&self, id: ExprId) -> FreeVars {

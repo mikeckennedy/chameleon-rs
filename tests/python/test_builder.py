@@ -439,14 +439,44 @@ class Nested:
         return self.Zero()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason='known gap (plan.md, Phase 4/6a): a boolean attribute is tested by whether its value '
-    'wrote anything; Chameleon tests the final object, here 0, which is false',
+class _HtmlOf:
+    """`__html__` returning a fixed object."""
+
+    def __init__(self, value: Any) -> None:
+        self.value = value
+
+    def __html__(self) -> Any:
+        return self.value
+
+
+@pytest.mark.parametrize(
+    'value',
+    [
+        Nested(),
+        _HtmlOf(_HtmlOf('')),
+        _HtmlOf(_HtmlOf(0.0)),
+        _HtmlOf(_HtmlOf(None)),
+        _HtmlOf(_HtmlOf('x')),
+        _HtmlOf(_HtmlOf(())),
+        _HtmlOf(''),
+        _HtmlOf(b''),
+        _HtmlOf(0),
+        _HtmlOf([]),
+        _HtmlOf([0]),
+    ],
+    ids=repr,
 )
-def test_boolean_attribute_with_non_str_html() -> None:
-    source = '<input checked="${x}">'
-    assert chameleon_rs.PageTemplate(source)(x=Nested()) == chameleon.PageTemplate(source)(x=Nested())
+@pytest.mark.parametrize('source', ['<input checked="${x}">', '<input checked="a${x}">', '<input checked="${x}${x}">'])
+def test_boolean_attribute_tests_the_converted_object(source: str, value: Any) -> None:
+    # Chameleon tests the final converted object, not whether anything was written (the
+    # Phase 4 approximation): `0` from a nested `__html__` writes `checked="0"`.
+    def render(engine: Any) -> Any:
+        try:
+            return engine.PageTemplate(source)(x=value)
+        except Exception as e:  # noqa: BLE001 - comparing exception types
+            return type(e).__name__
+
+    assert render(chameleon_rs) == render(chameleon)
 
 
 def test_attribute_dictionary_membership_is_hashed() -> None:

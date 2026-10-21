@@ -1,19 +1,18 @@
 //! The native `Program` (D7): a compiled template plus its expression table.
 
-use std::cell::OnceCell;
 use std::sync::Arc;
 
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::{PyRecursionError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{PyBytes, PyDict, PyString};
+use pyo3::types::{PyBytes, PyDict, PyList, PyString};
 use pyo3::{PyTraverseError, PyVisit, intern};
 
-use chameleon_core::{Done, Mode, Options, Output, VmState, run};
+use chameleon_core::{Done, ErrorSite, Mode, Options, Output, VmError, VmState, run};
 
-use crate::compiler::{Config, PyExprCompiler};
+use crate::compiler::{Config, PyExprCompiler, TokenSpan};
 use crate::errors::{catch_panics, compile_error, internal_error, vm_error};
-use crate::expr::{Expr, RenderCtx};
+use crate::expr::{RenderCtx, Site};
 use crate::runtime::PyRuntime;
 use crate::scope::Scope;
 
@@ -28,6 +27,14 @@ impl DefaultMarker {
         // Chameleon's `DEFAULT_MARKER` (an `ImportableMarker` named `DEFAULT`): its `str()` is
         // what a template writes when the marker is converted as an ordinary object.
         "<DEFAULT>"
+    }
+
+    /// Chameleon's marker is an `ImportableMarker` named `DEFAULT_MARKER` (it shows in a
+    /// render error's arguments through `value_repr`).
+    #[getter]
+    #[allow(clippy::unused_self)] // a Python attribute
+    fn __name__(&self) -> &'static str {
+        "DEFAULT_MARKER"
     }
 }
 
@@ -51,11 +58,41 @@ pub(crate) fn new_repeat_dict(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
 #[pyclass(frozen, module = "chameleon_rs._native")]
 pub(crate) struct Program {
     pub(crate) core: Arc<chameleon_core::Program>,
-    pub(crate) exprs: Vec<Expr>,
+    pub(crate) exprs: Vec<Site>,
     /// The core program's names, interned, indexed by `NameId`.
     pub(crate) names: Vec<Py<PyString>>,
     /// Whether a native partial frame running this program needs a `repeat` variable.
     pub(crate) needs_repeat: bool,
+    pub(crate) token_table: Vec<TokenSpan>,
+    /// The (normalized) source and filename, for error positions.
+    source: Box<str>,
+    pub(crate) filename: Py<PyString>,
+}
+
+impl Program {
+    /// An error token's text, line and column: Chameleon's `__tokens[__token]`, the source
+    /// re-sliced at the token's code-point position for its length.
+    /// The error token for an error the VM reports at `at` (Chameleon's `__token`): a nested
+    /// token set while the last expression ran, else that expression's own token; an
+    /// expression whose source has no position sets none, so then the one before counts.
+    pub(crate) fn token_at(&self, at: ErrorSite, nested: (u32, u32)) -> u32 {
+        for expr in [at.last, at.previous].into_iter().flatten() {
+            if nested.0 == expr.0.wrapping_add(1) && nested.1 != 0 {
+                return nested.1;
+            }
+            match self.exprs.get(expr.0 as usize) {
+                Some(site) if site.token != 0 => return site.token,
+                _ => {}
+            }
+        }
+        0
+    }
+
+    pub(crate) fn token_info(&self, token: u32) -> Option<(&str, usize, usize)> {
+        let span = self.token_table.get((token as usize).checked_sub(1)?)?;
+        let text = self.source.get(span.start as usize..span.end as usize).unwrap_or_default();
+        Some((text, span.line as usize, span.column as usize))
+    }
 }
 
 #[pymethods]
@@ -102,8 +139,17 @@ impl Program {
             Ok(Self {
                 needs_repeat: has_loops || compiler.mentions_repeat,
                 core: Arc::new(core),
-                exprs: compiler.exprs,
+                exprs: compiler
+                    .exprs
+                    .into_iter()
+                    .zip(compiler.tokens)
+                    .zip(compiler.has_nested)
+                    .map(|((expr, token), nested)| Site { expr, token, nested })
+                    .collect(),
                 names,
+                token_table: compiler.token_table,
+                source: source.into(),
+                filename: PyString::new(py, filename).unbind(),
             })
         })
     }
@@ -125,16 +171,17 @@ impl Program {
             let program = slf.get();
             let scope = Scope::new_root(py, variables)?;
             let builtins = builtins.unwrap_or_else(|| PyDict::new(py));
-            let render = RenderCtx { marker: marker(py)?, partials, defaults, builtins, rcontext: OnceCell::new() };
+            let render = RenderCtx::new(marker(py)?, partials, defaults, builtins);
             let mut st = VmState::new(
                 Arc::clone(&program.core),
                 slf.clone().into_any().unbind(),
                 scope.clone().into_any().unbind(),
             );
-            let mut rt = PyRuntime::new(&render, slf.clone(), scope);
+            let mut rt = PyRuntime::new(&render, slf.clone(), scope.clone());
             match run(&mut st, &mut rt) {
                 Ok(Done::Finished) => {}
                 Ok(Done::Suspended(_)) => return Err(internal_error(py, "a synchronous render suspended")),
+                Err(VmError::Runtime(e)) => return Err(render_error(py, e, &scope, &render)),
                 Err(e) => return Err(vm_error(py, e)),
             }
             program.core.record_size(st.out.len());
@@ -148,14 +195,61 @@ impl Program {
     }
 
     fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
-        for e in &self.exprs {
-            e.traverse(&visit)?;
+        for site in &self.exprs {
+            site.expr.traverse(&visit)?;
         }
         for n in &self.names {
             visit.call(n)?;
         }
-        Ok(())
+        visit.call(&self.filename)
     }
+}
+
+static RENDER_ERROR: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+
+/// An error that ended the render (`BaseTemplate.render`'s handler, D8): a `RecursionError`
+/// passes through; otherwise, if the frames recorded where it happened in
+/// `rcontext['__error__']`, Chameleon's formatted `RenderError` subclass of its type is
+/// raised instead (built in Python, `chameleon_rs.exc.render_error`, off the hot path).
+fn render_error(py: Python<'_>, error: PyErr, econtext: &Bound<'_, Scope>, render: &RenderCtx<'_>) -> PyErr {
+    if error.is_instance_of::<PyRecursionError>(py) {
+        return error;
+    }
+    let Some(rcontext) = render.rcontext.get() else { return error };
+    let errors = match rcontext.get_item(intern!(py, "__error__")) {
+        Ok(Some(errors)) if errors.is_truthy().unwrap_or(false) => errors,
+        _ => return error,
+    };
+    let formatted = RENDER_ERROR
+        .get_or_try_init(py, || {
+            Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs.exc"))?.getattr(intern!(py, "render_error"))?.unbind())
+        })
+        .and_then(|f| f.bind(py).call1((error.value(py), errors, econtext, rcontext, &render.builtins)));
+    match formatted {
+        Ok(exc) => PyErr::from_value(exc),
+        Err(e) => e,
+    }
+}
+
+/// `rcontext.setdefault('__error__', []).append((token, line, column, filename, exc))`.
+pub(crate) fn record_error(
+    py: Python<'_>,
+    rcontext: &Bound<'_, PyDict>,
+    program: &Program,
+    token: u32,
+    error: &PyErr,
+) -> PyResult<()> {
+    let Some((text, line, column)) = program.token_info(token) else { return Ok(()) };
+    let key = intern!(py, "__error__");
+    let list = if let Some(list) = rcontext.get_item(key)? {
+        list
+    } else {
+        let list = PyList::empty(py).into_any();
+        rcontext.set_item(key, &list)?;
+        list
+    };
+    list.call_method1(intern!(py, "append"), ((text, line, column, program.filename.bind(py), error.value(py)),))?;
+    Ok(())
 }
 
 /// `Options` from keyword arguments: `mode` (`"xml"` or `"text"`), `escape` (default: true in

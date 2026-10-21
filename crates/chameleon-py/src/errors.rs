@@ -2,9 +2,7 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use pyo3::exceptions::{
-    PyAssertionError, PyAttributeError, PyKeyError, PyRecursionError, PyRuntimeError, PyTypeError, PyValueError,
-};
+use pyo3::exceptions::{PyAssertionError, PyAttributeError, PyKeyError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 
@@ -65,7 +63,6 @@ pub(crate) fn compile_error(py: Python<'_>, err: CompileError<PyErr>, src: &str,
 pub(crate) fn vm_error(py: Python<'_>, err: VmError<PyErr>) -> PyErr {
     match err {
         VmError::Runtime(e) => e,
-        VmError::Recursion => PyRecursionError::new_err("maximum recursion depth exceeded while rendering a template"),
         VmError::Internal(what) => internal_error(py, what),
     }
 }

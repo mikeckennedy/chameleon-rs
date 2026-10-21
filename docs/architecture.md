@@ -426,6 +426,90 @@ it changes earlier interfaces. Every behaviour below was checked by running the 
   it. That needs per-render local state in the VM, which Phase 6a builds for `on-error`. One
   upstream fixture uses them, no corpus template does.
 
+## Phase 6a amendments (2026-10-20)
+
+The VM now runs every core feature; these are the decisions that made Chameleon's behaviour
+exact, and the places where they change D2, D3 and D8. Every quirk below was found or checked
+by running the reference.
+
+- **D3 item 2, `tal:on-error` as built.** `Try { handler, name }` / `EndTry { end }` around the
+  body, the fallback after it. A runtime error unwinds (`unwind_error` in `vm.rs`): the
+  innermost `Try` entry of the *current frame* that catches it (`Runtime::is_catchable`:
+  `Exception`, so `BaseException`s pass) wins; every unwind entry above it is **dropped
+  without restoring** (`Define` and `Loop` backups too, so a failed body's defines and loop
+  names leak, as Chameleon's try-without-finally does: the plan's test
+  `<div tal:on-error="x"><p tal:define="x 2"><b tal:repeat="i [7]">${i}${1/0}</b></p></div>|${x}|${i}`
+  renders `<div>2</div>|2|7`), then `Runtime::catch` binds `error` (an `ErrorInfo` with the
+  current token's line and column; without a token, Chameleon's `__tokens[None]` `KeyError`)
+  and calls the scope's `__on_error_handler`; an error from that is unwound further from the
+  handler's position. Otherwise the frame records the error (below) and is popped, and its
+  caller is tried.
+- **One fallback mark per frame, not per `Try`.** Chameleon's generated code stores the stream
+  length in a single `__fallback` local per render function, so once a nested `on-error` has
+  started, an outer handler truncates only to the *inner* mark:
+  `<p tal:on-error="string:A">a<b tal:on-error="string:x">B</b>C${1/0}</p>` renders
+  `<p>a<p>A</p>`, and a failing inner fallback leaves the outer element's start tag in place.
+  D3's `Try{out_mark}` became `Frame::fallback`. (Phase 6b: Chameleon's `len(__stream)` inside
+  an `i18n:name` is the name's own stream; revisit when translation marks land.)
+- **The fallback element's quirk.** Chameleon's fallback keeps only the static attributes,
+  still filtered by dictionaries the fallback never evaluates, and its compiler then crashes:
+  `AttributeError: 'NoneType' object has no attribute '_fields'` at compile time (not a render
+  `TypeError`, as Phase 4 guessed). Reproduced in `resolve`.
+- **D8, error tracking as built.** Chameleon assigns `__token` before each expression (only
+  for sources that are `Token`s, and again for the sub-expressions `not:`, `structure:`, a
+  prefixed pipe alternative and each `${}` of `string:` parse; not for `exists:`), and each
+  render function's `except` appends `(token, line, column, filename, exc)` to
+  `rcontext['__error__']`. Nothing is resolved on the hot path: the VM records the last two
+  expressions each frame started (`ErrorSite`, one `u64` store per evaluation, saved in the
+  frame when another becomes active) and passes them to `Runtime::catch` / `record_error`; the
+  runtime then picks the token (an expression whose source has no position, such as a
+  processing instruction's, sets none, so the one before counts). Nested tokens are kept in a
+  `RenderCtx` cell tagged with their site, which only expressions containing them clear (a
+  measured +8 ns per listing item when every evaluation stored its token, about 0 now). Token
+  spans (byte range, line, column) are resolved at compile time; the text is Chameleon's
+  re-slice of the source at the token's position for its length (`tal:define="a 1; b 1/0"`
+  reports `" 1/"`). `chameleon_core::throw` resumes a suspended render by raising at the
+  suspended instruction (Phase 11).
+- **D8, the formatted `RenderError`.** When the render fails and `rcontext['__error__']` is
+  non-empty, the native render calls `chameleon_rs.exc.render_error`, a port of
+  `BaseTemplate.render`'s handler: a dynamic subclass of the error's class and `RenderError`
+  (`create_formatted_exception`, ported) whose `__str__` is the ported `ExceptionFormatter`
+  (expression, filename, location, the source line for files, the arguments through the
+  template's `value_repr`), with the original as `__context__` and its traceback; an error that
+  already carries a formatter gets these entries appended; `RecursionError` passes through
+  unformatted. The messages are compared whole (addresses normalized) by the tests and the
+  render fuzz.
+- **Recursion.** `VmError::Recursion` is gone: the frame limit raises
+  `Runtime::recursion_error()` (`RecursionError`) through the same unwinding, so an
+  `on-error` can catch it, as Chameleon's `except Exception` catches Python's.
+- **Global `tal:repeat`.** Chameleon assigns each item to the scope and `rcontext` (a chained
+  assignment, so a tuple target unpacks the item twice), takes no backups, but still emits the
+  restore code, which reads a backup variable that was never assigned: every global loop that
+  finishes raises `NameError: name '__backup_<name>_<id>' is not defined` (`<id>` is
+  `id(names)` in Chameleon, the interned name's address here). Reproduced through
+  `Runtime::missing_backup`; `LoopInfo` carries the visibility and `assign` takes it.
+- **`<?python ?>` code blocks.** Chameleon inlines the block's statements into the render
+  function, rewritten like expressions (an assignment stores in the scope), and its one
+  visitor per template keeps every name a block defines (a `def`, its parameters, an import)
+  as a plain name in every expression compiled afterwards. Ours: `ExprCompiler::compile_code`
+  compiles the block (`_rewrite.compile_code`) to a code object, and `Op::Exec` runs it with
+  `exec` in a **per-render namespace** for its program (`Expr::Ns`, `RenderCtx::namespaces`)
+  holding the render function's locals (`translate`, `decode`, `on_error_handler`) and what
+  blocks define; once a template has such names, its later expressions skip the fast path and
+  those that read one are evaluated with `eval` in that namespace. A `NameError` for a name the
+  render function binds is turned into Chameleon's `UnboundLocalError`. Known differences: a
+  namespace is per program and render, so two frames of the same program (a recursive partial)
+  share it; `default`/`attrs` aliases are not applied inside a block.
+- **Boolean attributes, the Phase 4 approximation fixed.** A boolean attribute's lone
+  interpolation now goes through `Stage::Bool`: the runtime converts the value as Chameleon's
+  second stage does and answers `Emitted::True` (write the name), writes a false result that is
+  not `None` as text (`checked="0"` for an `__html__` chain ending in `0`), or nothing. Mixed
+  interpolations are always strings, so their written-or-empty test stays.
+- **`tal:content` without a default** (an `on-error` fallback): `Emit { stage: Content }`, so
+  the default marker is an ordinary object there.
+- **Unpacking messages:** `cannot unpack non-iterable int object`, as CPython's (Phase 2's
+  carried item for the loop target; walrus targets remain Phase 8's).
+
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
 ```

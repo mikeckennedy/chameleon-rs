@@ -1,12 +1,14 @@
-"""Generated templates using the features the VM runs (define, condition, repeat, content,
-replace, attributes, omit-tag, switch/case, interpolation) rendered by both engines: the
-same output, or the same exception type. CHAMELEON_RS_FUZZ_EXAMPLES raises the example
-count (default 300).
+"""Generated templates using the features the VM runs (define, condition, repeat including
+global loops, content, replace, attributes, omit-tag, switch/case, on-error, code blocks,
+interpolation, failing expressions) rendered by both engines: the same output, or the same
+exception type and formatted message (addresses and generated ids normalized).
+CHAMELEON_RS_FUZZ_EXAMPLES raises the example count (default 300).
 """
 
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 import chameleon
@@ -37,7 +39,32 @@ VARIABLES: dict[str, Any] = {
 }
 
 EXPR = st.sampled_from(
-    ['x', 'z', 'n', 's', 'e', 'h', 'xs', 'd', 't', 'f', 'default', 'x + 1', 'not x', 'undefined', 'xs[0]', 'attrs']
+    [
+        'x',
+        'z',
+        'n',
+        's',
+        'e',
+        'h',
+        'xs',
+        'd',
+        't',
+        'f',
+        'default',
+        'x + 1',
+        'not x',
+        'undefined',
+        'xs[0]',
+        'attrs',
+        '1/z',
+        'not: 1/z',
+        'string:a${1/z}',
+        'v | 1/z',
+        'y',
+    ]
+)
+ON_ERROR = st.sampled_from(
+    ['string:E', 'error.type.__name__', 'nothing', '1/z', 'structure s', 'v', 'string:${error.lineno}:${error.offset}']
 )
 NAME = st.sampled_from(['x', 'y', 'v', 'repeat_', 'a'])
 
@@ -56,7 +83,13 @@ def attributes(draw: Any) -> str:
 TAL: dict[str, Any] = {
     'tal:define': st.builds(lambda g, n, e: f'{g}{n} {e}', st.sampled_from(['', 'global ']), NAME, EXPR),
     'tal:condition': EXPR,
-    'tal:repeat': st.builds(lambda n, e: f'{n} {e}', NAME, st.sampled_from(['xs', 's', 'd', 'n', '[1, 2]', 'x'])),
+    'tal:repeat': st.builds(
+        lambda g, n, e: f'{g}{n} {e}',
+        st.sampled_from(['', '', 'global ']),
+        NAME,
+        st.sampled_from(['xs', 's', 'd', 'n', '[1, 2]', 'x', '1/z']),
+    ),
+    'tal:on-error': ON_ERROR,
     'tal:content': st.builds(lambda k, e: k + e, st.sampled_from(['', 'structure ']), EXPR),
     'tal:replace': st.builds(lambda k, e: k + e, st.sampled_from(['', 'structure ']), EXPR),
     'tal:attributes': attributes(),
@@ -94,9 +127,42 @@ def switch(draw: Any, depth: int) -> str:
     return f'<p tal:switch="{draw(EXPR)}">{cases}</p>'
 
 
+@st.composite
+def guarded(draw: Any, depth: int) -> str:
+    """An element under `tal:on-error`, so errors inside it are caught rather than ending the
+    render (most generated templates fail somewhere)."""
+    children = ''.join(draw(st.lists(node(depth - 1), max_size=3))) if depth > 0 else draw(EXPR)
+    tag = draw(st.sampled_from(['div', 'tal:x']))
+    extra = draw(st.sampled_from(['', ' tal:omit-tag=""', ' class="c"', ' tal:define="v 3"']))
+    return f'<{tag} tal:on-error="{draw(ON_ERROR)}"{extra}>{children}${{1/z}}</{tag}>|${{v | error | 0}}'
+
+
 def node(depth: int) -> Any:
-    text = st.sampled_from(['a', '${x}', '\n  ', '${s}|${n}', '<!-- ${s} -->', '<![CDATA[${s}]]>', '${y | x}'])
-    return st.one_of(text, element(depth), switch(depth))
+    text = st.sampled_from(
+        [
+            'a',
+            '${x}',
+            '\n  ',
+            '${s}|${n}',
+            '<!-- ${s} -->',
+            '<![CDATA[${s}]]>',
+            '${y | x}',
+            '${v}',
+            '<?python v = 2 ?>',
+            '<?python def g(k): return k ?>',
+            '${g(1) | 0}',
+        ]
+    )
+    return st.one_of(text, element(depth), switch(depth), guarded(depth))
+
+
+ADDRESS = re.compile(r'0x[0-9a-fA-F]+')
+BACKUP = re.compile(r'__backup_(\w+?)_\d+')
+
+
+def canon(text: str) -> str:
+    text = BACKUP.sub(r'__backup_\1_?', ADDRESS.sub('0x?', text))
+    return text.replace('chameleon_rs.', 'chameleon.')
 
 
 @settings(max_examples=EXAMPLES, deadline=None, suppress_health_check=[HealthCheck.too_slow])
@@ -114,6 +180,10 @@ def test_generated_templates_render_like_chameleon(body: str) -> None:
         assert isinstance(got, Exception), (body, want, got)
         names = {c.__name__ for c in type(want).__mro__}
         assert type(got).__name__ in names, (body, want, got)
+        if not isinstance(want, chameleon.exc.TemplateError):
+            # Render errors: the whole formatted message (compile errors' formatting is
+            # Phase 7's).
+            assert canon(str(got)) == canon(str(want)), body
         return
     assert not isinstance(got, Exception), (body, want, got)
-    assert got == want, body
+    assert canon(got) == canon(want), body

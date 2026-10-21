@@ -351,6 +351,13 @@ class PageTemplateFile(PageTemplate):
 
 
 class PageTextTemplateFile(PageTemplateFile):
-    """A text template read from a file."""
+    """A text template read from a file. Rendering returns ``bytes``, encoded with the
+    template's ``encoding`` (UTF-8 by default), as Chameleon's does."""
 
     mode = 'text'
+
+    def render(self, encoding: str | None = None, **kw: Any) -> bytes:  # type: ignore[override]
+        result = super().render(encoding, **kw)
+        return result.encode(self.encoding or 'utf-8')
+
+    __call__ = render

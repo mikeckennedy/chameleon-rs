@@ -353,9 +353,7 @@ def test_error_positions_are_code_points(source: str) -> None:
 
 def test_unsupported_features_say_so() -> None:
     for source in (
-        '<?python x = 1 ?>',
         '<p metal:use-macro="x"/>',
-        '<p tal:on-error="string:x">y</p>',
         '<p i18n:translate="">y</p>',
         '<div metal:define-macro="m">y</div>',
     ):

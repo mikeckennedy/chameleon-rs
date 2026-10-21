@@ -17,6 +17,12 @@ regex.workspace = true
 fancy-regex.workspace = true
 insta.workspace = true
 proptest.workspace = true
+criterion.workspace = true
+
+# Micro-benchmarks of the escaping, the tokenizer and the VM loop (`cargo bench -p chameleon-core`).
+[[bench]]
+name = "core"
+harness = false
 
 [lints]
 workspace = true

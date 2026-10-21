@@ -6,15 +6,17 @@
 
 //! The fast-path expression tree (D4) and its evaluation.
 
-use std::cell::OnceCell;
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::BTreeSet;
 
-use pyo3::exceptions::{PyAttributeError, PyKeyError, PyLookupError, PyNameError, PyTypeError, PyValueError};
+use pyo3::exceptions::{
+    PyAttributeError, PyKeyError, PyLookupError, PyNameError, PyTypeError, PyUnboundLocalError, PyValueError,
+};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pyclass::CompareOp;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{PyBool, PyDict, PyInt, PyList, PySlice, PyString, PyTuple};
+use pyo3::types::{PyBool, PyDict, PyInt, PyList, PySet, PySlice, PyString, PyTuple};
 use pyo3::{PyTraverseError, PyVisit};
 
 use chameleon_core::{Call, Escape, FreeVars, Step};
@@ -129,6 +131,42 @@ pub(crate) enum Expr {
     /// Non-strict mode: raises `ExpressionError(*args)` (a syntax error deferred to render
     /// time, raised fresh each time, as Chameleon unpickles a new copy).
     Raise(Py<PyTuple>),
+    /// Records a nested error token, then evaluates: the sub-expressions an expression type
+    /// parses with `engine.parse` (`not:`, `structure:`, a type prefix after a pipe, each
+    /// `${...}` of `string:`), which Chameleon gives a `TokenRef` of their own. Holds the
+    /// enclosing site's `ExprId` plus one and the token (see [`RenderCtx::nested`]).
+    Token(u32, u32, Box<Expr>),
+    /// Code run in the render's namespace (see [`NsCode`]).
+    Ns(Box<NsCode>),
+}
+
+/// A compiled expression site: the expression and its error token (index into the program's
+/// token table plus one; `0` leaves the previous token in place). One table, so `eval` does a
+/// single bounds check.
+#[derive(Debug)]
+pub(crate) struct Site {
+    pub(crate) expr: Expr,
+    pub(crate) token: u32,
+    /// The expression contains [`Expr::Token`] nodes: evaluating it clears
+    /// [`RenderCtx::nested`] first.
+    pub(crate) nested: bool,
+}
+
+/// A `<?python ?>` block (`exec`), or a fallback expression that reads a name a code block
+/// defined (`eval`): Chameleon inlines both into the render function, whose locals they
+/// share. They run with the render's namespace for this program as globals.
+#[derive(Debug)]
+pub(crate) struct NsCode {
+    pub(crate) code: Py<PyAny>,
+    /// The `attrs` alias where the code appears.
+    pub(crate) attrs: Option<Py<PyDict>>,
+    /// Which program's namespace (one per program and render).
+    pub(crate) key: u64,
+    /// Statements (`exec`, the value is `None`) rather than an expression (`eval`).
+    pub(crate) exec: bool,
+    /// The names the render function binds (see `chameleon_rs._rewrite.compile_code`): a
+    /// `NameError` for one of them is an `UnboundLocalError` in Chameleon.
+    pub(crate) bound: Py<PySet>,
 }
 
 /// The exact fallback: a Python function, and the names its rewritten code reads and writes.
@@ -173,6 +211,11 @@ impl Expr {
             }
             Self::Const(v) | Self::Folded(v) => visit.call(v),
             Self::Raise(v) => visit.call(v),
+            Self::Ns(n) => {
+                visit.call(&n.code)?;
+                visit.call(&n.bound)?;
+                n.attrs.as_ref().map_or(Ok(()), |a| visit.call(a))
+            }
             Self::Fallback(f) => visit.call(&f.func),
             Self::Custom(c) => c.traverse(visit),
             Self::Econtext | Self::Rcontext => Ok(()),
@@ -188,7 +231,9 @@ impl Expr {
                     v.traverse(visit)
                 })
             }
-            Self::Not(e) | Self::Unary(_, e) | Self::Exists(e) | Self::Structure(e) => e.traverse(visit),
+            Self::Not(e) | Self::Unary(_, e) | Self::Exists(e) | Self::Structure(e) | Self::Token(_, _, e) => {
+                e.traverse(visit)
+            }
             Self::Binary(_, a, b) | Self::Subscript(a, b) => {
                 a.traverse(visit)?;
                 b.traverse(visit)
@@ -225,7 +270,8 @@ impl Expr {
     /// Whether any part runs as Python code (the fallback or a custom type).
     pub(crate) fn uses_fallback(&self) -> bool {
         match self {
-            Self::Fallback(_) | Self::Custom(_) => true,
+            Self::Fallback(_) | Self::Custom(_) | Self::Ns(_) => true,
+            Self::Token(_, _, e) => e.uses_fallback(),
             Self::Name(_)
             | Self::Builtin(..)
             | Self::TemplateBuiltin(_)
@@ -274,7 +320,7 @@ impl Expr {
                 f.reads.insert(py_name(n));
             }
             Self::RenderBuiltin(_) | Self::Const(_) | Self::Folded(_) | Self::Import(_) | Self::Raise(_) => {}
-            Self::Econtext | Self::Rcontext | Self::Custom(_) => f.dynamic = true,
+            Self::Econtext | Self::Rcontext | Self::Custom(_) | Self::Ns(_) => f.dynamic = true,
             Self::Fallback(fb) => match &fb.free {
                 FreeVars::Dynamic => f.dynamic = true,
                 FreeVars::Known { reads, writes } => {
@@ -282,7 +328,12 @@ impl Expr {
                     f.writes.extend(writes.iter().map(ToString::to_string));
                 }
             },
-            Self::Attr(e, _) | Self::Not(e) | Self::Unary(_, e) | Self::Exists(e) | Self::Structure(e) => e.collect(f),
+            Self::Attr(e, _)
+            | Self::Not(e)
+            | Self::Unary(_, e)
+            | Self::Exists(e)
+            | Self::Structure(e)
+            | Self::Token(_, _, e) => e.collect(f),
             Self::Call { func, args, kwargs } => {
                 func.collect(f);
                 for a in args {
@@ -384,9 +435,32 @@ pub(crate) struct RenderCtx<'py> {
     pub(crate) builtins: Bound<'py, PyDict>,
     /// `rcontext`, created on first use.
     pub(crate) rcontext: OnceCell<Bound<'py, PyDict>>,
+    /// The last nested error token set (see [`Expr::Token`]): the site it belongs to (its
+    /// `ExprId` plus one) and the token. Read only on the error path, for the site the VM
+    /// reports (`chameleon_core::ErrorSite`).
+    pub(crate) nested: Cell<(u32, u32)>,
+    /// Each program's namespace for code blocks, created on first use (see [`NsCode`]).
+    pub(crate) namespaces: RefCell<Vec<(u64, Bound<'py, PyDict>)>>,
 }
 
 impl<'py> RenderCtx<'py> {
+    pub(crate) fn new(
+        marker: Bound<'py, PyAny>,
+        partials: Option<Bound<'py, PyDict>>,
+        defaults: Option<Bound<'py, PyDict>>,
+        builtins: Bound<'py, PyDict>,
+    ) -> Self {
+        Self {
+            marker,
+            partials,
+            defaults,
+            builtins,
+            rcontext: OnceCell::new(),
+            nested: Cell::new((0, 0)),
+            namespaces: RefCell::new(Vec::new()),
+        }
+    }
+
     pub(crate) fn rcontext(&self, py: Python<'py>) -> &Bound<'py, PyDict> {
         self.rcontext.get_or_init(|| PyDict::new(py))
     }
@@ -646,13 +720,18 @@ fn eval_more<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
             eval(last, cx)
         }
         Expr::List(items) => Ok(PyList::new(py, eval_all(items, cx)?)?.into_any()),
+        Expr::Token(site, token, inner) => {
+            cx.render.nested.set((*site, *token));
+            eval(inner, cx)
+        }
         Expr::Slice(_)
         | Expr::Exists(_)
         | Expr::Structure(_)
         | Expr::Import(_)
         | Expr::Interp(_)
         | Expr::Custom(_)
-        | Expr::Raise(_) => eval_rare(e, cx),
+        | Expr::Raise(_)
+        | Expr::Ns(_) => eval_rare(e, cx),
         _ => eval(e, cx),
     }
 }
@@ -693,8 +772,62 @@ fn eval_rare<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
             let exc = utils_attr(py, &EXPRESSION_ERROR, "chameleon_rs.exc", "ExpressionError")?.call1(args.bind(py))?;
             Err(PyErr::from_value(exc))
         }
+        Expr::Ns(code) => eval_ns(code, cx),
         _ => eval(e, cx),
     }
+}
+
+static NAMESPACE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+static EXEC: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+static EVAL: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+
+/// Runs code in the render's namespace for its program, after binding what Chameleon's render
+/// function has in scope: `econtext`, `rcontext`, the default marker, the template builtins
+/// and the `attrs` alias.
+fn eval_ns<'py>(code: &NsCode, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
+    let py = cx.scope.py();
+    let existing = cx.render.namespaces.borrow().iter().find(|(k, _)| *k == code.key).map(|(_, ns)| ns.clone());
+    let ns = if let Some(ns) = existing {
+        ns
+    } else {
+        let defaults = PyDict::new(py);
+        for key in [intern!(py, "__translate"), intern!(py, "__decode"), intern!(py, "__on_error_handler")] {
+            if let Some(v) = cx.scope_or_default(key)? {
+                defaults.set_item(key, v)?;
+            }
+        }
+        let lookup = wrap_pyfunction!(py_lookup_attr, py)?;
+        let ns = utils_attr(py, &NAMESPACE, "chameleon_rs._rewrite", "namespace")?.call1((lookup, defaults))?;
+        let ns = ns.cast_into::<PyDict>()?;
+        cx.render.namespaces.borrow_mut().push((code.key, ns.clone()));
+        ns
+    };
+    ns.set_item(intern!(py, "econtext"), cx.scope)?;
+    ns.set_item(intern!(py, "rcontext"), cx.render.rcontext(py))?;
+    ns.set_item(intern!(py, "__rs_default"), &cx.render.marker)?;
+    ns.set_item(intern!(py, "__rs_tpl"), &cx.render.builtins)?;
+    ns.set_item(intern!(py, "__rs_attrs"), code.attrs.as_ref().map(|a| a.bind(py)))?;
+    let result = if code.exec {
+        utils_attr(py, &EXEC, "builtins", "exec")?.call1((code.code.bind(py), &ns))
+    } else {
+        utils_attr(py, &EVAL, "builtins", "eval")?.call1((code.code.bind(py), &ns))
+    };
+    result.map_err(|e| unbound_local(py, e, &ns, code.bound.bind(py)))
+}
+
+/// A `NameError` for a name the render function binds (but has not bound yet) is, in
+/// Chameleon's generated function, an `UnboundLocalError`.
+fn unbound_local(py: Python<'_>, e: PyErr, ns: &Bound<'_, PyDict>, bound: &Bound<'_, PySet>) -> PyErr {
+    if !e.is_instance_of::<PyNameError>(py) || e.is_instance_of::<PyUnboundLocalError>(py) {
+        return e;
+    }
+    let Ok(name) = e.value(py).getattr(intern!(py, "name")) else { return e };
+    if !bound.contains(&name).unwrap_or(false) || ns.contains(&name).unwrap_or(true) {
+        return e;
+    }
+    PyUnboundLocalError::new_err(format!(
+        "cannot access local variable '{name}' where it is not associated with a value"
+    ))
 }
 
 /// Chameleon's `Interpolator` result: one node is the value itself (a sub-expression's may be

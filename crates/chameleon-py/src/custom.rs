@@ -8,7 +8,6 @@
 //! sub-expressions it asked the engine for (`engine.parse(s).assign_value(target)`) are
 //! compiled here, natively, and its code evaluates them through a [`SubEval`] handle.
 
-use std::cell::OnceCell;
 use std::sync::Arc;
 
 use pyo3::exceptions::PyIndexError;
@@ -101,15 +100,13 @@ pub(crate) struct SubEval {
 impl SubEval {
     fn __call__<'py>(&self, py: Python<'py>, index: usize) -> PyResult<Bound<'py, PyAny>> {
         let sub = self.subs.get(index).ok_or_else(|| PyIndexError::new_err("sub-expression index"))?;
-        let rcontext = OnceCell::new();
-        let _ = rcontext.set(self.rcontext.bind(py).clone());
-        let render = RenderCtx {
-            marker: self.marker.bind(py).clone(),
-            partials: self.partials.as_ref().map(|p| p.bind(py).clone()),
-            defaults: self.defaults.as_ref().map(|d| d.bind(py).clone()),
-            builtins: self.builtins.bind(py).clone(),
-            rcontext,
-        };
+        let render = RenderCtx::new(
+            self.marker.bind(py).clone(),
+            self.partials.as_ref().map(|p| p.bind(py).clone()),
+            self.defaults.as_ref().map(|d| d.bind(py).clone()),
+            self.builtins.bind(py).clone(),
+        );
+        let _ = render.rcontext.set(self.rcontext.bind(py).clone());
         let scope = self.scope.bind(py);
         let cx = Cx { scope, render: &render };
         let value = eval(&sub.expr, &cx)?;

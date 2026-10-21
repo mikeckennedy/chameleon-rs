@@ -20,6 +20,8 @@ regex = "1"
 pyo3 = "0.30"
 insta = "1"
 proptest = "1"
+# Micro-benchmarks only (no plots, no rayon).
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 
 # Every crate opts in with:
 #   [lints]

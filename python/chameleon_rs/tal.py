@@ -1,6 +1,5 @@
-# Ported from Chameleon's src/chameleon/tal.py (RepeatItem, RepeatDict), modified: only the
-# attributes the walking skeleton provides (index, number, even, odd, parity, start, end,
-# length); letter/roman and the rest arrive with Phase 6a.
+# Ported from Chameleon's src/chameleon/tal.py (RepeatItem, RepeatDict, ErrorInfo), modified:
+# type annotations.
 """The ``repeat`` variable available in templates."""
 
 from __future__ import annotations
@@ -59,6 +58,57 @@ class RepeatItem:
     def next(self) -> None:
         raise NotImplementedError("Method not implemented (can't update local variable).")
 
+    def _letter(self, base: int = ord('a'), radix: int = 26) -> str:
+        """Get the iterator position as a lower-case letter."""
+        index = self.index
+        if index < 0:
+            raise TypeError('No iteration position')
+        s = ''
+        while True:
+            index, off = divmod(index, radix)
+            s = chr(base + off) + s
+            if not index:
+                return s
+
+    letter = descriptorstr(_letter)
+
+    @descriptorstr
+    def Letter(self) -> str:
+        """Get the iterator position as an upper-case letter."""
+        return self._letter(base=ord('A'))
+
+    @descriptorstr
+    def Roman(
+        self,
+        rnvalues: tuple[tuple[int, str], ...] = (
+            (1000, 'M'),
+            (900, 'CM'),
+            (500, 'D'),
+            (400, 'CD'),
+            (100, 'C'),
+            (90, 'XC'),
+            (50, 'L'),
+            (40, 'XL'),
+            (10, 'X'),
+            (9, 'IX'),
+            (5, 'V'),
+            (4, 'IV'),
+            (1, 'I'),
+        ),
+    ) -> str:
+        """Get the iterator position as an upper-case roman numeral."""
+        n = self.index + 1
+        s = ''
+        for v, r in rnvalues:
+            rct, n = divmod(n, v)
+            s = s + r * rct
+        return s
+
+    @descriptorstr
+    def roman(self) -> str:
+        """Get the iterator position as a lower-case roman numeral."""
+        return self.Roman().lower()
+
 
 class RepeatDict:
     __slots__ = '__getitem__', '__setitem__'
@@ -80,3 +130,17 @@ class RepeatDict:
         iterator = iter(iterable)
         self[key] = RepeatItem(iterator, length)  # type: ignore[index]
         return iterator, length
+
+
+class ErrorInfo:
+    """Information about an exception passed to an on-error handler (bound as ``error``)."""
+
+    def __init__(self, err: BaseException | type[BaseException], position: tuple[Any, Any] = (None, None)) -> None:
+        if isinstance(err, Exception):
+            self.type: Any = err.__class__
+            self.value: Any = err
+        else:
+            self.type = err
+            self.value = None
+        self.lineno = position[0]
+        self.offset = position[1]

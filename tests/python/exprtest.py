@@ -10,7 +10,6 @@ import chameleon
 import chameleon_rs
 
 ADDRESS = re.compile(r'0x[0-9a-fA-F]+')
-RCONTEXT_ERRORS = re.compile(r"\{'__error__': \[.*?\]\}")
 
 
 def attribute_text(expression: str) -> str:
@@ -22,9 +21,6 @@ def attribute_text(expression: str) -> str:
 def canon(text: str) -> str:
     """Object addresses and the engine's package name differ between the engines."""
     text = ADDRESS.sub('0x?', text)
-    # Chameleon records render errors in `rcontext['__error__']` (Phase 6a's error tracking),
-    # visible when the exception holds `rcontext` itself.
-    text = RCONTEXT_ERRORS.sub('{}', text)
     # A few messages print the scope's type fully qualified (`module.qualname`); ours is a
     # native class in `chameleon_rs._native`, Chameleon's the Python class in `chameleon.utils`.
     text = text.replace('chameleon_rs._native.Scope', 'chameleon.utils.Scope')

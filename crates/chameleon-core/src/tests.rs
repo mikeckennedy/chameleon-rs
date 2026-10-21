@@ -85,6 +85,8 @@ struct World {
     scope: usize,
     log: Vec<String>,
     iterators: usize,
+    /// `rcontext`, for global definitions and loops.
+    rcontext: HashMap<String, V>,
 }
 
 impl World {
@@ -117,6 +119,9 @@ impl World {
     fn plain(&self, s: &str, cx: &Expr) -> Result<V, String> {
         if let Some(message) = s.strip_prefix("raise:") {
             return Err(format!("ExpressionError: {message}"));
+        }
+        if s == "interrupt" {
+            return Err("KeyboardInterrupt".into());
         }
         Ok(if s == "none" {
             V::None
@@ -173,7 +178,15 @@ impl Runtime for World {
         self.value(&e.src.clone(), &e)
     }
 
-    fn emit(&mut self, value: V, esc: Escape, _stage: Stage, out: &mut Output) -> Result<Emitted, String> {
+    fn emit(&mut self, value: V, esc: Escape, stage: Stage, out: &mut Output) -> Result<Emitted, String> {
+        if stage == Stage::Bool {
+            // The toy's boolean conversion: an empty string is false but written.
+            return Ok(match value {
+                V::None | V::Default => Emitted::Nothing,
+                V::Str(s) if s.is_empty() => Emitted::Value,
+                _ => Emitted::True,
+            });
+        }
         let s = match value {
             V::None | V::Default => return Ok(Emitted::Nothing),
             V::Int(n) => n.to_string(),
@@ -245,7 +258,7 @@ impl Runtime for World {
         Ok(item)
     }
 
-    fn assign(&mut self, names: &[NameId], item: V) -> Result<(), String> {
+    fn assign(&mut self, names: &[NameId], item: V, visibility: Visibility) -> Result<(), String> {
         let items = if names.len() == 1 {
             vec![item]
         } else {
@@ -254,9 +267,39 @@ impl Runtime for World {
         };
         for (&n, v) in names.iter().zip(items) {
             let n = self.name(n);
+            if visibility == Visibility::Global {
+                self.rcontext.insert(n.clone(), v.clone());
+            }
             self.scopes[self.scope].insert(n, v);
         }
         Ok(())
+    }
+
+    fn missing_backup(&mut self, name: NameId) -> String {
+        format!("NameError: __backup_{}", self.name(name))
+    }
+
+    fn is_catchable(&mut self, error: &String) -> bool {
+        !error.starts_with("KeyboardInterrupt")
+    }
+
+    fn catch(&mut self, error: &String, name: NameId, at: crate::ErrorSite) -> Result<(), String> {
+        let n = self.name(name);
+        self.log.push(format!("catch {error} at e{}", at.last.map_or(u32::MAX, |e| e.0)));
+        if self.scopes[self.scope].get("handler_fails") == Some(&V::Bool(true)) {
+            return Err(format!("HandlerError: {error}"));
+        }
+        self.scopes[self.scope].insert(n, V::Str(error.clone()));
+        Ok(())
+    }
+
+    fn record_error(&mut self, error: &String, at: crate::ErrorSite) {
+        let token = at.last.map_or(0, |e| e.0 + 1);
+        self.log.push(format!("record {error} in program {} at token {token}", self.code));
+    }
+
+    fn recursion_error(&mut self) -> String {
+        "RecursionError".into()
     }
 
     fn restore(&mut self, name: NameId, backup: Option<V>) -> Result<(), String> {
@@ -273,7 +316,7 @@ impl Runtime for World {
         let label: Vec<_> = names.iter().map(|&n| self.name(n)).collect();
         let global = if visibility == Visibility::Global { " global" } else { "" };
         self.log.push(format!("define{global} {}", label.join(",")));
-        self.assign(names, value)
+        self.assign(names, value, Visibility::Local)
     }
 
     fn yields_name(&mut self, container: &V, name: &str) -> Result<bool, String> {
@@ -323,7 +366,7 @@ fn world(templates: &[&str], vars: &[(&str, V)]) -> World {
         })
         .collect();
     let scope = vars.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect();
-    World { programs, scopes: vec![scope], code: 0, scope: 0, log: Vec::new(), iterators: 0 }
+    World { programs, scopes: vec![scope], code: 0, scope: 0, log: Vec::new(), iterators: 0, rcontext: HashMap::new() }
 }
 
 fn options() -> Options {
@@ -436,7 +479,9 @@ fn frames_write_into_the_caller_buffer() {
 fn infinite_recursion_is_an_error() {
     let mut w = world(&["${call:0}"], &[]);
     let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0));
-    assert!(matches!(run(&mut st, &mut w), Err(VmError::Recursion)));
+    assert!(matches!(run(&mut st, &mut w), Err(VmError::Runtime(e)) if e == "RecursionError"));
+    // Every frame records the error on its way out.
+    assert_eq!(w.log.iter().filter(|l| l.starts_with("record RecursionError")).count(), crate::MAX_FRAMES);
 }
 
 #[test]
@@ -719,4 +764,129 @@ fn fixture_trees() {
 fn instructions_stay_small() {
     // The VM's hot loop reads instructions back to back; keep them at Phase 2's size.
     assert_eq!(std::mem::size_of::<crate::Op>(), 24);
+}
+
+/// Renders, returning the output or the error that escaped.
+fn try_render(w: &mut World) -> Result<String, String> {
+    let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0));
+    loop {
+        match run(&mut st, w) {
+            Ok(Done::Finished) => break,
+            Ok(Done::Suspended(v)) => st.resume_with::<String>(v).unwrap(),
+            Err(VmError::Runtime(e)) => return Err(e),
+            Err(e) => panic!("{e:?}"),
+        }
+    }
+    assert_eq!(st.unwind_depth(), 0);
+    Ok(String::from_utf8(st.out.as_bytes().to_vec()).unwrap())
+}
+
+#[test]
+fn on_error_drops_defines_and_loops_without_restoring() {
+    // Chameleon's generated code has no try/finally: a failed body's defines and loop names
+    // keep their values (plan.md, Phase 6a). Written first.
+    let src = "<div tal:on-error=\"x\"><p tal:define=\"x 2\"><b tal:repeat=\"i [7]\">${i}${undefined}</b></p></div>|${x}|${i}";
+    let mut w = world(&[src], &[]);
+    assert_eq!(try_render(&mut w).unwrap(), "<div>2</div>|2|7");
+    assert!(!w.log.iter().any(|l| l.starts_with("restore")), "{:?}", w.log);
+    // The variable `error` is bound and stays bound.
+    let src = "<p tal:on-error=\"error\">${nope}</p>|${error}";
+    assert_eq!(render(src, &[]), "<p>NameError: nope</p>|NameError: nope");
+}
+
+#[test]
+fn on_error_truncates_to_the_frames_last_fallback_mark() {
+    // One `__fallback` register per render function: once an inner handler has started, an
+    // outer one truncates only to the inner one's mark.
+    let src = "<p tal:on-error=\"'A'\">a<b tal:on-error=\"'x'\">B</b>C${nope}</p>";
+    assert_eq!(render(src, &[]), "<p>a<p>A</p>");
+    // A failing fallback is caught by the outer handler, after the inner mark.
+    let src = "<p tal:on-error=\"'outer'\"><b tal:on-error=\"nope\">${nope}</b></p>";
+    assert_eq!(render(src, &[]), "<p><p>outer</p>");
+    // Siblings and the ordinary case.
+    let src = "<i tal:on-error=\"'1'\">${a}</i><i tal:on-error=\"'2'\">ok</i><i tal:on-error=\"'3'\">${c}</i>";
+    assert_eq!(render(src, &[]), "<i>1</i><i>ok</i><i>3</i>");
+    // Omitted tags, replace, and an on-error around a TAL element.
+    assert_eq!(render("<p tal:on-error=\"'a'\" tal:omit-tag=\"\">x${nope}</p>", &[]), "a");
+    assert_eq!(render("<tal:p on-error=\"'a'\">x${nope}</tal:p>", &[]), "a");
+    assert_eq!(render("<p tal:on-error=\"'a'\" tal:replace=\"nope\">x</p>", &[]), "<p>a</p>");
+}
+
+#[test]
+fn on_error_entries_and_handlers() {
+    // Cached values, switches, omit tests and attribute marks above the handler are dropped.
+    let src = "<div tal:on-error=\"'E'\"><p tal:switch=\"1\"><b tal:case=\"1\" tal:omit-tag=\"true\" \
+               tal:attributes=\"dict(a=1)\" checked=\"${t}\">${nope}</b></p></div>|ok";
+    assert_eq!(render(src, &[("t", V::Int(1))]), "<div>E</div>|ok");
+    let src = "<div tal:on-error=\"'E'\"><p tal:switch=\"1\"><b tal:case=\"1\" tal:omit-tag=\"false\" \
+               tal:attributes=\"dict(a=1)\" checked=\"a${nope}\">x</b></p></div>|ok";
+    assert_eq!(render(src, &[]), "<div>E</div>|ok");
+    // An error the handlers do not catch passes through every frame, recording it in each.
+    let mut w = world(&["<p tal:on-error=\"'E'\">${call:1}</p>", "<i>${interrupt}</i>"], &[]);
+    assert_eq!(try_render(&mut w).unwrap_err(), "KeyboardInterrupt");
+    assert_eq!(
+        w.log,
+        ["record KeyboardInterrupt in program 1 at token 1", "record KeyboardInterrupt in program 0 at token 2"]
+    );
+    // A callee's error is caught by the caller's handler, after the callee recorded it.
+    let mut w = world(&["<p tal:on-error=\"'E'\">a${call:1}b</p>|${error}", "<i>${nope}</i>"], &[]);
+    assert_eq!(try_render(&mut w).unwrap(), "<p>E</p>|NameError: nope");
+    assert_eq!(
+        w.log,
+        ["record NameError: nope in program 1 at token 1", "catch NameError: nope at e1"],
+        "the callee recorded its own token; the caller's token is the call"
+    );
+    // A handler that raises: the error leaves the body's frame.
+    let mut w = world(&["<p tal:on-error=\"'E'\">${nope}</p>"], &[("handler_fails", V::Bool(true))]);
+    assert_eq!(try_render(&mut w).unwrap_err(), "HandlerError: NameError: nope");
+}
+
+#[test]
+fn on_error_restarts_after_suspension() {
+    let src = "<p tal:on-error=\"wait:'E'\">${wait:'a'}${nope}</p>|${wait:'z'}";
+    assert_eq!(render(src, &[]), "<p>E</p>|z");
+}
+
+#[test]
+fn global_repeat_assigns_rcontext_and_ends_with_a_name_error() {
+    let vars = [("xs", V::List(vec![V::Int(1), V::Int(2)]))];
+    let mut w = world(&["<p tal:repeat=\"global x xs\">${x}</p>"], &vars);
+    assert_eq!(try_render(&mut w).unwrap_err(), "NameError: __backup_x");
+    assert_eq!(w.rcontext.get("x"), Some(&V::Int(2)));
+    assert!(!w.log.iter().any(|l| l.starts_with("backup")));
+    // Inside on-error, the loop's names leak.
+    let mut w = world(&["<div tal:on-error=\"'E'\"><p tal:repeat=\"global x xs\">${x}</p></div>${x}"], &vars);
+    assert_eq!(try_render(&mut w).unwrap(), "<div>E</div>2");
+}
+
+#[test]
+fn boolean_attributes_test_the_converted_value() {
+    let vars = [("e", V::Str(String::new())), ("t", V::Str("yes".into()))];
+    // The toy's `Stage::Bool`: an empty string is false but written.
+    assert_eq!(render("<input checked=\"${e}\" selected=\"${t}\">", &vars), "<input selected=\"selected\">");
+}
+
+#[test]
+fn throw_unwinds_from_the_suspended_instruction() {
+    // A failed await inside on-error: the fallback is rendered and the render goes on.
+    let mut w = world(&["<p tal:on-error=\"'E'\">a${wait:1}b</p>|${wait:'z'}"], &[]);
+    let (mut st, _) = run_to_suspension(&mut w);
+    let done = crate::throw(&mut st, &mut w, "ValueError: awaited".to_owned()).unwrap();
+    let Done::Suspended(v) = done else { panic!("the second wait suspends") };
+    st.resume_with::<String>(v).unwrap();
+    assert!(matches!(run(&mut st, &mut w), Ok(Done::Finished)));
+    assert_eq!(std::str::from_utf8(st.out.as_bytes()).unwrap(), "<p>E</p>|z");
+    assert!(w.log.iter().any(|l| l.starts_with("catch ValueError: awaited")));
+
+    // A non-catchable error (cancellation, BaseException-style) passes every handler.
+    let mut w = world(&["<p tal:on-error=\"'E'\">a${wait:1}b</p>"], &[]);
+    let (mut st, _) = run_to_suspension(&mut w);
+    let result = crate::throw(&mut st, &mut w, "KeyboardInterrupt".to_owned());
+    assert!(matches!(result, Err(VmError::Runtime(e)) if e == "KeyboardInterrupt"));
+    assert_eq!(st.frame_depth(), 0);
+
+    // Only a suspended render can be thrown into.
+    let mut w = world(&["x"], &[]);
+    let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0));
+    assert!(matches!(crate::throw(&mut st, &mut w, "E".to_owned()), Err(VmError::Internal(_))));
 }

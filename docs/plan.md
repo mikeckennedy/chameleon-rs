@@ -533,6 +533,118 @@ render-time error tracking and the `RenderError` path (D8), panic catching.
 Exit gate: every fixture that uses only these features passes byte-exact; a 3.14t smoke test
 renders under free-threading; VM micro-benchmarks recorded.
 
+**Done (2026-10-20).** Phases 2-5 had lowered most of the core already; this phase added what
+was left and made errors behave like Chameleon's: `tal:on-error` (D3 item 2, with the
+drop-not-restore rule; the plan's leak test was written first and passes:
+`<div>2</div>|2|7`), Chameleon's render-time error tracking (`__token`, `rcontext['__error__']`)
+and the formatted `RenderError` (`ExceptionFormatter` and `create_formatted_exception` ported
+to Python, cold path), global `tal:repeat`, `<?python ?>` code blocks with a per-render
+namespace, the full `RepeatItem` (`letter`, `Letter`, `roman`, `Roman`), `ErrorInfo`,
+`PageTextTemplateFile.render` returning `bytes`, and the fix for Phase 4's boolean-attribute
+approximation. The quirks reproduced (one `__fallback` mark per render function, so an outer
+handler truncates to an inner handler's mark; the on-error fallback's compile-time
+`AttributeError`; a global loop that always ends in `NameError`; error tokens re-sliced from
+the source; `UnboundLocalError` for code-block names) and the interface changes are in
+architecture.md, "Phase 6a amendments".
+
+Results:
+
+- **Fixtures (level 2, partial):** `tests/python/test_fixtures.py` renders every upstream
+  input as Chameleon's `test_pt_files` / `test_txt_files` feed them (non-strict, the same
+  keyword arguments, translate function and target languages) with both engines and compares
+  the results byte for byte (stricter than upstream's doctest-style check). **63 of 122
+  renders pass**; the other 59 (45 input files) need Phase 6b and are listed in the test's
+  `LATER` with the feature (strict: each must still raise `UnsupportedError`): `metal:use-macro`
+  21, `metal:define-macro` 12, `i18n:translate` 12 (2 on `tal:content`), `i18n:domain` 8,
+  `default` inside `i18n:target` 2, implicit translation 2. The five that use `load:` macros
+  (066, 081, 082, 083, 089) then also need the loader (Phase 7).
+- **Differential tests:** `test_errors.py` (on-error in 38 shapes, every error path's type and
+  *whole formatted message*, `rcontext['__error__']`, `ErrorInfo`, the error handler, the
+  `RenderError` class and bases, uncopyable exceptions, nested renders, file templates' source
+  line, recursion, global repeat, 29 code-block cases), `test_repeat.py` (every `RepeatItem`
+  attribute as value and call over nine kinds of iterable, plus 23 loop shapes, user `repeat`
+  objects), the boolean-attribute grid (33 cases; the strict xfail is gone).
+- **Render fuzz** (Hypothesis, `test_render_fuzz.py`; a third 30,000-example run after the
+  review fixes, zero differences): now with on-error (including a wrapper
+  that guards generated subtrees, so caught errors are common), failing expressions, global
+  loops and code blocks, comparing outputs and render errors' whole messages (addresses and
+  generated ids normalized): **30,000 examples, zero differences**, twice (once before and once
+  after adding the guarded wrapper). Earlier runs found two real differences, both fixed: the
+  fallback quirk above, and the default marker's `__name__` (`DEFAULT_MARKER`, which shows in
+  a render error's arguments). The suite runs 300.
+- **Free-threading:** `test_threads.py` gained a check that a free-threaded interpreter keeps
+  the GIL disabled after importing the extension, and 4,000 renders on 16 threads of templates
+  with on-error, code blocks and formatted render errors. Run on CPython 3.14.7t (a wheel built
+  with `maturin build --profile dev-opt -i <3.14t python>` into a scratch venv, separate
+  `CARGO_TARGET_DIR`, with `PYO3_PYTHON` pointing at that interpreter): GIL disabled,
+  `test_threads.py`, `test_errors.py` and `test_repeat.py` (364 tests) passed five times in a
+  row with `-W error::RuntimeWarning`. CI's 3.14t matrix entry runs the whole suite.
+- **Micro-benchmarks** (criterion, `cargo bench -p chameleon-core`, release, load average 3-6):
+  escaping 1 KiB of plain text 270 ns (3.6 GiB/s), 1 KiB dense with escapes into a quoted
+  attribute 778 ns (1.26 GiB/s), a short attribute value 4.7 ns; tokenizer 8.1 us for 10 KB
+  (1.17 GiB/s); the VM running the benchmark listing over a toy runtime (8 expressions per item,
+  linear-search scope) 91.6 us for 500 items, 183 ns per item, which bounds the VM's own share
+  of the 480-490 ns real figure.
+- **Speed, after the review fixes:** `bench/bench_ab.py ef700c6` (ef700c6 renders exactly
+  as 41613f2), release, 16 interleaved rounds, twice at load average 3.5-5: **+2.9 ns** (range
+  -2..+8) and **+0.2 ns** (range -5..+53), 5.8-6.3x Chameleon. Before the review fixes,
+  `bench/bench_ab.py 41613f2`, 8 rounds: the first run at load
+  average 10-12.5 (+3.1 ns, range -37..+18) is discarded; after folding the per-expression
+  token into the expression table, **-1.5 ns** (range -44..+13, load 8) and **-4.1 ns** (range
+  -7..-1, load 4-7), 6.2x Chameleon in the same run. `bench_skeleton.py`, three runs: listing
+  481-494 ns per item against Chameleon's 2,878-2,900 ns (5.9-6.0x); partial listing 632-644 ns
+  against 6,762-6,809 ns (10.6-10.7x). The token costs one store per expression.
+- **Tests:** 89 Rust (83 core: on-error unwinding, the fallback mark, handlers that raise,
+  errors through frames, suspension around on-error, `throw`, global loops, the boolean
+  stage; 6 `chameleon-py`), 1,681 pytest passed and 61 skipped (59 fixtures listed for Phase 6b, the
+  Phase 8 walrus probe, the free-threading check on a GIL build), the upstream suite on the
+  reference engine 227 passed and 6 xfailed; `make lint test` green with
+  `CHAMELEON_RS_CORPUS` set. Two stale probe deferrals (`tal:replace`, doctypes) now pass and
+  were removed. `make test-upstream-rust` still exits at the missing compat package (Phase 7).
+- **Review fixes (2026-10-20, after the Rust Architect's review; ~60 extra probes found the
+  semantics exact):** the catch path was O(template size) per caught error (each `catch` and
+  `record_error` rebuilt the line index and scanned the source for the token): 5,000 caught
+  errors on a 421 KB template took 575 ms against Chameleon's 2.0 ms. Token spans (byte range,
+  line, column) are now resolved once at compile time; 5,000 caught errors take 1.2 ms on a
+  200 KB template and 1.0 ms on an 84-byte one (Chameleon 1.8 ms for both), and a pytest guard
+  compares the two engines on a 400 KB template. Re-measuring showed the per-evaluation token
+  store itself cost about 8 ns per listing item (A/B against ef700c6 at load 3-4: +5.4, +8.8,
+  +9.8 ns; +0.1 ns with the store removed): the VM now records the last two expressions per
+  frame in `VmState` (one store) and the runtime resolves the token only on the error path
+  (architecture.md, D8 amendment). Fixed on the way: a position-less interpolation with two
+  expressions (a processing instruction's) is Chameleon's compile-time
+  `AttributeError: 'str' object has no attribute 'pos'`. New `chameleon_core::throw(st, rt, error)`
+  for Phase 11: resumes a suspended render by raising at the suspended instruction, so an
+  enclosing `on-error` renders its fallback and a non-catchable error (cancellation) passes
+  through (core tests for both).
+- **Corpus (229 Talk Python templates):** unchanged from Phase 5: 75 compile fully, 154 stop
+  only at macros (152 `metal:use-macro`, 2 `metal:define-macro`); trees still match.
+
+Carried forward:
+
+- **Phase 6b:** macro frames get their own `__token` (Chameleon resets it to `None` before an
+  internal macro call, so an error caught around one is a `KeyError` in the handler), their
+  own fallback mark and code-block namespace (ours are per program and render); translation
+  streams change what `len(__stream)` means for the fallback mark.
+- **Phase 7:** compile errors' `__str__` lacks Chameleon's `- Source:` line (render errors have
+  it); the compat aliases must map `chameleon_rs.tal.ErrorInfo` (its repr names our module).
+- **Phase 6b:** key the code-block namespace per frame (a frame serial passed through
+  `activate`), not per program (`expr.rs`, `NsCode::key` and `RenderCtx::namespaces`).
+- **Phase 6b:** split `Runtime` into sub-traits: a base `Values { type Value; type Error; }`;
+  `Eval` (activate, eval, emit, truthy, is_default, is_false; token and set_token no longer exist); `Names`
+  (lookup, set_null, define, restore); `Loops` (repeat, countdown, next, assign,
+  missing_backup); `Errors` (is_catchable, catch, record_error, recursion_error, with defaults
+  for the toy runtimes); `Attrs` (yields_name, attr_dict, case_compare); and
+  `pub trait Runtime: Eval + Names + Loops + Errors + Attrs {}` with a blanket impl.
+- **Known difference, recursion depth:** with an `on-error` at every level of Python-level
+  recursive renders, Chameleon recovers at about 198 levels deep and we at about 497; our
+  `RecursionError` message differs ("... while rendering a template"). Check macro-depth parity
+  against `MAX_FRAMES = 500` in Phase 6b.
+- **Known differences:** a fallback expression that reads a code-block name raises `NameError`
+  where Chameleon's function raises `UnboundLocalError` only for names it can see are local
+  (handled for the common case); the `default` and `attrs` aliases do not apply inside a code
+  block; a recursive native partial shares one code-block namespace.
+
 ## Phase 6b: VM, macros and i18n
 
 Macros (`define-macro`, `use-macro`, `extend-macro`, `define-slot`, `fill-slot`, `macroname`,

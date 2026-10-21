@@ -1,8 +1,9 @@
 // The semantics below follow Chameleon's src/chameleon/compiler.py (`Compiler.visit_Repeat`,
 // `_enter_assignment`, `_leave_assignment`, `visit_Assignment`, `visit_Define`,
 // `visit_Content`, `visit_Attribute`, `visit_DictAttributes`, `visit_Cache`, `visit_Cancel`,
-// `visit_Condition`, and `emit_bool`), modified: implemented as bytecode run by a resumable
-// VM.
+// `visit_Condition`, `visit_OnError`, the error handler `visit_Macro` wraps every render
+// function in, `visit_CodeBlock`, and `emit_bool`), modified: implemented as bytecode run by a
+// resumable VM.
 
 //! The program, its bytecode, and the VM that runs it (D2, D3).
 //!
@@ -41,12 +42,21 @@ pub enum Stage {
     Lone,
     /// One part of a mixed interpolation: converted, then `%s`-formatted.
     Part,
+    /// A whole interpolation that is a boolean attribute's value (the value is already known
+    /// to be true): converted like [`Stage::Lone`], then tested. The runtime returns
+    /// [`Emitted::True`] for a true result (the VM writes the attribute's name instead),
+    /// writes a false one that is not `None` as text ([`Emitted::Value`]), and returns
+    /// [`Emitted::Nothing`] for `None`.
+    Bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct LoopInfo {
     pub(crate) names: Vec<NameId>,
     pub(crate) whitespace: TextRef,
+    /// A global loop (`tal:repeat="global x ..."`) also assigns each item in `rcontext`, takes
+    /// no backups, and ends with a `NameError` (see [`Runtime::missing_backup`]).
+    pub(crate) visibility: Visibility,
 }
 
 /// Where a `tal:define` (or `tal:repeat`) binds its names.
@@ -236,6 +246,23 @@ pub enum Op {
         expr: ExprId,
         no_match: u32,
     },
+    /// `tal:on-error`: sets the frame's fallback mark (Chameleon's one `__fallback` local per
+    /// render function, shared by nested handlers) and enters the protected body. An
+    /// `Exception` raised before the matching [`Op::EndTry`] binds `name` (always `error`),
+    /// calls the error handler, truncates the output to the fallback mark and continues at
+    /// `handler`.
+    Try {
+        handler: u32,
+        name: NameId,
+    },
+    /// End of a protected body: leave it and skip the handler.
+    EndTry {
+        end: u32,
+    },
+    /// Evaluate and discard (a `<?python ?>` code block).
+    Exec {
+        expr: ExprId,
+    },
     End,
 }
 
@@ -314,7 +341,13 @@ impl Program {
                 Op::JumpIfNot { expr, target } => format!("jump_if_not e{} {target}", expr.0),
                 Op::LoopStart { info, expr, next } => match self.tables.loops.get(*info as usize) {
                     Some(li) => {
-                        format!("loop {:?} in e{} ws={} next={next}", names(&li.names), expr.0, text(li.whitespace))
+                        let global = if li.visibility == Visibility::Global { " global" } else { "" };
+                        format!(
+                            "loop{global} {:?} in e{} ws={} next={next}",
+                            names(&li.names),
+                            expr.0,
+                            text(li.whitespace)
+                        )
                     }
                     None => format!("loop ? in e{} next={next}", expr.0),
                 },
@@ -345,6 +378,9 @@ impl Program {
                     format!("case_test e{} no_match={no_match} matched={matched}", expr.0)
                 }
                 Op::CaseDefault { expr, no_match } => format!("case_default e{} no_match={no_match}", expr.0),
+                Op::Try { handler, .. } => format!("try handler={handler}"),
+                Op::EndTry { end } => format!("end_try {end}"),
+                Op::Exec { expr } => format!("exec e{}", expr.0),
                 Op::End => "end".to_owned(),
             };
             let _ = writeln!(out, "{i:3} {line}");
@@ -388,6 +424,29 @@ pub struct Call<V> {
 pub enum Emitted {
     Value,
     Nothing,
+    /// [`Stage::Bool`] only: the converted value is true (whatever was written is dropped).
+    True,
+}
+
+/// Where an error happened, for its error token (Chameleon's `__token`, assigned before each
+/// expression): the expressions whose evaluation the current frame started last and the one
+/// before it. The runtime resolves the token only on the error path (an expression whose
+/// source has no position sets no token, so the previous one counts); the VM records the
+/// pair with one store per evaluation.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ErrorSite {
+    pub last: Option<ExprId>,
+    pub previous: Option<ExprId>,
+}
+
+impl ErrorSite {
+    /// From the packed form kept in [`VmState`]: `previous + 1` in the high half, `last + 1`
+    /// in the low half (`0` for none).
+    #[allow(clippy::cast_possible_truncation)] // the halves are u32 by construction
+    fn unpack(recent: u64) -> Self {
+        let id = |v: u32| v.checked_sub(1).map(ExprId);
+        Self { last: id(recent as u32), previous: id((recent >> 32) as u32) }
+    }
 }
 
 /// A loop's countdown (Chameleon's `__index`): the length `repeat()` returned, decremented
@@ -448,8 +507,25 @@ pub trait Runtime {
     /// The next item. It must not suspend: [`Op::LoopNext`] performs its side effects only
     /// after this returns.
     fn next(&mut self, iterator: &Self::Value) -> Result<Option<Self::Value>, Self::Error>;
-    /// Binds the loop names to an item (unpacking it for several names).
-    fn assign(&mut self, names: &[NameId], item: Self::Value) -> Result<(), Self::Error>;
+    /// Binds the loop names to an item (unpacking it for several names); a global loop also
+    /// binds them in `rcontext` (unpacking the item again, as a chained assignment does).
+    fn assign(&mut self, names: &[NameId], item: Self::Value, visibility: Visibility) -> Result<(), Self::Error>;
+    /// The error a global loop raises when it ends: Chameleon restores names it never backed
+    /// up, a `NameError` for its backup variable.
+    fn missing_backup(&mut self, name: NameId) -> Self::Error;
+    // -- Errors ---------------------------------------------------------------------------
+
+    /// Whether `tal:on-error` catches the error (`except Exception`).
+    fn is_catchable(&mut self, error: &Self::Error) -> bool;
+    /// `tal:on-error` caught `error`: binds `name` to the error information (with the
+    /// position of the error token `at` identifies) and calls the error handler. The VM then
+    /// truncates the output and runs the fallback.
+    fn catch(&mut self, error: &Self::Error, name: NameId, at: ErrorSite) -> Result<(), Self::Error>;
+    /// The current frame ends with `error` (Chameleon's render-function `except`: the token,
+    /// its position, the filename and the error are appended to `rcontext['__error__']`).
+    fn record_error(&mut self, error: &Self::Error, at: ErrorSite);
+    /// The error for too many nested frames (`RecursionError`).
+    fn recursion_error(&mut self) -> Self::Error;
     // -- Attributes and `tal:case` --------------------------------------------------------
 
     /// `name in itertools.chain(container)`: whether iterating `container` yields an item
@@ -471,10 +547,10 @@ pub trait Runtime {
 
 #[derive(Debug, thiserror::Error)]
 pub enum VmError<E> {
+    /// An error the runtime raised (or [`Runtime::recursion_error`]), not caught by any
+    /// `tal:on-error`.
     #[error("runtime error")]
     Runtime(#[source] E),
-    #[error("maximum recursion depth exceeded")]
-    Recursion,
     #[error("internal error: {0}")]
     Internal(&'static str),
 }
@@ -486,8 +562,8 @@ pub enum Done<V> {
     Suspended(V),
 }
 
-/// Nested frames allowed before the render raises `RecursionError` (Chameleon hits Python's
-/// recursion limit at a few hundred nested macro calls).
+/// Nested frames allowed before the render raises the runtime's recursion error (Chameleon
+/// hits Python's recursion limit at a few hundred nested macro calls).
 pub const MAX_FRAMES: usize = 500;
 
 /// Largest initial output buffer a program asks for (1 MiB).
@@ -503,6 +579,18 @@ struct Frame<V> {
     on_return: Option<TextRef>,
     /// Height of the unwind stack when the frame was entered; its own entries lie above.
     unwind_base: usize,
+    /// The frame's recent expressions while another frame is active (see [`ErrorSite`]).
+    recent: u64,
+    /// Where `tal:on-error` truncates the output: the mark of the last [`Op::Try`] this
+    /// frame entered (one register per frame, like Chameleon's `__fallback` local, so an
+    /// outer handler truncates to an inner handler's mark once the inner one has started).
+    fallback: Mark,
+}
+
+impl<V> Frame<V> {
+    fn new(program: Arc<Program>, code: V, scope: V, on_return: Option<TextRef>, unwind_base: usize) -> Self {
+        Self { program, pc: 0, code, scope, on_return, unwind_base, recent: 0, fallback: Mark::default() }
+    }
 }
 
 /// The single unwind stack (D3): everything a frame has entered and must leave.
@@ -529,6 +617,11 @@ enum Unwind<V> {
         start: Mark,
         value: Mark,
     },
+    /// A `tal:on-error` body: where its handler starts and the name it binds.
+    Try {
+        handler: u32,
+        name: NameId,
+    },
 }
 
 /// Per-render state (D2): frames, the unwind stack and the output. Holds only runtime
@@ -538,6 +631,8 @@ pub struct VmState<V> {
     frames: Vec<Frame<V>>,
     unwind: Vec<Unwind<V>>,
     resume: Option<V>,
+    /// The active frame's last two evaluated expressions (see [`ErrorSite::unpack`]).
+    recent: u64,
     suspended: bool,
     pub out: Output,
 }
@@ -547,9 +642,10 @@ impl<V> VmState<V> {
     pub fn new(program: Arc<Program>, code: V, scope: V) -> Self {
         let out = Output::with_capacity(program.capacity_hint());
         Self {
-            frames: vec![Frame { program, pc: 0, code, scope, on_return: None, unwind_base: 0 }],
+            frames: vec![Frame::new(program, code, scope, None, 0)],
             unwind: Vec::new(),
             resume: None,
+            recent: 0,
             suspended: false,
             out,
         }
@@ -584,7 +680,7 @@ impl<V> VmState<V> {
                 }
                 Unwind::Define { backups } => backups.iter().flatten().for_each(&mut f),
                 Unwind::Value(v) | Unwind::Switch(Some(v)) => f(v),
-                Unwind::Omit(_) | Unwind::Switch(None) | Unwind::Attr { .. } => {}
+                Unwind::Omit(_) | Unwind::Switch(None) | Unwind::Attr { .. } | Unwind::Try { .. } => {}
             }
         }
         if let Some(v) = &self.resume {
@@ -632,23 +728,29 @@ pub fn run<R: Runtime>(st: &mut VmState<R::Value>, rt: &mut R) -> Result<Done<R:
         let Some(frame) = st.frames.last() else { return Ok(Done::Finished) };
         let program = Arc::clone(&frame.program);
         let mut pc = frame.pc as usize;
+        st.recent = frame.recent;
         rt.activate(&frame.code, &frame.scope).map_err(VmError::Runtime)?;
-        let action = execute(&program, &mut pc, st, rt)?;
+        let action = match execute(&program, &mut pc, st, rt) {
+            Ok(action) => action,
+            Err(VmError::Runtime(error)) => {
+                unwind_error(st, rt, error)?;
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
         match action {
             Action::Push(call, return_pc, on_return) => {
-                if st.frames.len() >= MAX_FRAMES {
-                    return Err(VmError::Recursion);
+                if let Some(caller) = st.frames.last_mut() {
+                    caller.pc = return_pc;
+                    caller.recent = st.recent;
                 }
-                set_pc(st, return_pc);
+                if st.frames.len() >= MAX_FRAMES {
+                    let error = rt.recursion_error();
+                    unwind_error(st, rt, error)?;
+                    continue;
+                }
                 let unwind_base = st.unwind.len();
-                st.frames.push(Frame {
-                    program: call.program,
-                    pc: 0,
-                    code: call.code,
-                    scope: call.scope,
-                    on_return,
-                    unwind_base,
-                });
+                st.frames.push(Frame::new(call.program, call.code, call.scope, on_return, unwind_base));
             }
             Action::Pop => {
                 let done = st.pop_frame();
@@ -657,7 +759,10 @@ pub fn run<R: Runtime>(st: &mut VmState<R::Value>, rt: &mut R) -> Result<Done<R:
                 }
             }
             Action::Suspend(value, at) => {
-                set_pc(st, at);
+                if let Some(frame) = st.frames.last_mut() {
+                    frame.pc = at;
+                    frame.recent = st.recent;
+                }
                 st.suspended = true;
                 return Ok(Done::Suspended(value));
             }
@@ -665,9 +770,75 @@ pub fn run<R: Runtime>(st: &mut VmState<R::Value>, rt: &mut R) -> Result<Done<R:
     }
 }
 
-fn set_pc<V>(st: &mut VmState<V>, pc: u32) {
-    if let Some(frame) = st.frames.last_mut() {
-        frame.pc = pc;
+/// Resumes a suspended render by raising `error` at the instruction it suspended on (Phase
+/// 11: the awaited value failed, or the task was cancelled through `throw()`). The error
+/// unwinds exactly as if that instruction had raised it: an enclosing `tal:on-error` that
+/// catches it renders its fallback and the render continues; otherwise it is returned.
+pub fn throw<R: Runtime>(
+    st: &mut VmState<R::Value>,
+    rt: &mut R,
+    error: R::Error,
+) -> Result<Done<R::Value>, VmError<R::Error>> {
+    if !st.suspended {
+        return Err(VmError::Internal("throw on a render that is not suspended"));
+    }
+    st.suspended = false;
+    st.resume = None;
+    if let Some(frame) = st.frames.last() {
+        st.recent = frame.recent;
+        rt.activate(&frame.code, &frame.scope).map_err(VmError::Runtime)?;
+    }
+    unwind_error(st, rt, error)?;
+    run(st, rt)
+}
+
+/// An error raised in the active frame (D3 item 2): the innermost `tal:on-error` of the frame
+/// that catches it gets it, or the frame ends (recording the error) and its caller is tried.
+///
+/// Catching drops every unwind entry above the handler's own, without restoring anything:
+/// Chameleon's generated code has no `try/finally`, so a failed body's `tal:define` and loop
+/// names keep their values, while cached values, omit tests, switches and attribute marks
+/// simply go. The output is truncated to the frame's fallback mark.
+#[cold]
+#[inline(never)]
+fn unwind_error<R: Runtime>(
+    st: &mut VmState<R::Value>,
+    rt: &mut R,
+    mut error: R::Error,
+) -> Result<(), VmError<R::Error>> {
+    loop {
+        let Some(frame) = st.frames.last_mut() else { return Err(VmError::Runtime(error)) };
+        let base = frame.unwind_base;
+        let handler = st
+            .unwind
+            .get(base..)
+            .and_then(|entries| entries.iter().rposition(|e| matches!(e, Unwind::Try { .. })).map(|i| base + i));
+        if let Some(at) = handler
+            && rt.is_catchable(&error)
+        {
+            let Some(&Unwind::Try { handler, name }) = st.unwind.get(at) else {
+                return Err(VmError::Internal("handler vanished"));
+            };
+            st.unwind.truncate(at);
+            frame.pc = handler;
+            match rt.catch(&error, name, ErrorSite::unpack(st.recent)) {
+                Ok(()) => {
+                    st.out.truncate(frame.fallback);
+                    frame.recent = st.recent;
+                    return Ok(());
+                }
+                // Raised by the handler itself (outside the protected body): keep unwinding.
+                Err(e) => {
+                    error = e;
+                    continue;
+                }
+            }
+        }
+        rt.record_error(&error, ErrorSite::unpack(st.recent));
+        st.pop_frame();
+        let Some(caller) = st.frames.last() else { return Err(VmError::Runtime(error)) };
+        st.recent = caller.recent;
+        rt.activate(&caller.code, &caller.scope).map_err(VmError::Runtime)?;
     }
 }
 
@@ -729,8 +900,8 @@ fn execute<R: Runtime>(
                 let mark = st.out.mark();
                 st.out.push(text(program, prefix)?);
                 match rt.emit(value, esc, Stage::Lone, &mut st.out).map_err(rt_err)? {
-                    Emitted::Value => st.out.push(text(program, suffix)?),
                     Emitted::Nothing => st.out.truncate(mark),
+                    Emitted::Value | Emitted::True => st.out.push(text(program, suffix)?),
                 }
             }
             Op::Content { expr, esc, end } => {
@@ -750,11 +921,15 @@ fn execute<R: Runtime>(
             }
             Op::LoopStart { info, expr, next } => {
                 let li = program.tables.loops.get(info as usize).ok_or(VmError::Internal("bad loop"))?;
-                // Chameleon backs the names up before evaluating the iterable, and binds them
-                // to None after registering the loop with `repeat`.
-                let mut backups = Vec::with_capacity(li.names.len());
-                for &name in &li.names {
-                    backups.push(rt.lookup(name).map_err(rt_err)?);
+                // Chameleon backs the names up before evaluating the iterable (a global loop
+                // takes no backups), and binds them to None after registering the loop with
+                // `repeat`.
+                let mut backups = Vec::new();
+                if li.visibility == Visibility::Local {
+                    backups.reserve(li.names.len());
+                    for &name in &li.names {
+                        backups.push(rt.lookup(name).map_err(rt_err)?);
+                    }
                 }
                 let iterable = eval_or_leave!(st, rt, pc, expr, false, no_call);
                 let (iterator, index) = rt.repeat(&li.names, iterable).map_err(rt_err)?;
@@ -910,10 +1085,11 @@ fn execute<R: Runtime>(
                     let start = st.out.mark();
                     st.out.push(text(program, a.prefix)?);
                     let value_at = st.out.mark();
-                    if rt.emit(value, esc, Stage::Lone, &mut st.out).map_err(rt_err)? == Emitted::Nothing {
-                        st.out.truncate(start);
-                    } else {
-                        finish_attr(program, st, rt, a, start, value_at, boolean, cached)?;
+                    let stage = if boolean { Stage::Bool } else { Stage::Lone };
+                    match rt.emit(value, esc, stage, &mut st.out).map_err(rt_err)? {
+                        Emitted::Nothing => st.out.truncate(start),
+                        Emitted::Value => finish_attr(program, st, rt, a, start, value_at, Finish::Keep, cached)?,
+                        Emitted::True => finish_attr(program, st, rt, a, start, value_at, Finish::Name, cached)?,
                     }
                 }
             }
@@ -929,7 +1105,8 @@ fn execute<R: Runtime>(
                 let Some(Unwind::Attr { start, value }) = st.unwind.pop() else {
                     return Err(VmError::Internal("attr_end without its attribute"));
                 };
-                finish_attr(program, st, rt, a, start, value, boolean, cached)?;
+                let finish = if boolean { Finish::Mixed } else { Finish::Keep };
+                finish_attr(program, st, rt, a, start, value, finish, cached)?;
             }
             Op::AttrDict { info, index, cached } => {
                 let d = program.tables.dicts.get(info as usize).ok_or(VmError::Internal("bad dictionary"))?;
@@ -987,6 +1164,23 @@ fn execute<R: Runtime>(
                     continue;
                 }
             }
+            Op::Try { handler, name } => {
+                let mark = st.out.mark();
+                if let Some(frame) = st.frames.last_mut() {
+                    frame.fallback = mark;
+                }
+                st.unwind.push(Unwind::Try { handler, name });
+            }
+            Op::EndTry { end } => {
+                let Some(Unwind::Try { .. }) = st.unwind.pop() else {
+                    return Err(VmError::Internal("end_try without its try"));
+                };
+                *pc = end as usize;
+                continue;
+            }
+            Op::Exec { expr } => {
+                let _ = eval_or_leave!(st, rt, pc, expr, false, no_call);
+            }
             Op::End => {
                 if st.unwind.len() != st.frame_base() {
                     return Err(VmError::Internal("frame ended with entries on the unwind stack"));
@@ -998,9 +1192,20 @@ fn execute<R: Runtime>(
     }
 }
 
+/// How [`finish_attr`] treats a written attribute value.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Finish {
+    /// Keep the value as written.
+    Keep,
+    /// The value is true: write the attribute's name instead (a boolean attribute).
+    Name,
+    /// A boolean attribute's mixed interpolation (always a `str`): empty drops the attribute,
+    /// anything else becomes the name.
+    Mixed,
+}
+
 /// A boolean or filtered attribute whose value has been written after `value`: dropped if a
-/// filter has the name; for a boolean attribute an empty value drops it and any other value
-/// becomes the name.
+/// filter has the name, otherwise finished as `finish` says.
 #[allow(clippy::too_many_arguments)]
 fn finish_attr<R: Runtime>(
     program: &Program,
@@ -1009,13 +1214,13 @@ fn finish_attr<R: Runtime>(
     a: &AttrInfo,
     start: Mark,
     value: Mark,
-    boolean: bool,
+    finish: Finish,
     cached: u32,
 ) -> Result<(), VmError<R::Error>> {
     // `if __attr is not None and name not in chain(...)`: the filter is only consulted for a
     // value that is not `None`. The boolean engine (`literal_false=False`) turns a false
     // *result* into `None`, which drops the attribute.
-    if boolean && st.out.mark() == value {
+    if finish == Finish::Mixed && st.out.mark() == value {
         st.out.truncate(start);
         return Ok(());
     }
@@ -1023,7 +1228,7 @@ fn finish_attr<R: Runtime>(
         st.out.truncate(start);
         return Ok(());
     }
-    if boolean {
+    if finish != Finish::Keep {
         // `Replace`: a true value becomes the attribute's name.
         st.out.truncate(value);
         st.out.push(text(program, a.name)?);
@@ -1076,14 +1281,17 @@ fn value_of<R: Runtime>(
     expr: ExprId,
     emitted: bool,
 ) -> Result<Step<R::Value>, VmError<R::Error>> {
-    match st.resume.take() {
-        Some(v) => Ok(Step::Ready(v)),
-        None => rt.eval(expr, emitted).map_err(VmError::Runtime),
+    if let Some(v) = st.resume.take() {
+        return Ok(Step::Ready(v));
     }
+    // The error token's bookkeeping: one store (see [`ErrorSite`]).
+    st.recent = (st.recent << 32) | u64::from(expr.0.wrapping_add(1));
+    rt.eval(expr, emitted).map_err(VmError::Runtime)
 }
 
 /// Binds a fetched item and returns `body`, or (no item) ends the loop, restoring the names
-/// in order, and returns `exit`.
+/// in order, and returns `exit`. A global loop has nothing to restore: Chameleon's restore
+/// code refers to backups it never made, a `NameError` for the first name.
 fn bind_or_exit<R: Runtime>(
     st: &mut VmState<R::Value>,
     rt: &mut R,
@@ -1093,12 +1301,16 @@ fn bind_or_exit<R: Runtime>(
     exit: usize,
 ) -> Result<usize, VmError<R::Error>> {
     if let Some(item) = item {
-        rt.assign(&li.names, item).map_err(VmError::Runtime)?;
+        rt.assign(&li.names, item, li.visibility).map_err(VmError::Runtime)?;
         return Ok(body);
     }
     let Some(Unwind::Loop { backups, .. }) = st.unwind.pop() else {
         return Err(VmError::Internal("loop exit without its loop"));
     };
+    if li.visibility == Visibility::Global {
+        let first = li.names.first().copied().ok_or(VmError::Internal("loop without names"))?;
+        return Err(VmError::Runtime(rt.missing_backup(first)));
+    }
     for (&name, backup) in li.names.iter().zip(backups) {
         rt.restore(name, backup).map_err(VmError::Runtime)?;
     }

@@ -132,8 +132,6 @@ case('repeat restore global', '<div tal:repeat="x [1]">${x}</div>${x}', x='g')
 
 DEFERRED = {
     'walrus': 'Phase 8: Chameleon raises SyntaxError from its generated code, we a TypeError',
-    'tal:replace': 'Phase 4/6a: tal:replace',
-    'doctype': 'Phase 3: declarations',
 }
 
 

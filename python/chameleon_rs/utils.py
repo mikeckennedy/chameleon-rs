@@ -1,7 +1,8 @@
 # Ported from Chameleon's src/chameleon/utils.py (callablestr, callableint, descriptorstr,
-# descriptorint, Markup, _resolve_dotted / resolve_dotted, and the encoding sniffing:
-# xml_prefixes, read_encoded, read_bytes, detect_encoding, read_xml_encoding), modified: only
-# the helpers chameleon-rs needs so far, with type annotations.
+# descriptorint, Markup, _resolve_dotted / resolve_dotted, safe_native, limit_string,
+# value_repr, create_formatted_exception, and the encoding sniffing: xml_prefixes,
+# read_encoded, read_bytes, detect_encoding, read_xml_encoding), modified: only the helpers
+# chameleon-rs needs so far, with type annotations.
 """Small helpers shared by the template runtime, and template encoding sniffing.
 
 The sniffing stays in Python on purpose (see docs/architecture.md, "Phase 3 amendments"):
@@ -12,9 +13,12 @@ names), and the regexes are Python's, so the behaviour is Chameleon's by constru
 from __future__ import annotations
 
 import codecs
+import logging
 import re
 from collections.abc import Callable, Iterator
 from typing import Any
+
+log = logging.getLogger('chameleon.utils')
 
 
 def encode_string(s: str) -> bytes:
@@ -196,3 +200,73 @@ def scope_iter(scope: dict[str, Any], root: dict[str, Any] | None) -> Iterator[s
         for key in root:
             if not dict.__contains__(scope, key):
                 yield key
+
+
+def safe_native(s: str | bytes, encoding: str = 'utf-8') -> str:
+    if not isinstance(s, str):
+        s = bytes.decode(s, encoding, 'replace')
+    return s
+
+
+def limit_string(s: str, max_length: int = 53) -> str:
+    if len(s) > max_length:
+        return s[: max_length - 3] + '...'
+
+    return s
+
+
+def value_repr(value: object) -> str:
+    """How a template's arguments are shown in a render error (``BaseTemplate.value_repr``)."""
+    if isinstance(value, str):
+        short = limit_string(value)
+        return short.replace('\n', '\\n')
+    if isinstance(value, (int, float)):
+        return value  # type: ignore[return-value]
+    if isinstance(value, dict):
+        return '{...} (%d)' % len(value)  # noqa: UP031 - Chameleon's formatting
+
+    try:
+        # Chameleon's trailing comma: the name is shown as a one-element tuple.
+        name = (str(getattr(value, '__name__', None)),)
+    except:  # noqa: E722 - as in Chameleon
+        name = '-'  # type: ignore[assignment]
+
+    return f'<{type(value).__name__} {name} at {hex(abs(id(value)))}>'
+
+
+def create_formatted_exception(
+    exc: BaseException,
+    cls: type[object],
+    formatter: Callable[..., str],
+    base: type[BaseException] = Exception,
+) -> BaseException:
+    """A copy of ``exc`` whose class derives from ``cls`` and ``base`` (so ``except KeyError``
+    still catches it) and whose ``__str__`` is ``formatter``."""
+    try:
+        try:
+            new = type(
+                cls.__name__,
+                (cls, base),
+                {
+                    '__str__': formatter,
+                    '_original__str__': exc.__str__,
+                    '__new__': BaseException.__new__,
+                    '__module__': cls.__module__,
+                },
+            )
+        except TypeError:
+            new = cls
+
+        inst: BaseException
+        try:
+            inst = BaseException.__new__(new)  # type: ignore[type-var]
+        except TypeError:
+            inst = cls.__new__(new)  # type: ignore[call-overload]
+
+        BaseException.__init__(inst, *exc.args)
+        inst.__dict__ = exc.__dict__
+        return inst
+    except ValueError:
+        name = type(exc).__name__
+        log.warning("Unable to copy exception of type '%s'.", name)
+        raise TypeError(exc) from None

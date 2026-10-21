@@ -13,7 +13,7 @@ pub struct Output {
 }
 
 /// A position in the output, for rolling back (`tal:on-error`, dropped attributes).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Mark(usize);
 
 impl Output {
@@ -54,6 +54,7 @@ impl Output {
         Mark(self.buf.len())
     }
 
+    /// Drops everything after `mark` (nothing if the buffer is already shorter).
     pub fn truncate(&mut self, mark: Mark) {
         self.buf.truncate(mark.0);
     }

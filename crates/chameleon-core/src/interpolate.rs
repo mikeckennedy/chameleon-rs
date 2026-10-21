@@ -38,6 +38,8 @@ pub(crate) fn interpolate<C: ExprCompiler>(
     let mut parts = Vec::new();
     let end = src.len();
     let mut t = 0;
+    // Chameleon's `body`: whether an earlier `${...}` produced code.
+    let mut body = false;
     while t < end {
         let rest = &src[t..];
         let Some((m_start, close)) = search(rest) else {
@@ -56,6 +58,12 @@ pub(crate) fn interpolate<C: ExprCompiler>(
                 continue;
             }
         }
+        if body && text.pos.is_none() {
+            // The target name of a later expression is `"%s_%d" % (name, text.pos)`, and a
+            // plain `str` (a processing instruction's text) has no `pos`.
+            return Err(CompileError::new(ErrorKind::Attribute, "'str' object has no attribute 'pos'", Tok::plain("")));
+        }
+        body = true;
         let mut close_abs = t + close - m_start;
         loop {
             let expr = text.slice(start + 2, close_abs);

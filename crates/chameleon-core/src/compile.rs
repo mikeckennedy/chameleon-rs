@@ -1,13 +1,14 @@
 // Ported from Chameleon's src/chameleon/compiler.py (`Compiler.visit` text coalescing,
 // `visit_Start`, `visit_End`, `visit_Attribute`, `visit_DictAttributes`, `visit_Define`,
-// `visit_Repeat`, `visit_Condition`, `visit_Content`, `visit_Cache`, `visit_Cancel`), modified:
+// `visit_Repeat`, `visit_Condition`, `visit_Content`, `visit_Cache`, `visit_Cancel`,
+// `visit_OnError`, `visit_CodeBlock`), modified:
 // lowers the program tree to bytecode instead of generating Python source.
 
 //! Lowering the program tree to bytecode: static text coalesced into one instruction per
 //! run, attribute prefixes and suffixes precomputed.
 //!
-//! Node kinds the VM does not run yet (macros, slots, i18n, `on-error`, code blocks) stop
-//! compilation with `UnsupportedError`.
+//! Node kinds the VM does not run yet (macros, slots, i18n) stop compilation with
+//! `UnsupportedError`.
 
 use std::convert::Infallible;
 
@@ -167,14 +168,11 @@ impl Lower<'_> {
                 }
             }
             Node::Repeat(r) => {
-                if r.visibility == Visibility::Global {
-                    return Err(unsupported("A global tal:repeat"));
-                }
                 let expr = self.expr(&r.expr)?;
                 let names = r.names.iter().map(|n| self.name(&n.text)).collect::<LResult<Vec<_>>>()?;
                 let whitespace = self.intern(r.whitespace.as_bytes())?;
                 let info = index(self.tables.loops.len())?;
-                self.tables.loops.push(LoopInfo { names, whitespace });
+                self.tables.loops.push(LoopInfo { names, whitespace, visibility: r.visibility });
                 let start = self.op(Op::LoopStart { info, expr, next: 0 })?;
                 self.node(&r.body)?;
                 let body = index(start + 1)?;
@@ -204,8 +202,26 @@ impl Lower<'_> {
                     *n = no_match;
                 }
             }
-            Node::OnError { .. } => return Err(unsupported("tal:on-error")),
-            Node::CodeBlock(code) => return Err(CompileError::unsupported("A <?python ?> code block", &code.source)),
+            Node::OnError { fallback, body } => {
+                // `try: body except Exception: bind error; handler; truncate; fallback`.
+                let name = self.name("error")?;
+                let at = self.op(Op::Try { handler: 0, name })?;
+                self.node(body)?;
+                let leave = self.op(Op::EndTry { end: 0 })?;
+                let handler = self.here()?;
+                self.node(fallback)?;
+                let end = self.here()?;
+                if let Some(Op::Try { handler: h, .. }) = self.ops.get_mut(at) {
+                    *h = handler;
+                }
+                if let Some(Op::EndTry { end: e }) = self.ops.get_mut(leave) {
+                    *e = end;
+                }
+            }
+            Node::CodeBlock(code) => {
+                let expr = self.expr(code)?;
+                self.op(Op::Exec { expr })?;
+            }
             Node::Translate { msgid, .. } => return Err(CompileError::unsupported("i18n:translate", msgid)),
             Node::Name { name, .. } => return Err(CompileError::unsupported("i18n:name", name)),
             Node::Domain { name, .. } => return Err(CompileError::unsupported("i18n:domain", name)),
@@ -228,7 +244,9 @@ impl Lower<'_> {
         let expr = self.expr(&c.expr)?;
         let esc = if c.kind == ContentKind::Structure { Escape::Structure } else { Escape::Content };
         let Some(default) = &c.default else {
-            return Err(CompileError::unsupported("tal:on-error", &c.expr.source));
+            // An `on-error` fallback: no default, so the marker is an ordinary object.
+            self.op(Op::Emit { expr, esc, stage: Stage::Content })?;
+            return Ok(());
         };
         let at = self.op(Op::Content { expr, esc, end: 0 })?;
         self.node(default)?;

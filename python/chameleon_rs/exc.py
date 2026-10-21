@@ -1,9 +1,21 @@
-# Ported from Chameleon's src/chameleon/exc.py (the TemplateError hierarchy), modified: errors
-# carry a code-point offset and location computed by the Rust core instead of a Token, and
-# the message format is simplified until Phase 7 ports ExceptionFormatter.
+# Ported from Chameleon's src/chameleon/exc.py (the TemplateError hierarchy, RenderError,
+# compute_source_marker, iter_source_marker_lines, ellipsify, ExceptionFormatter) and
+# template.py (`BaseTemplate.render`'s error handler, as `render_error`), modified: compile
+# errors carry a code-point offset and location computed by the Rust core instead of a Token
+# (their message format is simplified until Phase 7), and the render error handler is
+# called by the native render on its error path.
 """Exceptions raised by chameleon-rs."""
 
 from __future__ import annotations
+
+import traceback
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from typing import Any
+
+from chameleon_rs.utils import create_formatted_exception, safe_native, value_repr
+
+# Chameleon's `config.SOURCE_EXPRESSION_MARKER_LENGTH`.
+SOURCE_EXPRESSION_MARKER_LENGTH = 60
 
 
 class TemplateError(Exception):
@@ -60,3 +72,219 @@ class UnsupportedError(CompilationError, NotImplementedError):
 
 class InternalError(RuntimeError):
     """A bug in chameleon-rs (a Rust panic), raised instead of crashing the process."""
+
+
+class RenderError(Exception):
+    """An error raised during rendering.
+
+    This class is used as a mixin which is added to the original exception.
+    """
+
+
+def compute_source_marker(line: str, column: int, expression: str, size: int) -> tuple[str, str]:
+    """Computes source marker location string.
+
+    >>> def test(l, c, e, s):
+    ...     s, marker = compute_source_marker(l, c, e, s)
+    ...     out = s + '\\n' + marker
+    ...
+    ...     # Replace dot with middle-dot to work around doctest ellipsis
+    ...     print(out.replace('...', '···'))
+
+    >>> test('foo bar', 4, 'bar', 7)
+    foo bar
+        ^^^
+
+    >>> test('foo ${bar}', 4, 'bar', 10)
+    foo ${bar}
+          ^^^
+
+    >>> test('  foo bar', 6, 'bar', 6)
+    ··· oo bar
+           ^^^
+
+    >>> test('  foo bar baz  ', 6, 'bar', 6)
+    ··· o bar ···
+          ^^^
+
+    The entire expression is always shown, even if ``size`` does not
+    accommodate for it.
+
+    >>> test('  foo bar baz  ', 6, 'bar baz', 10)
+    ··· oo bar baz
+           ^^^^^^^
+
+    >>> test('      foo bar', 10, 'bar', 5)
+    ··· o bar
+          ^^^
+
+    >>> test('      foo bar', 10, 'boo', 5)
+    ··· o bar
+          ^
+
+    """
+
+    s = line.lstrip()
+    column -= len(line) - len(s)
+    s = s.rstrip()
+
+    try:
+        i = s[column:].index(expression)
+    except ValueError:
+        # If we can't find the expression (this shouldn't happen), simply use a standard
+        # size marker
+        marker = '^'
+    else:
+        column += i
+        marker = '^' * len(expression)
+
+    if len(expression) > size:
+        offset = column
+        size = len(expression)
+    else:
+        window = (size - len(expression)) / 2.0
+        f_offset = column - window
+        f_offset -= min(3, max(0, column + window + len(expression) - len(s)))
+        offset = int(f_offset)
+
+    if offset > 0:
+        s = s[offset:]
+        r = s.lstrip()
+        d = len(s) - len(r)
+        s = '... ' + r
+        column += 4 - d
+        column -= offset
+
+        # This also adds to the displayed length
+        size += 4
+
+    if len(s) > size:
+        s = s[:size].rstrip() + ' ...'
+
+    return s, column * ' ' + marker
+
+
+def iter_source_marker_lines(source: Iterable[str], expression: str, line: int, column: int) -> Iterator[str]:
+    for i, source_line in enumerate(source):
+        if i + 1 != line:
+            continue
+
+        s, marker = compute_source_marker(source_line, column, expression, SOURCE_EXPRESSION_MARKER_LENGTH)
+
+        yield ' - Source:     %s' % s  # noqa: UP031 - Chameleon's formatting
+        yield '               %s' % marker  # noqa: UP031
+        break
+
+
+def ellipsify(string: str, limit: int) -> str:
+    if len(string) > limit:
+        return '... ' + string[-(limit - 4) :]
+
+    return string
+
+
+class ExceptionFormatter:
+    """The ``__str__`` of a render error: the original message, then where it happened
+    (expression, filename, location and, for files, the source line) and the template's
+    arguments."""
+
+    def __init__(
+        self,
+        errors: list[tuple[str, int, int, str, BaseException]],
+        econtext: Mapping[str, object],
+        rcontext: dict[str, Any],
+        value_repr: Callable[[object], str],
+    ) -> None:
+        kwargs = rcontext.copy()
+        kwargs.update(econtext)
+
+        for name in tuple(kwargs):
+            if name.startswith('__'):
+                del kwargs[name]
+
+        self._errors = errors
+        self._kwargs = kwargs
+        self._value_repr = value_repr
+
+    def __call__(self) -> str:
+        # Format keyword arguments; consecutive arguments are indented for readability
+        formatted_args = [f'{name}: {self._value_repr(value)}' for name, value in self._kwargs.items()]
+
+        for index, string in enumerate(formatted_args[1:]):
+            formatted_args[index + 1] = ' ' * 15 + string
+
+        out = []
+
+        for error in self._errors:
+            expression, line, column, filename, exc = error
+
+            if isinstance(exc, UnicodeDecodeError) and exc.object is not None:
+                string = safe_native(exc.object)
+                s, marker = compute_source_marker(
+                    string, exc.start, string[exc.start : exc.end], SOURCE_EXPRESSION_MARKER_LENGTH
+                )
+
+                out.append(' - Stream:     %s' % s)  # noqa: UP031 - Chameleon's formatting
+                out.append('               %s' % marker)  # noqa: UP031
+
+            _filename = ellipsify(filename, 60) if filename else '<string>'
+
+            out.append(' - Expression: "%s"' % expression)  # noqa: UP031
+            out.append(' - Filename:   %s' % _filename)  # noqa: UP031
+            out.append(' - Location:   (line %d: col %d)' % (line, column))  # noqa: UP031
+
+            if filename and not filename.startswith('<') and line and column:
+                try:
+                    f = open(filename)  # noqa: SIM115 - as in Chameleon
+                except OSError:
+                    pass
+                else:
+                    lines = iter_source_marker_lines(iter(f), expression, line, column)
+                    try:
+                        out.extend(lines)
+                    finally:
+                        f.close()
+
+        out.append(' - Arguments:  %s' % '\n'.join(formatted_args))  # noqa: UP031
+
+        if isinstance(exc.__str__, ExceptionFormatter):
+            # This is a nested error that has already been wrapped. We must unwrap it before
+            # trying to format it to prevent recursion
+            exc = create_formatted_exception(exc, type(exc), exc._original__str__)  # type: ignore[attr-defined]
+        formatted = traceback.format_exception_only(type(exc), exc)[-1]
+        formatted_class = f'{type(exc).__name__}:'
+
+        if formatted.startswith(formatted_class):
+            formatted = formatted[len(formatted_class) :].lstrip()
+
+        return '\n'.join(map(safe_native, [formatted, *out]))
+
+
+def render_error(
+    exc: BaseException,
+    errors: list[tuple[str, int, int, str, BaseException]],
+    econtext: Mapping[str, object],
+    rcontext: dict[str, Any],
+    builtins: Mapping[str, Any],
+) -> BaseException:
+    """`BaseTemplate.render`'s handler for an error that ended a render whose frames recorded
+    where it happened: the exception to raise instead (a `RenderError` subclass of its class
+    with the formatted message), or ``exc`` itself if it already carries a formatter (that
+    formatter then also shows these errors) or cannot be copied."""
+    formatter = exc.__str__
+    if isinstance(formatter, ExceptionFormatter):
+        if errors is not formatter._errors:
+            formatter._errors.extend(errors)
+        return exc
+
+    template = builtins.get('template')
+    represent = getattr(template, 'value_repr', value_repr)
+    formatter = ExceptionFormatter(errors, econtext, rcontext, represent)
+    try:
+        new = create_formatted_exception(exc, type(exc), formatter, RenderError)
+    except TypeError:
+        return exc
+    # Raised inside Chameleon's `except` block, with the original traceback.
+    new.__traceback__ = exc.__traceback__
+    new.__context__ = exc
+    return new

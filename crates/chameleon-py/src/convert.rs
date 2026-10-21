@@ -45,6 +45,9 @@ pub(crate) fn emit<'py>(
     stage: Stage,
     out: &mut Output,
 ) -> PyResult<Emitted> {
+    if stage == Stage::Bool {
+        return emit_bool(cx, value, esc, out);
+    }
     let other = match quote(cx, value, esc, true, out)? {
         Quoted::Nothing => return Ok(Emitted::Nothing),
         Quoted::Written => return Ok(Emitted::Value),
@@ -67,7 +70,34 @@ pub(crate) fn emit<'py>(
             write_raw(&other.str()?, out)?;
             Ok(Emitted::Value)
         }
+        // Handled above.
+        Stage::Bool => Err(pyo3::exceptions::PyRuntimeError::new_err("boolean stage reached the general conversion")),
     }
+}
+
+/// A boolean attribute's lone interpolation, whose value is true (`visit_Attribute` with
+/// `literal_false=False`): `v = __quote(v)`, then `if not v: None; elif v is marker: None;
+/// else: emit_convert(v)`, then `if v: v = name`, then `if v is not None: ' name="%s"' % v`.
+/// So a true result is the name; a false one that is not `None` (an `__html__` returning
+/// `0` or `''`) is written as text.
+fn emit_bool<'py>(cx: &Cx<'_, 'py>, value: &Bound<'py, PyAny>, esc: Escape, out: &mut Output) -> PyResult<Emitted> {
+    let before = out.mark();
+    let other = match quote(cx, value, esc, true, out)? {
+        Quoted::Nothing => return Ok(Emitted::Nothing),
+        // A `str`, escaped: true unless empty.
+        Quoted::Written => return Ok(if out.mark() == before { Emitted::Nothing } else { Emitted::True }),
+        Quoted::Other(other) => other,
+    };
+    if !other.is_truthy()? {
+        return Ok(Emitted::Nothing);
+    }
+    let Some(converted) = convert(cx, &other, esc.drops_default())? else { return Ok(Emitted::Nothing) };
+    if converted.is_truthy()? {
+        return Ok(Emitted::True);
+    }
+    let text = intern!(value.py(), "%s").rem(&converted)?;
+    write_raw(text.cast::<PyString>()?, out)?;
+    Ok(Emitted::Value)
 }
 
 /// `__quote(value, quote, entity, None, None)` with the result appended (a `tal:attributes`

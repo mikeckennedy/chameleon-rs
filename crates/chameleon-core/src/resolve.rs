@@ -228,8 +228,16 @@ impl<'t, C: ExprCompiler> Resolver<'t, C> {
                     let engine = Engine { marker: true, ..Engine::default() };
                     self.with_engine(engine, |r| r.cache(dict, false))?;
                 }
+                let cached = e.start.dicts().count();
                 for attr in &e.start.attrs {
                     match attr {
+                        // An `on-error` fallback keeps only the static attributes, with the
+                        // filters that refer to the element's dictionaries, which the fallback
+                        // never caches: Chameleon's compiler then uses `None` as an AST node.
+                        Attr::Static { filters, .. } if !filters.is_empty() && cached == 0 => {
+                            let message = "'NoneType' object has no attribute '_fields'";
+                            return Err(CompileError::new(ErrorKind::Attribute, message, Tok::plain("")));
+                        }
                         Attr::Static { .. } | Attr::Dict { .. } => {}
                         Attr::Dynamic { value, filters, default, .. } => {
                             // A filtered value is checked before it is written, so it is not
