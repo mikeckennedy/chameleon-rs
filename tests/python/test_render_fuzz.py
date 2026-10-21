@@ -105,7 +105,6 @@ EXPR = st.sampled_from(
         'msg',
         's.upper()',
         "d.get('a')",
-        'econtext',
         "ctx.__setitem__('x', 'w')",
     ]
 )

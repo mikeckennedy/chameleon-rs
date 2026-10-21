@@ -874,11 +874,17 @@ back to that Python whenever its preconditions do not hold. Measurements: plan.m
   (`Program::mark_scope_sharing`, `shares_scope(entry)`). A call to such a function passes
   the caller's scope itself instead of `econtext.copy()`. Equivalence: the copy holds the
   caller's local items and shares its root, so every lookup gives the same value, and neither
-  side is written while the callee runs. One deliberate edge: a body that mutates a scope it
-  captured earlier as a value (`tal:define="ctx econtext"` in the caller, then
-  `ctx.update(...)` inside the macro, through a method call, which is not an `econtext`
-  expression) sees the change in the shared case where Chameleon's snapshot would not; no
-  real template is known to do this.
+  side is written while the callee runs, as long as no user code holds a scope object: an
+  alias (`tal:define="ctx econtext"`, then `ctx.__setitem__(...)` in the body, a method call
+  that is not an `econtext` expression) would write the shared scope where Chameleon writes
+  the caller's and reads the copy. So the render context records when a scope reaches user
+  code (`RenderCtx::scope_exposed`: `econtext` as a value, a code block's namespace, a custom
+  expression type, a fallback whose free variables are unknown, a render with a given scope
+  (`render_scope`), a macro or slot body called from outside through `include`), and from then
+  on every call copies (`Macros::may_share_scope`; checked at `UseMacro`, `CallMacro` and
+  `DefineSlot`). The architect's review found the alias case; tests in `test_macros.py` (the
+  alias across templates and within one, through a code block, in a slot body, and a foreign
+  `include`).
 - **`PageTemplate.render` natively** (`_native.render_page`, D7): the same steps in the same
   order (defaults, `cook_check()`, the `_render` protocol in Python via `_render_protocol`,
   then the scope from the keywords, the missing defaults and a fresh `RepeatDict`). Defaults
@@ -894,22 +900,37 @@ back to that Python whenever its preconditions do not hold. Measurements: plan.m
 - **Conversions (D6).** `structure:`'s exact `Markup` is written from its own text (its
   `__html__` is `str(self)`); with the default translation function (`simple_translate`,
   checked by identity, so an `encoding` wrapper or a user function takes the call), a
-  non-string value converts by reading its `default` and `mapping` attributes natively, the
-  function itself being called only for a true `mapping` (then those attributes are read
-  twice); exact `callableint`/`callablestr` skip the attribute reads (their classes have
+  non-string value converts by reading its `default` and `mapping` attributes natively, once
+  each, a true `mapping` being interpolated by `chameleon_rs.i18n._interpolate` with the values
+  read (the regex substitution itself); exact `callableint`/`callablestr` skip the attribute reads (their classes have
   none). Escaping finds gate and replaced characters eight bytes at a time (SWAR in safe
   Rust; a property test checks it against the byte rule); the output buffer gets an eighth
   of headroom over the last size.
 - **Method calls (D4).** `obj.name()` / `obj.name(c1, c2)` with constant arguments use
-  `PyObject_VectorcallMethod` (no bound method). Constants cannot fail or have effects, so
-  looking the method up after them changes nothing. An `AttributeError` when `obj` has no
-  attribute `name` takes `lookup_attr`'s `__getitem__` fallback; otherwise it came from the
-  call and propagates. Only on that error path can a property getter run more than once.
+  `PyObject_VectorcallMethod` (no bound method) only when `obj` is an exact `str`, `dict`,
+  `list`, `tuple`, `int`, `float`, `bytes`, `set` or `frozenset` (no `__getattr__`, no
+  properties, reads without effects). Constants cannot fail or have effects, so looking the
+  method up after them changes nothing; an `AttributeError` when `obj` has no attribute
+  `name` takes `lookup_attr`'s `__getitem__` fallback, otherwise it came from the call. Every
+  other receiver is looked up once with `lookup_attr` and called, exactly as before (the
+  first version used the method call for all receivers, which ran `__getattr__` three times
+  where Chameleon runs it once; found in review).
+- **Caches compare by identity.** The cached render defaults (`_defaults_key` in
+  `render_page`, `_encoded_defaults` for an `encoding`/`translate` argument) are reused only
+  when the translation function, encoding and settings are the same objects: two translators
+  that compare equal (one per language) must each be used (found in review; the Phase 7 key
+  compared with `!=`).
+- **Notes.** The `Markup` fast path does not look at an instance attribute `__html__` (only
+  reachable by assigning one on a `structure:` result inside the render). `render_page`
+  requires `_render_defaults` to return a `dict`, as ours does. Two Python-expression
+  differences predate Phase 10 and stay: `eval('econtext')` and `'econtext' in locals()` in a
+  fallback expression (Chameleon's render function has `econtext` as a local).
 - **Startup.** `chameleon_rs.__version__` is resolved on first access (module
   `__getattr__`); `importlib.metadata` is imported only when used.
 - **PGO** (D12): `make build-pgo` (instrumented build, `bench/pgo_train.py`, `llvm-profdata`
   from rustup's `llvm-tools`, optimised build); about 10% faster on every benchmark; a CI
-  job builds and tests it. Release wheels (Phase 12) should be built this way. No
+  job builds and tests it; the build fails if LLVM reports the profile out of date (a stale
+  profile silently loses the gain), and its `RUSTFLAGS` replace any configured rustflags. Release wheels (Phase 12) should be built this way. No
   `chameleon-capi` crate was needed: no measured gap required `unsafe`.
 
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell

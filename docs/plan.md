@@ -1059,18 +1059,37 @@ Done, each measured (same-process A/B, `bench/bench_ab.py`, interleaved, medians
    (not yet run in CI); Phase 12's wheels should use it. Profiles are not byte-identical
    between runs, so neither are the binaries.
 
-Results (release, load average 8-11 during the runs; Chameleon from the same run):
+Results, plain release builds (no PGO), after the review fixes: `bench_ab.py a7bd81a`, 8
+interleaved rounds per scenario, load average 4.5 before and 3.5 after; Chameleon from the
+same run. Ratios are for the plain release build: quote PGO ratios only for builds that ship
+PGO (with PGO, a further ~10%: listing 415 ns, macro 635 ns, app page 61 us, report 1.31 ms,
+measured before the review fixes at load 8-10).
 
-| Scenario | a7bd81a | Phase 10 | Phase 10 + PGO | Chameleon | Ratio (PGO) |
-|---|---|---|---|---|---|
-| Listing, ns per item | 513 | 475 | 415 | 3,086 | 7.3x |
-| Partial listing (native prototype), ns per item | 666 | 654-680 | - | 7,300 | 10.9x (no PGO) |
-| Macro call filling a slot, ns per item | 1,105 | 735 | 635 | 5,292 | 7.9x (8.3x) |
-| Translated element, ns per item | 2,305 | 1,520 | - | 2,870 | 1.9x (no PGO) |
-| Layout page (50 videos), us | 28.8 | 27.0 | - | 164 | 6.1x (no PGO) |
-| App page, inline cards, us | 88.9 | 77.0 | 61.1 | 313 | 5.1x |
-| App report page (1,000-row partial), ms | 1.87 | 1.53 | 1.31 | 4.5-5.7 | 3.4-4.3x |
-| chameleon_partials via compat, ns per item | ~3,130 | 2,500 | - | 7,300 | 2.9x (no PGO) |
+| Scenario | a7bd81a | Phase 10 | Chameleon | Ratio |
+|---|---|---|---|---|
+| Listing, ns per item | 469 | 431 | 2,835 | 6.6x |
+| Macro call filling a slot, ns per item | 1,080 | 676 | 4,648 | 6.9x |
+| App page, inline cards, us | 82.4 | 69.6 | 301 | 4.3x |
+| App report page (1,000-row partial), ms | 1.74 | 1.40 | 4.87 | 3.5x |
+| Translated element, ns per item (bench_macros) | 2,305 | 1,520 | 2,870 | 1.9x |
+| Native partial listing, ns per item (bench_skeleton) | 666 | 654-680 | 7,300 | 10.9x |
+| chameleon_partials via compat, ns per item | ~3,130 | 2,500 | 7,300 | 2.9x |
+
+(The last three rows are from separate runs at load 8-11, before the review fixes.)
+
+Review fixes (2026-10-21, after the Rust Architect's review; each checked against stock
+Chameleon first): the render-defaults caches compared translators by equality, so a second
+render with an equal but different translator used the first's (now by identity); the method
+call fast path ran `__getattr__` three times (now only for exact builtin receivers); sharing
+the caller's scope was observable through an `econtext` alias (now no sharing once a scope has
+reached user code); a message value's `default`/`mapping` are read once; the escape property
+test covers unquoted attributes (4,096 cases, up to 80 bytes); the render fuzzers generate
+`econtext` aliases, application objects, message values and per-render equal translators;
+`make build-pgo` fails on a stale profile. Fuzz after the fixes: 20,000 examples per
+generator (render, macro/i18n, expression), no differences (the expression fuzzer's address
+normalization now ignores case). Tests: 2,569 pytest passed, 7 skipped, 3 strict xfails;
+upstream 227 on each engine; 93 + 6 Rust tests. The page and report scenarios keep their gains
+after the fixes (table above).
 
 The report page is shaped like the owner's heaviest pages (properties, small helpers, a method
 call and `structure:` per row): there the remaining time is the application's own Python
@@ -1115,6 +1134,11 @@ during an async render under 1 ms; no failures under the free-threaded stress su
 
 Wheels for macOS, Linux and Windows (maturin), docs, a migration guide, the free-threading
 classifier.
+
+Must fix before release: the slot-ordering difference the Phase 10 fuzz run found (an
+extend-macro whose slot sits in an `i18n:name`, with a recursive translated fill:
+`test_macros.test_extended_slot_inside_a_name_with_a_recursive_translated_fill`, a strict
+xfail; present since Phase 8). Wheels are built with `make build-pgo`.
 
 ## Risks
 

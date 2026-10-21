@@ -9,7 +9,8 @@ from typing import Any
 import chameleon
 import chameleon_rs
 
-ADDRESS = re.compile(r'0x[0-9a-fA-F]+')
+ADDRESS = re.compile(r'0x[0-9a-f]+', re.IGNORECASE)
+PACKAGE = re.compile(r'chameleon_rs\.', re.IGNORECASE)
 
 
 def attribute_text(expression: str) -> str:
@@ -24,7 +25,8 @@ def canon(text: str) -> str:
     # A few messages print the scope's type fully qualified (`module.qualname`); ours is a
     # native class in `chameleon_rs._native`, Chameleon's the Python class in `chameleon.utils`.
     text = text.replace('chameleon_rs._native.Scope', 'chameleon.utils.Scope')
-    return text.replace('chameleon_rs.', 'chameleon.')
+    # Case-insensitive: an expression may upper-case a repr (`str(repeat).upper()`).
+    return PACKAGE.sub(lambda m: m.group(0)[:9] + '.', text)
 
 
 def describe_value(value: Any) -> tuple[str, str]:
