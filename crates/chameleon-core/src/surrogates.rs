@@ -78,7 +78,8 @@ impl Wtf8Buf {
     /// `bytes`, if it is UTF-8 apart from `surrogatepass` sequences.
     #[must_use]
     pub fn from_bytes(bytes: Vec<u8>) -> Option<Self> {
-        let valid = chars(&bytes).all(|c| c.is_some());
+        // Almost always plain UTF-8: one validation pass.
+        let valid = std::str::from_utf8(&bytes).is_ok() || chars(&bytes).all(|c| c.is_some());
         valid.then_some(Self(bytes))
     }
 
@@ -144,19 +145,28 @@ enum Piece {
 }
 
 /// The characters of WTF-8 text; `None` for an invalid sequence that is not a surrogate's.
+/// Each valid run is validated once (linear in the length).
 fn chars(bytes: &[u8]) -> impl Iterator<Item = Option<Piece>> + '_ {
     let mut rest = bytes;
+    let mut run = "".chars();
     std::iter::from_fn(move || {
+        if let Some(c) = run.next() {
+            return Some(Some(Piece::Char(c)));
+        }
         if rest.is_empty() {
             return None;
         }
-        let valid = match std::str::from_utf8(rest) {
-            Ok(s) => s,
-            Err(e) => std::str::from_utf8(&rest[..e.valid_up_to()]).unwrap_or_default(),
+        let (valid, tail) = match std::str::from_utf8(rest) {
+            Ok(s) => (s, &rest[rest.len()..]),
+            Err(e) => {
+                let (head, tail) = rest.split_at(e.valid_up_to());
+                (std::str::from_utf8(head).unwrap_or_default(), tail)
+            }
         };
-        if let Some(c) = valid.chars().next() {
-            rest = &rest[c.len_utf8()..];
-            return Some(Some(Piece::Char(c)));
+        if !valid.is_empty() {
+            rest = tail;
+            run = valid.chars();
+            return run.next().map(|c| Some(Piece::Char(c)));
         }
         let piece = match rest {
             [0xED, b1, b2, ..] if (0xA0..=0xBF).contains(b1) && (0x80..=0xBF).contains(b2) => {
