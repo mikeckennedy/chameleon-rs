@@ -24,7 +24,6 @@ import builtins as _builtins_module
 import datetime
 import hashlib
 import importlib
-import importlib.metadata
 import logging
 import os
 import pathlib
@@ -96,6 +95,8 @@ PROGRAM_OPTIONS = (
 
 
 def safe_get_package_version(name: str) -> str | None:
+    import importlib.metadata  # imported when used: ~6 ms at startup
+
     try:
         return importlib.metadata.version(name)
     except importlib.metadata.PackageNotFoundError:
@@ -103,6 +104,8 @@ def safe_get_package_version(name: str) -> str | None:
 
 
 def get_package_versions() -> list[tuple[str, str]]:
+    import importlib.metadata  # imported when used
+
     distributions = importlib.metadata.packages_distributions().values()
     versions = {x: safe_get_package_version(x) or '' for x in sum(distributions, [])}  # noqa: RUF017 - as in Chameleon
     return sorted(versions.items())

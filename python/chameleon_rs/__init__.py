@@ -6,18 +6,28 @@ The public API mirrors `chameleon` (PageTemplate, PageTemplateFile, PageTemplate
 written for Chameleon runs unchanged.
 """
 
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as _version
+from typing import Any
 
 from chameleon_rs._native import core_version
 from chameleon_rs.exc import TemplateError
 from chameleon_rs.template import PageTemplate, PageTemplateFile, PageTextTemplate, PageTextTemplateFile
 from chameleon_rs.zpt.loader import TemplateLoader as PageTemplateLoader
 
-try:
-    __version__ = _version('chameleon-rs')
-except PackageNotFoundError:  # pragma: no cover - running from a source tree
-    __version__ = '0+unknown'
+
+def __getattr__(name: str) -> Any:
+    # `__version__` is read from the installed metadata on first use: importing
+    # `importlib.metadata` and finding the distribution cost ~6 ms of every app's startup.
+    if name != '__version__':
+        raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        value = version('chameleon-rs')
+    except PackageNotFoundError:  # pragma: no cover - running from a source tree
+        value = '0+unknown'
+    globals()['__version__'] = value
+    return value
+
 
 __all__ = [
     'PageTemplate',
