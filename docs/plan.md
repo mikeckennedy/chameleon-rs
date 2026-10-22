@@ -1175,6 +1175,19 @@ renders of the same templates on 3.15t).
 Exit gate: the dashboard benchmark's concurrent render near its 25 ms ceiling; event-loop lag
 during an async render under 1 ms; no failures under the free-threaded stress suite.
 
+Render off the event loop (Michael, 2026-10-21): an opt-in `render_async(..., offload=True)` that runs the
+render on a worker thread and awaits it, and releases the GIL in the engine's pure-Rust stretches
+(`allow_threads`: escaping, buffer assembly, final UTF-8 encoding; consider gzip in Rust). Expectations, to
+check rather than assume:
+- On free-threaded 3.14t, renders run in parallel with the event loop and with each other. This is the
+  big potential win; it needs Granian and the app's dependencies to run on 3.14t.
+- On GIL builds, the gain is mainly fairness (the event loop gets the GIL back every switch interval, so
+  long renders stop freezing short requests and p99 drops), with little throughput gain, because most of a
+  real render is CPython work that needs the GIL.
+
+Measure sync, `render_async`, and `render_async` with offload on both builds: locust throughput, p50/p99
+and event-loop lag, including a mixed heavy-and-light page load.
+
 Real-app re-test: after this phase, repeat the owner's real-app crawl and the owner's locust load tests (many
 simultaneous requests against a single-threaded asyncio Granian worker): throughput, p50/p95/p99 latency
 and event-loop lag, chameleon-rs sync vs async vs stock Chameleon.
