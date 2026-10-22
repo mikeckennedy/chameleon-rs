@@ -39,7 +39,8 @@ replacement. Documentation: <https://mkennedy.codes/docs/chameleon-rs/>.
   Opt-in: `@chameleon_rs.concurrent` helpers and `concurrent=True` partial fan-out run
   concurrently; `render_async(..., offload=True)` renders in a worker thread (experimental).
 - **`markdown:` expressions** (opt-in, `configure(markdown=True)`): CommonMark plus the GitHub
-  extensions, converted in Rust, with no Markdown package to install.
+  extensions, converted in Rust, with no Markdown package to install. Raw HTML and unsafe
+  links are escaped by default, and in an attribute value the result is escaped like a string.
 - **Framework integrations**, each importing its framework only when imported itself, with no
   extras to install:
   - `chameleon_rs.flask` (Flask and Quart): chameleon-flask's API.

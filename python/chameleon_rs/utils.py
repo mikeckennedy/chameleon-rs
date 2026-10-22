@@ -170,6 +170,14 @@ class Markup(str):
         return f"s'{self}'"
 
 
+class MarkdownMarkup(Markup):
+    """What a ``markdown:`` expression returns: markup in element content, but escaped like any
+    string in an attribute value. Its HTML comes from untrusted text and has quoted attributes
+    of its own, which would close the attribute it sits in."""
+
+    __slots__ = ()
+
+
 module_cache: dict[str, Any] = {}
 
 

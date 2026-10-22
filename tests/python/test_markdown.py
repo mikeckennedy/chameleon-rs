@@ -66,7 +66,49 @@ def test_raw_html_is_escaped_by_default() -> None:
 
 
 def test_the_result_is_not_escaped_again() -> None:
-    assert md('<p title="${markdown: t}">x</p>', t='a & b') == '<p title="<p>a &amp; b</p>\n">x</p>'
+    assert md('<div>${markdown: t}</div>', t='a & b') == '<div><p>a &amp; b</p>\n</div>'
+
+
+ATTRIBUTE_SITES = [
+    '<img alt="${md: x}"/>',
+    "<img alt='${md: x}'/>",
+    '<img alt="a ${md: x} b"/>',
+    '<img tal:attributes="alt md: x"/>',
+    '<img tal:define="h md: x" alt="${h}"/>',
+    '<img tal:define="h md: x" tal:attributes="alt h"/>',
+    '<img tal:attributes="d"/>',
+]
+
+
+@pytest.mark.parametrize('source', ATTRIBUTE_SITES)
+def test_in_an_attribute_the_result_is_escaped(source: str) -> None:
+    # Security: Markdown's own `href="..."` would close the attribute, and the text could add
+    # an event handler (`onmouseover=...`) to the element.
+    x = '[a](onmouseover=alert(1)//)'
+    out = md(source, {'md': {'inline': True}}, x=x, d={'alt': chameleon_rs.utils.MarkdownMarkup('<a href="x">')})
+    tags = _tags(out)
+    assert [name for name, _ in tags] == ['img'], out
+    assert [name for name, _ in tags[0][1]] == ['alt'], out
+    assert '<a href=' in (tags[0][1][0][1] or ''), out
+
+
+def _tags(html: str) -> list[tuple[str, list[tuple[str, str | None]]]]:
+    from html.parser import HTMLParser
+
+    found: list[tuple[str, list[tuple[str, str | None]]]] = []
+
+    class Parser(HTMLParser):
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            found.append((tag, attrs))
+
+    Parser().feed(html)
+    return found
+
+
+def test_structure_keeps_markdown_raw_in_an_attribute() -> None:
+    # `structure` is the template author's explicit opt-in, as for any value.
+    out = md('<img alt="${structure: md: x}"/>', {'md': {'inline': True}}, x='*a*')
+    assert out == '<img alt="<em>a</em>"/>'
 
 
 def test_unsafe_urls_are_dropped_unless_raw_html_is_allowed() -> None:

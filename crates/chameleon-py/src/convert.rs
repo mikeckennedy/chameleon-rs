@@ -173,6 +173,11 @@ fn quote<'py>(
         write_str(value.cast::<PyString>()?, Escape::Structure, out)?;
         return Ok(Quoted::Written);
     }
+    if esc.drops_default() && is_markdown(value)? {
+        // Converted Markdown in an attribute: escaped, never markup (see `is_markdown`).
+        write_str(value.cast::<PyString>()?, esc, out)?;
+        return Ok(Quoted::Written);
+    }
     if value.is_exact_instance_of::<PyInt>() {
         if let Ok(n) = value.extract::<i64>() {
             let _ = write!(out, "{n}");
@@ -206,6 +211,19 @@ fn quote<'py>(
 }
 
 static MARKUP: pyo3::sync::PyOnceLock<Py<PyAny>> = pyo3::sync::PyOnceLock::new();
+static MARKDOWN: pyo3::sync::PyOnceLock<Py<PyAny>> = pyo3::sync::PyOnceLock::new();
+
+/// Whether the value is a `markdown:` result (`chameleon_rs.utils.MarkdownMarkup`): markup in
+/// content, but escaped in an attribute value. Its HTML is made from untrusted text and quotes
+/// its own attributes (`<a href="...">`), so written raw into `alt="..."` it would close that
+/// attribute and let the text add others (`onmouseover`).
+fn is_markdown(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let py = value.py();
+    let markdown = MARKDOWN.get_or_try_init(py, || {
+        Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs.utils"))?.getattr(intern!(py, "MarkdownMarkup"))?.unbind())
+    })?;
+    Ok(value.get_type().is(markdown.bind(py)))
+}
 
 /// `value.__html__()` if the value has the method (`None` if it has not). For an exact
 /// `chameleon_rs.utils.Markup` (what `structure:` makes), whose `__html__` is `str(self)`,
@@ -219,7 +237,7 @@ fn is_markup(value: &Bound<'_, PyAny>) -> PyResult<bool> {
 }
 
 fn html_of<'py>(value: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
-    if is_markup(value)? {
+    if is_markup(value)? || is_markdown(value)? {
         return Ok(Some(value.str()?.into_any()));
     }
     if crate::repeat::is_plain_callable(value)? {
@@ -457,7 +475,10 @@ pub(crate) fn convert_text<'py>(
         };
     };
     // `__quote(target, quote, quote_entity, default, default_marker)`.
-    let target = if value.is_exact_instance_of::<PyBytes>() {
+    let target = if esc.drops_default() && is_markdown(value)? {
+        // Converted Markdown in an attribute: escaped (see `is_markdown`).
+        value.clone()
+    } else if value.is_exact_instance_of::<PyBytes>() {
         decode(cx, value)?
     } else if value.is_exact_instance_of::<PyString>() {
         value.clone()

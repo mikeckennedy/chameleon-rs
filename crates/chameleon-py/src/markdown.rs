@@ -112,12 +112,12 @@ impl MarkdownProfile {
 static MARKUP: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 fn markup<'py>(py: Python<'py>, html: &str) -> PyResult<Bound<'py, PyAny>> {
-    let class =
-        MARKUP.get_or_try_init(py, || Ok::<_, PyErr>(py.import("chameleon_rs.utils")?.getattr("Markup")?.unbind()))?;
+    let class = MARKUP
+        .get_or_try_init(py, || Ok::<_, PyErr>(py.import("chameleon_rs.utils")?.getattr("MarkdownMarkup")?.unbind()))?;
     class.bind(py).call1((html,))
 }
 
-/// A `markdown:` value as markup: `None` and `''` render nothing, the `default` marker passes
+/// A `markdown:` value as markup (`MarkdownMarkup`, which attribute values escape): `None` and `''` render nothing, the `default` marker passes
 /// through (the element keeps its own content), other non-strings go through `str()`, and
 /// strings convert (cached). Lone surrogates, which UTF-8 can't hold, become U+FFFD.
 pub(crate) fn to_markup<'py>(
