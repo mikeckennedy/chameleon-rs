@@ -199,7 +199,10 @@ def render_corpus(stand_in: Any) -> tuple[int, int, list[str]]:
     differences = []
     for path in FILES:
         templates = [chameleon.PageTemplateFile(str(path)), chameleon_rs.PageTemplateFile(str(path))]
-        variables: dict[str, Any] = {}
+        # render_partial is a chameleon-rs builtin but a missing name on stock Chameleon (the apps pass
+        # chameleon_partials' function in the model). Bind it for both, as the apps do: keyword arguments
+        # override builtins, so both engines then take the same path.
+        variables: dict[str, Any] = {'render_partial': stand_in}
         while True:
             outcomes: list[tuple[Any, ...]] = []
             for template in templates:
