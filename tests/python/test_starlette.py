@@ -681,7 +681,6 @@ def test_decorator_render_keeps_the_original_libraries_lookup(folder: Path) -> N
 
 
 def test_missing_template_is_template_not_found(folder: Path) -> None:
-    import chameleon
 
     with pytest.raises(chameleon_rs.web.TemplateNotFound) as info:
         ours.Templates(directory=folder).TemplateResponse(blank_request(), 'nope.pt')
@@ -690,24 +689,32 @@ def test_missing_template_is_template_not_found(folder: Path) -> None:
     assert isinstance(info.value, chameleon_rs.web.TemplateError)
     assert str(info.value) == 'Template not found: nope.pt.'
     assert ours.TemplateNotFound is chameleon_rs.web.TemplateNotFound
-    # The loaders: Chameleon's message and a ValueError, as stock Chameleon's.
-    with pytest.raises(ValueError, match='nope') as stock:
-        chameleon.PageTemplateLoader(str(folder))['nope.pt']
-    with pytest.raises(chameleon_rs.web.TemplateNotFound) as native:
-        chameleon_rs.PageTemplateLoader(str(folder))['nope.pt']
-    assert str(native.value) == str(stock.value)
+    # From the configuration too.
+    chameleon_rs.configure(template_folder=str(folder))
+    with pytest.raises(chameleon_rs.web.TemplateNotFound):
+        ours.Templates().get_template('nope.pt')
 
 
-def test_missing_template_inside_a_render_reads_as_chameleons(folder: Path) -> None:
+def test_only_templates_raise_template_not_found(folder: Path) -> None:
+    # Everything else raises Chameleon's plain ValueError, with its message, as before.
     import chameleon
 
+    with pytest.raises(ValueError, match='nope') as stock:
+        chameleon.PageTemplateLoader(str(folder))['nope.pt']
+    with pytest.raises(ValueError, match='nope') as native:
+        chameleon_rs.PageTemplateLoader(str(folder))['nope.pt']
+    assert type(native.value) is type(stock.value) is ValueError
+    assert str(native.value) == str(stock.value) == 'Template not found: nope.pt.'
+    with pytest.raises(ValueError, match='nope') as rendered:
+        ours.render('nope.pt')
+    assert type(rendered.value) is ValueError
     (folder / 'loads.pt').write_text('<p tal:define="t load: nope.pt">${t}</p>')
     messages = []
     for engine in (chameleon, chameleon_rs):
-        try:
+        with pytest.raises(ValueError) as info:
             engine.PageTemplateLoader(str(folder))['loads.pt']()
-        except ValueError as e:
-            messages.append(str(e).splitlines()[0])
+        assert not isinstance(info.value, chameleon_rs.web.TemplateNotFound)
+        messages.append(str(info.value).splitlines()[0])
     assert messages[0] == messages[1] == 'Template not found: nope.pt.'
 
 

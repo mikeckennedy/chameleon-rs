@@ -29,7 +29,6 @@ pytest.importorskip('httpx')
 import chameleon_rs
 import chameleon_rs.fastapi as ours
 import chameleon_rs.web
-from exprtest import exception_name
 from fastapi import Response  # the type, for the typing checks
 
 # Starlette 1.x warns that its test client should use httpx2; the integration venv and this
@@ -100,7 +99,7 @@ def result(module: ModuleType, make_view: Callable[[ModuleType], Callable[..., A
         if asyncio.iscoroutine(resp):
             resp = asyncio.run(resp)
     except Exception as e:  # noqa: BLE001 - comparing exceptions across implementations
-        return ('raise', exception_name(e), re.sub(r'0x[0-9a-f]+', '0x?', str(e)))
+        return ('raise', type(e).__name__, re.sub(r'0x[0-9a-f]+', '0x?', str(e)))
     return described(resp)
 
 

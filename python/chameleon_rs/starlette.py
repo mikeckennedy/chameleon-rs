@@ -399,11 +399,17 @@ class Templates:
     def get_template(self, name: str) -> PageTemplateFile:
         """The page template ``name`` (relative to the template folder).
 
-        Raises ``chameleon_rs.web.TemplateNotFound`` (a ``ValueError``) if there is none, or if
-        the name could reach outside the folder (absolute, ``..``, a backslash, a drive letter
-        or a package spec), as Jinja's ``FileSystemLoader`` refuses such names."""
+        Raises ``chameleon_rs.web.TemplateNotFound`` (a ``ValueError``) if no folder has it,
+        or if the name could reach outside the folder (absolute, ``..``, a backslash, a drive
+        letter or a package spec), as Jinja's ``FileSystemLoader`` refuses such names. (Only
+        here: ``PageTemplateLoader`` and the decorator API raise Chameleon's ``ValueError``.)"""
         _check_name(name)
-        return self.loader[name]
+        loader = self.loader
+        spec = name.strip()
+        if not any(os.path.isfile(os.path.join(folder, spec)) for folder in loader.search_path):
+            msg = f'Template not found: {name}.'
+            raise TemplateNotFound(msg)
+        return loader[name]
 
     def _context(self, request: Request, context: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
         """The response's context (Starlette's: ``request`` set unless given, then the context

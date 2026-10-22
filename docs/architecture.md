@@ -1456,9 +1456,9 @@ Release blockers. Each behaviour checked against Chameleon's generated code firs
   `chameleon_rs.web.TemplateNotFound`, as Jinja's `split_template_path` does; the decorator
   paths, error pages and partials deliberately keep the original libraries' lookup (owner's
   rule: default behaviour matches them; documented as "names come from your code").
-  `TemplateNotFound(TemplateError, ValueError, LookupError)` is what the loader raises for a
-  missing template (Chameleon's message; formatted inside a render exactly as Chameleon's
-  `ValueError`). Error pages get `view_context` too (`{**extra, **data}`). The debug event's
+  `TemplateNotFound(TemplateError, ValueError, LookupError)` is raised by `Templates` only, for
+  a missing template (checked against its folders before loading); the loaders and the other
+  integrations keep Chameleon's plain `ValueError`. Error pages get `view_context` too (`{**extra, **data}`). The debug event's
   template is a `_DebugTemplate` proxy adding Jinja's `name`. `Templates.globals` mirrors
   `env.globals` (`{**globals, **context}`, `url_for` there by default). The route walk follows
   `.app` through middleware below `Mount` / `Host`.

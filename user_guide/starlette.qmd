@@ -80,7 +80,8 @@ media_type=None, background=None)` behaves as Starlette's:
   attributes are the page template's: `filename` is its full path.)
 - A missing template raises `chameleon_rs.web.TemplateNotFound` (also importable from
   `chameleon_rs.starlette`): catch it where you caught `jinja2.TemplateNotFound`. It is a
-  `ValueError`, as Chameleon's loaders raise, and a `LookupError`.
+  `ValueError` and a `LookupError`. Only `Templates` raises it: `PageTemplateLoader`, the
+  decorator API and `render_partial` raise Chameleon's plain `ValueError`.
 - A name that could reach outside the template folder (absolute, a `..` segment, a backslash,
   a drive letter or a `package:` spec) is refused with `TemplateNotFound`, as Jinja's
   `FileSystemLoader` refuses it.
@@ -190,8 +191,9 @@ It is the API of `chameleon_rs.flask` and `chameleon_rs.fastapi`:
 - `render()`, `render_async()`, `response()`, `response_async()`, `clear()`,
   `check_views(app)`.
 
-Errors are `chameleon_rs.web.TemplateError`, `TemplateNotFound`, `NotFound`, `ErrorPage` and
-`DecoratorOrderError`, also importable from `chameleon_rs.starlette`.
+Errors are `chameleon_rs.web.TemplateError`, `NotFound`, `ErrorPage` and
+`DecoratorOrderError`, also importable from `chameleon_rs.starlette` (a missing template here
+is Chameleon's `ValueError`, as in the other integrations).
 
 ::: {.callout-warning}
 ## Template names come from your code

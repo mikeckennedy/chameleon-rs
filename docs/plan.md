@@ -1879,11 +1879,13 @@ review's probes first):
   libraries' lookup (they allow such names); the README and the Flask, FastAPI and Starlette
   guides say names must come from code, never from requests, and that `Templates` guards as
   Jinja does.
-- `chameleon_rs.web.TemplateNotFound(TemplateError, ValueError, LookupError)`, raised by the
-  loader for a missing template with Chameleon's message; exported from
-  `chameleon_rs.starlette`. Inside a render the formatted error reads exactly as Chameleon's
-  `ValueError` (`exc.py` strips the qualified class name as it strips `ValueError:`). Our
-  differential tests compare it as `ValueError`.
+- `chameleon_rs.web.TemplateNotFound(TemplateError, ValueError, LookupError)`, raised by
+  `Templates` only (exported from `chameleon_rs.starlette`): `get_template` checks the name
+  against its folders after the traversal guard and raises it when no file exists, before the
+  loader runs (no `ValueError` is caught). Coordinator's scoping, for "default behaviour
+  matches Chameleon": the loader, `PageTemplateLoader`, the decorator API and partials raise
+  Chameleon's plain `ValueError` as before (a first version raised the new class from the
+  loader, which changed `type(e)` everywhere and needed a formatting special case; reverted).
 - Error pages of decorated Starlette endpoints get `request` and `url_for` (the page's data
   wins), so a 404 layout using `url_for` renders instead of failing with a `NameError`.
 - `response.template` is a `_DebugTemplate(page, name)`: Jinja's `.name` (Starlette's
@@ -1901,14 +1903,16 @@ review's probes first):
   its views' templates do not get `request` / `url_for`.
 - Tests: `test_starlette.py` 40 (19 new: ten refused name forms, sync and async; Jinja refusing
   `..`; names inside the folder; the decorator path keeping the original lookup;
-  `TemplateNotFound`'s types and message against stock Chameleon, also inside a render; globals;
-  error pages with `url_for`; the debug template; the walk through middleware), and the
-  Jinja differential now also compares `response.template.name`. The differential helpers
-  (`exprtest.exception_name`) name `TemplateNotFound` as the `ValueError` it is.
+  `TemplateNotFound` from `Templates` (directory and configuration) and only there (the
+  loaders and `render()` raise exactly `ValueError`, as stock Chameleon, also inside a render);
+  globals; error pages with `url_for`; the debug template; the walk through middleware), and
+  the Jinja differential now also compares `response.template.name`.
 - Verification after the fixes: pytest 3,085 passed, 2 skipped, 7 strict xfails (corpus set);
   upstream 227 passed + 6 xpassed on each engine; Rust 102 + 3 + 9; lint clean (ty 0);
   integration 40/16/39/6 on the originals, 40/16/6 on the built-ins. A/B against 0b0bce3
-  (release, listing, 8 rounds, load 2.0): -1.6 ns (range -5..+3), 6.34x Chameleon.
+  (release, listing, 8 rounds, load 2.0): -1.6 ns (range -5..+3), 6.34x Chameleon. After scoping
+  `TemplateNotFound` to `Templates`: the same totals (pytest 3,085 passed, 2 skipped, 7 xfailed;
+  upstream 227 + 6 per engine; integration unchanged), A/B +0.8 ns (range -2..+4), 6.48x.
 
 Open for Michael:
 - Per-app settings for Starlette are easy (endpoints get the request; `request.app.state`),
