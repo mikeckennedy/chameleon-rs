@@ -58,7 +58,9 @@ python-version = "3.12"
 # (exprtest, chameleon_tests). Not ".", or temp/chameleon would shadow the installed chameleon.
 root = ["python", "tests/python", "tests/upstream", "tests/integration", "bench", "scripts"]
 # chameleon_partials is an editable install through an import hook, which ty can't follow.
-extra-paths = ["temp/chameleon_partials"]
+# temp/robyn-typing: Robyn's sources (`make dev`), as Robyn has no wheel for every Python we
+# lint on (3.15).
+extra-paths = ["temp/chameleon_partials", "temp/robyn-typing"]
 # Resolve third-party packages from venv/ rather than from an activated VIRTUAL_ENV. ty picks
 # site-packages from the environment, not from the location of its own binary, so without this
 # a non-activated shell (CI, a subprocess, an editor task) silently resolves Homebrew's

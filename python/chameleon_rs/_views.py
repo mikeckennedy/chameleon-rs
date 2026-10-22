@@ -12,7 +12,7 @@ pass-through and model conversion (``chameleon_rs.web.model_of``), and the check
 was registered with its router before ``@template`` wrapped it.
 
 A framework module (``chameleon_rs.flask``, ``chameleon_rs.starlette``, ``chameleon_rs.fastapi``,
-which builds on Starlette's) supplies an ``Integration``: how to recognise its response objects,
+which builds on Starlette's, ``chameleon_rs.robyn``) supplies an ``Integration``: how to recognise its response objects,
 how to build an HTML response, where its settings live, what it adds to a view's model, how to
 list an app's routes and how to run a check when the app starts.
 Imports only the standard library (the framework modules import their framework).

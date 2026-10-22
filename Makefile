@@ -28,11 +28,23 @@ INTEGRATION_SUITES := fastapi-chameleon chameleon-flask chameleon-robyn chameleo
 # tarball of that commit, as in a sandboxed worktree) is used as it is.
 checkout = if [ -d $(1)/.git ]; then git -C $(1) checkout -q $(2); else echo "$(1): not a git clone, used as is"; fi
 
+# Robyn ships wheels for CPython 3.10-3.14 only (no 3.15, no free-threaded build, no sdist), so
+# it is not in the dev group: `make dev` installs it where a wheel exists, and always unpacks the
+# pinned version's sources into temp/robyn-typing, where ty finds them (pyproject.toml,
+# `extra-paths`). Where venv has no robyn, `test-robyn` runs the robyn tests in a 3.14 venv.
+ROBYN_TYPING_VERSION := 0.88.0
+ROBYN_VENV := $(CURDIR)/temp/venv-robyn
+
 .PHONY: dev reference build build-release build-profiling build-pgo test test-rust test-python \
-	test-upstream test-upstream-rust integration test-integration lint fmt bench docs docs-serve
+	test-upstream test-upstream-rust test-robyn integration test-integration lint fmt bench docs docs-serve
 
 dev: reference
 	uv pip install --python $(PY) --group dev --group docs -e temp/chameleon -e temp/chameleon_partials
+	uv pip install -q --python $(PY) --only-binary robyn robyn \
+		|| echo "robyn has no wheel for this Python: test-robyn runs its tests on $(INTEGRATION_PYTHON)"
+	@# With a GIL $(INTEGRATION_PYTHON), as venv may be free-threaded (`uv pip` does not download one).
+	uv python find -q $(INTEGRATION_PYTHON) > /dev/null 2>&1 || uv python install -q $(INTEGRATION_PYTHON)
+	uv pip install -q --python $(INTEGRATION_PYTHON) --target temp/robyn-typing --no-deps robyn==$(ROBYN_TYPING_VERSION)
 	$(MAKE) build
 
 reference: temp/chameleon temp/chameleon_partials
@@ -93,7 +105,7 @@ build-pgo:
 	@# A profile that no longer matches the code would silently lose the optimisation.
 	! grep -E "profile data may be out of date|control flow change detected|hash mismatch" $(PGO_DIR)/use.log
 
-test: test-rust test-python test-upstream test-upstream-rust
+test: test-rust test-python test-upstream test-upstream-rust test-robyn
 
 test-rust:
 	cargo test --workspace
@@ -107,11 +119,26 @@ test-upstream:
 test-upstream-rust: build
 	CHAMELEON_ENGINE=rust $(PYTEST) tests/upstream
 
+# chameleon_rs.robyn's tests where venv cannot install Robyn (Python 3.15, free-threaded): in a
+# $(INTEGRATION_PYTHON) venv with the dev tools, stock Chameleon (the differential tests) and
+# Robyn. Where venv has Robyn, test-python already ran them.
+ROBYN_TESTS := tests/python/test_robyn.py tests/python/test_typing.py tests/python/test_api.py::test_no_runtime_dependencies
+
+test-robyn: reference
+	@if $(PY) -c 'import robyn' 2>/dev/null; then echo "test-robyn: robyn is in venv, test-python ran its tests"; else \
+		set -e; \
+		test -x $(ROBYN_VENV)/bin/python || uv venv -q $(ROBYN_VENV) --python $(INTEGRATION_PYTHON); \
+		uv pip install -q --python $(ROBYN_VENV)/bin/python --group dev -e temp/chameleon -e temp/chameleon_partials robyn; \
+		VIRTUAL_ENV=$(ROBYN_VENV) PYO3_PYTHON=$(ROBYN_VENV)/bin/python CARGO_TARGET_DIR=$(CURDIR)/target/robyn \
+			$(ROBYN_VENV)/bin/maturin develop -q --profile dev-opt; \
+		$(ROBYN_VENV)/bin/python -m pytest -q $(ROBYN_TESTS); \
+	fi
+
 # Each suite runs from its own checkout (its own rootdir and conftest), unmodified: first the
 # original packages on the compat alias, then (BUILTIN_SUITES) the same suites against
-# chameleon-rs's built-in chameleon_partials, chameleon_flask and fastapi_chameleon
-# (compat.install()'s mapping).
-BUILTIN_SUITES := fastapi-chameleon chameleon-flask chameleon_partials
+# chameleon-rs's built-in chameleon_partials, chameleon_flask, fastapi_chameleon and
+# chameleon_robyn (compat.install()'s mapping).
+BUILTIN_SUITES := fastapi-chameleon chameleon-flask chameleon-robyn chameleon_partials
 
 test-integration: integration
 	set -e; for suite in $(INTEGRATION_SUITES); do \

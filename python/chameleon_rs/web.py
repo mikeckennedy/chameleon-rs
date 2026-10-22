@@ -1,6 +1,7 @@
 """Shared pieces of the web framework integrations (``chameleon_rs.flask``,
-``chameleon_rs.fastapi``, ``chameleon_rs.starlette``): the exceptions every integration raises, and the conversion of a
-view's return value to a template model. Imports only the standard library.
+``chameleon_rs.fastapi``, ``chameleon_rs.starlette``, ``chameleon_rs.robyn``): the exceptions
+every integration raises, and the conversion of a view's return value to a template model.
+Imports only the standard library.
 
 Each integration's old exception names (``FlaskChameleonException``, ...) are subclasses of
 these, so ``except chameleon_rs.web.TemplateError`` catches all of them and old ``except``
