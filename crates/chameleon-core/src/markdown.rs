@@ -3,11 +3,11 @@
 //! it; [`Profile::to_html`] converts one value at render time and reads nothing else.
 
 use std::cell::Cell;
-use std::fmt;
+use std::fmt::{self, Write as _};
 use std::rc::Rc;
 
-use comrak::html::{ChildRendering, Context, format_document_with_formatter, format_node_default};
-use comrak::nodes::{AstNode, NodeValue};
+use comrak::html::{ChildRendering, Context, format_document_with_formatter, format_node_default, render_sourcepos};
+use comrak::nodes::{AstNode, NodeValue, TableAlignment};
 use comrak::options::Plugins;
 use comrak::{Arena, Options, parse_document};
 
@@ -215,7 +215,7 @@ impl Profile {
         let pending = Rc::new(Cell::new(None));
         let mut out =
             ClassWriter { out: String::with_capacity(text.len() + text.len() / 4 + 16), pending: Rc::clone(&pending) };
-        let state = State { profile: self, pending };
+        let state = State { profile: self, pending, column: 0 };
         let plugins = Plugins::default();
         // Writing to a `String` cannot fail, and the formatter only fails when the writer does.
         let _ = format_document_with_formatter(root, &self.options, &mut out, &plugins, formatter, state);
@@ -228,6 +228,8 @@ struct State<'p> {
     profile: &'p Profile,
     /// The class attribute for the opening tag being written (shared with [`ClassWriter`]).
     pending: Rc<Cell<Option<Pending<'p>>>>,
+    /// The next table cell's column in the row being written ([`table_cell`]).
+    column: usize,
 }
 
 /// A class attribute waiting for its element's opening tag.
@@ -241,9 +243,9 @@ struct Pending<'p> {
     attr: &'p str,
 }
 
-/// comrak's default rendering, with three changes: `images: false` writes an image's alt text
-/// instead, `inline` drops a lone paragraph's tags, and `classes` adds a class attribute to
-/// the opening tag of the elements it names.
+/// comrak's default rendering, with four changes: `images: false` writes an image's alt text
+/// instead, `inline` drops a lone paragraph's tags, `classes` adds a class attribute to
+/// the opening tag of the elements it names, and table cells render in [`table_cell`].
 ///
 /// A class is armed when its node starts and only ever lands in that node's own opening tag:
 /// the writer checks the tag ([`ClassWriter`]), and whatever is left unused is dropped when
@@ -264,6 +266,11 @@ fn formatter<'a>(
     if profile.settings.inline && matches!(value, NodeValue::Paragraph) && is_lone_paragraph(node) {
         return Ok(ChildRendering::HTML);
     }
+    match value {
+        NodeValue::TableRow(_) if entering => context.user.column = 0,
+        NodeValue::TableCell => return table_cell(context, node, entering),
+        _ => {}
+    }
     if profile.class_attrs.is_empty() {
         return format_node_default(context, node, entering);
     }
@@ -279,6 +286,39 @@ fn formatter<'a>(
         context.user.pending.set(None);
     }
     rendering
+}
+
+/// A table cell, written as comrak's `render_table_cell` writes it. comrak finds the cell's
+/// column by walking the row from its first cell, for every cell: quadratic in the columns,
+/// so a 64 KB table of 16,000 columns took 10 s (a denial of service a security review found).
+/// Here the column is counted as the row's cells render, in order.
+fn table_cell<'a>(
+    context: &mut Context<'_, '_, State<'_>>,
+    node: &'a AstNode<'a>,
+    entering: bool,
+) -> Result<ChildRendering, fmt::Error> {
+    let row = node.parent();
+    let header = row.is_some_and(|row| matches!(row.data().value, NodeValue::TableRow(true)));
+    if !entering {
+        context.write_str(if header { "</th>" } else { "</td>" })?;
+        return Ok(ChildRendering::HTML);
+    }
+    let column = context.user.column;
+    context.user.column += 1;
+    let alignment = row.and_then(comrak::arena_tree::Node::parent).and_then(|table| match &table.data().value {
+        NodeValue::Table(table) => table.alignments.get(column).copied(),
+        _ => None,
+    });
+    context.cr()?;
+    context.write_str(if header { "<th" } else { "<td" })?;
+    render_sourcepos(context, node)?;
+    context.write_str(match alignment {
+        Some(TableAlignment::Left) => " align=\"left\">",
+        Some(TableAlignment::Right) => " align=\"right\">",
+        Some(TableAlignment::Center) => " align=\"center\">",
+        Some(TableAlignment::None) | None => ">",
+    })?;
+    Ok(ChildRendering::HTML)
 }
 
 /// The document's only child is this paragraph.
@@ -409,5 +449,41 @@ mod tests {
         assert!(out.contains("<pre class=\"code\"><code>"), "{out}");
         assert!(out.contains("<table class=\"table is-striped\">"), "{out}");
         assert!(out.contains("<p>raw</p>"), "{out}");
+    }
+
+    #[test]
+    fn table_cells_render_as_comrak_does() {
+        let tables = [
+            "| a | b |\n|---|---|\n| 1 | 2 |",
+            "| l | c | r | n |\n|:--|:-:|--:|---|\n| 1 | 2 | 3 | 4 |\n| *x* | `y` | <b> | z |",
+            "| a | b | c |\n|:-:|---|--:|\n| short |\n| 1 | 2 | 3 | 4 | 5 |",
+            "| h |\n|---|",
+            "> | q | t |\n> |---|:-:|\n> | 1 | 2 |\n\n- | in | list |\n  |----|-----:|\n  | 1 | 2 |",
+        ];
+        for settings in
+            [Settings::default(), Settings { classes: vec![(Element::Table, "t".into())], ..Settings::default() }]
+        {
+            let profile = Profile::new(settings);
+            for table in tables {
+                let expected = comrak::markdown_to_html(table, &profile.options);
+                let expected = if profile.class_attrs.is_empty() {
+                    expected
+                } else {
+                    expected.replace("<table>", "<table class=\"t\">")
+                };
+                assert_eq!(profile.to_html(table), expected, "{table}");
+            }
+        }
+    }
+
+    #[test]
+    fn wide_tables_render_in_linear_time() {
+        // A security review's DoS: 16,000 columns took 10 s in comrak's own cell rendering.
+        let columns = 40_000;
+        let text = format!("{}\n{}\n{}", "|a".repeat(columns), "|-".repeat(columns), "|b\n".repeat(8));
+        let start = std::time::Instant::now();
+        let out = html(Settings::default(), &text);
+        assert_eq!(out.matches("<td>").count(), 8 * columns);
+        assert!(start.elapsed() < std::time::Duration::from_secs(10), "{:?}", start.elapsed());
     }
 }
