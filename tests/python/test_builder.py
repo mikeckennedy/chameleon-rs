@@ -491,3 +491,14 @@ def test_attribute_dictionary_membership_is_hashed() -> None:
 class _Unhashable:
     def items(self) -> list[tuple[Any, Any]]:
         return [([], 'x')]
+
+
+@pytest.mark.parametrize('cls', ['PageTemplate', 'PageTextTemplate'])
+@pytest.mark.parametrize(
+    'source',
+    ['<!-- ${x}😀', '<!--${x}éab', '<!--${x}é', '<!--${', '<!--${x}😀😀😀', '<!--é${x}é-->', '<!-- ${x} -->'],
+)
+def test_comment_interpolation_slices_code_points(cls: str, source: str) -> None:
+    # `node[4:-3]` and `node[-3:]` are code points: an unclosed comment ending in multi-byte
+    # text once sliced a char in two (a panic, `InternalError`), or overlapped the prefix.
+    assert getattr(chameleon_rs, cls)(source)(x=1) == getattr(chameleon, cls)(source)(x=1)

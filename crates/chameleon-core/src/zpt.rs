@@ -219,13 +219,16 @@ impl Builder<'_> {
         if !self.interpolating() || !text.contains("${") {
             return Some(Node::Text(text.to_owned()));
         }
-        // `node[4:-3]` (a comment token is at least `<!---->`).
-        let inner = self.tok(span.sub(4, span.len().saturating_sub(3).max(4)));
+        // `node[:4]`, `node[4:-3]` and `node[-3:]`, in code points as Python slices: the token
+        // starts with `<!--` (4 bytes), and need not end with `-->` (an unclosed comment), so
+        // its last 3 characters may be multi-byte, or overlap the prefix.
+        let tail = text.char_indices().rev().nth(2).map_or(0, |(i, _)| i);
+        let inner = self.tok(span.sub(4, tail.max(4)));
         let escape = self.text_escape();
         Some(Node::Sequence(vec![
             Node::Text(text[..4].to_owned()),
             Node::Interpolation(self.interp(inner, escape, Translation::Plain)),
-            Node::Text(text[text.len().saturating_sub(3).max(4)..].to_owned()),
+            Node::Text(text[tail..].to_owned()),
         ]))
     }
 
