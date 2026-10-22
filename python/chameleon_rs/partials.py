@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import os
 import posixpath
+import stat
 import types
 import weakref
 from typing import Any
@@ -175,10 +176,15 @@ def resolve(caller: Any, template_file: str) -> Any:
     if hit is not None and hit[0] == generation:
         return hit[1]
     template = _find(caller, template_file)
+    if len(cache) >= _CACHE_LIMIT:
+        # Spellings that reach one file (`A.pt`, `a.PT` on a case-insensitive filesystem) share
+        # its template, but each would keep an entry here: bounded, for names from requests.
+        cache.clear()
     cache[key] = (generation, template)
     return template
 
 
+_CACHE_LIMIT = 1024
 _GLOBAL_CACHE: dict[str, tuple[tuple[int, bool, bool], Any]] = {}
 
 # Templates found on a caller's search path or folders (`partial_search='caller'`), shared by
@@ -203,16 +209,33 @@ def _find(caller: Any, template_file: str) -> Any:
         try:
             if not _in_folder(name, settings.template_folder):
                 raise _not_found(spec)
-            return settings.loader.load(name)
+            identity = _file_id(os.path.join(os.path.abspath(settings.template_folder), name))
+            if identity is None:
+                raise _not_found(spec)
+            # One template per file, whatever the spelling: the first one seen loads it.
+            spellings = settings.loader.__dict__.setdefault('_rs_spellings', {})
+            return settings.loader.load(spellings.setdefault(identity, name))
         except ValueError:
             if not search:
                 raise
     for folder, root in _folders(caller, settings):
         path = os.path.normpath(os.path.join(folder, name))
         # Never outside the root the folder belongs to: no `..` or absolute path out of it.
-        if _inside(path, root) and os.path.isfile(path):
-            return _sibling(caller, path)
+        if _inside(path, root):
+            identity = _file_id(path)
+            if identity is not None:
+                return _sibling(caller, path, identity)
     raise _not_found(spec)
+
+
+def _file_id(path: str) -> tuple[int, int] | None:
+    """The file at ``path`` (device and inode), or ``None`` if there is no regular file: one
+    identity for every spelling that opens it (case, Unicode form, `..` through a symlink)."""
+    try:
+        info = os.stat(path)
+    except (OSError, ValueError):
+        return None
+    return (info.st_dev, info.st_ino) if stat.S_ISREG(info.st_mode) else None
 
 
 def _not_found(spec: str) -> ValueError:
@@ -227,7 +250,7 @@ def _in_folder(spec: str, folder: str) -> bool:
     if not spec or os.path.isabs(spec) or ':' in spec or '\0' in spec:
         return False
     root = os.path.abspath(folder)
-    return _inside(os.path.normpath(os.path.join(root, spec)), root)
+    return _inside(os.path.join(root, spec), root)
 
 
 def _folders(caller: Any, settings: _settings.Settings | None) -> list[tuple[str, str]]:
@@ -243,14 +266,15 @@ def _folders(caller: Any, settings: _settings.Settings | None) -> list[tuple[str
     filename = getattr(caller, 'filename', None)
     if isinstance(filename, str) and os.path.isabs(filename) and getattr(caller, 'package_name', None) is None:
         here = os.path.dirname(os.path.normpath(filename))
-        roots = [*paths, *_configured_folders(settings)]
-        holding = [r for r in roots if _inside(here, r)]
-        root = min(holding, key=len) if holding else _package_templates(here)
+        roots = [*paths, *_configured_folders(settings), _package_templates(here)]
+        # The outermost root that holds it (its own folder, at least: the package fallback).
+        root = min((r for r in roots if _inside(here, r)), key=lambda r: len(_key(r)))
         while True:
             folders.append((here, root))
-            if here == root:
+            parent = os.path.dirname(here)
+            if _key(here) == _key(root) or parent == here:
                 break
-            here = os.path.dirname(here)
+            here = parent
     return folders
 
 
@@ -276,11 +300,18 @@ def _package_templates(here: str) -> str:
         folder = parent
 
 
+def _key(path: str) -> str:
+    """A path as comparisons see it: absolute, normalized, case-folded where the platform
+    folds (Windows), and with a leading `//` as `/`, as `commonpath` gives it."""
+    return os.path.commonpath([os.path.normcase(os.path.abspath(path))])
+
+
 def _inside(path: str, root: str) -> bool:
     try:
-        return os.path.commonpath([os.path.normcase(path), os.path.normcase(root)]) == os.path.normcase(root)
+        root_key = _key(root)
+        return os.path.commonpath([_key(path), root_key]) == root_key
     except ValueError:
-        # Different drives (Windows), or one path relative.
+        # Different drives (Windows).
         return False
 
 
@@ -289,12 +320,13 @@ def _is_package(path: str) -> bool:
     return not os.path.isabs(path) and ':' in path
 
 
-def _sibling(caller: Any, path: str) -> Any:
+def _sibling(caller: Any, path: str, identity: tuple[int, int]) -> Any:
     cls = type(caller)
     config = getattr(caller, '_partial_config', {})
     paths = getattr(caller, '_partial_paths', [])
     try:
-        key: Any = (path, cls, tuple(paths), tuple(sorted(config.items())))
+        # By the file, not the path's spelling: the first spelling seen builds the template.
+        key: Any = (identity, cls, tuple(paths), tuple(sorted(config.items())))
         hash(key)
     except TypeError:
         # Unhashable settings: not shared (the caller's own cache keeps it).
@@ -333,11 +365,17 @@ def _legacy_target(func: Any, template_file: Any) -> Any:
     folder = module.get('template_path')
     if not isinstance(template_file, str) or not isinstance(folder, str):
         return None
-    if not _in_folder(template_file.strip(), folder):
-        # A name outside its folder: called as Python, so the function decides (it refuses
-        # one from 0.2.1 on), never loaded here around its check.
+    name_of = module.get('_template_name')
+    if callable(name_of):
+        # 0.2.1 on: its own check and spelling (one template per file).
+        name = name_of(template_file, folder)
+    else:
+        name = template_file if _in_folder(template_file.strip(), folder) else None
+    if name is None:
+        # A name outside its folder or missing: called as Python, so the function decides (it
+        # refuses one from 0.2.1 on), never loaded here around its check.
         return None
-    return loader[template_file]
+    return loader[name]
 
 
 def _prepare(template: Any) -> tuple[Any, Any, Any] | None:

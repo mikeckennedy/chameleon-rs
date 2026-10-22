@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 import textwrap
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -652,3 +653,71 @@ def test_every_spelling_of_a_partial_is_one_template(folder: Path) -> None:
     assert settings is not None
     assert len(settings.loader.registry) == 1
     assert len(page.__dict__['_partial_cache']) == 1
+
+
+def _case_insensitive(folder: Path) -> bool:
+    probe = folder / 'CaseProbe'
+    probe.write_text('')
+    try:
+        return (folder / 'caseprobe').exists()
+    finally:
+        probe.unlink()
+
+
+def test_a_double_slash_path_neither_hangs_nor_hides_partials(folder: Path) -> None:
+    # Once an endless walk: the caller under `//...`, its root under `/...` (`commonpath`
+    # reads both as one path; the walk compared the strings). A configured `//...` folder made
+    # every partial "not found".
+    write(folder, {'t/deep/page.pt': '${render_partial(name)}', 't/deep/near.pt': 'near', 't/top.pt': 'top'})
+    chameleon_rs.configure(template_folder=str(folder / 't'))
+    page = chameleon_rs.PageTemplateFile('/' + str(folder / 't' / 'deep' / 'page.pt'))
+    for name in ['near.pt', 'nope.pt']:
+        done: list[str] = []
+
+        def run(name: str = name, done: list[str] = done) -> None:
+            try:
+                done.append(page(name=name))
+            except ValueError as e:
+                done.append(str(e).split('.')[0])
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        thread.join(5)
+        assert done, f'{name}: still running'
+    chameleon_rs.configure(template_folder='/' + str(folder / 't'))
+    assert chameleon_rs.render_partial('top.pt').html_text == 'top'
+
+
+def test_a_folder_name_is_not_a_template(folder: Path) -> None:
+    write(folder, {'sub/x.pt': 'x'})
+    chameleon_rs.configure(template_folder=str(folder))
+    for name in ['sub', 'sub/', '.', './']:
+        with pytest.raises(ValueError, match='Template not found'):
+            chameleon_rs.render_partial(name)
+
+
+def test_a_loader_inside_the_packages_templates_folder_still_finds_shared_partials(folder: Path) -> None:
+    # A Pyramid app whose loader points below `templates`: the package's folder is the root.
+    write(
+        folder,
+        {
+            'pkg/__init__.py': '',
+            'pkg/templates/pages/p.pt': '${render_partial("shared/x.pt")}',
+            'pkg/templates/shared/x.pt': 'shared',
+        },
+    )
+    loader = chameleon_rs.PageTemplateLoader([str(folder / 'pkg' / 'templates' / 'pages')])
+    assert loader['p.pt']() == 'shared'
+
+
+def test_case_spellings_of_a_partial_are_one_template(folder: Path) -> None:
+    if not _case_insensitive(folder):
+        pytest.skip('a case-sensitive filesystem: each spelling is another file')
+    write(folder, {'page.pt': '${render_partial(name)}', 'shared/card.pt': 'card'})
+    chameleon_rs.configure(template_folder=str(folder))
+    page = chameleon_rs.PageTemplateFile(str(folder / 'page.pt'))
+    for name in ['shared/card.pt', 'SHARED/card.pt', 'shared/CARD.PT', 'Shared/Card.Pt']:
+        assert page(name=name) == 'card'
+    settings = chameleon_rs._settings.partials
+    assert settings is not None
+    assert len(settings.loader.registry) == 1

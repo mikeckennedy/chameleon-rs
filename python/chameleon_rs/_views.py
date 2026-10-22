@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import inspect
 import os
+import stat
 import sys
 import weakref
 from collections.abc import Callable, Iterable, Iterator, Mapping
@@ -286,6 +287,28 @@ def canonical(name: str) -> str:
     ``split_template_path`` drops them: one cached template per file, however a request spells
     its name (each spelling would otherwise compile and keep its own copy)."""
     return '/'.join(piece for piece in name.split('/') if piece not in {'', '.'})
+
+
+def spelling(loader: Any, name: str) -> str | None:
+    """The name to load ``name`` (already checked with ``outside_folder``) by, or ``None`` if
+    no folder of ``loader`` has a regular file of that name (a directory is not a template).
+    Every spelling of one file (``./a//b.pt``, and on a case-insensitive filesystem ``A.PT``)
+    loads by the first one seen, so the loader's cache holds one template per file, however
+    requests spell it. The file is found as the loader finds it: its ``default_extension``
+    added to a name without a dot, its folders in order."""
+    name = canonical(name)
+    extension = getattr(loader, 'default_extension', None)
+    filename = name + extension if extension is not None and '.' not in name else name
+    for folder in loader.search_path:
+        try:
+            info = os.stat(os.path.join(folder, filename))
+        except (OSError, ValueError):
+            continue
+        if not stat.S_ISREG(info.st_mode):
+            return None
+        spellings = loader.__dict__.setdefault('_rs_spellings', {})
+        return spellings.setdefault((info.st_dev, info.st_ino), name)  # type: ignore[no-any-return]
+    return None
 
 
 def is_not_found(exc: ValueError) -> bool:

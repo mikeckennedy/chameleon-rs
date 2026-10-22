@@ -1038,3 +1038,18 @@ def test_every_spelling_of_a_name_is_one_template(folder: Path) -> None:
     pages = {id(engine.get_template(name).template) for name in SPELLINGS}
     assert len(pages) == 1
     assert len(engine.loader.registry) == 1
+
+
+def test_case_spellings_and_folders(folder: Path) -> None:
+    engine = ours.ChameleonEngine(folder)
+    for name in ['home', 'home/', '.']:
+        with pytest.raises(TemplateNotFoundException):
+            engine.get_template(name)
+    probe = folder / 'CaseProbe'
+    probe.write_text('')
+    insensitive = (folder / 'caseprobe').exists()
+    probe.unlink()
+    if insensitive:
+        for name in ['home/index.pt', 'HOME/index.pt', 'home/INDEX.PT']:
+            engine.get_template(name)
+        assert len(engine.loader.registry) == 1

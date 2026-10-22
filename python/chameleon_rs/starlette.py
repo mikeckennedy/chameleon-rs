@@ -68,7 +68,6 @@ from __future__ import annotations
 
 import contextlib
 import inspect
-import os
 from collections.abc import AsyncGenerator, Callable, Coroutine, Iterable, Iterator, Mapping, Sequence
 from os import PathLike
 from typing import Any, NoReturn, Protocol, overload
@@ -272,13 +271,12 @@ def _url_for(request: Request) -> Callable[..., Any]:
 # --- Templates: Starlette's Jinja2Templates for chameleon-rs ----------------------------------
 
 
-def _check_name(name: str) -> str:
+def _check_name(name: str) -> None:
     """Refuses a name that could load a template outside the folder, as Jinja's
-    ``FileSystemLoader`` does (``_views.outside_folder``); returns its canonical spelling."""
+    ``FileSystemLoader`` does (``_views.outside_folder``)."""
     if _views.outside_folder(name):
         msg = f'Template not found: {name}.'
         raise TemplateNotFound(msg)
-    return _views.canonical(name)
 
 
 class _DebugTemplate:
@@ -394,9 +392,10 @@ class Templates:
         or if the name could reach outside the folder (absolute, ``..``, a backslash, a drive
         letter or a package spec), as Jinja's ``FileSystemLoader`` refuses such names. (Only
         here: ``PageTemplateLoader`` and the decorator API raise Chameleon's ``ValueError``.)"""
-        spec = _check_name(name)
+        _check_name(name)
         loader = self.loader
-        if not any(os.path.isfile(os.path.join(folder, spec)) for folder in loader.search_path):
+        spec = _views.spelling(loader, name)
+        if spec is None:
             msg = f'Template not found: {name}.'
             raise TemplateNotFound(msg)
         return loader[spec]

@@ -264,8 +264,11 @@ class ChameleonEngine(TemplateEngineProtocol[ChameleonTemplate, TemplateContext]
         package spec), as Litestar's Jinja engine refuses such names."""
         if _views.outside_folder(template_name):
             raise TemplateNotFoundException(template_name=template_name)
+        spec = _views.spelling(self.loader, template_name)
+        if spec is None:
+            raise TemplateNotFoundException(template_name=template_name)
         try:
-            page = self.loader[_views.canonical(template_name)]
+            page = self.loader[spec]
         except ValueError as exc:
             # Only the loader's own lookup failure (its `default_extension` and search path
             # applied); other errors pass through.

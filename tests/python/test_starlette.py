@@ -827,3 +827,18 @@ def test_every_spelling_of_a_name_is_one_template(folder: Path) -> None:
     templates = ours.Templates(directory=folder)
     assert len({id(templates.get_template(name)) for name in SPELLINGS}) == 1
     assert len(templates.loader.registry) == 1
+
+
+def test_case_spellings_and_folders(folder: Path) -> None:
+    templates = ours.Templates(directory=folder)
+    for name in ['home', 'home/', '.']:
+        with pytest.raises(chameleon_rs.web.TemplateNotFound):
+            templates.get_template(name)
+    probe = folder / 'CaseProbe'
+    probe.write_text('')
+    insensitive = (folder / 'caseprobe').exists()
+    probe.unlink()
+    if insensitive:
+        names = ['home/index.pt', 'HOME/index.pt', 'home/INDEX.PT', 'Home/Index.pt']
+        assert len({id(templates.get_template(name)) for name in names}) == 1
+        assert len(templates.loader.registry) == 1

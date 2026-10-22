@@ -999,3 +999,10 @@ def test_every_spelling_of_a_name_is_one_template(folder: Path) -> None:
     for name in ['home/index.pt', './home/index.pt', 'home//index.pt', './/home/./index.pt']:
         assert engine.render_template(name, a=1).description == '<h1>Hello 1 -!</h1>'
     assert len(engine.loader.registry) == 1
+
+
+def test_folders_and_missing_files_are_template_not_found(folder: Path) -> None:
+    engine = ours.ChameleonTemplate(str(folder))
+    for name in ['home', 'home/', '.', 'nope.pt']:
+        with pytest.raises(chameleon_rs.web.TemplateNotFound):
+            engine.render_template(name)
