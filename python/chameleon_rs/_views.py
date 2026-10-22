@@ -11,9 +11,10 @@ with ``render``), the error pages (``chameleon_rs.web.ErrorPage`` / ``NotFound``
 pass-through and model conversion (``chameleon_rs.web.model_of``), and the check that no view
 was registered with its router before ``@template`` wrapped it.
 
-A framework module (``chameleon_rs.flask``, ``chameleon_rs.fastapi``) supplies an
-``Integration``: how to recognise its response objects, how to build an HTML response, where
-its settings live, how to list an app's routes and how to run a check when the app starts.
+A framework module (``chameleon_rs.flask``, ``chameleon_rs.starlette``, ``chameleon_rs.fastapi``,
+which builds on Starlette's) supplies an ``Integration``: how to recognise its response objects,
+how to build an HTML response, where its settings live, what it adds to a view's model, how to
+list an app's routes and how to run a check when the app starts.
 Imports only the standard library (the framework modules import their framework).
 """
 
@@ -58,6 +59,11 @@ class Integration:
     def make_response(self, html: str, content_type: str, status_code: int) -> Any:
         """The framework's response for a rendered page."""
         raise NotImplementedError
+
+    def view_context(self, args: tuple[Any, ...]) -> Mapping[str, Any] | None:
+        """Template variables the framework adds to a view's model, from the view's arguments
+        (Starlette: ``request`` and ``url_for``); the model's own keys win. ``None``: none."""
+        return None
 
     def routes(self, app: Any) -> Iterable[tuple[Any, str]]:
         """Every view the app's routes call, with a description of the route (``GET /path``),
@@ -104,17 +110,26 @@ class Integration:
     async def render_async(self, template_file: str, template_data: Mapping[str, Any]) -> str:
         return await self.page(template_file).render_async(encoding='utf-8', **template_data)  # type: ignore[no-any-return]
 
-    def model(self, value: Any) -> Mapping[str, Any]:
+    def model(self, value: Any, extra: Mapping[str, Any] | None = None) -> Mapping[str, Any]:
         model = model_of(value)
         if model is None:
             msg = f'Invalid return type {type(value)}, we expected a dict or {self.response_name} as the return value.'
             raise self.error(msg)
+        if extra:
+            return {**extra, **model}
         return model
 
-    def render_response(self, template_file: str, value: Any, content_type: str, status_code: int) -> Any:
+    def render_response(
+        self,
+        template_file: str,
+        value: Any,
+        content_type: str,
+        status_code: int,
+        extra: Mapping[str, Any] | None = None,
+    ) -> Any:
         if self.is_response(value):
             return value
-        html = self.render(template_file, self.model(value))
+        html = self.render(template_file, self.model(value, extra))
         return self.make_response(html, content_type, status_code)
 
     async def render_response_async(
@@ -125,24 +140,25 @@ class Integration:
         status_code: int,
         concurrent: bool | None = None,
         offload: bool = False,
+        extra: Mapping[str, Any] | None = None,
     ) -> Any:
         if self.is_response(value):
             return value
-        model = dict(self.model(value))
+        model = dict(self.model(value, extra))
         page = self.page(template_file)
         if concurrent is None:
             concurrent = page.concurrent
         html = await _render_async(page, 'utf-8', model, bool(concurrent), offload)
         return self.make_response(html, content_type, status_code)
 
-    def error_response(self, page: ErrorPage) -> Any:
+    def error_response(self, page: ErrorPage, extra: Mapping[str, Any] | None = None) -> Any:
         # As the original libraries' error paths: text/html, the page's status, its data as the
-        # model.
-        html = self.render(page.template_file, page.template_data or {})
+        # model (with the framework's `view_context`, whose keys the data's override).
+        html = self.render(page.template_file, _error_model(page, extra))
         return self.make_response(html, 'text/html', page.status_code)
 
-    async def error_response_async(self, page: ErrorPage) -> Any:
-        html = await self.render_async(page.template_file, page.template_data or {})
+    async def error_response_async(self, page: ErrorPage, extra: Mapping[str, Any] | None = None) -> Any:
+        html = await self.render_async(page.template_file, _error_model(page, extra))
         return self.make_response(html, 'text/html', page.status_code)
 
     # --- The decorator ----------------------------------------------------------------------
@@ -182,18 +198,20 @@ class Integration:
         @wraps(f)
         def sync_view_method(*args: Any, **kwargs: Any) -> Any:
             try:
-                return self.render_response(view_template, f(*args, **kwargs), content_type, status_code)
+                value = f(*args, **kwargs)
+                return self.render_response(view_template, value, content_type, status_code, self.view_context(args))
             except ErrorPage as page:
-                return self.error_response(page)
+                return self.error_response(page, self.view_context(args))
 
         @wraps(f)
         async def async_view_method(*args: Any, **kwargs: Any) -> Any:
             try:
+                value = await f(*args, **kwargs)
                 return await self.render_response_async(
-                    view_template, await f(*args, **kwargs), content_type, status_code, concurrent, offload
+                    view_template, value, content_type, status_code, concurrent, offload, self.view_context(args)
                 )
             except ErrorPage as page:
-                return await self.error_response_async(page)
+                return await self.error_response_async(page, self.view_context(args))
 
         wrapper = async_view_method if inspect.iscoroutinefunction(f) else sync_view_method
         _remember(f, wrapper)
@@ -240,6 +258,11 @@ class Integration:
             passed = True
 
         self.watch(app, check)
+
+
+def _error_model(page: ErrorPage, extra: Mapping[str, Any] | None) -> Mapping[str, Any]:
+    data = page.template_data or {}
+    return {**extra, **data} if extra else data
 
 
 # --- Views wrapped by @template, for the decorator-order check ------------------------------

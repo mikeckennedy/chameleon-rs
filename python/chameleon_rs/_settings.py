@@ -2,7 +2,7 @@
 
 One call configures the template folder and its loader for everything that loads templates by
 name: the built-in ``render_partial`` and the framework integrations (``chameleon_rs.flask``,
-``chameleon_rs.fastapi``). The old per-library calls (``chameleon_partials.register_extensions``,
+``chameleon_rs.starlette``, ``chameleon_rs.fastapi``). The old per-library calls (``chameleon_partials.register_extensions``,
 ``chameleon_flask.global_init``, ``fastapi_chameleon.global_init``) are aliases of it, each
 setting only its own slot. A configuration is an immutable ``Settings`` object swapped in
 whole, so a render never sees half of one (free-threading).
@@ -77,7 +77,7 @@ class Settings:
 # `VIEW_SLOTS` (chameleon-flask's and fastapi-chameleon's `global_init`). `configure()` sets
 # every slot, each alias only its own (`None`: not configured, or cleared). `views` is replaced
 # whole, never mutated. `generation` is bumped by every change and keys the partial path caches.
-VIEW_SLOTS = ('flask', 'fastapi')
+VIEW_SLOTS = ('flask', 'starlette', 'fastapi')
 partials: Settings | None = None
 views: dict[str, Settings | None] = dict.fromkeys(VIEW_SLOTS)
 generation = 0
@@ -268,7 +268,7 @@ def configure(
 ) -> Settings | None:
     """Configures chameleon-rs for the whole process: where templates loaded by name live, for
     ``render_partial`` and the framework integrations (``chameleon_rs.flask``,
-    ``chameleon_rs.fastapi``), and how they load.
+    ``chameleon_rs.starlette``, ``chameleon_rs.fastapi``), and how they load.
 
     ``template_folder``: an existing directory. ``auto_reload``: recompile a template when its
     file changes (checked at most once per file per render for partials). ``restricted_namespace``:

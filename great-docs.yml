@@ -81,6 +81,7 @@ user_guide:
     contents:
       - flask.qmd
       - fastapi.qmd
+      - starlette.qmd
   - section: "Background"
     contents:
       - compatibility.qmd
@@ -110,7 +111,7 @@ skill:
     - "To switch an existing app, add `import chameleon_rs.compat; chameleon_rs.compat.install()` as the first lines of the entry point, and leave the rest of the code unchanged."
     - "Prefer ${render_partial('shared/card.pt', item=item)} as a whole expression: it renders as a native frame of the page, with no Python call."
     - "Build template folder paths with (Path(__file__).parent / 'templates').as_posix()."
-    - "In tests, reset with chameleon_rs.partials.clear() (or chameleon_rs.flask.clear(), chameleon_rs.fastapi.clear()) between configurations."
+    - "In tests, reset with chameleon_rs.partials.clear() (or chameleon_rs.flask.clear(), chameleon_rs.fastapi.clear(), chameleon_rs.starlette.clear()) between configurations."
     - "Put @template below the route decorator (@app.get, @router.get, @app.route); pass app= to configure() so a misordered view fails at startup with DecoratorOrderError."
   decision_table:
     - need: "Run an existing Chameleon app on chameleon-rs with no code changes"
@@ -127,6 +128,8 @@ skill:
       use: "chameleon_rs.flask: configure(folder), then @template('page.pt') on the view"
     - need: "Render Chameleon templates from FastAPI views"
       use: "chameleon_rs.fastapi: configure(folder, app=app), then @template('page.pt') below @app.get"
+    - need: "Replace Starlette's Jinja2Templates"
+      use: "chameleon_rs.starlette.Templates(directory=folder); await templates.TemplateResponse_async(request, 'page.pt', context) in async endpoints"
 
 # Umami analytics. Needs this site's own website id (the partials site has its own):
 # include_in_header:
@@ -147,7 +150,7 @@ reference:
   desc: >-
     The public API of chameleon-rs. It mirrors Chameleon's (PageTemplate,
     PageTemplateFile, PageTemplateLoader, ...), plus built-in partials, process-wide
-    configuration and the Flask/Quart and FastAPI integrations.
+    configuration and the Flask/Quart, FastAPI and Starlette integrations.
   sections:
     - title: Templates
       desc: "Compile and render templates from strings, files and folders."
@@ -199,6 +202,22 @@ reference:
         - fastapi.generic_error
         - fastapi.clear
         - fastapi.check_views
+    - title: Starlette
+      desc: "Jinja2Templates' API for chameleon-rs, and the decorator API. Imports Starlette only when imported itself."
+      contents:
+        - starlette.Templates
+        - starlette.configure
+        - starlette.global_init
+        - starlette.template
+        - starlette.render
+        - starlette.render_async
+        - starlette.response
+        - starlette.response_async
+        - starlette.not_found
+        - starlette.error
+        - starlette.generic_error
+        - starlette.clear
+        - starlette.check_views
     - title: Errors and web helpers
       desc: "Exceptions, and the pieces shared by the framework integrations."
       contents:
@@ -208,6 +227,7 @@ reference:
         - web.TemplateError
         - web.ErrorPage
         - web.NotFound
+        - web.TemplateNotFound
         - web.DecoratorOrderError
         - web.model_of
     - title: Compatibility

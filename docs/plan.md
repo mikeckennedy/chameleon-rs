@@ -1790,6 +1790,136 @@ Open for Michael:
   Flask's `response()` keeps `mimetype` in the model.
 - Only apps given to `configure(app=...)` / `global_init(..., app=...)` are checked.
 
+## Integrations: Starlette
+
+Scope (Michael's order, vision.md section 2: FastAPI, then Starlette, then Robyn, then
+Litestar): `chameleon_rs.starlette` with two layers, a drop-in for Starlette's
+`Jinja2Templates` and the decorator API of `chameleon_rs.flask` / `.fastapi`, on the shared
+views core, sharing Starlette's pieces with `chameleon_rs.fastapi` (FastAPI is Starlette), with
+no change of behaviour for `chameleon_rs.fastapi`. No extras, no runtime dependencies, ty at
+zero diagnostics. Design: architecture.md, "Integrations amendments: Starlette".
+
+**Results (2026-10-22), on a worktree branch from 0b0bce3.**
+
+Built:
+- `chameleon_rs.starlette.Templates(directory=None, *, context_processors=None,
+  auto_reload=None, restricted_namespace=None)`: `directory` a folder or a list of folders;
+  left out, the process-wide configuration (the new `starlette` settings slot, which
+  `chameleon_rs.configure()` sets), looked up at each render. `TemplateResponse(request, name,
+  context=None, status_code=200, headers=None, media_type=None, background=None)` is
+  Starlette 1.x's: `context.setdefault('request', request)` on the caller's dict, the context
+  processors update it, the template gets `url_for(name, **path_params)` (a template variable
+  unless the context has one, not added to the response's context, as Jinja's global), and the
+  response is an `HTMLResponse` subclass that sends `http.response.debug` (`response.template`
+  is the page template, `response.context` the context). Old-style `TemplateResponse(name,
+  {...})` is a `TypeError` saying the request comes first. `get_template(name)`, `loader`.
+- **`await templates.TemplateResponse_async(...)`**: the same arguments (plus keyword-only
+  `concurrent` / `offload`), rendering with `render_async`. Named for Starlette's
+  `TemplateResponse` plus the `_async` of `render_async` / `response_async`, so moving an
+  endpoint over is mechanical. A lazily rendering response (sync call site, rendered when sent)
+  was not built: `.body` would be empty until sent.
+- The module API: `configure`, `global_init`, `clear`, `@template` (Flask's signature:
+  `template_file, content_type, status_code, *, mimetype, concurrent, offload`), `render`,
+  `render_async`, `response`, `response_async` (an `HTMLResponse`), `not_found`, `error`,
+  `generic_error`, `check_views`, and the `web` exceptions re-exported (no new exception names:
+  there is no legacy library). Function endpoints and `HTTPEndpoint` methods, sync (thread
+  pool) and async (`render_async` on the loop). New: a decorated Starlette endpoint's template
+  also gets `request` and `url_for` (the model's own keys win), through a `view_context(args)`
+  hook on `_views.Integration` (`None` for Flask and FastAPI).
+- Shared with FastAPI: `chameleon_rs.starlette.StarletteIntegration` holds response
+  recognition and building, the route walk and the startup hooks (`_FirstRequestCheck`, the
+  lifespan and `build_middleware_stack` wrappers); `chameleon_rs.fastapi._FastAPI` subclasses
+  it and keeps only its names, `fastapi.Response` and no `view_context`; fastapi.py lost about
+  90 lines. The walk now expands `HTTPEndpoint` classes into their handler methods
+  (`GET /page (Page.get)`) and names a non-WebSocket route without methods `ANY` (it said
+  `WEBSOCKET`); `check_views()` in the Starlette module also takes a `Router`.
+- `compat`: `starlette` is one of chameleon-rs's own modules (never aliased as
+  `chameleon.starlette`); no legacy package maps to it.
+- Docs: README (Starlette item and example, async notes), `user_guide/starlette.qmd` (its
+  cells run), `great-docs.yml` (the page, a Starlette reference section, the decision table),
+  the configuration page. `site/` not rebuilt (needs Quarto).
+
+Tests: pytest 3,066 passed, 2 skipped, 7 strict xfails (corpus set); upstream 227 passed and 6
+xpassed on each engine; Rust 102 core + 3 Markdown spec + 9 `chameleon-py`; lint clean
+(rustfmt, clippy, cargo-deny, ruff check and format, ty 0 diagnostics). New `test_starlette.py`
+(21): `Templates` against `Jinja2Templates` through the test client, sync and async variants,
+nine requests each (status, every header, body, the debug event's context and template,
+background tasks, context processors overriding the context, positional arguments, `url_for`,
+HEAD/POST); the caller's dict is the response's context; HTML identical to stock Chameleon's
+for a template with `tal:repeat`, conditions, attributes, `structure` and `url_for`;
+configuration-backed `Templates()`, several folders and loader options, `render_partial` and
+`markdown:` inside `Templates` templates with no folder configured; `TemplateResponse_async`
+keeps the loop running (five renders waiting 2 x 50 ms finish together, a ticker keeps
+ticking) and `concurrent=True` partial fan-out; `Templates` in a FastAPI app; decorated
+function and `HTTPEndpoint` endpoints (error pages, pass-through, content types, status codes,
+bare `@template`), loop vs thread pool, `render`/`response` and their coroutines, settings
+slots; decorator order (lifespan and first request, `Mount`/`Host`/`Router`/sub-app/
+`HTTPEndpoint` coverage, the escape hatches, a user lifespan's state, `TypeError` for a
+`Router` as `app=`); `assert_type` checks. `test_no_runtime_dependencies` covers
+`chameleon_rs.starlette`; `test_typing.PUBLIC` lists it. Starlette versions: 1.9.0 (dev venv)
+and 0.46.2 with FastAPI 0.115.14 (scratch venv: `test_starlette.py` all pass; `test_fastapi.py`
+has the same three failures there on the base commit as on this branch, from that venv lacking
+Flask and FastAPI 0.115 resolving one test's annotation differently). Integration (`make
+test-integration` steps by hand): originals on the compat alias fastapi-chameleon 40,
+chameleon-flask 16, chameleon-robyn 39, chameleon_partials 6; built-ins fastapi-chameleon 40,
+chameleon-flask 16, chameleon_partials 6.
+
+Speed: no Rust change. `bench/bench_ab.py 0b0bce3`, release, listing, 8 rounds, load 1.8:
+-6.5 ns per item (range -8..-2), within the +5 ns tolerance; 6.42x Chameleon. Decorated
+Flask/FastAPI views pay one extra method call per request (`view_context`), outside the
+render.
+
+Review fixes (2026-10-22, after the Rust Architect's review; each reproduced with the
+review's probes first):
+- Blocker, path traversal: `Templates` loaded names outside its folder (`../secret/s.pt`, an
+  absolute path) and executed them, where Jinja's `FileSystemLoader` refuses. `get_template`
+  (so both `TemplateResponse`s) now refuses an absolute name, a `..` segment, a backslash, a
+  drive letter or a `package:` spec with `TemplateNotFound`. Owner's rule: the decorator
+  modules' `render()` / `@template`, error pages and `render_partial` keep the original
+  libraries' lookup (they allow such names); the README and the Flask, FastAPI and Starlette
+  guides say names must come from code, never from requests, and that `Templates` guards as
+  Jinja does.
+- `chameleon_rs.web.TemplateNotFound(TemplateError, ValueError, LookupError)`, raised by
+  `Templates` only (exported from `chameleon_rs.starlette`): `get_template` checks the name
+  against its folders after the traversal guard and raises it when no file exists, before the
+  loader runs (no `ValueError` is caught). Coordinator's scoping, for "default behaviour
+  matches Chameleon": the loader, `PageTemplateLoader`, the decorator API and partials raise
+  Chameleon's plain `ValueError` as before (a first version raised the new class from the
+  loader, which changed `type(e)` everywhere and needed a formatting special case; reverted).
+- Error pages of decorated Starlette endpoints get `request` and `url_for` (the page's data
+  wins), so a 404 layout using `url_for` renders instead of failing with a `NameError`.
+- `response.template` is a `_DebugTemplate(page, name)`: Jinja's `.name` (Starlette's
+  documented `assert response.template.name == 'index.html'` passes), every other attribute
+  the page template's; the cached template is not changed.
+- `Templates.globals` (Jinja's `env.globals`): `url_for` set there by default; the template's
+  variables are `{**globals, **context}`. `env=` stays unsupported (documented).
+- Nits: the decorator-order message names `app.add_route, Route(...), @app.route (0.x), a
+  route decorator of your own`; the route walk follows `.app` through middleware under
+  `Mount` / `Host` (bounded), so `Mount('/g', app=GZipMiddleware(Starlette(...)))` is checked
+  (FastAPI too, shared walk); the guide documents the 0.x differences (request-first only,
+  0.x's deprecated old form, 0.x mutating an empty context dict) and that
+  `TemplateResponse_async` is awaited from an async endpoint; `Templates.loader` /
+  `get_template` are typed (`TemplateLoader`, `PageTemplateFile`); the FastAPI guide says why
+  its views' templates do not get `request` / `url_for`.
+- Tests: `test_starlette.py` 40 (19 new: ten refused name forms, sync and async; Jinja refusing
+  `..`; names inside the folder; the decorator path keeping the original lookup;
+  `TemplateNotFound` from `Templates` (directory and configuration) and only there (the
+  loaders and `render()` raise exactly `ValueError`, as stock Chameleon, also inside a render);
+  globals; error pages with `url_for`; the debug template; the walk through middleware), and
+  the Jinja differential now also compares `response.template.name`.
+- Verification after the fixes: pytest 3,085 passed, 2 skipped, 7 strict xfails (corpus set);
+  upstream 227 passed + 6 xpassed on each engine; Rust 102 + 3 + 9; lint clean (ty 0);
+  integration 40/16/39/6 on the originals, 40/16/6 on the built-ins. A/B against 0b0bce3
+  (release, listing, 8 rounds, load 2.0): -1.6 ns (range -5..+3), 6.34x Chameleon. After scoping
+  `TemplateNotFound` to `Templates`: the same totals (pytest 3,085 passed, 2 skipped, 7 xfailed;
+  upstream 227 + 6 per engine; integration unchanged), A/B +0.8 ns (range -2..+4), 6.48x.
+
+Open for Michael:
+- Per-app settings for Starlette are easy (endpoints get the request; `request.app.state`),
+  but not built, to keep the modules' `configure(app=...)` alike (FastAPI's is open).
+- `request` / `url_for` in decorated Starlette endpoints' templates is new (not in the
+  original libraries); FastAPI views do not get them (fastapi-chameleon's behaviour).
+
 ## Risks
 
 | Risk | Impact | Mitigation |

@@ -54,7 +54,10 @@ Open questions:
 > below; `render_async`/`response_async` and `render_async` for async views in Phase 11).
 > FastAPI built ("Integrations: shared core and FastAPI" in plan.md): `chameleon_rs.fastapi`,
 > both modules on a shared private core (`chameleon_rs._views`), and the decorator-order check
-> at startup. Starlette, Robyn and Litestar remain vision items with the same API.
+> at startup. Starlette built ("Integrations: Starlette" in plan.md): `chameleon_rs.starlette`
+> with `Templates` (Jinja2Templates' API, plus `await TemplateResponse_async(...)`) and the same
+> module API, sharing its Starlette pieces with `chameleon_rs.fastapi`. Robyn and Litestar
+> remain vision items with the same API.
 >
 > Decided by Michael (2026-10-22):
 > - **No extras.** No `pip install chameleon-rs[fastapi]`: each framework module imports its

@@ -1,5 +1,5 @@
 """Shared pieces of the web framework integrations (``chameleon_rs.flask``,
-``chameleon_rs.fastapi``): the exceptions every integration raises, and the conversion of a
+``chameleon_rs.fastapi``, ``chameleon_rs.starlette``): the exceptions every integration raises, and the conversion of a
 view's return value to a template model. Imports only the standard library.
 
 Each integration's old exception names (``FlaskChameleonException``, ...) are subclasses of
@@ -51,6 +51,15 @@ class NotFound(ErrorPage):
         super().__init__(template_file, 404, message, template_data)
 
 
+class TemplateNotFound(TemplateError, ValueError, LookupError):
+    """No template of that name, or a name reaching outside the template folder: raised by
+    ``chameleon_rs.starlette.Templates`` (the ``Jinja2Templates`` drop-in), with the message
+    ``Template not found: {name}.``; code moving from Jinja catches it where it caught
+    ``jinja2.TemplateNotFound``. A ``ValueError`` (as Chameleon's loader raises) and a
+    ``LookupError``. ``PageTemplateLoader`` and the other integrations raise Chameleon's plain
+    ``ValueError``, unchanged."""
+
+
 class DecoratorOrderError(TemplateError):
     """A view was registered with its framework before ``@template`` wrapped it (``@template``
     written above ``@app.get`` / ``@app.route`` / ``@router.get``), so the route calls the bare
@@ -78,4 +87,4 @@ def model_of(value: Any) -> dict[str, Any] | None:
     return None
 
 
-__all__ = ['DecoratorOrderError', 'ErrorPage', 'NotFound', 'TemplateError', 'model_of']
+__all__ = ['DecoratorOrderError', 'ErrorPage', 'NotFound', 'TemplateError', 'TemplateNotFound', 'model_of']

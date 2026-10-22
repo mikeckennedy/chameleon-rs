@@ -112,6 +112,11 @@ test with `fastapi_chameleon.check_views(app, ignore=[that_function])`.
 `@template(..., concurrent=True)` renders `render_partial(...)` calls with awaitable arguments
 concurrently; `@template(..., offload=True)` (experimental) renders in a worker thread.
 
+The template gets what the view returns, and nothing else: unlike `chameleon_rs.starlette`'s
+endpoints, a FastAPI view's template does not get `request` or `url_for` added, as with
+fastapi-chameleon (a FastAPI view has no request unless it declares one). Return them in the
+model if the template needs them.
+
 ## What a view can return
 
 - **A model:** a `dict`, any other mapping, a dataclass instance (its fields, shallowly) or a
@@ -158,6 +163,16 @@ print(response.status_code, response.text)
 - `error(template_file, status_code=500, **data)` renders any error page.
 - `generic_error(template_file, status_code, template_data)` is fastapi-chameleon's name and
   signature for `error()`.
+
+::: {.callout-warning}
+## Template names come from your code
+
+The names given to `@template`, `render()`, `response()`, `not_found()` / `error()` and
+`render_partial()` are looked up as the original libraries look them up, which allows `..` and
+absolute paths. Write them in your code; never build one from a request (a path or query
+parameter, a header). `chameleon_rs.starlette.Templates`, the Jinja drop-in, refuses names that
+reach outside its folder, as Jinja does.
+:::
 
 ## Rendering without the decorator
 

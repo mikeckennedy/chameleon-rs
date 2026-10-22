@@ -57,6 +57,36 @@ OpenAPI docs work as without `@template`. An `async def` view renders with `rend
 (awaitable values in the model are awaited where the template uses them, without blocking the
 event loop); a sync view renders in FastAPI's thread pool, as before.
 
+- **Starlette:** `chameleon_rs.starlette.Templates` is a drop-in for Starlette's
+  `Jinja2Templates`: `TemplateResponse(request, name, context, status_code, headers,
+  media_type, background)` adds `request` to the context, runs the context processors, gives
+  the template `url_for(...)` and sends the debug event the test client reads
+  (`response.template`, `response.context`). `await templates.TemplateResponse_async(...)`
+  takes the same arguments and renders with `render_async`, so the event loop is never
+  blocked. The same module has the decorator API of the Flask and FastAPI modules
+  (`configure`, `@template`, `render`, `response`, `not_found`, `error`, `check_views`, ...);
+  decorated endpoints' templates also get `request` and `url_for`. For a missing template `Templates`
+  raises `chameleon_rs.web.TemplateNotFound` (a `ValueError`), the counterpart of
+  `jinja2.TemplateNotFound` (everything else raises Chameleon's plain `ValueError`, as before); `templates.globals` is Jinja's `env.globals`.
+
+```python
+from chameleon_rs.starlette import Templates
+
+templates = Templates(directory='templates')   # or Templates() after chameleon_rs.configure(...)
+
+async def episode(request):
+    episode = load_episode(request.path_params['number'])   # awaitable values are awaited in the template
+    return await templates.TemplateResponse_async(request, 'episodes/detail.pt', {'episode': episode})
+
+app = Starlette(routes=[Route('/episodes/{number}', episode, name='episode')])
+```
+
+**Template names come from your code.** Names given to `@template`, `render()`,
+`response()`, the error pages and `render_partial()` are looked up as chameleon-flask,
+fastapi-chameleon and chameleon_partials look them up (`..` and absolute paths work): never
+build one from request data. `chameleon_rs.starlette.Templates`, the Jinja drop-in, refuses
+names that reach outside its folder, as Jinja does.
+
 **Decorator order.** `@template` goes *below* the route decorator (`@app.get`, `@router.get`,
 `@app.route`, `@blueprint.get`). Written above it, the router registers the bare view, the
 template never renders and the route quietly returns JSON. An app given to `configure(...,
@@ -95,9 +125,10 @@ html = await page.render_async(episodes=latest_episodes(), user=user)
   fixture and the render fuzzers).
 - Async iterables in `tal:repeat` are not supported (as in a sync render, they are not
   iterable): collect them first, `[x async for x in source]` in an async helper.
-- `chameleon_rs.flask` and `chameleon_rs.fastapi`: async views (Flask's async views, Quart,
-  FastAPI) render with `render_async`; `render_async()` and `response_async()` are the coroutine versions of
-  `render()` and `response()`. This also applies through `compat.install()`, and it is a
+- `chameleon_rs.flask`, `chameleon_rs.fastapi` and `chameleon_rs.starlette`: async views
+  (Flask's async views, Quart, FastAPI, Starlette) render with `render_async`; `render_async()`
+  and `response_async()` are the coroutine versions of `render()` and `response()`, and
+  Starlette's `Templates.TemplateResponse_async()` of `TemplateResponse()`. This also applies through `compat.install()`, and it is a
   difference from chameleon-flask: a model value that is awaitable (a coroutine, task or
   future, or a test double such as `AsyncMock()`) is awaited where the template uses it, where
   chameleon-flask and fastapi-chameleon would have rendered the object itself.
@@ -108,7 +139,7 @@ Opt-in concurrency (it changes the order in which helpers run):
 
 - `@chameleon_rs.concurrent` on an async helper: its calls written as `${...}` are awaited
   concurrently with the rest of the page, each result filled in at the end.
-- `PageTemplate(..., concurrent=True)` (or `@template(..., concurrent=True)` in Flask and FastAPI):
+- `PageTemplate(..., concurrent=True)` (or `@template(..., concurrent=True)` in Flask, FastAPI and Starlette):
   `render_partial(...)` calls of the page whose arguments are awaitable render concurrently.
 
 Experimental: `render_async(..., offload=True)` (or `@template(..., offload=True)`) renders in a

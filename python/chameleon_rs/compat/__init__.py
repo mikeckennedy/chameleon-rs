@@ -43,7 +43,7 @@ from types import ModuleType
 NOT_PROVIDED = frozenset({'nodes', 'program', 'zpt.program', 'benchmark'})
 
 # chameleon-rs's own public modules that are not Chameleon's (not aliased under `chameleon.`).
-OWN_MODULES = frozenset({'fastapi', 'flask', 'partials', 'web'})
+OWN_MODULES = frozenset({'fastapi', 'flask', 'partials', 'starlette', 'web'})
 
 # Libraries built into chameleon-rs: old top-level name -> (module, submodule names that are
 # the same module).
