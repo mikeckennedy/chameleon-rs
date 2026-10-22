@@ -1,0 +1,213 @@
+---
+title: "Robyn"
+---
+
+`chameleon_rs.robyn` renders templates from [Robyn](https://robyn.tech) route handlers. It has
+chameleon-robyn's API, so moving an app over is an import change, or no change at all with
+`chameleon_rs.compat.install()` (which makes `import chameleon_robyn` give this module).
+
+`import chameleon_rs` doesn't import Robyn. Only `import chameleon_rs.robyn` does. There is
+nothing extra to install: it uses the Robyn your app already has.
+
+::: {.callout-note}
+## Python versions
+
+Robyn publishes wheels for CPython 3.10 to 3.14 only (no 3.15 and no free-threaded build yet),
+so `chameleon_rs.robyn` works wherever Robyn installs. The examples on this page are not run
+when the docs are built, as the other framework pages are.
+:::
+
+## A first handler
+
+```python
+from robyn import Robyn
+
+import chameleon_rs.robyn as chameleon_robyn
+
+app = Robyn(__file__)
+chameleon_robyn.configure(template_folder='templates', auto_reload=dev_mode, app=app)
+
+
+@app.get('/')
+@chameleon_robyn.template('home/index.pt')
+async def index(query_params):
+    videos = ['intro', 'partials', 'async']
+    return {'message': 'Hello', 'videos': videos[: int(query_params.get('limit', '2'))]}
+
+
+app.start(port=8080)
+```
+
+The handler returns the template's model, and `@template` renders it into a `robyn.Response`
+with `Content-Type: text/html; charset=utf-8`. The decorated handler keeps its signature, so
+Robyn passes it the same request parts (`request`, `query_params`, path parameters, ...) as
+without `@template`.
+
+`configure()` here is the same call as `chameleon_rs.configure()`, so it also tells
+`render_partial` where templates live. `app=` turns on the decorator-order check below.
+`global_init(template_folder, auto_reload=False, cache_init=True, restricted_namespace=True)`
+is chameleon-robyn's call and still works.
+
+## Decorator order
+
+`@template` goes below the route decorator. Written above it, Robyn registers the bare
+handler, the template never renders and the route quietly returns the handler's dict as JSON.
+An app given to `configure(..., app=app)` checks this when it starts:
+
+```python
+@chameleon_robyn.template('home/about.pt')   # wrong: above the route
+@app.get('/about')
+def about():
+    return {'message': 'About'}
+
+
+app.start(port=8080)
+# chameleon_rs.web.DecoratorOrderError: @template must be placed below the route decorator
+# (@app.get, @app.post, @router.get, app.add_route, ...) on about() at app.py:12
+# (route GET /about): the route was registered with the undecorated view, so its template
+# never renders. Put the route decorator first (outermost) and @template under it.
+```
+
+The check runs in `app.start()`, in the main process before the server starts, so a
+misordered app fails to start. Robyn's own startup hook was not used: an app has one startup
+handler (a second `startup_handler` replaces the first) and Robyn runs it inside each server
+process. Robyn's in-process test client (`robyn.testing.TestClient(app)`) never calls
+`start()`, so the check also runs whenever the app's route table is read with routes added
+since the last check, which the test client does when it is built: a misordered app fails
+there too. Reading the table early (a route listing built at import time) does not end the
+check: routes added afterwards are checked at the next read and in `start()`. Once `start()`
+passed the check, both hooks remove themselves.
+
+Routes of a `SubRouter` included with `app.include_router(...)` are checked with the app.
+`chameleon_robyn.check_views(app)` (or a `SubRouter`) runs the same check on demand. A
+function registered raw on purpose (JSON on one route) and also decorated on another route is
+not flagged. One pattern can't be told from the mistake: a function routed raw on this app
+whose `@template` wrapper is used somewhere else (called from another handler, or routed on
+another app). For such an app, pass `check_order=False` to `configure()` and keep the check in
+a test with `chameleon_robyn.check_views(app, ignore=[that_function])`.
+
+## Sync and async handlers
+
+- An `async def` handler renders its page with `render_async` on Robyn's event loop. A model
+  value that is awaitable (a coroutine, task or future) is awaited where the template uses it,
+  so a slow query can be handed to the template unawaited, and other requests keep being served
+  while it waits.
+- A plain `def` handler renders with `render()` where Robyn runs it: on its Rust worker
+  thread, not on the event loop and not in a thread pool. While it renders, that worker (one per
+  process by default) handles nothing else, as with chameleon-robyn.
+
+`@template(..., concurrent=True)` renders `render_partial(...)` calls with awaitable arguments
+concurrently; `@template(..., offload=True)` (experimental) renders in a worker thread. Both
+apply to `async def` handlers only.
+
+## What a handler can return
+
+- **A model:** a `dict`, any other mapping, a dataclass instance (its fields, shallowly) or a
+  Pydantic model (anything with a callable `model_dump()`).
+- **A response:** a `robyn.Response` passes through unchanged (redirects, custom errors).
+
+Anything else raises `chameleon_rs.robyn.ChameleonRobynException`.
+
+A `__response_callback__` in the model is not a template variable: it is called with the
+response before it is returned, to set cookies or headers. The handler's dict is not changed,
+so a shared or module-level model keeps working.
+
+```python
+def remember(response):
+    response.set_cookie('session', session_id)
+
+@app.post('/login')
+@chameleon_robyn.template('account/welcome.pt')
+def login(request):
+    return {'user': user, '__response_callback__': remember}
+```
+
+## The `@template` decorator
+
+```python
+@chameleon_robyn.template('home/index.pt')                       # a template path
+@chameleon_robyn.template('feed.pt', 'application/xml')          # content_type=, or mimetype=
+@chameleon_robyn.template('home/created.pt', status_code=201)
+@chameleon_robyn.template                                        # no arguments
+```
+
+With no path, it renders `{module}/{function}.html`, where `{module}` is the last part of the
+handler's module name; if there's no `.html` file in the template folder, it uses
+`{module}/{function}.pt`. As in chameleon-robyn, the choice is made at the first request, once
+a template folder is configured, so handlers can be decorated at import time and
+`global_init()` called later from `main()`.
+
+## Error pages
+
+Inside a decorated handler, `not_found()` and `error()` stop the handler and render an error
+page as `text/html`. The template gets `message` (`'The URL resulted in a 404 response.'` or
+`'The URL resulted in an error.'`) and the data passed:
+
+```python
+@app.get('/videos/:name')
+@chameleon_robyn.template('home/index.pt')
+async def video(name):
+    if name not in videos:
+        chameleon_robyn.not_found(name=name)   # renders errors/404.pt with status 404
+    return {'message': name, 'videos': [name]}
+```
+
+- `not_found(template_file='errors/404.pt', **data)` renders the page with status 404
+  (`four04template_file=` is chameleon-robyn's name for the template).
+- `error(template_file, status_code=500, **data)` renders any error page.
+- `generic_error(template_file, status_code, template_data)` is fastapi-chameleon's name and
+  signature for `error()`.
+
+::: {.callout-warning}
+## Template names come from your code
+
+The names given to `@template`, `render()`, `response()`, `not_found()` / `error()`,
+`ChameleonTemplate.render_template()` and `render_partial()` are looked up as the original
+libraries look them up, which allows `..` and absolute paths. Write them in your code; never
+build one from a request (a path or query parameter, a header).
+:::
+
+## Rendering without the decorator
+
+```python
+html = chameleon_robyn.render('emails/welcome.pt', user=user)        # a str
+html = await chameleon_robyn.render_async('emails/welcome.pt', user=user)
+resp = chameleon_robyn.response('feed.pt', 'application/xml', items=items)
+resp = await chameleon_robyn.response_async('feed.pt', status_code=201, items=items)
+```
+
+Both raise `ChameleonRobynException` if nothing has been configured.
+
+## Robyn's template interface
+
+`ChameleonTemplate` implements Robyn's `TemplateInterface`, as its `JinjaTemplate` does. It
+has a loader of its own and needs no `configure()`:
+
+```python
+from chameleon_rs.robyn import ChameleonTemplate
+
+templates = ChameleonTemplate('templates', auto_reload=dev_mode)
+
+
+@app.get('/about')
+async def about():
+    return await templates.render_template_async('home/about.pt', message='About')
+```
+
+`render_template(name, **data)` returns a 200 `robyn.Response`; `render_template_async` is
+its coroutine. `robyn.templating.render(name, template_engine=ChameleonTemplate, ...)` works
+too, and type-checks there. (At runtime `ChameleonTemplate` follows Robyn's interface without
+subclassing its abstract class, which would import Jinja2, as chameleon-robyn does.)
+
+## Coming from chameleon-robyn
+
+| chameleon-robyn | chameleon-rs |
+|---|---|
+| `global_init(folder, auto_reload=False, cache_init=True, restricted_namespace=True)` | Still works, and takes `app=`. It configures the handlers only, as before, and ignores a second call. `configure()` sets handlers and partials together, and every call applies. |
+| `@template(file, content_type, status_code)`, `render`, `response`, `not_found`, `clear`, `ChameleonTemplate` | Same. `@template` also takes `mimetype=`, `concurrent=` and `offload=`; `not_found` also takes `template_file=` and template data. |
+| — | `error()`, `generic_error()`, `render_async()`, `response_async()`, `ChameleonTemplate.render_template_async()`, `check_views()`. |
+| `ChameleonRobynException`, `ChameleonRobynNotFoundException` | Same names, now subclasses of `chameleon_rs.web.TemplateError` and `NotFound`. |
+| Handlers return a `dict` | Also mappings, dataclasses and Pydantic models. |
+| Async handlers render synchronously | They render with `render_async`; an awaitable model value is awaited where the template uses it. |
+
+Settings are process-wide: a Robyn handler has no app to find settings of its own in.

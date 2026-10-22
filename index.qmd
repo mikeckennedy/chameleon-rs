@@ -56,8 +56,8 @@ import chameleon_rs.compat
 chameleon_rs.compat.install()
 ```
 
-From then on, `import chameleon`, `import chameleon_partials`, `import chameleon_flask` and
-`import fastapi_chameleon` all give you chameleon-rs. See [Switching from Chameleon](user-guide/switching-from-chameleon.qmd).
+From then on, `import chameleon`, `import chameleon_partials`, `import chameleon_flask`,
+`import fastapi_chameleon` and `import chameleon_robyn` all give you chameleon-rs. See [Switching from Chameleon](user-guide/switching-from-chameleon.qmd).
 
 ## Where to next
 

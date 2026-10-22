@@ -29,6 +29,7 @@ PUBLIC: dict[str, tuple[str, ...] | None] = {
     'chameleon_rs.flask': None,
     'chameleon_rs.loader': None,
     'chameleon_rs.partials': None,
+    'chameleon_rs.robyn': None,
     'chameleon_rs.shadow': None,
     'chameleon_rs.starlette': None,
     'chameleon_rs.template': None,
@@ -170,7 +171,14 @@ def test_stub_signatures_match_the_extension() -> None:
 # --- The public API -----------------------------------------------------------------------
 
 
+# Public modules whose framework is not installable on every Python we test: Robyn ships wheels
+# for CPython 3.10-3.14 only.
+NEEDS = {'chameleon_rs.robyn': 'robyn'}
+
+
 def _exports(module_name: str) -> list[tuple[str, Any]]:
+    if module_name in NEEDS:
+        pytest.importorskip(NEEDS[module_name])
     module = importlib.import_module(module_name)
     names = PUBLIC[module_name] or getattr(module, '__all__', None)
     if names is None:

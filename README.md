@@ -16,7 +16,7 @@ Switching an application over is one line at startup, before anything imports Ch
 ```python
 import chameleon_rs.compat
 
-chameleon_rs.compat.install()  # `import chameleon`, `chameleon_partials`, `chameleon_flask`, `fastapi_chameleon` give chameleon-rs
+chameleon_rs.compat.install()  # `import chameleon`, `chameleon_partials`, `chameleon_flask`, `fastapi_chameleon`, `chameleon_robyn` give chameleon-rs
 ```
 
 Built in, with no extra package:
@@ -81,9 +81,33 @@ async def episode(request):
 app = Starlette(routes=[Route('/episodes/{number}', episode, name='episode')])
 ```
 
+- **Robyn:** `chameleon_rs.robyn` has chameleon-robyn's API (`global_init`, `@template`,
+  `render`, `response`, `not_found`, `clear`, `ChameleonTemplate` for Robyn's template
+  interface, the `__response_callback__` hook, its exception names) plus `configure`, `error`,
+  `render_async`, `response_async` and `check_views`, and imports Robyn only when it is
+  imported itself. An `async def` handler renders with `render_async` on Robyn's event loop; a
+  sync handler renders where Robyn runs it, on its worker thread. Robyn has wheels for CPython
+  3.10-3.14 only (no 3.15 or free-threaded build yet).
+
+```python
+from robyn import Robyn
+import chameleon_rs.robyn as chameleon_robyn
+
+app = Robyn(__file__)
+chameleon_robyn.configure(template_folder='templates', app=app)
+
+@app.get('/episodes/:number')                      # the route decorator first...
+@chameleon_robyn.template('episodes/detail.pt')    # ...then @template
+async def detail(number):
+    episode = await db.episode(int(number))
+    if episode is None:
+        chameleon_robyn.not_found()
+    return {'episode': episode}
+```
+
 **Template names come from your code.** Names given to `@template`, `render()`,
-`response()`, the error pages and `render_partial()` are looked up as chameleon-flask,
-fastapi-chameleon and chameleon_partials look them up (`..` and absolute paths work): never
+`response()`, the error pages, Robyn's `ChameleonTemplate` and `render_partial()` are looked up
+as chameleon-flask, fastapi-chameleon, chameleon-robyn and chameleon_partials look them up (`..` and absolute paths work): never
 build one from request data. `chameleon_rs.starlette.Templates`, the Jinja drop-in, refuses
 names that reach outside its folder, as Jinja does.
 
@@ -91,7 +115,8 @@ names that reach outside its folder, as Jinja does.
 `@app.route`, `@blueprint.get`). Written above it, the router registers the bare view, the
 template never renders and the route quietly returns JSON. An app given to `configure(...,
 app=app)` (or `global_init(..., app=app)`) checks this when it starts (FastAPI and Quart: at
-startup; Flask, which has no startup hook: before its first request) and raises
+startup; Robyn: in `app.start()` and when its test client is built; Flask, which has no
+startup hook: before its first request) and raises
 `chameleon_rs.web.DecoratorOrderError` naming the view and the fix; `check_views(app)` runs the
 same check on demand. One pattern looks the same as the mistake: a function routed raw on this
 app whose `@template` wrapper is used elsewhere (called from another view, or routed on another
@@ -125,13 +150,14 @@ html = await page.render_async(episodes=latest_episodes(), user=user)
   fixture and the render fuzzers).
 - Async iterables in `tal:repeat` are not supported (as in a sync render, they are not
   iterable): collect them first, `[x async for x in source]` in an async helper.
-- `chameleon_rs.flask`, `chameleon_rs.fastapi` and `chameleon_rs.starlette`: async views
-  (Flask's async views, Quart, FastAPI, Starlette) render with `render_async`; `render_async()`
+- `chameleon_rs.flask`, `chameleon_rs.fastapi`, `chameleon_rs.starlette` and
+  `chameleon_rs.robyn`: async views (Flask's async views, Quart, FastAPI, Starlette, Robyn)
+  render with `render_async`; `render_async()`
   and `response_async()` are the coroutine versions of `render()` and `response()`, and
   Starlette's `Templates.TemplateResponse_async()` of `TemplateResponse()`. This also applies through `compat.install()`, and it is a
   difference from chameleon-flask: a model value that is awaitable (a coroutine, task or
   future, or a test double such as `AsyncMock()`) is awaited where the template uses it, where
-  chameleon-flask and fastapi-chameleon would have rendered the object itself.
+  chameleon-flask, fastapi-chameleon and chameleon-robyn would have rendered the object itself.
 - A subclass that overrides `render()` keeps its override: `render_async()` calls it
   (synchronously, so awaitable values are not awaited).
 
@@ -139,7 +165,7 @@ Opt-in concurrency (it changes the order in which helpers run):
 
 - `@chameleon_rs.concurrent` on an async helper: its calls written as `${...}` are awaited
   concurrently with the rest of the page, each result filled in at the end.
-- `PageTemplate(..., concurrent=True)` (or `@template(..., concurrent=True)` in Flask, FastAPI and Starlette):
+- `PageTemplate(..., concurrent=True)` (or `@template(..., concurrent=True)` in Flask, FastAPI, Starlette and Robyn):
   `render_partial(...)` calls of the page whose arguments are awaitable render concurrently.
 
 Experimental: `render_async(..., offload=True)` (or `@template(..., offload=True)`) renders in a

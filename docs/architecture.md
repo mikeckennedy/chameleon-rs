@@ -1466,6 +1466,58 @@ Release blockers. Each behaviour checked against Chameleon's generated code firs
   `chameleon_rs.starlette.configure()` sets the partials and its slot, `global_init` / `clear`
   only its slot. Settings are process-wide, as FastAPI's.
 
+## Integrations amendments: Robyn (2026-10-22)
+
+- **`chameleon_rs.robyn`** is chameleon-robyn's API on `_views`, with `_Robyn(Integration)`
+  supplying `is_response` (`robyn.Response` only, as the original), `make_response`
+  (`Response(status_code, description=html, headers=Headers({'Content-Type':
+  f'{content_type}; charset=utf-8'}))`), `routes` and `watch`. Where chameleon-robyn differs
+  from the other libraries, the subclass overrides the shared path rather than changing it for
+  everyone: `render_response` / `render_response_async` pop the `__response_callback__` hook
+  from a copy of the model (validated callable, called with the response), error pages render
+  through the same path with `{'message': page.message, **data}` (chameleon-robyn's 404 model,
+  so a callback in the data works on error pages too), and `decorate` resolves a bare
+  `@template` name per request until a folder is configured, then fixes it (chameleon-robyn
+  decides at the first request, so handlers may be decorated before `global_init()`; the
+  other modules decide at decoration). The wrappers are `functools.wraps`'d: Robyn injects
+  request parts by `inspect.signature`, which follows `__wrapped__`.
+- **Execution model** (probed with a real server): `async def` handlers run on the asyncio loop
+  of Robyn's main thread, so they render with `render_async`; sync handlers are called from
+  Robyn's Rust worker thread with no running loop, so they render with `render` there, as
+  chameleon-robyn does (not moved to a thread pool: default behaviour unchanged).
+- **Decorator order.** Robyn's route decorators return Robyn's own wrapper of the handler and
+  store it in `Route.function.handler`; `routes(app)` walks `type(app.router).get_routes(...)`
+  (class method, bypassing the guard below) and the shared `__wrapped__` walk does the rest.
+  `include_router` copies a SubRouter's routes into the app's table, so they are covered.
+  `_Robyn.watch_app` installs two instance-attribute guards: `app.start` (the check runs in
+  the main process before `run_processes`, so the app fails to start) and
+  `app.router.get_routes` (read by `start()` and by `robyn.testing.TestClient.__init__`, which
+  never starts the app). Only `start()` passing is final: it removes both guards. The
+  `get_routes` guard re-checks whenever the route count changed since the last passing check
+  (Robyn only appends routes), so an early read by the app's own code (a route listing at
+  import time) does not end the check for routes added later (review fix; a plain memo would
+  have). Rejected:
+  `app.startup_handler`, a single slot per app (a later user call would replace ours, ours
+  would replace theirs) run inside each server process, after the server is up.
+- **No wheel everywhere.** Robyn 0.88.0 has wheels for CPython 3.10-3.14 only. It stays out of
+  the dev dependency group; `make dev` installs it where a wheel exists, and its sources are
+  unpacked into `temp/robyn-typing` for ty (`extra-paths`), so typing is checked on every
+  Python; `make test-robyn` runs the Robyn tests in a 3.14 venv when `venv` cannot install
+  Robyn. Tests skip cleanly without Robyn (`importorskip`; `test_typing.NEEDS`).
+- **Settings:** `VIEW_SLOTS = ('flask', 'starlette', 'fastapi', 'robyn')`; process-wide, as
+  FastAPI's (a handler has no app to find per-app settings in).
+- **Deliberate small differences** (beyond the extras): the wrappers catch any
+  `chameleon_rs.web.ErrorPage`, as the other modules' do, so another integration's
+  `not_found()` (`chameleon_rs.fastapi.not_found`) raised inside a Robyn handler renders its
+  page where chameleon-robyn lets the exception propagate. `ChameleonTemplate` derives from
+  Robyn's `robyn.templating.TemplateInterface` for type checkers only (`TYPE_CHECKING`), so it
+  type-checks as `template_engine=`; at runtime it derives from the local protocol, as
+  chameleon-robyn's, since `robyn.templating` imports Jinja2.
+- **One Robyn pin** (`ROBYN_VERSION` in the Makefile) for the dev install, the `test-robyn`
+  and integration venvs, and the ty snapshot (`temp/robyn-typing`, unpacked from a wheel of
+  that release by `scripts/fetch_robyn_typing.py`, standard library only, so no 3.14
+  interpreter is needed; `make lint` depends on it).
+
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
 ```

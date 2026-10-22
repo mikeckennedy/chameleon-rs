@@ -82,6 +82,7 @@ user_guide:
       - flask.qmd
       - fastapi.qmd
       - starlette.qmd
+      - robyn.qmd
   - section: "Background"
     contents:
       - compatibility.qmd
@@ -100,7 +101,7 @@ sections:
 skill:
   extra_body: skill_extra_body.md
   gotchas:
-    - "chameleon_rs.compat.install() must run before anything imports chameleon, chameleon_partials, chameleon_flask or fastapi_chameleon; a module already imported keeps stock Chameleon's objects."
+    - "chameleon_rs.compat.install() must run before anything imports chameleon, chameleon_partials, chameleon_flask, fastapi_chameleon or chameleon_robyn; a module already imported keeps stock Chameleon's objects."
     - "render_partial looks in the configured template folder, then on the calling template's search path and in its folder and each folder above it. chameleon_rs.configure(partial_search='registered') restores chameleon_partials' lookup (configured folder only)."
     - "render_partial is a builtin in every template; you don't need extend_model() or a BeforeRender subscriber (both still work)."
     - "configure() applies on every call (there is no cache_init); the first call must give template_folder."
@@ -111,7 +112,7 @@ skill:
     - "To switch an existing app, add `import chameleon_rs.compat; chameleon_rs.compat.install()` as the first lines of the entry point, and leave the rest of the code unchanged."
     - "Prefer ${render_partial('shared/card.pt', item=item)} as a whole expression: it renders as a native frame of the page, with no Python call."
     - "Build template folder paths with (Path(__file__).parent / 'templates').as_posix()."
-    - "In tests, reset with chameleon_rs.partials.clear() (or chameleon_rs.flask.clear(), chameleon_rs.fastapi.clear(), chameleon_rs.starlette.clear()) between configurations."
+    - "In tests, reset with chameleon_rs.partials.clear() (or chameleon_rs.flask.clear(), chameleon_rs.fastapi.clear(), chameleon_rs.starlette.clear(), chameleon_rs.robyn.clear()) between configurations."
     - "Put @template below the route decorator (@app.get, @router.get, @app.route); pass app= to configure() so a misordered view fails at startup with DecoratorOrderError."
   decision_table:
     - need: "Run an existing Chameleon app on chameleon-rs with no code changes"
@@ -130,6 +131,8 @@ skill:
       use: "chameleon_rs.fastapi: configure(folder, app=app), then @template('page.pt') below @app.get"
     - need: "Replace Starlette's Jinja2Templates"
       use: "chameleon_rs.starlette.Templates(directory=folder); await templates.TemplateResponse_async(request, 'page.pt', context) in async endpoints"
+    - need: "Render Chameleon templates from Robyn handlers"
+      use: "chameleon_rs.robyn: configure(folder, app=app), then @template('page.pt') below @app.get (Robyn has wheels for Python 3.10-3.14)"
 
 # Umami analytics. Needs this site's own website id (the partials site has its own):
 # include_in_header:
@@ -150,7 +153,7 @@ reference:
   desc: >-
     The public API of chameleon-rs. It mirrors Chameleon's (PageTemplate,
     PageTemplateFile, PageTemplateLoader, ...), plus built-in partials, process-wide
-    configuration and the Flask/Quart, FastAPI and Starlette integrations.
+    configuration and the Flask/Quart, FastAPI, Starlette and Robyn integrations.
   sections:
     - title: Templates
       desc: "Compile and render templates from strings, files and folders."
@@ -218,6 +221,22 @@ reference:
         - starlette.generic_error
         - starlette.clear
         - starlette.check_views
+    - title: Robyn
+      desc: "chameleon-robyn's API, built in. Imports Robyn only when imported itself."
+      contents:
+        - robyn.configure
+        - robyn.global_init
+        - robyn.template
+        - robyn.render
+        - robyn.render_async
+        - robyn.response
+        - robyn.response_async
+        - robyn.not_found
+        - robyn.error
+        - robyn.generic_error
+        - robyn.clear
+        - robyn.check_views
+        - robyn.ChameleonTemplate
     - title: Errors and web helpers
       desc: "Exceptions, and the pieces shared by the framework integrations."
       contents:

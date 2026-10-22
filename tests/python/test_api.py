@@ -750,9 +750,9 @@ def test_no_runtime_dependencies() -> None:
     # except the framework integrations, which import their framework; and neither
     # `import chameleon_rs` nor `compat.install()` imports them.
     result = run_python("""
-        import importlib, importlib.abc, pkgutil, sys, sysconfig
+        import importlib, importlib.abc, importlib.util, pkgutil, sys, sysconfig
         stdlib = sysconfig.get_paths()['stdlib']
-        FRAMEWORKS = {'chameleon_rs.flask', 'chameleon_rs.fastapi', 'chameleon_rs.starlette'}
+        FRAMEWORKS = {'chameleon_rs.flask', 'chameleon_rs.fastapi', 'chameleon_rs.starlette', 'chameleon_rs.robyn'}
 
         class Block(importlib.abc.MetaPathFinder):
             on = True
@@ -772,9 +772,9 @@ def test_no_runtime_dependencies() -> None:
         for info in pkgutil.walk_packages(chameleon_rs.__path__, 'chameleon_rs.'):
             if info.name not in FRAMEWORKS:
                 importlib.import_module(info.name)
-        imported = {'flask', 'werkzeug', 'quart', 'fastapi', 'starlette', 'pydantic'} & set(sys.modules)
+        imported = {'flask', 'werkzeug', 'quart', 'fastapi', 'starlette', 'pydantic', 'robyn'} & set(sys.modules)
         assert not imported and not FRAMEWORKS & set(sys.modules), 'framework imported'
-        for old in ('chameleon_flask', 'fastapi_chameleon'):
+        for old in ('chameleon_flask', 'fastapi_chameleon', 'chameleon_robyn'):
             try:
                 importlib.import_module(old)
             except ImportError as e:
@@ -783,18 +783,25 @@ def test_no_runtime_dependencies() -> None:
         for module in FRAMEWORKS:
             sys.modules.pop(module, None)
         block.on = False
+        # Robyn has no wheel for every Python we test (3.15, free-threaded).
+        has_robyn = importlib.util.find_spec('robyn') is not None
         for module in FRAMEWORKS:
-            importlib.import_module(module)
+            if module != 'chameleon_rs.robyn' or has_robyn:
+                importlib.import_module(module)
         import chameleon_flask, chameleon_flask.engine
         from chameleon_flask.exceptions import FlaskChameleonException
         assert chameleon_flask.engine is chameleon_flask is chameleon_rs.flask
         import fastapi_chameleon, fastapi_chameleon.engine
         from fastapi_chameleon.exceptions import FastAPIChameleonException
         assert fastapi_chameleon.engine is fastapi_chameleon is chameleon_rs.fastapi
+        if has_robyn:
+            import chameleon_robyn, chameleon_robyn.engine
+            from chameleon_robyn.exceptions import ChameleonRobynException
+            assert chameleon_robyn.engine is chameleon_robyn is chameleon_rs.robyn
         assert 'chameleon.starlette' not in sys.modules and 'chameleon.fastapi' not in sys.modules
         print('ok')
     """)
-    blocked = 'blocked: not the standard library: flask\nblocked: not the standard library: fastapi\n'
+    blocked = ''.join(f'blocked: not the standard library: {name}\n' for name in ('flask', 'fastapi', 'robyn'))
     assert result.stdout == blocked + 'ok\n', result.stderr
 
 

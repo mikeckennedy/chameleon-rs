@@ -17,6 +17,7 @@ code that's no longer needed.
 | A Pyramid `BeforeRender` subscriber that adds `render_partial` | Remove it |
 | `import chameleon_flask` | `import chameleon_rs.flask as chameleon_flask` |
 | `import fastapi_chameleon` | `import chameleon_rs.fastapi as fastapi_chameleon` |
+| `import chameleon_robyn` | `import chameleon_rs.robyn as chameleon_robyn` |
 | `chameleon_partials.render_partial(path, **m).html_text` | `chameleon_rs.render_partial(path, **m).html_text` |
 | `except chameleon_partials.PartialsException`, `except chameleon_flask.exceptions.FlaskChameleonException` | Still work. `except chameleon_rs.web.TemplateError` catches both |
 | `has_registered_extensions = False` in test teardown | `chameleon_rs.partials.clear()` |
@@ -111,9 +112,29 @@ See [FastAPI](fastapi.qmd).
 
 ## chameleon-robyn
 
-chameleon-rs doesn't build it in yet. Keep using it, with `chameleon_rs.compat.install()` at
-the top of your entry point: it imports `chameleon`, so it renders with chameleon-rs. Its test
-suite passes unmodified on it.
+```python
+import chameleon_robyn
+```
+
+becomes
+
+```python
+import chameleon_rs.robyn as chameleon_robyn
+```
+
+or stays as it is with `chameleon_rs.compat.install()`. Every name keeps working
+(`global_init`, `@template`, `render`, `response`, `not_found`, `clear`, `ChameleonTemplate`,
+`__response_callback__`, the exception classes), and its test suite passes unmodified on the
+built-in. Differences:
+
+- Async handlers render with `render_async`: an awaitable model value is awaited where the
+  template uses it.
+- `configure(..., app=app)` (or `global_init(..., app=app)`) checks in `app.start()` (and when
+  Robyn's test client is built) that every `@template` sits below its route decorator.
+- `error()`, `render_async()`, `response_async()`, data for `not_found()`, and
+  `ChameleonTemplate.render_template_async()`.
+
+See [Robyn](robyn.qmd).
 
 ## Pitfalls
 
