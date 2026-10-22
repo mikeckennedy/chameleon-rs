@@ -1,0 +1,100 @@
+---
+title: "Migrating from the helper libraries"
+---
+
+chameleon-rs builds in what chameleon_partials and chameleon-flask provide. With
+`chameleon_rs.compat.install()` you don't have to change anything: the old imports give the
+built-ins. This page is for when you want to move to the new names, and drop the old setup
+code that's no longer needed.
+
+## At a glance
+
+| Before | After |
+|---|---|
+| `from chameleon import PageTemplateLoader` | `from chameleon_rs import PageTemplateLoader` |
+| `chameleon_partials.register_extensions(folder, auto_reload=dev)` and `chameleon_flask.global_init(folder, auto_reload=dev)` | One call: `chameleon_rs.configure(template_folder=folder, auto_reload=dev)` |
+| `return chameleon_partials.extend_model(model)` in every view | `return model`: `render_partial` is in every template |
+| A Pyramid `BeforeRender` subscriber that adds `render_partial` | Remove it |
+| `import chameleon_flask` | `import chameleon_rs.flask as chameleon_flask` |
+| `chameleon_partials.render_partial(path, **m).html_text` | `chameleon_rs.render_partial(path, **m).html_text` |
+| `except chameleon_partials.PartialsException`, `except chameleon_flask.exceptions.FlaskChameleonException` | Still work. `except chameleon_rs.web.TemplateError` catches both |
+| `has_registered_extensions = False` in test teardown | `chameleon_rs.partials.clear()` |
+
+## chameleon_partials
+
+```python
+# Before
+import chameleon_partials
+
+chameleon_partials.register_extensions(template_folder, auto_reload=dev_mode)
+
+
+def index(request):
+    model = {'videos': videos}
+    return chameleon_partials.extend_model(model)
+```
+
+```python
+# After
+import chameleon_rs
+
+chameleon_rs.configure(template_folder=template_folder, auto_reload=dev_mode)
+
+
+def index(request):
+    return {'videos': videos}
+```
+
+Templates don't change. `${render_partial('shared/partials/video.pt', video=v)}` works
+as before, and runs natively.
+
+Things to know:
+
+- **Every `configure()` call applies.** `register_extensions` ignored a second call unless you
+  passed `cache_init=False`. `register_extensions` itself still behaves the old way.
+- **Partial paths can also be relative to the calling template.** A path that isn't in the
+  template folder is looked for next to the calling template, where chameleon_partials would
+  raise. Templates that worked before render exactly the same.
+  `configure(partial_search='registered')` turns the extra lookup off.
+- **Configuring is thread-safe.** Configuration is swapped in whole, so a render never sees
+  half of one.
+
+## chameleon-flask
+
+```python
+# Before
+import chameleon_flask
+
+chameleon_flask.global_init(template_folder, auto_reload=dev_mode)
+```
+
+```python
+# After
+import chameleon_rs.flask as chameleon_flask
+
+chameleon_flask.configure(template_folder=template_folder, auto_reload=dev_mode)
+```
+
+Views, `@template`, `render`, `response` and `not_found` stay the same. New in chameleon-rs:
+
+- `configure()` also sets the partials folder, so you need only one setup call.
+- `error(template_file, status_code=500, **data)` renders any error page.
+- Views can return mappings, dataclasses and Pydantic models, not only `dict`.
+- `configure(..., app=app)` gives one app its own configuration.
+
+See [Flask and Quart](flask.qmd).
+
+## fastapi-chameleon and chameleon-robyn
+
+chameleon-rs doesn't build these in yet. Keep using them, with `chameleon_rs.compat.install()`
+at the top of your entry point: they import `chameleon`, so they render with chameleon-rs.
+Their test suites pass unmodified on it.
+
+## Pitfalls
+
+- **Install the alias first.** `chameleon_rs.compat.install()` must run before the first
+  `import chameleon`, including imports inside your framework integration. Put it in the entry
+  point itself, above every other import.
+- **Don't mix shadow mode with the alias.** Shadow mode needs stock Chameleon as `chameleon`.
+- **`template.source` isn't Python.** Code that read the generated module (rare, mostly
+  debugging tools) gets a program dump instead. See [Compatibility](compatibility.qmd#known-differences).

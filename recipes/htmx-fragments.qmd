@@ -1,0 +1,82 @@
+---
+title: "HTMX fragments"
+description: "Render the same partial inside a page and on its own, for HTMX swaps."
+---
+
+HTMX swaps a piece of the page with HTML the server returns. Write that piece as a partial,
+and you can render it in two places: inside the full page on the first load, and on its own
+when HTMX asks for it.
+
+```{python}
+#| echo: false
+import pathlib, tempfile
+
+folder = pathlib.Path(tempfile.mkdtemp()) / 'templates'
+(folder / 'todos').mkdir(parents=True)
+(folder / 'todos' / 'list.pt').write_text(
+    '<ul id="todos">\n'
+    '  <li tal:repeat="todo todos">${todo}</li>\n'
+    '</ul>'
+)
+(folder / 'todos' / 'index.pt').write_text(
+    '<h1>Todos</h1>\n'
+    '<form hx-post="/todos" hx-target="#todos" hx-swap="outerHTML">\n'
+    '  <input name="title"><button>Add</button>\n'
+    '</form>\n'
+    "${render_partial('todos/list.pt', todos=todos)}"
+)
+template_folder = str(folder)
+```
+
+The fragment, `todos/list.pt`:
+
+```html
+<ul id="todos">
+  <li tal:repeat="todo todos">${todo}</li>
+</ul>
+```
+
+The page, `todos/index.pt`, includes it:
+
+```html
+<h1>Todos</h1>
+<form hx-post="/todos" hx-target="#todos" hx-swap="outerHTML">
+  <input name="title"><button>Add</button>
+</form>
+${render_partial('todos/list.pt', todos=todos)}
+```
+
+The views render the page on `GET` and only the fragment on `POST`:
+
+```{python}
+import flask
+
+import chameleon_rs
+import chameleon_rs.flask as chameleon_flask
+
+app = flask.Flask(__name__)
+chameleon_flask.configure(template_folder=template_folder)
+todos = ['Write docs']
+
+
+@app.get('/todos')
+@chameleon_flask.template('todos/index.pt')
+def index():
+    return {'todos': todos}
+
+
+@app.post('/todos')
+def add():
+    todos.append(flask.request.form['title'])
+    return chameleon_rs.render_partial('todos/list.pt', todos=todos).html_text
+
+
+client = app.test_client()
+print(client.post('/todos', data={'title': 'Ship it'}).text)
+```
+
+`chameleon_rs.render_partial()` returns an `HTML` object. Its `html_text` is the markup.
+Because the fragment is one template file, the page and the HTMX response can't drift apart.
+
+`chameleon_flask.response('todos/list.pt', todos=todos)` does the same and returns a
+`flask.Response`, if you'd rather set a content type or status code.

@@ -76,6 +76,20 @@ jobs:
       - run: make dev
       - run: PATH="$PWD/venv/bin:$PATH" make lint
 
+  docs:
+    # Builds the docs site (docs/docs-site-plan.md) and runs its executable examples against
+    # the extension; publishing stays manual (commit site/, the server serves it).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: 1.9.38
+      - run: uv venv venv --python 3.15
+      - run: make dev
+      - run: make docs
+
   msrv:
     runs-on: ubuntu-latest
     steps:

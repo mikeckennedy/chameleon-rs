@@ -1,0 +1,149 @@
+---
+title: "Getting started"
+---
+
+This page installs chameleon-rs, renders a template from a string, then sets up a folder of
+template files the way a web app would.
+
+## Install
+
+```bash
+uv pip install chameleon-rs
+```
+
+chameleon-rs supports CPython 3.12 and later, including the free-threaded build. The wheel
+contains the compiled engine and has no dependencies.
+
+## Render a template string
+
+`PageTemplate` compiles a template from a string. Calling it renders the template, with the
+keyword arguments as the template's variables:
+
+```{python}
+from chameleon_rs import PageTemplate
+
+page = PageTemplate("""
+<div class="greeting">
+  <h1>Hello, ${name}!</h1>
+  <ul tal:condition="items">
+    <li tal:repeat="item items">${repeat.item.number}. ${item}</li>
+  </ul>
+</div>
+""")
+
+print(page(name='World', items=['templates', 'in', 'Rust']))
+```
+
+The template compiles once, when it's first rendered. Every later render reuses the compiled
+program, so keep template objects around (module level, or in a loader) rather than building
+one per request.
+
+`${...}` inserts a value with HTML escaping. To insert markup as-is, use `structure:`, or pass
+an object with an `__html__` method:
+
+```{python}
+page = PageTemplate('<p>${text}</p> <p>${structure: text}</p>')
+print(page(text='<b>bold</b>'))
+```
+
+## Render templates from files
+
+`PageTemplateFile` loads one file. `PageTemplateLoader` loads templates by name from one or
+more folders, and caches each compiled template:
+
+```{python}
+#| echo: false
+import pathlib, tempfile
+
+folder = pathlib.Path(tempfile.mkdtemp()) / 'templates'
+(folder / 'home').mkdir(parents=True)
+(folder / 'shared').mkdir()
+(folder / 'home' / 'index.pt').write_text(
+    '<html>\n'
+    '  <body>\n'
+    '    <h1>${title}</h1>\n'
+    '    <div tal:repeat="video videos">\n'
+    "      ${render_partial('shared/video.pt', video=video)}\n"
+    '    </div>\n'
+    '  </body>\n'
+    '</html>\n'
+)
+(folder / 'shared' / 'video.pt').write_text('<a href="/videos/${video.id}">${video.title}</a>')
+template_folder = str(folder)
+```
+
+Suppose your templates live in a folder like this:
+
+```text
+templates/
+├── home/
+│   └── index.pt
+└── shared/
+    └── video.pt
+```
+
+with `home/index.pt`:
+
+```html
+<html>
+  <body>
+    <h1>${title}</h1>
+    <div tal:repeat="video videos">
+      ${render_partial('shared/video.pt', video=video)}
+    </div>
+  </body>
+</html>
+```
+
+and `shared/video.pt`:
+
+```html
+<a href="/videos/${video.id}">${video.title}</a>
+```
+
+Configure the folder once at startup with `chameleon_rs.configure()`, then load templates by
+name:
+
+```{python}
+from dataclasses import dataclass
+
+import chameleon_rs
+from chameleon_rs import PageTemplateLoader
+
+
+@dataclass
+class Video:
+    id: int
+    title: str
+
+
+chameleon_rs.configure(template_folder=template_folder)
+templates = PageTemplateLoader([template_folder])
+
+page = templates['home/index.pt']
+print(page(title='Latest videos', videos=[Video(1, 'Intro'), Video(2, 'Partials')]))
+```
+
+`render_partial` is available in every template, with nothing to register or pass in.
+`configure()` tells it where to find partials. See [Partials](partials.qmd).
+
+In a real app, build the folder path relative to your code, so it doesn't depend on the
+working directory:
+
+```python
+from pathlib import Path
+
+import chameleon_rs
+
+template_folder = (Path(__file__).parent / 'templates').as_posix()
+chameleon_rs.configure(template_folder=template_folder, auto_reload=dev_mode)
+```
+
+`auto_reload=True` recompiles a template when its file changes. Turn it on in development and
+leave it off in production.
+
+## Next steps
+
+- Already have a Chameleon app? See [Switching from Chameleon](switching-from-chameleon.qmd).
+- Using Flask or Quart? See [Flask and Quart](flask.qmd).
+- The [language reference](../language/index.qmd) covers TAL, METAL, i18n and expressions.

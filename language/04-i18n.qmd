@@ -1,0 +1,427 @@
+---
+title: "Translation (I18N)"
+---
+
+::: {.callout-note appearance="minimal"}
+Adapted from [Chameleon's language reference](https://chameleon.readthedocs.io/)
+([source](https://github.com/malthe/chameleon)), modified for chameleon-rs. Used under
+Chameleon's license; see `LICENSE.txt` and `COPYRIGHT.txt` in the repository.
+:::
+
+Translation of template contents and attributes is supported via the `i18n` namespace and
+message objects.
+
+## Messages
+
+The translation machinery defines a message as *any object* which is not a string or a number
+and which does not provide an `__html__` method.
+
+When any such object is inserted into the template, the translate function is invoked first to
+see if it needs translation. The result is always coerced to a native string before it's
+inserted into the template.
+
+## Translation function
+
+The simplest way to hook into the translation machinery is to provide a translation function
+to the template constructor or at render-time. In either case it should be passed as the
+keyword argument `translate`.
+
+The function has the following signature:
+
+```python
+def translate(msgid, domain=None, mapping=None, context=None, target_language=None, default=None):
+    ...
+```
+
+The result should be a string. If another type of object is returned, it's automatically
+coerced into a string.
+
+For example:
+
+```python
+from chameleon_rs import PageTemplate
+
+GERMAN = {'Apple': 'Apfel'}
+
+
+def translate(msgid, domain=None, mapping=None, context=None, target_language=None, default=None):
+    return GERMAN.get(msgid, default)
+
+
+template = PageTemplate('<p i18n:translate="">Apple</p>', translate=translate)
+print(template())  # <p>Apfel</p>
+```
+
+::: {.callout-warning}
+Return `default` (or the message id) for a message you can't translate, not `None`. A `None`
+result renders a message object as an empty string and drops a translated attribute, but
+raises `TypeError` for the content of an `i18n:translate` element. Chameleon behaves the same
+way.
+:::
+
+If [zope.i18n](https://pypi.org/project/zope.i18n/) is available, the translation machinery
+defaults to using its translation function. Note that this function requires messages to
+conform to the message class from
+[zope.i18nmessageid](https://pypi.org/project/zope.i18nmessageid/); specifically, messages
+must have attributes `domain`, `mapping` and `default`. Example use:
+
+```python
+from zope.i18nmessageid import MessageFactory
+_ = MessageFactory("food")
+
+apple = _("Apple")
+```
+
+There's currently no further support for other translation frameworks.
+
+## Using Zope's translation framework
+
+The translation function from `zope.i18n` relies on *translation domains* to provide
+translations.
+
+These are components that are registered for some translation domain identifier and which
+implement a `translate` method that translates messages for that domain.
+
+::: {.callout-note}
+To register translation domain components, the Zope Component Architecture must be used (see
+[zope.component](https://pypi.org/project/zope.component/)).
+:::
+
+The easiest way to configure translation domains is to use the `registerTranslations`
+ZCML-directive; this requires the use of the
+[zope.configuration](https://pypi.org/project/zope.configuration/) package. This will set up
+translation domains and gettext catalogs automatically:
+
+```xml
+<configure xmlns="http://namespaces.zope.org/zope"
+           xmlns:i18n="http://xml.zope.org/namespaces/i18n">
+
+   <i18n:registerTranslations directory="locales" />
+
+</configure>
+```
+
+The `./locales` directory must follow a particular directory structure:
+
+```bash
+./locales/en/LC_MESSAGES
+./locales/de/LC_MESSAGES
+...
+```
+
+In each of the `LC_MESSAGES` directories, one [GNU gettext](https://en.wikipedia.org/wiki/Gettext)
+file in the `.po` format must be present per translation domain:
+
+```text
+# ./locales/de/LC_MESSAGES/food.po
+
+msgid ""
+msgstr ""
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Apple"
+msgstr "Apfel"
+```
+
+It may be necessary to compile the message catalog using the `msgfmt` utility. This will
+produce a `.mo` file.
+
+## Translation domains without gettext
+
+The following example demonstrates how to manually set up and configure a translation domain
+for which messages are provided directly:
+
+```python
+from zope import component
+from zope.i18n.simpletranslationdomain import SimpleTranslationDomain
+
+food = SimpleTranslationDomain("food", {
+    ('de', 'Apple'): 'Apfel',
+    })
+
+component.provideUtility(food, food.domain)
+```
+
+An example of a custom translation domain class:
+
+```python
+from zope import component, interface
+from zope.i18n.interfaces import ITranslationDomain
+
+
+@interface.implementer(ITranslationDomain)
+class TranslationDomain:
+    def translate(self, msgid, mapping=None, context=None,
+                  target_language=None, default=None):
+        ...
+
+
+component.provideUtility(TranslationDomain(), name="custom")
+```
+
+This approach can be used to integrate other translation catalog implementations.
+
+## Namespace
+
+The `i18n` namespace URI and recommended prefix are currently defined as:
+
+```html
+xmlns:i18n="http://xml.zope.org/namespaces/i18n"
+```
+
+This is not a URL, but merely a unique identifier. Do not expect a browser to resolve it
+successfully.
+
+## Statements
+
+The allowable `i18n` statements are:
+
+- `i18n:translate`
+- `i18n:domain`
+- `i18n:context`
+- `i18n:source`
+- `i18n:target`
+- `i18n:name`
+- `i18n:attributes`
+- `i18n:data`
+- `i18n:comment`
+- `i18n:ignore`
+- `i18n:ignore-attributes`
+
+### `i18n:translate`
+
+This attribute is used to mark units of text for translation. If this attribute is specified
+with an empty string as the value, the message ID is computed from the content of the element
+bearing this attribute. Otherwise, the value of the element gives the message ID.
+
+### `i18n:domain`
+
+The `i18n:domain` attribute is used to specify the domain to be used to get the translation.
+If not specified, the translation services will use a default domain. The value of the
+attribute is used directly; it is not a TALES expression.
+
+### `i18n:context`
+
+The `i18n:context` attribute is used to specify the context to be used to get the
+translation. If not specified, the translation services will use a default context. The
+context is generally used to distinguish identical texts in different contexts (because in a
+translation this may not be the case). The value of the attribute is used literally; it is not
+an expression.
+
+### `i18n:source`
+
+The `i18n:source` attribute specifies the language of the text to be translated. The default
+is `nothing`, which means we don't provide this information to the translation services.
+
+### `i18n:target`
+
+The `i18n:target` attribute specifies the language of the translation we want to get. If the
+value is `default`, the language negotiation services will be used to choose the destination
+language. If the value is `nothing`, no translation will be performed; this can be used to
+suppress translation within a larger translated unit. Any other value must be a language code.
+
+The attribute value is a TALES expression; the result of evaluating the expression is the
+language code or one of the reserved values.
+
+::: {.callout-note}
+`i18n:target` is primarily used for hints to text extraction tools and translation teams. If
+you had some text that should only be translated to e.g. German, then it probably shouldn't be
+wrapped in an `i18n:translate` span.
+:::
+
+### `i18n:name`
+
+Name the content of the current element for use in interpolation within translated content.
+This allows a replaceable component in content to be re-ordered by translation. For example:
+
+```html
+<span i18n:translate=''>
+  <span tal:replace='context.name' i18n:name='name' /> was born in
+  <span tal:replace='context.country_of_birth' i18n:name='country' />.
+</span>
+```
+
+would cause this text to be passed to the translation service:
+
+```text
+"${name} was born in ${country}."
+```
+
+### `i18n:attributes`
+
+This attribute will allow us to translate attributes of HTML tags, such as the `alt`
+attribute in the `img` tag. The `i18n:attributes` attribute specifies a list of attributes to
+be translated with optional message IDs for each; if multiple attribute names are given, they
+must be separated by semicolons. Message IDs used in this context must not include whitespace.
+
+Note that the value of the particular attributes come either from the HTML attribute value
+itself or from the data inserted by `tal:attributes`.
+
+If an attribute is to be both computed using `tal:attributes` and translated, the translation
+service is passed the result of the TALES expression for that attribute.
+
+An example:
+
+```html
+<img src="http://foo.com/logo" alt="Visit us"
+     tal:attributes="alt context.greeting"
+     i18n:attributes="alt"
+     >
+```
+
+In this example, we let `tal:attributes` set the value of the `alt` attribute to the text
+"Stop by for a visit!". This text will be passed to the translation service, which uses the
+result of language negotiation to translate "Stop by for a visit!" into the requested
+language. The example text in the template, "Visit us", will simply be discarded.
+
+Another example, with explicit message IDs:
+
+```html
+<img src="../icons/uparrow.png" alt="Up"
+     i18n:attributes="src up-arrow-icon; alt up-arrow-alttext"
+     >
+```
+
+Here, the message ID `up-arrow-icon` will be used to generate the link to an icon image file,
+and the message ID 'up-arrow-alttext' will be used for the "alt" text.
+
+### `i18n:data`
+
+Since TAL always returns strings, we need a way in ZPT to translate objects, one of the most
+obvious cases being `datetime` objects. The `data` attribute will allow us to specify such an
+object, and `i18n:translate` will provide us with a legal format string for that object. If
+`data` is used, `i18n:translate` must be used to give an explicit message ID, rather than
+relying on a message ID computed from the content.
+
+### `i18n:comment`
+
+The `i18n:comment` attribute can be used to add extra comments for translators. It is not used
+by Chameleon for processing, but will be picked up by tools like
+[lingua](https://pypi.org/project/lingua/).
+
+An example:
+
+```html
+<h3 i18n:comment="Header for the news section"
+    i18n:translate="">News</h3>
+```
+
+### `i18n:ignore`
+
+The `i18n:ignore` attribute can be used to inform translation extraction tools like
+[i18ndude](https://pypi.org/project/i18ndude/) to not give a warning/error on the given tag if
+there is no `i18n:translate` attribute.
+
+An example:
+
+```html
+<h1 i18n:ignore="">News</h1>
+```
+
+### `i18n:ignore-attributes`
+
+The `i18n:ignore-attributes`, just like `i18n:ignore` is expected to be used by translation
+extraction tools like [i18ndude](https://pypi.org/project/i18ndude/). If `i18n:ignore` makes
+text within a tag to be ignored, `i18n:ignore-attributes` marks the given attributes as
+ignored.
+
+An example:
+
+```html
+<a href="http://python.org"
+   title="Python!"
+   i18n:ignore-attributes="title">Python website</a>
+```
+
+## Relation with TAL processing
+
+The attributes defined in the `i18n` namespace modify the behavior of the TAL interpreter for
+the `tal:attributes`, `tal:content`, `tal:repeat`, and `tal:replace` attributes, but otherwise
+do not affect TAL processing.
+
+Since these attributes only affect TAL processing by causing translations to occur at specific
+times, using these with a TAL processor which does not support the `i18n` namespace degrades
+well; the structural expectations for a template which uses the `i18n` support is no different
+from those for a page which does not. The only difference is that translations will not be
+performed in a legacy processor.
+
+## Relation with METAL processing
+
+When using translation with METAL macros, the internationalization context is considered part
+of the specific documents that page components are retrieved from rather than part of the
+combined page. This makes the internationalization context lexical rather than dynamic, making
+it easier for a site builder to understand the behavior of each element with respect to
+internationalization.
+
+Let's look at an example to see what this means:
+
+```html
+<html i18n:translate='' i18n:domain='EventsCalendar'
+      metal:use-macro="container['master.html'].macros.thismonth">
+
+  <div metal:fill-slot='additional-notes'>
+    <ol tal:condition="context.notes">
+      <li tal:repeat="note context.notes">
+         <tal:block tal:omit-tag=""
+                    tal:condition="note.heading">
+           <strong tal:content="note.heading">
+             Note heading goes here
+           </strong>
+           <br />
+         </tal:block>
+         <span tal:replace="note.description">
+           Some longer explanation for the note goes here.
+         </span>
+      </li>
+    </ol>
+  </div>
+
+</html>
+```
+
+And the macro source:
+
+```html
+<html i18n:domain='CalendarService' metal:define-macro="thismonth">
+  <div tal:replace='DateTime().Month()'
+       i18n:translate=''>January</div>
+
+  <!-- really hairy TAL code here ;-) -->
+
+  <div metal:define-slot="additional-notes">
+    Place for the application to add additional notes if desired.
+  </div>
+
+</html>
+```
+
+Note that the macro is using a different domain than the application (which it should be).
+With lexical scoping, no special markup needs to be applied to cause the slot-filler in the
+application to be part of the same domain as the rest of the application's page components.
+If dynamic scoping were used, the internationalization context would need to be re-established
+in the slot-filler.
+
+## Extracting translatable messages
+
+Translators use [PO files](https://www.gnu.org/software/gettext/manual/html_node/PO-Files.html)
+when translating messages. To create and update PO files you need to do two things: *extract*
+all messages from Python and template files and store them in a `.pot` file, and for each
+language *update* its `.po` file.
+
+::: {.callout-note}
+Earlier versions of this reference described Babel extractors (`chameleon_python`,
+`chameleon_xml`) shipped with Chameleon. Current Chameleon doesn't include them. The
+[lingua](https://pypi.org/project/lingua/) package extracts messages from Python code and from
+Chameleon templates; since chameleon-rs uses the same template language, it works on them
+unchanged. See lingua's documentation for its `pot-create` command.
+:::
+
+Once you have a `.pot` file, the standard gettext tools update and compile the catalogs:
+
+```bash
+msginit -l nl -i i18n/mydomain.pot -o i18n/nl/LC_MESSAGES/mydomain.po   # new language
+msgmerge --update i18n/nl/LC_MESSAGES/mydomain.po i18n/mydomain.pot     # after re-extracting
+msgfmt -o i18n/nl/LC_MESSAGES/mydomain.mo i18n/nl/LC_MESSAGES/mydomain.po
+```

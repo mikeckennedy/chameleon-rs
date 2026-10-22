@@ -1,0 +1,69 @@
+# Performance
+
+chameleon-rs compiles a template to a native program and runs it in Rust. The template's own work (the loops, conditions, escaping, macro and slot calls, partials and output assembly) happens without Python bytecode. Python only runs where the template calls into your code: an attribute lookup, a method call, a helper.
+
+
+# Synthetic benchmarks
+
+Times per render, or per item for listings. Both engines ran in the same process, interleaved, on a release build of chameleon-rs without profile-guided optimization.
+
+| Scenario | chameleon-rs | Chameleon | Speedup |
+|----|----|----|----|
+| Listing, per item | 431 ns | 2,835 ns | 6.6x |
+| Macro call filling a slot, per item | 676 ns | 4,648 ns | 6.9x |
+| App-shaped page, inline cards | 69.6 µs | 301 µs | 4.3x |
+| Report page, 1,000 rows through a partial | 1.40 ms | 4.87 ms | 3.5x |
+| Translated element, per item | 1,520 ns | 2,870 ns | 1.9x |
+| Partial listing, per item (native [render_partial](../reference/render_partial.md#chameleon_rs.render_partial) vs chameleon_partials) | 654-680 ns | 7,300 ns | 10.9x |
+| chameleon_partials through [compat.install()](../reference/compat.install.md#chameleon_rs.compat.install), per item | 2,500 ns | 7,300 ns | 2.9x |
+
+Profile-guided builds (`make build-pgo`) are about 10% faster again.
+
+The pages that gain least spend their time in the application's Python: the report page's rows call property getters and formatting helpers, which cost the same on both engines.
+
+
+# Compile time and the first request
+
+|  | chameleon-rs | Chameleon | Speedup |
+|----|----|----|----|
+| Compile 118 templates, total | 9.6 ms | 657 ms | 68x |
+| Compile one template, median | 0.053 ms | 3.8 ms | 72x |
+| First request of an app page (compile, load the layout, first render) | 1.4 ms | 54 ms | 39x |
+
+This matters after every deploy, every worker restart and every `auto_reload` change.
+
+
+# Real applications
+
+On real pages, the template engine is only part of the work. In a production Quart site, measured page by page with both engines on the same data:
+
+- **Template rendering** was 2.2x faster in total, with a median of 2.9x per page.
+- **Whole requests**, including the app's database and Python code, were 1.3x faster.
+- **Under load**, with 20 concurrent users on one single-threaded worker, throughput rose 34%, median latency fell from 170 ms to 120 ms, and p99 latency fell from 255 ms to 195 ms.
+
+The HTML was identical on every page. In chameleon-rs's renders there, the engine's own code was only 3-6% of the time. The rest was CPython work the templates trigger: attribute lookups, small helpers and properties, and conversions.
+
+
+# Getting the most out of it
+
+- **Keep templates loaded.** Reuse [PageTemplateLoader](../reference/PageTemplateLoader.md#chameleon_rs.PageTemplateLoader) instances and template objects. Building a template per request recompiles it every time.
+- **Leave `auto_reload` off in production.** It checks the file's modification time on every render.
+- **Write partials as a whole expression:** `${render_partial('card.pt', item=item)}`. Then the partial renders natively, without a Python call.
+- **Prepare data in the view.** Expensive properties and helpers called inside a loop cost the same on either engine.
+
+
+# Reproduce the numbers
+
+The benchmarks are in the repository's `bench/` folder. Build a release first:
+
+``` bash
+make dev             # one-time setup: venv, reference Chameleon, extension
+make build-release
+venv/bin/python bench/bench_ab.py <git-ref> --scenario listing   # also: macro, page
+venv/bin/python bench/bench_page.py
+venv/bin/python bench/bench_skeleton.py
+venv/bin/python bench/bench_macros.py
+venv/bin/python bench/bench_first.py
+```
+
+Each script prints chameleon-rs's and Chameleon's times from the same run. Run them on a quiet machine. Background load moves the absolute numbers much more than the ratios.

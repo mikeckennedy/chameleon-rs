@@ -1,0 +1,213 @@
+# Macros (METAL)
+
+> **Note**
+>
+> Adapted from [Chameleon's language reference](https://chameleon.readthedocs.io/) ([source](https://github.com/malthe/chameleon)), modified for chameleon-rs. Used under Chameleon's license; see `LICENSE.txt` and `COPYRIGHT.txt` in the repository.
+
+The *Macro Expansion Template Attribute Language* (METAL) standard is a facility for HTML/XML macro preprocessing. It can be used in conjunction with or independently of TAL and TALES.
+
+Macros provide a way to define a chunk of presentation in one template, and share it in others, so that changes to the macro are immediately reflected in all of the places that share it. Additionally, macros are always fully expanded, even in a template's source text, so that the template appears very similar to its final rendering.
+
+A single Page Template can accommodate multiple macros.
+
+> **Tip: Tip**
+>
+> For a reusable fragment that takes arguments, such as a card or a table row, chameleon-rs's built-in [render_partial](../reference/render_partial.md#chameleon_rs.render_partial) is often simpler than a macro: see [Partials](../user-guide/partials.md). Macros remain the tool for layouts with slots.
+
+
+# Namespace
+
+The METAL namespace URI and recommended alias are currently defined as:
+
+``` html
+xmlns:metal="http://xml.zope.org/namespaces/metal"
+```
+
+Just like the TAL namespace URI, this URI is not attached to a web page; it's just a unique identifier. This identifier must be used in all templates which use METAL.
+
+Note that elements that appear in a template with the METAL namespace are omitted from the output where they appear. This is useful when defining a macro:
+
+``` html
+<metal:block define-macro="hello">
+  ...
+</metal:block>
+```
+
+In the example above the element is named `block` but any name can be used to the same effect as long as it is qualified with the METAL namespace.
+
+
+# Statements
+
+METAL defines a number of statements:
+
+- `metal:define-macro` Define a macro.
+- `metal:use-macro` Use a macro.
+- `metal:extend-macro` Extend a macro.
+- `metal:define-slot` Define a macro customization point.
+- `metal:fill-slot` Customize a macro.
+
+Although METAL does not define the syntax of expression non-terminals, leaving that up to the implementation, a canonical expression syntax for use in METAL arguments is described in the [TALES specification](expressions.md).
+
+
+# `define-macro`
+
+Defines a macro.
+
+
+## Syntax
+
+`metal:define-macro` syntax:
+
+``` text
+argument ::= Name
+```
+
+
+## Description
+
+The `metal:define-macro` statement defines a macro. The macro is named by the statement expression, and is defined as the element and its sub-tree.
+
+
+## Examples
+
+Simple macro definition:
+
+``` html
+<p metal:define-macro="copyright">
+  Copyright 2011, <em>Foobar</em> Inc.
+</p>
+```
+
+
+# `define-slot`
+
+Defines a macro customization point.
+
+
+## Syntax
+
+`metal:define-slot` syntax:
+
+``` text
+argument ::= Name
+```
+
+
+## Description
+
+The `metal:define-slot` statement defines a macro customization point or *slot*. When a macro is used, its slots can be replaced, in order to customize the macro. Slot definitions provide default content for the slot. You will get the default slot contents if you decide not to customize the macro when using it.
+
+The `metal:define-slot` statement must be used inside a `metal:define-macro` statement.
+
+Slot names must be unique within a macro.
+
+
+## Examples
+
+Simple macro with slot:
+
+``` html
+<p metal:define-macro="hello">
+  Hello <b metal:define-slot="name">World</b>
+</p>
+```
+
+This example defines a macro with one slot named `name`. When you use this macro you can customize the `b` element by filling the `name` slot.
+
+
+# `fill-slot`
+
+Customize a macro.
+
+
+## Syntax
+
+`metal:fill-slot` syntax:
+
+``` text
+argument ::= Name
+```
+
+
+## Description
+
+The `metal:fill-slot` statement customizes a macro by replacing a *slot* in the macro with the statement element (and its content).
+
+The `metal:fill-slot` statement must be used inside a `metal:use-macro` statement.
+
+Slot names must be unique within a macro.
+
+If the named slot does not exist within the macro, the slot contents will be silently dropped.
+
+
+## Examples
+
+Given this macro:
+
+``` html
+<p metal:define-macro="hello">
+  Hello <b metal:define-slot="name">World</b>
+</p>
+```
+
+You can fill the `name` slot like so:
+
+``` html
+<p metal:use-macro="container['master.html'].macros.hello">
+  Hello <b metal:fill-slot="name">Kevin Bacon</b>
+</p>
+```
+
+
+# `use-macro`
+
+Use a macro.
+
+
+## Syntax
+
+`metal:use-macro` syntax:
+
+``` text
+argument ::= expression
+```
+
+
+## Description
+
+The `metal:use-macro` statement replaces the statement element with a macro. The statement expression describes a macro definition. While the macro runs, the `macroname` variable is bound to the name it was called with: the `use-macro` expression as written, after its last `/` (for `container['master.html'].macros.hello` that is the whole expression text).
+
+> **Note: Note**
+>
+> In Chameleon the expression may point to a template instance; in this case it will be rendered in its entirety.
+
+
+# `extend-macro`
+
+Extends a macro.
+
+
+## Syntax
+
+`metal:extend-macro` syntax:
+
+``` text
+argument ::= expression
+```
+
+
+## Description
+
+To extend an existing macro, choose a name for the macro and add a define-macro attribute to a document element with the name as the argument. Add an extend-macro attribute to the document element with an expression referencing the base macro as the argument. The extend-macro must be used in conjunction with define-macro, and must not be used with use-macro. The element's subtree is the macro body.
+
+
+## Examples
+
+``` html
+
+  <div metal:fill-slot="breadcrumbs">
+    You are here:
+    <div metal:define-slot="breadcrumbs"/>
+  </div>
+
+```
