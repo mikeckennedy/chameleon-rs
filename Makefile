@@ -42,7 +42,7 @@ checkout = if [ -d $(1)/.git ]; then git -C $(1) checkout -q $(2); else echo "$(
 ROBYN_VERSION := 0.88.0
 ROBYN_VENV := $(CURDIR)/temp/venv-robyn
 
-.PHONY: dev reference build build-release build-profiling build-pgo test test-rust test-python \
+.PHONY: dev reference build build-release build-profiling build-pgo wheels sdist check-wheels test test-rust test-python \
 	test-upstream test-upstream-rust test-robyn integration test-integration lint fmt bench docs docs-serve
 
 dev: reference temp/litestar-chameleon
@@ -123,6 +123,22 @@ build-pgo:
 	cat $(PGO_DIR)/use.log
 	@# A profile that no longer matches the code would silently lose the optimisation.
 	! grep -E "profile data may be out of date|control flow change detected|hash mismatch" $(PGO_DIR)/use.log
+
+# Release artifacts (Phase 12b) into dist/: a profile-guided wheel per interpreter
+# (scripts/pgo_wheel.py, the steps of build-pgo with a training venv per interpreter, found by
+# uv), and the sdist. The release workflow (.github/workflows/release.yml) runs the same script.
+WHEEL_PYTHONS ?= 3.12 3.13 3.14 3.14t 3.15 3.15t
+
+wheels: reference
+	$(PY) scripts/pgo_wheel.py $(foreach p,$(WHEEL_PYTHONS),--python $(p)) --maturin venv/bin/maturin --out dist
+
+sdist:
+	$(MATURIN) sdist --out dist
+
+# Each wheel in dist/ this machine can run, in a fresh venv with nothing else installed: a
+# smoke render, the upstream suite on chameleon_rs and test_typing (scripts/check_wheel.py).
+check-wheels:
+	$(PY) scripts/check_wheel.py --all dist
 
 test: test-rust test-python test-upstream test-upstream-rust test-robyn
 
