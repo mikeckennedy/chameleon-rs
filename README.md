@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/mikeckennedy/chameleon-rust/main/assets/chameleon-rs-slogan.png" alt="chameleon-rs: Chameleon templates, Rust speed" width="850">
+  <img src="https://mkennedy-shared.nyc3.digitaloceanspaces.com/github/chameleon-rs-slogan.png" alt="chameleon-rs: Chameleon templates, Rust speed" width="850">
 </p>
 
 # chameleon-rs
@@ -91,8 +91,9 @@ OpenAPI docs work as without `@template`.
   `tal:on-error` work across the wait, and with no awaitables the output is exactly
   `render()`'s. Opt-in concurrency: `@chameleon_rs.concurrent` helpers and
   `concurrent=True` partials run at the same time as the rest of the page.
-  [`render_async`](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.render_async.html).
-- **Framework integrations.** Built in, with nothing extra to install (table below). Async
+  [Async rendering](https://mkennedy.codes/docs/chameleon-rs/user-guide/async.html).
+- **Framework integrations.** Built in, with nothing extra to install (table below), and
+  Pyramid's pyramid_chameleon runs unchanged. Async
   views render with `render_async`, and a `@template` written above its route decorator raises
   an error naming the fix instead of quietly returning JSON.
 - **Partials.** Any template can call `${render_partial('shared/card.pt', item=item)}`; the
@@ -100,7 +101,9 @@ OpenAPI docs work as without `@template`.
   [Partials](https://mkennedy.codes/docs/chameleon-rs/user-guide/partials.html).
 - **Markdown.** `${markdown: episode.notes}` converts Markdown to HTML while the page renders:
   CommonMark plus the GitHub extensions (tables, task lists, footnotes, ...), converted in
-  Rust, with raw HTML escaped by default. Opt-in with `chameleon_rs.configure(markdown=True)`;
+  Rust, with raw HTML escaped by default. It's about 26x faster than mistune, a pure-Python
+  converter, on a 5 KB document, and repeat conversions come from a cache in well under a
+  microsecond. Opt-in with `chameleon_rs.configure(markdown=True)`;
   named profiles (`md-comment:`) give different settings to different content.
   [Markdown](https://mkennedy.codes/docs/chameleon-rs/user-guide/markdown.html).
 - **One place for settings.** `chameleon_rs.configure(...)` sets the template folder,
@@ -122,10 +125,12 @@ OpenAPI docs work as without `@template`.
 | Starlette | `chameleon_rs.starlette` | Starlette's `Jinja2Templates` (`Templates` is a drop-in) | [Starlette](https://mkennedy.codes/docs/chameleon-rs/user-guide/starlette.html) |
 | Robyn | `chameleon_rs.robyn` | chameleon-robyn | [Robyn](https://mkennedy.codes/docs/chameleon-rs/user-guide/robyn.html) |
 | Litestar | `chameleon_rs.litestar` | Litestar's `TemplateConfig` engine (`ChameleonEngine`); litestar-chameleon | [Litestar](https://mkennedy.codes/docs/chameleon-rs/user-guide/litestar.html) |
+| Pyramid | pyramid_chameleon, unchanged, through `compat.install()` | — | [Pyramid](https://mkennedy.codes/docs/chameleon-rs/user-guide/pyramid.html) |
 
-Each module keeps the API of the library it replaces and adds the same decorator API
-(`configure`, `@template`, `render`, `response`, `not_found`, `error`, `render_async`,
-`response_async`, `check_views`).
+[Web frameworks](https://mkennedy.codes/docs/chameleon-rs/user-guide/frameworks.html) shows the
+same page in each one. Each module keeps the API of the library it replaces and adds the same
+decorator API (`configure`, `@template`, `render`, `response`, `not_found`, `error`,
+`render_async`, `response_async`, `check_views`).
 
 **Template names come from your code.** The decorator modules and `render_partial()` look names
 up as the original libraries do (`..` and absolute paths work), so never build one from
