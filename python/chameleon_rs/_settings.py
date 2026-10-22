@@ -10,10 +10,13 @@ The old per-library calls (``chameleon_partials.register_extensions``,
 from __future__ import annotations
 
 import os
+import re
 import sys
 import threading
+from collections.abc import Mapping
 from typing import Any
 
+from chameleon_rs import _native
 from chameleon_rs.web import TemplateError
 
 
@@ -57,6 +60,103 @@ _lock = threading.Lock()
 PARTIAL_SEARCH = ('caller', 'registered')
 DEFAULT_SEARCH = 'caller'
 search_mode = DEFAULT_SEARCH
+
+# The `markdown:` expression types (Phase 11b): prefix -> native profile, built once by
+# `configure(markdown=...)` and added to each template's expression types when it compiles
+# (`chameleon_rs.tales.native_types`), unless the template class defines the prefix itself.
+# Replaced whole, never mutated.
+markdown_profiles: dict[str, Any] = {}
+DEFAULT_MARKDOWN_CACHE: int = _native.markdown_cache_limits()[0]
+markdown_cache_size = DEFAULT_MARKDOWN_CACHE
+
+# A prefix as Chameleon matches it (`tales.match_prefix`), and Chameleon's own prefixes, which a
+# Markdown profile may not take.
+_PREFIX = re.compile(r'[a-z][a-z0-9\-_]*')
+_ID_PREFIX = re.compile(r'[A-Za-z0-9_-]*')
+_RESERVED = frozenset({'python', 'string', 'not', 'exists', 'import', 'structure', 'load'})
+_MARKDOWN_OPTIONS = frozenset({'raw_html', 'images', 'inline', 'heading_ids', 'classes', 'extensions'})
+_EXTENSIONS = ('table', 'strikethrough', 'tasklist', 'autolink', 'footnotes')
+
+
+def _markdown_profile(name: Any, options: Any) -> Any:
+    """One validated profile: ``options`` is ``True`` (the defaults) or a mapping of them."""
+    if not isinstance(name, str) or not _PREFIX.fullmatch(name):
+        msg = f'markdown: profile names are expression prefixes (lowercase, like "md-comment"), not {name!r}'
+        raise ValueError(msg)
+    if name in _RESERVED:
+        msg = f"markdown: {name!r} is one of Chameleon's own expression types"
+        raise ValueError(msg)
+    if options is True:
+        options = {}
+    if not isinstance(options, Mapping):
+        msg = f'markdown: the options for {name!r} must be a dict or True, not {options!r}'
+        raise TypeError(msg)
+    unknown = set(options) - _MARKDOWN_OPTIONS
+    if unknown:
+        msg = f'markdown: unknown option {min(unknown)!r} for {name!r} (one of {", ".join(sorted(_MARKDOWN_OPTIONS))})'
+        raise ValueError(msg)
+
+    def flag(key: str, default: bool) -> bool:
+        value = options.get(key, default)
+        if not isinstance(value, bool):
+            msg = f'markdown: {key} for {name!r} must be True or False, not {value!r}'
+            raise TypeError(msg)
+        return value
+
+    heading_ids = options.get('heading_ids', False)
+    if heading_ids is True:
+        heading_ids = ''
+    elif heading_ids is False:
+        heading_ids = None
+    elif not isinstance(heading_ids, str):
+        msg = f'markdown: heading_ids for {name!r} must be True, False or a prefix string, not {heading_ids!r}'
+        raise TypeError(msg)
+    elif not _ID_PREFIX.fullmatch(heading_ids):
+        # comrak writes the prefix into `id` and `href` as it is.
+        msg = f'markdown: heading_ids for {name!r} must be letters, digits, "-" and "_", not {heading_ids!r}'
+        raise ValueError(msg)
+    classes = options.get('classes', {})
+    if not isinstance(classes, Mapping) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in classes.items()
+    ):
+        msg = f'markdown: classes for {name!r} must map element names to class strings, not {classes!r}'
+        raise TypeError(msg)
+    extensions = options.get('extensions', {})
+    if not isinstance(extensions, Mapping):
+        msg = f'markdown: extensions for {name!r} must be a dict, not {extensions!r}'
+        raise TypeError(msg)
+    if not set(extensions) <= set(_EXTENSIONS):
+        msg = f'markdown: extensions for {name!r} must map some of {", ".join(_EXTENSIONS)} to True or False, not {extensions!r}'
+        raise ValueError(msg)
+    switches = {}
+    for key in _EXTENSIONS:
+        value = extensions.get(key, True)
+        if not isinstance(value, bool):
+            msg = f'markdown: extensions[{key!r}] for {name!r} must be True or False, not {value!r}'
+            raise TypeError(msg)
+        switches[key] = value
+    return _native.MarkdownProfile(
+        name,
+        raw_html=options.get('raw_html', 'escape'),
+        images=flag('images', True),
+        inline=flag('inline', False),
+        heading_ids=heading_ids,
+        classes=list(classes.items()),
+        **switches,
+    )
+
+
+def markdown_settings(markdown: Any) -> dict[str, Any]:
+    """``configure(markdown=...)``'s value as profiles: ``True`` is ``{'markdown': {}}``,
+    ``False`` none, a mapping one profile per prefix."""
+    if markdown is True:
+        markdown = {'markdown': {}}
+    elif markdown is False:
+        markdown = {}
+    if not isinstance(markdown, Mapping):
+        msg = f'markdown must be True, False or a dict of profiles, not {markdown!r}'
+        raise TypeError(msg)
+    return {name: _markdown_profile(name, options) for name, options in markdown.items()}
 
 
 def check_folder(template_folder: Any, error: type[Exception] = TemplateError) -> None:
@@ -112,6 +212,8 @@ def configure(
     auto_reload: bool | None = None,
     restricted_namespace: bool | None = None,
     partial_search: str | None = None,
+    markdown: Any = None,
+    markdown_cache: int | None = None,
 ) -> Settings | None:
     """Configures chameleon-rs for the whole process: where templates loaded by name live, for
     ``render_partial`` and the framework integrations (``chameleon_rs.flask``), and how they load.
@@ -122,30 +224,59 @@ def configure(
     ``partial_search``: ``'caller'`` (the default: partials are looked for in the template
     folder, then on the calling template's search path, then in its folder and each folder above
     it) or ``'registered'`` (chameleon_partials' lookup: the template folder only, a path not
-    there being an error). A setting left out keeps its current
-    value; the first call that sets anything but ``partial_search`` must give the folder.
-    Applies every time it is called (there is no ``cache_init``).
+    there being an error). ``markdown``: the ``markdown:`` expression types, ``True`` for
+    ``markdown:`` with the defaults or a dict of profiles (prefix -> options, see the docs),
+    ``False`` for none; it applies to templates compiled afterwards. ``markdown_cache``: how many
+    conversions to keep (``0``: no cache). A setting left out keeps its current value; the first
+    call that sets the folder's settings must give the folder (``partial_search`` and the
+    Markdown settings don't need one). Applies every time it is called (there is no
+    ``cache_init``).
 
     Raises ``chameleon_rs.web.TemplateError`` for a missing folder, ``ValueError`` for an
-    unknown ``partial_search``.
+    unknown ``partial_search`` or an invalid Markdown setting, ``TypeError`` for a Markdown
+    setting of the wrong type (nothing changes then).
     """
-    global search_mode
-    if partial_search is not None:
-        if partial_search not in PARTIAL_SEARCH:
-            msg = f'partial_search must be one of {PARTIAL_SEARCH}, not {partial_search!r}'
+    global search_mode, markdown_profiles, markdown_cache_size
+    # Everything is checked before anything changes.
+    if partial_search is not None and partial_search not in PARTIAL_SEARCH:
+        msg = f'partial_search must be one of {PARTIAL_SEARCH}, not {partial_search!r}'
+        raise ValueError(msg)
+    if markdown_cache is not None:
+        if isinstance(markdown_cache, bool) or not isinstance(markdown_cache, int):
+            msg = f'markdown_cache must be a number of entries (0 or more), not {markdown_cache!r}'
+            raise TypeError(msg)
+        if not 0 <= markdown_cache <= sys.maxsize:
+            msg = f'markdown_cache must be a number of entries (0 or more), not {markdown_cache!r}'
             raise ValueError(msg)
+    profiles = markdown_settings(markdown) if markdown is not None else None
+    folder_given = template_folder is not None or auto_reload is not None or restricted_namespace is not None
+    if folder_given:
+        settings = build(template_folder, auto_reload, restricted_namespace, base=partials or flask)
+    if profiles is not None or markdown_cache is not None:
+        size = markdown_cache_size if markdown_cache is None else markdown_cache
+        # First, so a failure leaves the settings as they were. It also empties the cache:
+        # conversions by an earlier configuration's profiles are dropped.
+        _native.set_markdown_cache(size)
+        markdown_cache_size = size
+        if profiles is not None:
+            markdown_profiles = profiles
+    if partial_search is not None:
         search_mode = partial_search
-        if template_folder is None and auto_reload is None and restricted_namespace is None:
+    if not folder_given:
+        if partial_search is not None or profiles is not None or markdown_cache is not None:
             install()
             return partials
-    settings = build(template_folder, auto_reload, restricted_namespace, base=partials or flask)
+        settings = build(base=partials or flask)
     install(partials_settings=settings, flask_settings=settings)
     return settings
 
 
 def clear() -> None:
     """Forgets the process-wide configuration, both slots and ``partial_search`` (tests reset
-    with it)."""
-    global search_mode
+    with it), and the Markdown settings."""
+    global search_mode, markdown_profiles, markdown_cache_size
     search_mode = DEFAULT_SEARCH
+    markdown_profiles = {}
+    markdown_cache_size = DEFAULT_MARKDOWN_CACHE
+    _native.set_markdown_cache(DEFAULT_MARKDOWN_CACHE)
     install(partials_settings=None, flask_settings=None)

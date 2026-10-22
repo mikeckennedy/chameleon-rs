@@ -22,6 +22,9 @@ allow = [
     "ISC",
     "Zlib",
     "Unicode-3.0",
+    # Unicode-3.0's predecessor (permissive, OSI approved): finl_unicode, through comrak (the
+    # `markdown:` expression, Phase 11b).
+    "Unicode-DFS-2016",
     "MPL-2.0",
     "CDLA-Permissive-2.0",
 ]

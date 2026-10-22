@@ -70,7 +70,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="../">
 <link href="../user-guide/flask.html" rel="next">
-<link href="../user-guide/partials.html" rel="prev">
+<link href="../user-guide/markdown.html" rel="prev">
 <link href="../favicon.ico" rel="icon">
 <script src="../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
@@ -239,6 +239,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/markdown.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Markdown</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/configuration.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Configuration</span></a>
   </div>
@@ -338,7 +344,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    auto_reload<span class="op">=</span><span class="va">False</span>,</span>
 <span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    restricted_namespace<span class="op">=</span><span class="va">True</span>,</span>
 <span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    partial_search<span class="op">=</span><span class="st">'caller'</span>,</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>    markdown<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    markdown_cache<span class="op">=</span><span class="dv">1024</span>,</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
 <table class="caption-top table">
 <thead>
 <tr class="header">
@@ -368,6 +376,16 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td><code>'caller'</code></td>
 <td>Where <a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a> looks: <code>'caller'</code> searches the template folder, then the calling template’s search path and folders. <code>'registered'</code> searches the template folder only, as chameleon_partials does. See <a href="../user-guide/partials.html#how-a-path-is-found">Partials</a>.</td>
 </tr>
+<tr class="odd">
+<td><code>markdown</code></td>
+<td>none</td>
+<td>The <code>markdown:</code> expression: <code>True</code> for the defaults, or a dict of profiles (prefix → options). <code>False</code> removes it. See <a href="../user-guide/markdown.html">Markdown</a>.</td>
+</tr>
+<tr class="even">
+<td><code>markdown_cache</code></td>
+<td><code>1024</code></td>
+<td>How many Markdown conversions to keep. <code>0</code> turns the cache off.</td>
+</tr>
 </tbody>
 </table>
 <p>How it behaves:</p>
@@ -375,9 +393,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><strong>An option you leave out keeps its current value.</strong> So <code>configure(partial_search='registered')</code> changes only the search mode.</li>
 <li><strong>Every call applies.</strong> There’s no <code>cache_init</code> as in chameleon_partials and chameleon-flask, so a second call with a different folder takes effect.</li>
 <li><strong>It’s safe with threads.</strong> Each configuration is an immutable object that’s swapped in whole, so a render running at the same time never sees half of one. Still, call it at startup, not per request.</li>
-<li>It returns the new settings, and raises <a href="../reference/web.TemplateError.html#chameleon_rs.web.TemplateError" class="gdls-link gdls-code">chameleon_rs.web.TemplateError</a> for a missing folder, or <code>ValueError</code> for an unknown <code>partial_search</code>.</li>
+<li><strong><code>partial_search</code> and the Markdown settings don’t need a folder.</strong> Every other option needs one, on the first call.</li>
+<li>It returns the new settings, and raises <a href="../reference/web.TemplateError.html#chameleon_rs.web.TemplateError" class="gdls-link gdls-code">chameleon_rs.web.TemplateError</a> for a missing folder, or <code>ValueError</code> for an unknown <code>partial_search</code> or an invalid Markdown setting (<code>TypeError</code> for one of the wrong type). A call that raises changes nothing.</li>
 </ul>
-<div id="2fe5d688" class="cell" data-execution_count="2">
+<div id="11ebee7f" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>settings <span class="op">=</span> chameleon_rs.configure(template_folder<span class="op">=</span>template_folder, auto_reload<span class="op">=</span><span class="va">True</span>)</span>
@@ -868,8 +887,8 @@ True</code></pre>
   </script>
 <nav class="page-navigation">
   <div class="nav-page nav-page-previous">
-      <a href="../user-guide/partials.html" class="pagination-link" aria-label="Partials">
-        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Partials</span>
+      <a href="../user-guide/markdown.html" class="pagination-link" aria-label="Markdown">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Markdown</span>
       </a>          
   </div>
   <div class="nav-page nav-page-next">

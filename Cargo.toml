@@ -18,6 +18,10 @@ memchr = "2"
 fancy-regex = "0.19"
 regex = "1"
 pyo3 = "0.30"
+# The `markdown:` expression (Phase 11b). No syntect, no clap: highlighting is client-side.
+comrak = { version = "0.57", default-features = false }
+# Already in the tree through comrak: the Markdown cache's key hash.
+rustc-hash = "2"
 insta = "1"
 proptest = "1"
 # Micro-benchmarks only (no plots, no rayon).

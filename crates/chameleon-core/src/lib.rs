@@ -16,6 +16,8 @@ mod escape;
 mod expr;
 mod i18n;
 mod interpolate;
+#[cfg(feature = "markdown")]
+pub mod markdown;
 mod nodes;
 mod options;
 mod output;

@@ -1187,6 +1187,62 @@ value position and compares with Chameleon's render where `aw(v)` is `v`.
   pages (transcripts). Not done: gzip in Rust (the frameworks compress; nothing measured
   justifies it).
 
+## Phase 11b amendments (2026-10-21)
+
+The `markdown:` expression type (plan.md, Phase 11b). It is opt-in and has no Chameleon
+counterpart, so the reference is the CommonMark and GFM specs, and the rule that nothing
+changes while it isn't configured.
+
+- **Where the code lives.** `chameleon-core/src/markdown.rs`, behind the `markdown` cargo
+  feature (on in `chameleon-py`, so in the wheel): `Settings` (the options) and `Profile`
+  (settings plus the comrak `Options` built from them, once). comrak 0.57, default features
+  off (no syntect, no clap). `chameleon-py/src/markdown.rs`: the frozen pyclass
+  `MarkdownProfile` (name, id, `Profile`), the conversion a render runs, and the cache.
+- **Compiled in, not looked up.** `configure(markdown=...)` validates the settings and builds
+  one `MarkdownProfile` per prefix (`_settings.markdown_profiles`, replaced whole).
+  `tales.native_types` appends `('markdown', profile)` for each prefix the template class
+  doesn't define itself, so an application's own `markdown` type wins. The compiler turns
+  it into `Expr::Markdown(profile, inner)`, `inner` parsed as `structure:`'s is
+  (`typed_ref`: an ordinary expression, pipes included). A render never reads settings; a
+  template keeps the profiles in effect when it compiled.
+- **Evaluation.** `None` and `''` give empty `Markup`; the `default` marker passes through
+  (the element keeps its content); other non-strings go through `str()`; lone surrogates
+  become U+FFFD (one each, through UTF-16); the result is `Markup`, emitted unescaped like
+  `structure:`. In an async render only the final value is awaited (D9), as for
+  `structure:`: a coroutine passed to `markdown:` is not. A panic in comrak is caught
+  (`catch_unwind`) and raised as `RuntimeError` naming the profile: an `Exception`
+  frameworks handle, and not one a TALES `|` falls back on.
+- **Options through comrak's formatter hook, not by rewriting HTML.** `images: false`
+  renders an image's children in plain mode (its alt text); `inline` skips the tags of a
+  lone top-level paragraph; `classes` arms a pending ` class="..."` when a node starts, and a
+  wrapping writer inserts it before the `>` (or ` />`) of that element's opening tag. It fails
+  closed: the next non-whitespace output must be the element's tag start (`<p`, matched across
+  comrak's split writes such as `<h` then `2`) followed by a tag boundary, or the class is
+  dropped; and whatever is still pending when the node's formatter call returns is dropped
+  (an image keeps it until its exit, where ` />` is written). So a class never lands on raw
+  HTML, a closing tag or another element (the first version did: a paragraph in a tight list
+  writes no `<p>`, and its class went to `</li>`; found in the architect's review).
+  `tests/markdown_spec.rs` checks it with a unique class on every element over every spec
+  example, four option combinations. `heading_ids` sets `header_id_prefix` and `header_id_prefix_in_href` (the anchor
+  link points at the prefixed id).
+- **The cache.** A process-wide map behind a `std::sync::Mutex` (locked with
+  `lock_py_attached`, recovered if poisoned: no update stops halfway), key (profile id,
+  `FxHash` of the UTF-8), entry (text, `Markup`, size, last use). A hit compares the text, so a
+  collision only costs a miss; it returns the cached `Markup` object. Python's own `hash()`
+  was tried first: it is cached per object, but costs about 1 µs for 5 KB on a string seen
+  for the first time, which per-request Markdown is. Limits: `markdown_cache` entries (1,024
+  by default) and 64 MiB of text plus HTML; over either it evicts by last use down to 7/8 of
+  both. Texts over 64 KiB aren't cached. Objects leaving the cache are dropped after the lock
+  is released. Conversions of 4 KB or more detach from the interpreter.
+  `configure(markdown=...)` and `markdown_cache=` empty it; the native size is set before the
+  Python settings, so a failure changes nothing.
+- **Licenses.** `finl_unicode` (through comrak) is Unicode-DFS-2016, added to `deny.toml`
+  (Unicode-3.0's predecessor, already allowed in its newer form). The spec test data (the
+  CommonMark spec is CC BY-SA 4.0) is excluded from the sdist; the wheel never had it.
+- **Not done.** A per-profile length limit: hostile input can be slow (a table with
+  thousands of columns takes seconds), so the docs say to limit length on input and to turn
+  tables off for comment profiles.
+
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
 ```

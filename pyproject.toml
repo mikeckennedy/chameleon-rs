@@ -29,7 +29,7 @@ Repository = "https://github.com/mikeckennedy/chameleon-rust"
 [dependency-groups]
 # What the compatibility, differential and benchmark code needs. The reference Chameleon and
 # chameleon_partials are installed editable from pinned clones in temp/ by `make dev`.
-dev = ["maturin>=1.15,<2", "pytest>=9", "hypothesis>=6", "pydantic>=2", "setuptools", "ruff", "flask[async]>=3", "quart>=0.20"]
+dev = ["maturin>=1.15,<2", "pytest>=9", "hypothesis>=6", "pydantic>=2", "setuptools", "ruff", "flask[async]>=3", "quart>=0.20", "mistune>=3"]
 # The docs site (`make docs`). Quarto is installed separately and must be on PATH.
 docs = ["great-docs==0.13.0", "ipykernel"]
 
@@ -37,6 +37,11 @@ docs = ["great-docs==0.13.0", "ipykernel"]
 manifest-path = "crates/chameleon-py/Cargo.toml"
 python-source = "python"
 module-name = "chameleon_rs._native"
+# The Markdown spec examples are test data (the CommonMark spec is CC BY-SA 4.0): not shipped.
+exclude = [
+    { path = "crates/chameleon-core/tests/markdown_spec/**/*", format = "sdist" },
+    { path = "crates/chameleon-core/tests/markdown_spec.rs", format = "sdist" },
+]
 # No `pyo3/extension-module` feature: it is deprecated in PyO3 0.30, and maturin sets
 # PYO3_BUILD_EXTENSION_MODULE itself. Plain `cargo test` keeps linking libpython.
 

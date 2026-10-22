@@ -25,6 +25,7 @@ use chameleon_core::{
 use crate::custom::{Custom, Sub, SubKind};
 use crate::errors::unsupported_error;
 use crate::expr::{Expr, Fallback, NsCode, TextConv};
+use crate::markdown::MarkdownProfile;
 
 /// An entry of a program's token table, resolved at compile time so the error path costs
 /// a slice: Chameleon re-slices the template source at the token's position for its length
@@ -75,6 +76,8 @@ pub(crate) enum TypeSpec<'py> {
     Exists,
     Import,
     Structure,
+    /// A configured Markdown prefix (`configure(markdown=...)`, Phase 11b).
+    Markdown(Py<MarkdownProfile>),
     /// `ProxyExpr(name, expression, ignore_prefix)` (`load:` is `ProxyExpr('__loader',
     /// ignore_prefix=False)`): each alternative is an interpolated string passed to `name`.
     Proxy {
@@ -115,7 +118,8 @@ impl<'py> Config<'py> {
 
     /// Reads the `(prefix, spec)` pairs `chameleon_rs.tales.native_types` returns: `spec` is
     /// `('python',)`, `('string', braces_required)`, `('not',)`, `('exists',)`, `('import',)`,
-    /// `('structure',)`, `('proxy', name, ignore_prefix)` or `('custom', factory)`.
+    /// `('structure',)`, `('markdown', profile)`, `('proxy', name, ignore_prefix)` or
+    /// `('custom', factory)`.
     pub(crate) fn set_types(&mut self, specs: &Bound<'py, PyAny>) -> PyResult<()> {
         self.types.clear();
         for item in specs.try_iter()? {
@@ -129,6 +133,7 @@ impl<'py> Config<'py> {
                 "exists" => TypeSpec::Exists,
                 "import" => TypeSpec::Import,
                 "structure" => TypeSpec::Structure,
+                "markdown" => TypeSpec::Markdown(spec.get_item(1)?.cast_into::<MarkdownProfile>()?.unbind()),
                 "proxy" => TypeSpec::Proxy {
                     name: spec.get_item(1)?.extract()?,
                     ignore_prefix: spec.get_item(2)?.is_truthy()?,
@@ -263,6 +268,7 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
             Some(TypeSpec::Exists) => Spec::Exists,
             Some(TypeSpec::Import) => Spec::Import,
             Some(TypeSpec::Structure) => Spec::Structure,
+            Some(TypeSpec::Markdown(profile)) => Spec::Markdown(profile.clone_ref(self.py)),
             Some(TypeSpec::Proxy { name, ignore_prefix }) => Spec::Proxy(name.clone(), *ignore_prefix),
             Some(TypeSpec::Custom(factory)) => Spec::Custom(factory.clone()),
             // `LookupError("Unknown expression type: %s." % str(KeyError(prefix)))`.
@@ -282,6 +288,7 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
             Spec::Not => Expr::Not(Box::new(self.typed_ref(&expression, inner)?)),
             Spec::Exists => Expr::Exists(Box::new(self.typed(&expression, inner, false)?)),
             Spec::Structure => Expr::Structure(Box::new(self.typed_ref(&expression, inner)?)),
+            Spec::Markdown(profile) => Expr::Markdown(profile, Box::new(self.typed_ref(&expression, inner)?)),
             // `self.expression.strip().replace('\n', ' ')`.
             Spec::Import => {
                 let name = expression.text.trim_matches(is_python_space).replace('\n', " ");
@@ -621,6 +628,7 @@ enum Spec<'py> {
     Exists,
     Import,
     Structure,
+    Markdown(Py<MarkdownProfile>),
     Proxy(String, bool),
     Custom(Bound<'py, PyAny>),
 }

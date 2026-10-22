@@ -75,6 +75,7 @@ user_guide:
     contents:
       - template-language.qmd
       - partials.qmd
+      - markdown.qmd
       - configuration.qmd
   - section: "Web frameworks"
     contents:

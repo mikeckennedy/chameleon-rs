@@ -1521,6 +1521,50 @@ converting a 5 KB document is faster than mistune, and a cache hit costs under 1
 changes when `markdown` isn't configured (upstream suite, real-site corpus identical, A/B bench
 flat).
 
+**Results (2026-10-21).** Built as scoped above; details in architecture.md, "Phase 11b
+amendments".
+
+- **Specs.** All 652 CommonMark 0.31.2 examples (raw HTML allowed, extensions off, as the spec
+  assumes) and 28 of cmark-gfm's 29 extension examples (`tests/markdown_spec.rs`; GitHub's tag
+  filter skipped, not an extension here). The one difference is pinned: comrak doesn't
+  autolink `http://🍄.ga/` (a domain starting with an emoji); cmark-gfm does.
+- **Speed** (`bench/bench_markdown.py`, release build, load 3-5): a 5 KB document (headings,
+  lists, a table, code, footnotes) converts in 54-57 µs against mistune's 1,396-1,413 µs with
+  the same plugins (25-26x). A cache hit costs about 310 ns on the same string object, and
+  370-640 ns on a fresh equal one (the per-request case: the `FxHash` of 5 KB plus the
+  comparison). In a template, `${markdown: body}` on a hit is faster than `${structure: html}`
+  of the same HTML (the cached `Markup` isn't copied).
+- **Nothing changes unconfigured.** Upstream 227 on each engine; the real-site corpus 228
+  identical and 1 raising the same error, as before; integration 40/16/39/6, and 16/6
+  built-in. A/B against 239fd36 (`bench_ab.py`, 8 rounds): listing -6.8 and -4.2 ns, macro
+  -19.1, +16.2, -9.4 and -9.5 ns, page -174, +498, +395 and -1,956 ns (each run's range
+  spans zero or flips sign between runs, at load 3-4): flat.
+- **Decided on the way.** `|` falls back on an error, not on `None` (as everywhere in TALES).
+  A wrong-typed setting raises `TypeError`, a bad value `ValueError`, and a call that raises
+  changes nothing. Profile names can't be Chameleon's own prefixes. An async render doesn't
+  await a coroutine inside `markdown:` (D9's rule, as `structure:`); load the text in the view.
+- **Rust Architect review** (before the commit). Fixed: `classes` put the class on the next
+  `>` written, so a paragraph in a tight list (which writes no `<p>`) sent it to `</li>`, to
+  `<em>`, or to raw HTML; now it fails closed (architecture.md) and a property test runs a
+  unique class on every element over every spec example. `configure(markdown_cache=2**64)`
+  changed the settings and then raised; now checked first. Also: a 64 MiB byte budget and a
+  64 KiB per-text limit on the cache (it was entries only, up to gigabytes), `heading_ids`
+  prefixes limited to id-safe characters (comrak writes them as they are), a poisoned lock
+  recovered instead of failing every render, a comrak panic raised as `RuntimeError`, the
+  `default` marker passed through, lone surrogates replaced, the spec data kept out of the
+  sdist, and the docs say where `classes` applies, that unsafe URLs are dropped unless
+  `raw_html` is `'allow'`, and that hostile input can be slow (limit its length; not done: a
+  per-profile length limit).
+- **Tests:** 68 in `tests/python/test_markdown.py` (every option, the escaping default,
+  fallbacks, `None`, `default`, `str()`, surrogates, unsafe URLs, macros and slots,
+  `render_async`, validation and atomicity, the cache's LRU order and byte budget,
+  reconfiguring while rendering, a class's own prefix winning, concurrent renders), 5 core
+  unit tests, the two spec tests and the `classes` property test. `make test` 2,897 passed,
+  2 skipped, 3 strict xfails; on free-threaded 3.14t, `test_markdown.py` and
+  `test_threads.py` pass (74) with the GIL off.
+- **Docs:** user guide page `user_guide/markdown.qmd` (executable examples), configuration
+  page.
+
 ## Phase 12: Release
 
 Wheels for macOS, Linux and Windows (maturin), docs, a migration guide, the free-threading

@@ -22,6 +22,7 @@ use pyo3::{PyTraverseError, PyVisit};
 use chameleon_core::{Escape, FreeVars, Step};
 
 use crate::custom::Custom;
+use crate::markdown::MarkdownProfile;
 use crate::scope::Scope;
 
 #[derive(Clone, Copy, Debug)]
@@ -111,6 +112,9 @@ pub(crate) enum Expr {
     Exists(Box<Expr>),
     /// `structure:`: the value wrapped in `Markup`.
     Structure(Box<Expr>),
+    /// `markdown:` (and the other configured Markdown prefixes): the value converted from
+    /// Markdown to HTML, as `Markup` (Phase 11b).
+    Markdown(Py<MarkdownProfile>, Box<Expr>),
     /// `import:`: `resolve_dotted(name)`, at every evaluation (it caches imports).
     Import(Py<PyString>),
     /// `string:` and each path of `load:` (Chameleon's `Interpolator`, braces optional).
@@ -230,9 +234,12 @@ impl Expr {
                     v.traverse(visit)
                 })
             }
-            Self::Not(e) | Self::Unary(_, e) | Self::Exists(e) | Self::Structure(e) | Self::Token(_, _, e) => {
-                e.traverse(visit)
-            }
+            Self::Not(e)
+            | Self::Unary(_, e)
+            | Self::Exists(e)
+            | Self::Structure(e)
+            | Self::Markdown(_, e)
+            | Self::Token(_, _, e) => e.traverse(visit),
             Self::Binary(_, a, b) | Self::Subscript(a, b) => {
                 a.traverse(visit)?;
                 b.traverse(visit)
@@ -270,7 +277,6 @@ impl Expr {
     pub(crate) fn uses_fallback(&self) -> bool {
         match self {
             Self::Fallback(_) | Self::Custom(_) | Self::Ns(_) => true,
-            Self::Token(_, _, e) => e.uses_fallback(),
             Self::Name(_)
             | Self::Builtin(..)
             | Self::TemplateBuiltin(_)
@@ -282,9 +288,13 @@ impl Expr {
             | Self::ScopeKey(_)
             | Self::Import(_)
             | Self::Raise(_) => false,
-            Self::Attr(e, _) | Self::Not(e) | Self::Unary(_, e) | Self::Exists(e) | Self::Structure(e) => {
-                e.uses_fallback()
-            }
+            Self::Attr(e, _)
+            | Self::Not(e)
+            | Self::Unary(_, e)
+            | Self::Exists(e)
+            | Self::Structure(e)
+            | Self::Markdown(_, e)
+            | Self::Token(_, _, e) => e.uses_fallback(),
             Self::Call { func, args, kwargs } => {
                 func.uses_fallback()
                     || args.iter().any(Self::uses_fallback)
@@ -332,6 +342,7 @@ impl Expr {
             | Self::Unary(_, e)
             | Self::Exists(e)
             | Self::Structure(e)
+            | Self::Markdown(_, e)
             | Self::Token(_, _, e) => e.collect(f),
             Self::Call { func, args, kwargs } => {
                 func.collect(f);
@@ -919,6 +930,7 @@ fn eval_more<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
         Expr::Slice(_)
         | Expr::Exists(_)
         | Expr::Structure(_)
+        | Expr::Markdown(..)
         | Expr::Import(_)
         | Expr::Interp(_)
         | Expr::Custom(_)
@@ -956,6 +968,9 @@ fn eval_rare<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
         Expr::Structure(inner) => {
             let value = eval(inner, cx)?;
             utils_attr(py, &MARKUP, "chameleon_rs.utils", "Markup")?.call1((value,))
+        }
+        Expr::Markdown(profile, inner) => {
+            crate::markdown::to_markup(profile.get(), &eval(inner, cx)?, Some(cx.marker()))
         }
         Expr::Import(name) => utils_attr(py, &RESOLVE_DOTTED, "chameleon_rs.utils", "resolve_dotted")?.call1((name,)),
         Expr::Interp(s) => eval_interp(s, cx),

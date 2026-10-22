@@ -17,6 +17,8 @@ chameleon_rs.configure(
     auto_reload=False,
     restricted_namespace=True,
     partial_search='caller',
+    markdown=True,
+    markdown_cache=1024,
 )
 ```
 
@@ -26,13 +28,16 @@ chameleon_rs.configure(
 | `auto_reload` | `False` | Recompile a template when its file changes. For partials, each file is checked at most once per render. Use it in development only. |
 | `restricted_namespace` | `True` | `False` allows attributes with other namespaces or prefixes, such as Alpine.js's `@click` or Vue's `v-on:click`. |
 | `partial_search` | `'caller'` | Where [render_partial](../reference/render_partial.md#chameleon_rs.render_partial) looks: `'caller'` searches the template folder, then the calling template's search path and folders. `'registered'` searches the template folder only, as chameleon_partials does. See [Partials](partials.md#how-a-path-is-found). |
+| `markdown` | none | The `markdown:` expression: `True` for the defaults, or a dict of profiles (prefix → options). `False` removes it. See [Markdown](markdown.md). |
+| `markdown_cache` | `1024` | How many Markdown conversions to keep. `0` turns the cache off. |
 
 How it behaves:
 
 - **An option you leave out keeps its current value.** So `configure(partial_search='registered')` changes only the search mode.
 - **Every call applies.** There's no `cache_init` as in chameleon_partials and chameleon-flask, so a second call with a different folder takes effect.
 - **It's safe with threads.** Each configuration is an immutable object that's swapped in whole, so a render running at the same time never sees half of one. Still, call it at startup, not per request.
-- It returns the new settings, and raises [chameleon_rs.web.TemplateError](../reference/web.TemplateError.md#chameleon_rs.web.TemplateError) for a missing folder, or `ValueError` for an unknown `partial_search`.
+- **`partial_search` and the Markdown settings don't need a folder.** Every other option needs one, on the first call.
+- It returns the new settings, and raises [chameleon_rs.web.TemplateError](../reference/web.TemplateError.md#chameleon_rs.web.TemplateError) for a missing folder, or `ValueError` for an unknown `partial_search` or an invalid Markdown setting (`TypeError` for one of the wrong type). A call that raises changes nothing.
 
 
 ``` python

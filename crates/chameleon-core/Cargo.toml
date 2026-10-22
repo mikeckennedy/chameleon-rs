@@ -11,6 +11,11 @@ publish.workspace = true
 thiserror.workspace = true
 memchr.workspace = true
 regex.workspace = true
+comrak = { workspace = true, optional = true }
+
+[features]
+# The `markdown:` expression type: Markdown to HTML with comrak (on in the wheel).
+markdown = ["dep:comrak"]
 
 [dev-dependencies]
 # The reference engine for the hand-written matchers and the tokenizer fast path (tests only).

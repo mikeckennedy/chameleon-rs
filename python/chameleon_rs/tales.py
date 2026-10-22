@@ -135,8 +135,18 @@ def _spec(factory: Any) -> tuple[Any, ...]:
 
 
 def native_types(expression_types: Mapping[str, Any]) -> list[tuple[str, tuple[Any, ...]]]:
-    """``(prefix, spec)`` for each entry, as the native compiler reads them."""
-    return [(prefix, _spec(factory)) for prefix, factory in expression_types.items()]
+    """``(prefix, spec)`` for each entry, as the native compiler reads them, then the Markdown
+    profiles ``chameleon_rs.configure(markdown=...)`` set up, for prefixes the template class
+    doesn't define itself (a custom ``markdown`` type an application registers wins)."""
+    from chameleon_rs import _settings
+
+    specs = [(prefix, _spec(factory)) for prefix, factory in expression_types.items()]
+    specs.extend(
+        (prefix, ('markdown', profile))
+        for prefix, profile in _settings.markdown_profiles.items()
+        if prefix not in expression_types
+    )
+    return specs
 
 
 # Chameleon's base class for TALES expression types, vendored for custom types that subclass

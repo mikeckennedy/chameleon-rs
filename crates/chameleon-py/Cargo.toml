@@ -12,8 +12,9 @@ name = "_native"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-chameleon-core.workspace = true
+chameleon-core = { workspace = true, features = ["markdown"] }
 pyo3.workspace = true
+rustc-hash.workspace = true
 
 [lints]
 workspace = true

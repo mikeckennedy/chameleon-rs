@@ -14,6 +14,7 @@ mod errors;
 mod expr;
 mod lower;
 mod macros;
+mod markdown;
 mod partials;
 mod program;
 mod repeat;
@@ -40,6 +41,8 @@ mod _native {
     use super::expr::py_lookup_attr;
     #[pymodule_export]
     use super::macros::{Macro, SlotFill};
+    #[pymodule_export]
+    use super::markdown::{MarkdownProfile, markdown_cache_info, markdown_cache_limits, set_markdown_cache};
     #[pymodule_export]
     use super::program::{DefaultMarker, Program, render_page, render_page_async};
     #[pymodule_export]
