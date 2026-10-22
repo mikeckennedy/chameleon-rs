@@ -316,7 +316,6 @@ ul.task-list li input[type="checkbox"] {
   <li><a href="#render_partial-in-econtext" id="toc-render_partial-in-econtext" class="nav-link" data-scroll-target="#render_partial-in-econtext"><code>render_partial</code> in <code>econtext</code></a></li>
   <li><a href="#corner-cases-in-slot-bodies" id="toc-corner-cases-in-slot-bodies" class="nav-link" data-scroll-target="#corner-cases-in-slot-bodies">Corner cases in slot bodies</a></li>
   <li><a href="#behaviour-of-the-helper-libraries" id="toc-behaviour-of-the-helper-libraries" class="nav-link" data-scroll-target="#behaviour-of-the-helper-libraries">Behaviour of the helper libraries</a></li>
-  <li><a href="#a-macro-removed-while-reloading" id="toc-a-macro-removed-while-reloading" class="nav-link" data-scroll-target="#a-macro-removed-while-reloading">A macro removed while reloading</a></li>
   <li><a href="#render_async-and-a-replaced-render" id="toc-render_async-and-a-replaced-render" class="nav-link" data-scroll-target="#render_async-and-a-replaced-render"><code>render_async</code> and a replaced <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render</a></a></li>
   </ul></li>
   <li><a href="#found-a-difference" id="toc-found-a-difference" class="nav-link" data-scroll-target="#found-a-difference">Found a difference?</a></li>
@@ -370,7 +369,7 @@ ul.task-list li input[type="checkbox"] {
 <td>No differences in 20,000 examples per generator.</td>
 </tr>
 <tr class="even">
-<td><strong>Integration suites.</strong> The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials and litestar-chameleon, unmodified, on chameleon-rs.</td>
+<td><strong>Integration suites.</strong> The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials, litestar-chameleon and pyramid_chameleon, unmodified, on chameleon-rs.</td>
 <td>All pass.</td>
 </tr>
 <tr class="odd">
@@ -454,10 +453,6 @@ ul.task-list li input[type="checkbox"] {
 <li><strong>Async views await model values.</strong> An async view renders with <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a>, so a model value that is awaitable (a coroutine, task or future, or a test double such as <code>AsyncMock()</code>) is awaited where the template uses it. The original libraries rendered the object itself.</li>
 <li><strong>Setup.</strong> Every <a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">configure()</a> call applies (<a href="../reference/partials.register_extensions.html#chameleon_rs.partials.register_extensions" class="gdls-link gdls-code">register_extensions</a> ignored later calls), and <code>configure(..., app=app)</code> checks the decorator order at startup.</li>
 </ul>
-</section>
-<section id="a-macro-removed-while-reloading" class="level2">
-<h2 class="anchored" data-anchor-id="a-macro-removed-while-reloading">A macro removed while reloading</h2>
-<p>With <code>auto_reload</code>, Chameleon re-cooks a changed template into the same object and keeps the macro functions of the old version on it. So a macro that the new source no longer defines can still be looked up by name (and renders its old content). chameleon-rs replaces the macros with the new source’s and raises <code>KeyError('Macro does not exist: ...')</code>. This shows up in Pyramid with a <code>#macro</code> renderer when you edit a template to remove or rename that macro: one test in pyramid_chameleon’s suite checks it. See <a href="../user-guide/pyramid.html#compatibility">Pyramid</a>.</p>
 </section>
 <section id="render_async-and-a-replaced-render" class="level2">
 <h2 class="anchored" data-anchor-id="render_async-and-a-replaced-render"><a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a> and a replaced <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render</a></h2>

@@ -12,7 +12,7 @@ Each level is a check that runs on every change:
 | **Chameleon's own test suite.** All 233 tests, vendored unmodified, run against chameleon-rs. | Every test that passes on Chameleon passes on chameleon-rs: 227 of 227. The other 6 depend on the test environment and are skipped on both engines. |
 | **Fixture renders.** Every input template in Chameleon's test suite, rendered by both engines. | All 122 byte-identical. |
 | **Differential fuzzing.** Generated templates, models and expressions, rendered by both engines and compared. | No differences in 20,000 examples per generator. |
-| **Integration suites.** The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials and litestar-chameleon, unmodified, on chameleon-rs. | All pass. |
+| **Integration suites.** The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials, litestar-chameleon and pyramid_chameleon, unmodified, on chameleon-rs. | All pass. |
 | **Real sites.** Every page of two production Flask/Quart apps, crawled with both engines: anonymous and signed in, with all their partials and layouts. | Every page byte-identical. |
 
 The upstream suite and the fuzzers compare output byte for byte, and they also compare the type and message of any error a template raises.
@@ -68,11 +68,6 @@ The built-ins differ from chameleon_partials, chameleon-flask, fastapi-chameleon
 - **Partial paths.** A path that isn't in the configured template folder is also looked for next to the calling template, where chameleon_partials would raise. `configure(partial_search='registered')` restores the original lookup. See [Partials](partials.md#how-a-path-is-found).
 - **Async views await model values.** An async view renders with [render_async](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async), so a model value that is awaitable (a coroutine, task or future, or a test double such as `AsyncMock()`) is awaited where the template uses it. The original libraries rendered the object itself.
 - **Setup.** Every [configure()](../reference/configure.md#chameleon_rs.configure) call applies ([register_extensions](../reference/partials.register_extensions.md#chameleon_rs.partials.register_extensions) ignored later calls), and `configure(..., app=app)` checks the decorator order at startup.
-
-
-## A macro removed while reloading
-
-With `auto_reload`, Chameleon re-cooks a changed template into the same object and keeps the macro functions of the old version on it. So a macro that the new source no longer defines can still be looked up by name (and renders its old content). chameleon-rs replaces the macros with the new source's and raises `KeyError('Macro does not exist: ...')`. This shows up in Pyramid with a `#macro` renderer when you edit a template to remove or rename that macro: one test in pyramid_chameleon's suite checks it. See [Pyramid](pyramid.md#compatibility).
 
 
 ## [render_async](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async) and a replaced [render](../reference/flask.render.md#chameleon_rs.flask.render)

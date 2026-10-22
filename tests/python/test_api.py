@@ -252,6 +252,47 @@ def test_render_function_set_on_the_instance() -> None:
     assert calls == [{'target_language': None}]
 
 
+def test_recook_keeps_removed_macros() -> None:
+    """Chameleon never removes a macro's `_render_<name>` from the template when it compiles
+    new source: a macro the new source lacks still renders its last compilation, `names` lists
+    every name in the order it was first defined, and a macro defined again is the new one."""
+    use = '<p metal:use-macro="t.macros[n]"/>'
+    for engine in (chameleon, chameleon_rs):
+        template = engine.PageTemplate(
+            '<div metal:define-macro="b-x">B</div><div metal:define-macro="a">A</div><div metal:define-macro="c">C</div>'
+        )
+        assert template.macros.names == ['b_x', 'a', 'c']
+        template.cook('<div metal:define-macro="c">C2</div><div metal:define-macro="d">D</div>')
+        assert template.macros.names == ['b_x', 'a', 'c', 'd'], engine
+        rendered = {n: engine.PageTemplate(use)(t=template, n=n) for n in ('b-x', 'a', 'c', 'd')}
+        assert rendered == {'b-x': '<div>B</div>', 'a': '<div>A</div>', 'c': '<div>C2</div>', 'd': '<div>D</div>'}
+        template.cook('<div metal:define-macro="b-x">B3</div>')
+        assert template.macros.names == ['b_x', 'a', 'c', 'd']
+        assert engine.PageTemplate(use)(t=template, n='b-x') == '<div>B3</div>'
+        assert engine.PageTemplate(use)(t=template, n='d') == '<div>D</div>'
+        with pytest.raises(KeyError, match="Macro does not exist: 'e'"):
+            template.macros['e']
+
+
+def test_recook_keeps_macro_of_macro_renderer(tmp_path: Path) -> None:
+    """pyramid_chameleon's `test_macro_template_reload`: a template whose `cook` renders one
+    macro keeps rendering it after `cook` is given source without that macro."""
+    path = tmp_path / 'page.pt'
+    path.write_text('<html>\nOutside macro\n<div metal:define-macro="foo">\n  Hello!\n</div>\n</html>\n')
+    for engine in (chameleon, chameleon_rs):
+
+        class PyramidPageTemplateFile(engine.PageTemplateFile):  # ty: ignore[unsupported-base]
+            def cook(self, body: str) -> None:
+                super().cook(body)
+                if self.macro:
+                    self._render = self.macros[self.macro].include
+
+        template = PyramidPageTemplateFile(str(path), macro='foo')
+        first = template()
+        template.cook('<html>\nOutside macro\n\n  Hello!\n\n</html>\n\n')
+        assert template() == first, engine
+
+
 def test_render_function_set_by_cook(tmp_path: Path) -> None:
     """pyramid_chameleon's `macro=` renderer: `cook` sets `_render` to a macro's `include`,
     so even the first render of a lazily compiled file template renders only the macro."""

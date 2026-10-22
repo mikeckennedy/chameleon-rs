@@ -32,8 +32,8 @@ package `chameleon-rs` (import `chameleon_rs`). Goal: drop-in compatible with Ch
 - `make test`: cargo tests, our pytest suite, the upstream suite on both engines, and the Robyn
   tests (`test-robyn`, a 3.14 venv where the main venv has no Robyn wheel).
 - `make test-upstream-rust`: the upstream suite against chameleon_rs (the compatibility score).
-- `make test-integration`: fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials
-  and litestar-chameleon, unmodified, on chameleon_rs via `compat.install()`, plus the first four
+- `make test-integration`: fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials,
+  litestar-chameleon and pyramid_chameleon, unmodified, on chameleon_rs via `compat.install()`, plus the first four
   again against the built-in modules (`chameleon_rs.fastapi`, `.flask`, `.robyn`, `.partials`).
 - `make bench`: baseline benchmarks.
 

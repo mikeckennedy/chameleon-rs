@@ -22,6 +22,11 @@ if MODE not in ('original', 'builtin'):
     raise RuntimeError(f'INTEGRATION_MODE must be original or builtin, not {MODE!r}')
 chameleon_rs.compat.install(integrations=MODE == 'builtin')
 
+# Processes the suite starts (a multiprocessing pool's workers) get the alias too: Python runs
+# the sitecustomize module it finds on PYTHONPATH at startup.
+_CHILD_ALIAS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'child_alias')
+os.environ['PYTHONPATH'] = os.pathsep.join(filter(None, [_CHILD_ALIAS, os.environ.get('PYTHONPATH')]))
+
 
 def pytest_report_header(config):
     import chameleon

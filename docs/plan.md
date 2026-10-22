@@ -1828,6 +1828,18 @@ What remains for the owner:
   create a GitHub Release from the CHANGELOG section (Great Docs then builds the Changelog
   page); commit the rebuilt `site/`.
 
+**Pyramid (2026-10-22).** pyramid_chameleon's suite, run on chameleon-rs while writing the
+Pyramid docs page, found one difference: Chameleon's `cook` sets each macro's `_render_<name>`
+on the template and never removes one, so after a re-cook a macro the new source lacks still
+renders its last compilation and `macros.names` keeps every name in first-defined order
+(pyramid_chameleon's `test_macro_template_reload` relies on it). chameleon-rs now keeps the
+last compilation of each removed macro (`BaseTemplate._keep_removed_macros`; a template cooked
+once pays one dict lookup), tested on both engines in `test_api.py`. pyramid_chameleon (pinned
+e11b894) joined `make test-integration` on the compat alias: 67 passed. Its precompile tests
+start a multiprocessing pool, whose workers (a fresh interpreter: spawn, forkserver) import
+`chameleon`; `chameleon_compat_plugin` now puts `tests/integration/child_alias` (a
+`sitecustomize` installing the alias) on child processes' PYTHONPATH.
+
 ## Integrations: shared core and FastAPI
 
 Scope (Michael's decisions, 2026-10-22): a private core shared by the framework modules;

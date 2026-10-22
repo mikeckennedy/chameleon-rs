@@ -15,7 +15,7 @@ Each level is a check that runs on every change:
 | **Chameleon's own test suite.** All 233 tests, vendored unmodified, run against chameleon-rs. | Every test that passes on Chameleon passes on chameleon-rs: 227 of 227. The other 6 depend on the test environment and are skipped on both engines. |
 | **Fixture renders.** Every input template in Chameleon's test suite, rendered by both engines. | All 122 byte-identical. |
 | **Differential fuzzing.** Generated templates, models and expressions, rendered by both engines and compared. | No differences in 20,000 examples per generator. |
-| **Integration suites.** The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials and litestar-chameleon, unmodified, on chameleon-rs. | All pass. |
+| **Integration suites.** The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials, litestar-chameleon and pyramid_chameleon, unmodified, on chameleon-rs. | All pass. |
 | **Real sites.** Every page of two production Flask/Quart apps, crawled with both engines: anonymous and signed in, with all their partials and layouts. | Every page byte-identical. |
 
 The upstream suite and the fuzzers compare output byte for byte, and they also compare the
@@ -96,15 +96,6 @@ chameleon-robyn in a few ways that don't affect templates that worked before:
   object itself.
 - **Setup.** Every `configure()` call applies (`register_extensions` ignored later calls), and
   `configure(..., app=app)` checks the decorator order at startup.
-
-### A macro removed while reloading
-
-With `auto_reload`, Chameleon re-cooks a changed template into the same object and keeps the
-macro functions of the old version on it. So a macro that the new source no longer defines can
-still be looked up by name (and renders its old content). chameleon-rs replaces the macros
-with the new source's and raises `KeyError('Macro does not exist: ...')`. This shows up in
-Pyramid with a `#macro` renderer when you edit a template to remove or rename that macro: one
-test in pyramid_chameleon's suite checks it. See [Pyramid](pyramid.qmd#compatibility).
 
 ### `render_async` and a replaced `render`
 

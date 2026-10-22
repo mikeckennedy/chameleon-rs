@@ -110,4 +110,4 @@ pyramid_chameleon's `pyramid-chameleon-precompile` script fills `CHAMELEON_CACHE
 
 # Compatibility
 
-pyramid_chameleon's own test suite passes on chameleon-rs, unmodified, with one exception: a test that re-cooks a template with new source in which the macro its renderer was given no longer exists. Chameleon keeps rendering the old macro; chameleon-rs raises `KeyError`. In an app, that only happens with `pyramid.reload_templates` on, when you edit a template to remove or rename a macro that a `#macro` renderer names.
+pyramid_chameleon's own test suite passes on chameleon-rs, unmodified: it runs in chameleon-rs's integration tests on every change, together with the suites of the other framework libraries. See [Compatibility](compatibility.md).

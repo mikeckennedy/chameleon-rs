@@ -61,8 +61,10 @@ replacement. Documentation: <https://mkennedy.codes/docs/chameleon-rs/>.
 - All 122 fixture renders of that suite are byte-identical.
 - Differential fuzzing of templates, partials, macros/slots/i18n and expressions finds no
   differences.
-- The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials
-  and litestar-chameleon pass unmodified on chameleon-rs.
+- The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials,
+  litestar-chameleon and pyramid_chameleon pass unmodified on chameleon-rs. As in Chameleon, a
+  macro that a template's new source no longer defines (a reload) still renders its last
+  version, which pyramid_chameleon's macro renderer relies on.
 - Every page of two production Flask/Quart sites renders byte-identical HTML.
 
 ### Performance

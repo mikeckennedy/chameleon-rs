@@ -1,434 +1,354 @@
 {
-  "build_time": "2026-10-22T14:56:42Z",
-  "total_seconds": 74.052,
+  "build_time": "2026-10-22T15:09:25Z",
+  "total_seconds": 71.89,
   "pages": [
     {
       "page": "reference/PageTemplate.parse.qmd",
-      "seconds": 19.881,
+      "seconds": 19.522,
       "frozen": false
     },
     {
       "page": "user-guide/async.qmd",
-      "seconds": 3.086,
-      "frozen": false
-    },
-    {
-      "page": "user-guide/litestar.qmd",
-      "seconds": 1.498,
-      "frozen": false
-    },
-    {
-      "page": "user-guide/fastapi.qmd",
-      "seconds": 1.465,
-      "frozen": false
-    },
-    {
-      "page": "user-guide/starlette.qmd",
-      "seconds": 1.455,
+      "seconds": 2.679,
       "frozen": false
     },
     {
       "page": "user-guide/configuration.qmd",
-      "seconds": 1.452,
+      "seconds": 1.484,
       "frozen": false
     },
     {
-      "page": "user-guide/getting-started.qmd",
-      "seconds": 1.431,
+      "page": "user-guide/litestar.qmd",
+      "seconds": 1.462,
+      "frozen": false
+    },
+    {
+      "page": "user-guide/fastapi.qmd",
+      "seconds": 1.439,
       "frozen": false
     },
     {
       "page": "user-guide/partials.qmd",
-      "seconds": 1.413,
+      "seconds": 1.409,
+      "frozen": false
+    },
+    {
+      "page": "user-guide/getting-started.qmd",
+      "seconds": 1.382,
+      "frozen": false
+    },
+    {
+      "page": "user-guide/starlette.qmd",
+      "seconds": 1.365,
       "frozen": false
     },
     {
       "page": "user-guide/flask.qmd",
-      "seconds": 1.361,
+      "seconds": 1.316,
       "frozen": false
     },
     {
       "page": "user-guide/markdown.qmd",
-      "seconds": 1.343,
+      "seconds": 1.315,
       "frozen": false
     },
     {
       "page": "user-guide/template-language.qmd",
-      "seconds": 1.309,
-      "frozen": false
-    },
-    {
-      "page": "user-guide/switching-from-chameleon.qmd",
-      "seconds": 1.299,
-      "frozen": false
-    },
-    {
-      "page": "recipes/email-bodies.qmd",
-      "seconds": 1.272,
+      "seconds": 1.304,
       "frozen": false
     },
     {
       "page": "recipes/htmx-fragments.qmd",
-      "seconds": 1.27,
+      "seconds": 1.29,
+      "frozen": false
+    },
+    {
+      "page": "user-guide/switching-from-chameleon.qmd",
+      "seconds": 1.269,
+      "frozen": false
+    },
+    {
+      "page": "recipes/email-bodies.qmd",
+      "seconds": 1.249,
       "frozen": false
     },
     {
       "page": "recipes/shared-layout.qmd",
-      "seconds": 1.254,
+      "seconds": 1.237,
       "frozen": false
     },
     {
       "page": "language/tal.qmd",
-      "seconds": 0.757,
+      "seconds": 0.533,
       "frozen": false
     },
     {
       "page": "language/i18n.qmd",
-      "seconds": 0.467,
-      "frozen": false
-    },
-    {
-      "page": "language/expressions.qmd",
-      "seconds": 0.399,
-      "frozen": false
-    },
-    {
-      "page": "language/macros.qmd",
-      "seconds": 0.391,
+      "seconds": 0.413,
       "frozen": false
     },
     {
       "page": "reference/index.qmd",
-      "seconds": 0.374,
+      "seconds": 0.399,
       "frozen": false
     },
     {
-      "page": "reference/litestar.response.qmd",
-      "seconds": 0.366,
-      "frozen": false
-    },
-    {
-      "page": "reference/configure.qmd",
-      "seconds": 0.352,
-      "frozen": false
-    },
-    {
-      "page": "reference/litestar.ChameleonEngine.qmd",
-      "seconds": 0.344,
+      "page": "language/expressions.qmd",
+      "seconds": 0.388,
       "frozen": false
     },
     {
       "page": "reference/PageTemplateLoader.qmd",
-      "seconds": 0.342,
+      "seconds": 0.372,
       "frozen": false
     },
     {
-      "page": "reference/flask.template.qmd",
-      "seconds": 0.332,
-      "frozen": false
-    },
-    {
-      "page": "reference/flask.response.qmd",
-      "seconds": 0.326,
-      "frozen": false
-    },
-    {
-      "page": "reference/flask.configure.qmd",
-      "seconds": 0.325,
+      "page": "language/macros.qmd",
+      "seconds": 0.37,
       "frozen": false
     },
     {
       "page": "reference/PageTemplate.builtins.qmd",
-      "seconds": 0.322,
-      "frozen": false
-    },
-    {
-      "page": "reference/flask.clear.qmd",
-      "seconds": 0.322,
-      "frozen": false
-    },
-    {
-      "page": "reference/starlette.clear.qmd",
-      "seconds": 0.322,
-      "frozen": false
-    },
-    {
-      "page": "reference/web.ErrorPage.qmd",
-      "seconds": 0.321,
-      "frozen": false
-    },
-    {
-      "page": "reference/flask.error.qmd",
-      "seconds": 0.32,
-      "frozen": false
-    },
-    {
-      "page": "reference/litestar.error.qmd",
-      "seconds": 0.315,
-      "frozen": false
-    },
-    {
-      "page": "reference/fastapi.generic_error.qmd",
-      "seconds": 0.315,
-      "frozen": false
-    },
-    {
-      "page": "reference/fastapi.not_found.qmd",
-      "seconds": 0.314,
-      "frozen": false
-    },
-    {
-      "page": "reference/fastapi.error.qmd",
-      "seconds": 0.313,
-      "frozen": false
-    },
-    {
-      "page": "reference/fastapi.check_views.qmd",
-      "seconds": 0.313,
-      "frozen": false
-    },
-    {
-      "page": "reference/flask.global_init.qmd",
-      "seconds": 0.313,
-      "frozen": false
-    },
-    {
-      "page": "reference/web.TemplateError.qmd",
-      "seconds": 0.312,
-      "frozen": false
-    },
-    {
-      "page": "reference/PageTemplate.__getitem__.qmd",
-      "seconds": 0.31,
-      "frozen": false
-    },
-    {
-      "page": "reference/partials.register_extensions.qmd",
-      "seconds": 0.309,
-      "frozen": false
-    },
-    {
-      "page": "reference/PageTemplateFile.qmd",
-      "seconds": 0.309,
-      "frozen": false
-    },
-    {
-      "page": "reference/starlette.Templates.qmd",
-      "seconds": 0.308,
-      "frozen": false
-    },
-    {
-      "page": "reference/robyn.error.qmd",
-      "seconds": 0.308,
-      "frozen": false
-    },
-    {
-      "page": "reference/fastapi.render_async.qmd",
-      "seconds": 0.305,
-      "frozen": false
-    },
-    {
-      "page": "reference/partials.PartialRenderer.qmd",
-      "seconds": 0.305,
-      "frozen": false
-    },
-    {
-      "page": "reference/partials.PartialsException.qmd",
-      "seconds": 0.303,
-      "frozen": false
-    },
-    {
-      "page": "reference/partials.HTML.qmd",
-      "seconds": 0.303,
-      "frozen": false
-    },
-    {
-      "page": "reference/starlette.render.qmd",
-      "seconds": 0.302,
-      "frozen": false
-    },
-    {
-      "page": "reference/robyn.ChameleonTemplate.qmd",
-      "seconds": 0.301,
-      "frozen": false
-    },
-    {
-      "page": "reference/fastapi.render.qmd",
-      "seconds": 0.301,
-      "frozen": false
-    },
-    {
-      "page": "reference/PageTemplate.render_async.qmd",
-      "seconds": 0.301,
-      "frozen": false
-    },
-    {
-      "page": "reference/shadow.install.qmd",
-      "seconds": 0.301,
-      "frozen": false
-    },
-    {
-      "page": "reference/web.NotFound.qmd",
-      "seconds": 0.3,
-      "frozen": false
-    },
-    {
-      "page": "reference/PageTextTemplate.qmd",
-      "seconds": 0.298,
-      "frozen": false
-    },
-    {
-      "page": "user-guide/robyn.qmd",
-      "seconds": 0.297,
-      "frozen": false
-    },
-    {
-      "page": "reference/flask.check_views.qmd",
-      "seconds": 0.297,
-      "frozen": false
-    },
-    {
-      "page": "user-guide/compatibility.qmd",
-      "seconds": 0.296,
-      "frozen": false
-    },
-    {
-      "page": "reference/robyn.configure.qmd",
-      "seconds": 0.296,
-      "frozen": false
-    },
-    {
-      "page": "reference/starlette.response.qmd",
-      "seconds": 0.296,
-      "frozen": false
-    },
-    {
-      "page": "reference/TemplateError.qmd",
-      "seconds": 0.295,
-      "frozen": false
-    },
-    {
-      "page": "reference/litestar.clear.qmd",
-      "seconds": 0.295,
-      "frozen": false
-    },
-    {
-      "page": "reference/litestar.configure.qmd",
-      "seconds": 0.295,
-      "frozen": false
-    },
-    {
-      "page": "reference/litestar.check_views.qmd",
-      "seconds": 0.294,
-      "frozen": false
-    },
-    {
-      "page": "reference/starlette.response_async.qmd",
-      "seconds": 0.294,
-      "frozen": false
-    },
-    {
-      "page": "reference/robyn.generic_error.qmd",
-      "seconds": 0.293,
-      "frozen": false
-    },
-    {
-      "page": "reference/shadow.ShadowDifference.qmd",
-      "seconds": 0.293,
-      "frozen": false
-    },
-    {
-      "page": "reference/robyn.response_async.qmd",
-      "seconds": 0.292,
-      "frozen": false
-    },
-    {
-      "page": "reference/litestar.not_found.qmd",
-      "seconds": 0.29,
-      "frozen": false
-    },
-    {
-      "page": "reference/robyn.global_init.qmd",
-      "seconds": 0.289,
-      "frozen": false
-    },
-    {
-      "page": "reference/robyn.render_async.qmd",
-      "seconds": 0.289,
-      "frozen": false
-    },
-    {
-      "page": "reference/fastapi.configure.qmd",
-      "seconds": 0.288,
-      "frozen": false
-    },
-    {
-      "page": "reference/flask.not_found.qmd",
-      "seconds": 0.288,
-      "frozen": false
-    },
-    {
-      "page": "reference/starlette.check_views.qmd",
-      "seconds": 0.288,
-      "frozen": false
-    },
-    {
-      "page": "reference/litestar.generic_error.qmd",
-      "seconds": 0.288,
-      "frozen": false
-    },
-    {
-      "page": "reference/fastapi.global_init.qmd",
-      "seconds": 0.287,
-      "frozen": false
-    },
-    {
-      "page": "reference/litestar.ChameleonTemplate.qmd",
-      "seconds": 0.287,
-      "frozen": false
-    },
-    {
-      "page": "reference/litestar.Template.qmd",
-      "seconds": 0.287,
-      "frozen": false
-    },
-    {
-      "page": "reference/litestar.global_init.qmd",
-      "seconds": 0.287,
-      "frozen": false
-    },
-    {
-      "page": "reference/partials.extend_model.qmd",
-      "seconds": 0.287,
-      "frozen": false
-    },
-    {
-      "page": "reference/starlette.generic_error.qmd",
-      "seconds": 0.286,
+      "seconds": 0.331,
       "frozen": false
     },
     {
       "page": "reference/starlette.configure.qmd",
-      "seconds": 0.286,
+      "seconds": 0.329,
       "frozen": false
     },
     {
-      "page": "reference/robyn.check_views.qmd",
+      "page": "reference/fastapi.render_async.qmd",
+      "seconds": 0.321,
+      "frozen": false
+    },
+    {
+      "page": "reference/robyn.configure.qmd",
+      "seconds": 0.318,
+      "frozen": false
+    },
+    {
+      "page": "reference/litestar.check_views.qmd",
+      "seconds": 0.315,
+      "frozen": false
+    },
+    {
+      "page": "reference/starlette.render.qmd",
+      "seconds": 0.312,
+      "frozen": false
+    },
+    {
+      "page": "reference/litestar.ChameleonEngine.qmd",
+      "seconds": 0.311,
+      "frozen": false
+    },
+    {
+      "page": "reference/robyn.not_found.qmd",
+      "seconds": 0.308,
+      "frozen": false
+    },
+    {
+      "page": "reference/starlette.Templates.qmd",
+      "seconds": 0.301,
+      "frozen": false
+    },
+    {
+      "page": "reference/configure.qmd",
+      "seconds": 0.3,
+      "frozen": false
+    },
+    {
+      "page": "reference/flask.configure.qmd",
+      "seconds": 0.299,
+      "frozen": false
+    },
+    {
+      "page": "reference/shadow.ShadowDifference.qmd",
+      "seconds": 0.299,
+      "frozen": false
+    },
+    {
+      "page": "reference/partials.PartialRenderer.qmd",
+      "seconds": 0.299,
+      "frozen": false
+    },
+    {
+      "page": "reference/starlette.not_found.qmd",
+      "seconds": 0.297,
+      "frozen": false
+    },
+    {
+      "page": "reference/flask.template.qmd",
+      "seconds": 0.297,
+      "frozen": false
+    },
+    {
+      "page": "reference/litestar.error.qmd",
+      "seconds": 0.297,
+      "frozen": false
+    },
+    {
+      "page": "reference/robyn.ChameleonTemplate.qmd",
+      "seconds": 0.297,
+      "frozen": false
+    },
+    {
+      "page": "reference/starlette.template.qmd",
+      "seconds": 0.296,
+      "frozen": false
+    },
+    {
+      "page": "reference/flask.clear.qmd",
+      "seconds": 0.296,
+      "frozen": false
+    },
+    {
+      "page": "reference/partials.HTML.qmd",
+      "seconds": 0.295,
+      "frozen": false
+    },
+    {
+      "page": "reference/partials.PartialsException.qmd",
+      "seconds": 0.294,
+      "frozen": false
+    },
+    {
+      "page": "reference/starlette.render_async.qmd",
+      "seconds": 0.293,
+      "frozen": false
+    },
+    {
+      "page": "reference/flask.not_found.qmd",
+      "seconds": 0.293,
+      "frozen": false
+    },
+    {
+      "page": "reference/flask.check_views.qmd",
+      "seconds": 0.293,
+      "frozen": false
+    },
+    {
+      "page": "reference/PageTemplate.render_async.qmd",
+      "seconds": 0.292,
+      "frozen": false
+    },
+    {
+      "page": "reference/flask.global_init.qmd",
+      "seconds": 0.292,
+      "frozen": false
+    },
+    {
+      "page": "reference/starlette.generic_error.qmd",
+      "seconds": 0.291,
+      "frozen": false
+    },
+    {
+      "page": "reference/robyn.response_async.qmd",
+      "seconds": 0.29,
+      "frozen": false
+    },
+    {
+      "page": "reference/fastapi.global_init.qmd",
+      "seconds": 0.29,
+      "frozen": false
+    },
+    {
+      "page": "reference/litestar.ChameleonTemplate.qmd",
+      "seconds": 0.29,
+      "frozen": false
+    },
+    {
+      "page": "reference/web.DecoratorOrderError.qmd",
+      "seconds": 0.289,
+      "frozen": false
+    },
+    {
+      "page": "reference/flask.error.qmd",
+      "seconds": 0.289,
+      "frozen": false
+    },
+    {
+      "page": "reference/PageTemplate.__getitem__.qmd",
+      "seconds": 0.289,
+      "frozen": false
+    },
+    {
+      "page": "reference/starlette.global_init.qmd",
+      "seconds": 0.288,
+      "frozen": false
+    },
+    {
+      "page": "reference/robyn.clear.qmd",
+      "seconds": 0.288,
+      "frozen": false
+    },
+    {
+      "page": "reference/fastapi.configure.qmd",
+      "seconds": 0.287,
+      "frozen": false
+    },
+    {
+      "page": "reference/PageTextTemplateFile.qmd",
+      "seconds": 0.287,
+      "frozen": false
+    },
+    {
+      "page": "reference/TemplateError.qmd",
+      "seconds": 0.287,
+      "frozen": false
+    },
+    {
+      "page": "reference/fastapi.template.qmd",
       "seconds": 0.286,
       "frozen": false
     },
     {
       "page": "reference/litestar.render_async.qmd",
+      "seconds": 0.286,
+      "frozen": false
+    },
+    {
+      "page": "reference/starlette.check_views.qmd",
+      "seconds": 0.286,
+      "frozen": false
+    },
+    {
+      "page": "reference/litestar.generic_error.qmd",
+      "seconds": 0.286,
+      "frozen": false
+    },
+    {
+      "page": "reference/starlette.response.qmd",
+      "seconds": 0.286,
+      "frozen": false
+    },
+    {
+      "page": "reference/shadow.install.qmd",
+      "seconds": 0.286,
+      "frozen": false
+    },
+    {
+      "page": "reference/PageTemplate.render.qmd",
       "seconds": 0.285,
       "frozen": false
     },
     {
-      "page": "reference/litestar.response_async.qmd",
+      "page": "reference/robyn.global_init.qmd",
       "seconds": 0.285,
       "frozen": false
     },
     {
-      "page": "reference/fastapi.response.qmd",
+      "page": "reference/litestar.Template.qmd",
+      "seconds": 0.285,
+      "frozen": false
+    },
+    {
+      "page": "reference/fastapi.not_found.qmd",
+      "seconds": 0.285,
+      "frozen": false
+    },
+    {
+      "page": "reference/litestar.clear.qmd",
       "seconds": 0.285,
       "frozen": false
     },
@@ -438,7 +358,27 @@
       "frozen": false
     },
     {
-      "page": "reference/starlette.template.qmd",
+      "page": "user-guide/frameworks.qmd",
+      "seconds": 0.284,
+      "frozen": false
+    },
+    {
+      "page": "reference/starlette.error.qmd",
+      "seconds": 0.284,
+      "frozen": false
+    },
+    {
+      "page": "reference/robyn.template.qmd",
+      "seconds": 0.284,
+      "frozen": false
+    },
+    {
+      "page": "reference/robyn.check_views.qmd",
+      "seconds": 0.284,
+      "frozen": false
+    },
+    {
+      "page": "reference/litestar.not_found.qmd",
       "seconds": 0.284,
       "frozen": false
     },
@@ -448,173 +388,233 @@
       "frozen": false
     },
     {
-      "page": "reference/PageTemplate.qmd",
+      "page": "reference/web.model_of.qmd",
+      "seconds": 0.284,
+      "frozen": false
+    },
+    {
+      "page": "reference/core_version.qmd",
+      "seconds": 0.283,
+      "frozen": false
+    },
+    {
+      "page": "reference/robyn.error.qmd",
+      "seconds": 0.283,
+      "frozen": false
+    },
+    {
+      "page": "reference/PageTemplateFile.qmd",
+      "seconds": 0.283,
+      "frozen": false
+    },
+    {
+      "page": "reference/litestar.response.qmd",
+      "seconds": 0.283,
+      "frozen": false
+    },
+    {
+      "page": "reference/web.TemplateError.qmd",
       "seconds": 0.283,
       "frozen": false
     },
     {
       "page": "reference/web.TemplateNotFound.qmd",
-      "seconds": 0.283,
-      "frozen": false
-    },
-    {
-      "page": "reference/fastapi.template.qmd",
       "seconds": 0.282,
       "frozen": false
     },
     {
-      "page": "reference/robyn.template.qmd",
+      "page": "reference/flask.render.qmd",
       "seconds": 0.282,
+      "frozen": false
+    },
+    {
+      "page": "reference/partials.extend_model.qmd",
+      "seconds": 0.282,
+      "frozen": false
+    },
+    {
+      "page": "reference/PageTextTemplate.qmd",
+      "seconds": 0.282,
+      "frozen": false
+    },
+    {
+      "page": "reference/fastapi.response_async.qmd",
+      "seconds": 0.281,
       "frozen": false
     },
     {
       "page": "reference/PageTemplate.digest.qmd",
-      "seconds": 0.282,
+      "seconds": 0.281,
       "frozen": false
     },
     {
-      "page": "reference/render_partial.qmd",
-      "seconds": 0.282,
+      "page": "reference/fastapi.check_views.qmd",
+      "seconds": 0.281,
+      "frozen": false
+    },
+    {
+      "page": "reference/litestar.response_async.qmd",
+      "seconds": 0.281,
       "frozen": false
     },
     {
       "page": "reference/fastapi.clear.qmd",
-      "seconds": 0.282,
-      "frozen": false
-    },
-    {
-      "page": "reference/robyn.not_found.qmd",
       "seconds": 0.281,
       "frozen": false
     },
     {
-      "page": "reference/core_version.qmd",
+      "page": "reference/compat.install.qmd",
       "seconds": 0.281,
       "frozen": false
     },
     {
-      "page": "reference/starlette.not_found.qmd",
-      "seconds": 0.28,
+      "page": "reference/flask.response.qmd",
+      "seconds": 0.281,
       "frozen": false
     },
     {
-      "page": "reference/web.model_of.qmd",
-      "seconds": 0.28,
-      "frozen": false
-    },
-    {
-      "page": "reference/starlette.render_async.qmd",
-      "seconds": 0.279,
-      "frozen": false
-    },
-    {
-      "page": "reference/PageTemplate.render.qmd",
-      "seconds": 0.279,
+      "page": "reference/fastapi.generic_error.qmd",
+      "seconds": 0.281,
       "frozen": false
     },
     {
       "page": "reference/PageTemplate.include.qmd",
-      "seconds": 0.278,
+      "seconds": 0.28,
       "frozen": false
     },
     {
-      "page": "reference/web.DecoratorOrderError.qmd",
+      "page": "reference/robyn.render_async.qmd",
+      "seconds": 0.28,
+      "frozen": false
+    },
+    {
+      "page": "reference/robyn.render.qmd",
+      "seconds": 0.28,
+      "frozen": false
+    },
+    {
+      "page": "reference/web.NotFound.qmd",
+      "seconds": 0.28,
+      "frozen": false
+    },
+    {
+      "page": "reference/litestar.global_init.qmd",
+      "seconds": 0.279,
+      "frozen": false
+    },
+    {
+      "page": "reference/PageTemplate.qmd",
       "seconds": 0.278,
       "frozen": false
     },
     {
       "page": "reference/concurrent.qmd",
-      "seconds": 0.276,
+      "seconds": 0.278,
       "frozen": false
     },
     {
-      "page": "reference/starlette.global_init.qmd",
-      "seconds": 0.275,
+      "page": "reference/partials.register_extensions.qmd",
+      "seconds": 0.278,
       "frozen": false
     },
     {
-      "page": "reference/partials.clear.qmd",
-      "seconds": 0.275,
+      "page": "reference/starlette.clear.qmd",
+      "seconds": 0.278,
       "frozen": false
     },
     {
-      "page": "reference/fastapi.response_async.qmd",
-      "seconds": 0.274,
-      "frozen": false
-    },
-    {
-      "page": "reference/starlette.error.qmd",
-      "seconds": 0.273,
-      "frozen": false
-    },
-    {
-      "page": "reference/flask.render.qmd",
-      "seconds": 0.273,
-      "frozen": false
-    },
-    {
-      "page": "reference/robyn.clear.qmd",
-      "seconds": 0.273,
-      "frozen": false
-    },
-    {
-      "page": "reference/compat.install.qmd",
-      "seconds": 0.273,
+      "page": "reference/fastapi.response.qmd",
+      "seconds": 0.277,
       "frozen": false
     },
     {
       "page": "reference/shadow.uninstall.qmd",
-      "seconds": 0.272,
+      "seconds": 0.276,
       "frozen": false
     },
     {
-      "page": "user-guide/frameworks.qmd",
+      "page": "reference/render_partial.qmd",
+      "seconds": 0.276,
+      "frozen": false
+    },
+    {
+      "page": "reference/partials.clear.qmd",
+      "seconds": 0.276,
+      "frozen": false
+    },
+    {
+      "page": "reference/litestar.configure.qmd",
+      "seconds": 0.276,
+      "frozen": false
+    },
+    {
+      "page": "reference/robyn.generic_error.qmd",
+      "seconds": 0.275,
+      "frozen": false
+    },
+    {
+      "page": "reference/fastapi.error.qmd",
+      "seconds": 0.274,
+      "frozen": false
+    },
+    {
+      "page": "reference/fastapi.render.qmd",
+      "seconds": 0.271,
+      "frozen": false
+    },
+    {
+      "page": "reference/web.ErrorPage.qmd",
       "seconds": 0.27,
       "frozen": false
     },
     {
-      "page": "reference/PageTextTemplateFile.qmd",
-      "seconds": 0.269,
-      "frozen": false
-    },
-    {
-      "page": "reference/robyn.render.qmd",
+      "page": "reference/starlette.response_async.qmd",
       "seconds": 0.269,
       "frozen": false
     },
     {
       "page": "skill.md",
-      "seconds": 0.262,
+      "seconds": 0.257,
+      "frozen": false
+    },
+    {
+      "page": "user-guide/robyn.qmd",
+      "seconds": 0.248,
       "frozen": false
     },
     {
       "page": "user-guide/migrating.qmd",
-      "seconds": 0.242,
+      "seconds": 0.235,
+      "frozen": false
+    },
+    {
+      "page": "user-guide/compatibility.qmd",
+      "seconds": 0.231,
       "frozen": false
     },
     {
       "page": "language/extensions.qmd",
-      "seconds": 0.241,
-      "frozen": false
-    },
-    {
-      "page": "language/index.qmd",
-      "seconds": 0.233,
-      "frozen": false
-    },
-    {
-      "page": "skills.qmd",
-      "seconds": 0.229,
-      "frozen": false
-    },
-    {
-      "page": "user-guide/performance.qmd",
-      "seconds": 0.227,
+      "seconds": 0.231,
       "frozen": false
     },
     {
       "page": "user-guide/pyramid.qmd",
-      "seconds": 0.222,
+      "seconds": 0.226,
+      "frozen": false
+    },
+    {
+      "page": "skills.qmd",
+      "seconds": 0.225,
+      "frozen": false
+    },
+    {
+      "page": "user-guide/performance.qmd",
+      "seconds": 0.223,
+      "frozen": false
+    },
+    {
+      "page": "language/index.qmd",
+      "seconds": 0.223,
       "frozen": false
     },
     {
@@ -623,18 +623,18 @@
       "frozen": false
     },
     {
-      "page": "recipes/testing-templates.qmd",
-      "seconds": 0.21,
+      "page": "language/syntax.qmd",
+      "seconds": 0.201,
       "frozen": false
     },
     {
-      "page": "language/syntax.qmd",
-      "seconds": 0.206,
+      "page": "recipes/testing-templates.qmd",
+      "seconds": 0.191,
       "frozen": false
     },
     {
       "page": "recipes/index.qmd",
-      "seconds": 0.19,
+      "seconds": 0.184,
       "frozen": false
     }
   ]

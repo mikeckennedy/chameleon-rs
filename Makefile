@@ -25,6 +25,11 @@ ROBYN_COMMIT := ab4f6e83f50cf1b6d808645b34ff966a4483c048
 # stock Chameleon). The same pinned clone is what `make dev` installs into venv (one pin).
 LITESTAR_CHAMELEON_REPO := https://github.com/uyar/litestar-chameleon
 LITESTAR_CHAMELEON_COMMIT := da0652d3b3b32f42af5ae806242779e8df21ba09
+# Pyramid's Chameleon bindings (third party, no built-in replacement): like litestar-chameleon,
+# on the compat alias only and put on the path, not installed (it depends on stock Chameleon).
+# Its tests live in the package (pyramid_chameleon/tests), and it imports pkg_resources.
+PYRAMID_CHAMELEON_REPO := https://github.com/Pylons/pyramid_chameleon
+PYRAMID_CHAMELEON_COMMIT := e11b8947cd06a5913af2ec8d4aa5ebcd3c774994
 INTEGRATION_PYTHON ?= 3.14
 INTEGRATION_VENV := $(CURDIR)/temp/venv-integration
 INTEGRATION_SUITES := fastapi-chameleon chameleon-flask chameleon-robyn chameleon_partials litestar-chameleon
@@ -72,13 +77,14 @@ temp/chameleon:
 temp/chameleon_partials:
 	git clone -q $(PARTIALS_REPO) $@
 
-integration: reference temp/fastapi-chameleon temp/chameleon-flask temp/chameleon-robyn temp/litestar-chameleon
+integration: reference temp/fastapi-chameleon temp/chameleon-flask temp/chameleon-robyn temp/litestar-chameleon temp/pyramid_chameleon
 	$(call checkout,temp/fastapi-chameleon,$(FASTAPI_COMMIT))
 	$(call checkout,temp/chameleon-flask,$(FLASK_COMMIT))
 	$(call checkout,temp/chameleon-robyn,$(ROBYN_COMMIT))
 	$(call checkout,temp/litestar-chameleon,$(LITESTAR_CHAMELEON_COMMIT))
+	$(call checkout,temp/pyramid_chameleon,$(PYRAMID_CHAMELEON_COMMIT))
 	test -x $(INTEGRATION_VENV)/bin/python || uv venv -q $(INTEGRATION_VENV) --python $(INTEGRATION_PYTHON)
-	uv pip install -q --python $(INTEGRATION_VENV)/bin/python fastapi httpx 'flask[async]' robyn==$(ROBYN_VERSION) 'litestar>=2.25,<3' pytest maturin
+	uv pip install -q --python $(INTEGRATION_VENV)/bin/python fastapi httpx 'flask[async]' robyn==$(ROBYN_VERSION) 'litestar>=2.25,<3' pyramid 'setuptools<82' pytest maturin
 	VIRTUAL_ENV=$(INTEGRATION_VENV) PYO3_PYTHON=$(INTEGRATION_VENV)/bin/python CARGO_TARGET_DIR=$(CURDIR)/target/integration \
 		$(INTEGRATION_VENV)/bin/maturin develop -q --profile dev-opt
 
@@ -93,6 +99,9 @@ temp/chameleon-robyn:
 
 temp/litestar-chameleon:
 	git clone -q $(LITESTAR_CHAMELEON_REPO) $@
+
+temp/pyramid_chameleon:
+	git clone -q $(PYRAMID_CHAMELEON_REPO) $@
 
 # Fast optimized build for the test loop; release (fat LTO) for benchmarks and wheels.
 build:
@@ -193,6 +202,11 @@ test-integration: integration
 			$(INTEGRATION_VENV)/bin/python -m pytest -q -c pyproject.toml --rootdir . \
 			-p chameleon_compat_plugin -p no:cacheprovider tests; \
 	done
+	@echo "== pyramid_chameleon (original)"
+	cd $(CURDIR)/temp/pyramid_chameleon && INTEGRATION_MODE=original \
+		PYTHONPATH=$(CURDIR)/tests/integration:$(CURDIR)/temp/pyramid_chameleon \
+		$(INTEGRATION_VENV)/bin/python -m pytest -q -c setup.cfg --rootdir . \
+		-p chameleon_compat_plugin -p no:cacheprovider pyramid_chameleon/tests
 	set -e; for suite in $(BUILTIN_SUITES); do \
 		echo "== $$suite (built-in)"; \
 		cd $(CURDIR)/temp/$$suite; \

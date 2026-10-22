@@ -412,7 +412,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </tr>
 </tbody>
 </table>
-<div id="4e41242b" class="cell" data-execution_count="1">
+<div id="7c002a84" class="cell" data-execution_count="1">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.compat</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>chameleon_rs.compat.install()</span>
@@ -427,7 +427,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 &lt;p&gt;2&lt;/p&gt;</code></pre>
 </div>
 </div>
-<p>Stock Chameleon doesn’t need to be installed, and chameleon-rs never imports it. Libraries that use Chameleon internally get chameleon-rs the same way: litestar-chameleon’s test suite passes on it unmodified, and so does pyramid_chameleon’s but for one test (see <a href="../user-guide/pyramid.html#compatibility">Pyramid</a>). Each framework’s guide is listed in <a href="../user-guide/frameworks.html">Web frameworks</a>.</p>
+<p>Stock Chameleon doesn’t need to be installed, and chameleon-rs never imports it. Libraries that use Chameleon internally (litestar-chameleon, pyramid_chameleon, …) get chameleon-rs the same way. Their own test suites pass on it unmodified. Each framework’s guide is listed in <a href="../user-guide/frameworks.html">Web frameworks</a>.</p>
 <div class="callout callout-style-default callout-warning callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">

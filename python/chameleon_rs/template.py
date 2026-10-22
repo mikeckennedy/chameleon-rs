@@ -236,6 +236,9 @@ class BaseTemplate:
             # normalize to str
             exc.token.filename = str(self.filename)
             raise
+        previous = self.__dict__.get('_compiled')
+        if previous is not None:
+            self._keep_removed_macros(previous, program)
         # One attribute read by renders and macro lookups, so a reload in another thread can
         # never pair one compilation's program with another's builtins.
         self._compiled = (program, builtins_dict)
@@ -248,6 +251,27 @@ class BaseTemplate:
         if self.keep_source:
             # D11: a readable dump of the compiled program, not generated Python code.
             self.source = program.dump()
+
+    def _keep_removed_macros(self, previous: tuple[Program, dict[str, Any]], program: Program) -> None:
+        """Chameleon's ``cook`` sets each macro's function on the template (``_render_<name>``)
+        and never removes one, so a macro the new source no longer defines (a reload, or
+        pyramid_chameleon's ``cook``) still renders its last compilation, and ``macros.names``
+        lists every name in the order it was first defined. Kept here: name -> the last
+        compilation that defined it, for the names the new program lacks."""
+        names = program.macro_names
+        defined = set(names)
+        removed = {name: compiled for name, compiled in self._removed_macros.items() if name not in defined}
+        for name in previous[0].macro_names:
+            if name not in defined:
+                removed[name] = previous
+        order = self._macro_order or tuple(previous[0].macro_names)
+        seen = set(order)
+        # Set before `_compiled`: a lookup that reads the new program finds these too.
+        self._removed_macros = removed
+        self._macro_order = order + tuple(name for name in names if name not in seen)
+
+    _removed_macros: dict[str, tuple[Program, dict[str, Any]]] = {}  # noqa: RUF012 - replaced, never mutated
+    _macro_order: tuple[str, ...] = ()
 
     def _compile_program(self, body: str, builtins: Mapping[str, Any]) -> Program:
         self.parse(body)
@@ -469,6 +493,10 @@ class Macros:
         template = self.template
         template.cook_check()
         program, builtins = template._compiled
+        removed = template._removed_macros
+        if removed and name in removed and name not in program.macro_names:
+            # Defined by an earlier compilation only: Chameleon still renders it.
+            program, builtins = removed[name]
         cached = self._cache.get(name)
         if cached is not None and cached[0] is program:
             return cached[1]
@@ -478,8 +506,10 @@ class Macros:
 
     @property
     def names(self) -> list[str]:
-        self.template.cook_check()
-        return list(self.template._program.macro_names)
+        template = self.template
+        template.cook_check()
+        # After a recompilation, every name ever defined, as Chameleon lists them.
+        return list(template._macro_order or template._program.macro_names)
 
 
 def _marker_value(node: Any) -> Any:

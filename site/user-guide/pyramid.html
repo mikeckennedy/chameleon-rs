@@ -463,7 +463,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="compatibility" class="level1">
 <h1>Compatibility</h1>
-<p>pyramid_chameleon’s own test suite passes on chameleon-rs, unmodified, with one exception: a test that re-cooks a template with new source in which the macro its renderer was given no longer exists. Chameleon keeps rendering the old macro; chameleon-rs raises <code>KeyError</code>. In an app, that only happens with <code>pyramid.reload_templates</code> on, when you edit a template to remove or rename a macro that a <code>#macro</code> renderer names.</p>
+<p>pyramid_chameleon’s own test suite passes on chameleon-rs, unmodified: it runs in chameleon-rs’s integration tests on every change, together with the suites of the other framework libraries. See <a href="../user-guide/compatibility.html">Compatibility</a>.</p>
 
 
 </section>

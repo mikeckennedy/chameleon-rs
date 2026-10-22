@@ -41,7 +41,7 @@ print(PageTemplate('<p>${1 + 1}</p>')())
     <p>2</p>
 
 
-Stock Chameleon doesn't need to be installed, and chameleon-rs never imports it. Libraries that use Chameleon internally get chameleon-rs the same way: litestar-chameleon's test suite passes on it unmodified, and so does pyramid_chameleon's but for one test (see [Pyramid](pyramid.md#compatibility)). Each framework's guide is listed in [Web frameworks](frameworks.md).
+Stock Chameleon doesn't need to be installed, and chameleon-rs never imports it. Libraries that use Chameleon internally (litestar-chameleon, pyramid_chameleon, …) get chameleon-rs the same way. Their own test suites pass on it unmodified. Each framework's guide is listed in [Web frameworks](frameworks.md).
 
 > **Warning: Install before the first import**
 >

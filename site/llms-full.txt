@@ -524,9 +524,8 @@ print(PageTemplate('<p>${1 + 1}</p>')())
 ```
 
 Stock Chameleon doesn't need to be installed, and chameleon-rs never imports it. Libraries
-that use Chameleon internally get chameleon-rs the same way: litestar-chameleon's test suite
-passes on it unmodified, and so does pyramid_chameleon's but for one test (see
-[Pyramid](pyramid.qmd#compatibility)). Each framework's guide is listed in
+that use Chameleon internally (litestar-chameleon, pyramid_chameleon, ...) get chameleon-rs the
+same way. Their own test suites pass on it unmodified. Each framework's guide is listed in
 [Web frameworks](frameworks.qmd).
 
 ::: {.callout-warning}
@@ -2849,11 +2848,9 @@ need the alias too: they import `chameleon` without running your app's `main()`.
 
 ## Compatibility
 
-pyramid_chameleon's own test suite passes on chameleon-rs, unmodified, with one exception:
-a test that re-cooks a template with new source in which the macro its renderer was given
-no longer exists. Chameleon keeps rendering the old macro; chameleon-rs raises `KeyError`. In
-an app, that only happens with `pyramid.reload_templates` on, when you edit a template to
-remove or rename a macro that a `#macro` renderer names.
+pyramid_chameleon's own test suite passes on chameleon-rs, unmodified: it runs in chameleon-rs's
+integration tests on every change, together with the suites of the other framework libraries.
+See [Compatibility](compatibility.qmd).
 
 
 
@@ -2874,7 +2871,7 @@ Each level is a check that runs on every change:
 | **Chameleon's own test suite.** All 233 tests, vendored unmodified, run against chameleon-rs. | Every test that passes on Chameleon passes on chameleon-rs: 227 of 227. The other 6 depend on the test environment and are skipped on both engines. |
 | **Fixture renders.** Every input template in Chameleon's test suite, rendered by both engines. | All 122 byte-identical. |
 | **Differential fuzzing.** Generated templates, models and expressions, rendered by both engines and compared. | No differences in 20,000 examples per generator. |
-| **Integration suites.** The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials and litestar-chameleon, unmodified, on chameleon-rs. | All pass. |
+| **Integration suites.** The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials, litestar-chameleon and pyramid_chameleon, unmodified, on chameleon-rs. | All pass. |
 | **Real sites.** Every page of two production Flask/Quart apps, crawled with both engines: anonymous and signed in, with all their partials and layouts. | Every page byte-identical. |
 
 The upstream suite and the fuzzers compare output byte for byte, and they also compare the
@@ -2955,15 +2952,6 @@ chameleon-robyn in a few ways that don't affect templates that worked before:
   object itself.
 - **Setup.** Every `configure()` call applies (`register_extensions` ignored later calls), and
   `configure(..., app=app)` checks the decorator order at startup.
-
-### A macro removed while reloading
-
-With `auto_reload`, Chameleon re-cooks a changed template into the same object and keeps the
-macro functions of the old version on it. So a macro that the new source no longer defines can
-still be looked up by name (and renders its old content). chameleon-rs replaces the macros
-with the new source's and raises `KeyError('Macro does not exist: ...')`. This shows up in
-Pyramid with a `#macro` renderer when you edit a template to remove or rename that macro: one
-test in pyramid_chameleon's suite checks it. See [Pyramid](pyramid.qmd#compatibility).
 
 ### `render_async` and a replaced `render`
 
