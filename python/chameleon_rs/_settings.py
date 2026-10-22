@@ -14,10 +14,37 @@ import re
 import sys
 import threading
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal, TypedDict
 
 from chameleon_rs import _native
 from chameleon_rs.web import TemplateError
+
+
+class MarkdownExtensions(TypedDict, total=False):
+    """The extensions of a ``markdown:`` profile (all on by default)."""
+
+    table: bool
+    strikethrough: bool
+    tasklist: bool
+    autolink: bool
+    footnotes: bool
+
+
+class MarkdownOptions(TypedDict, total=False):
+    """The options of a ``markdown:`` profile, as ``configure(markdown={prefix: options})`` takes
+    them (see the docs); a key left out keeps its default."""
+
+    raw_html: Literal['escape', 'allow']
+    images: bool
+    inline: bool
+    heading_ids: bool | str
+    classes: Mapping[str, str]
+    extensions: MarkdownExtensions
+
+
+type MarkdownSetting = bool | Mapping[str, Literal[True] | MarkdownOptions]
+"""``configure(markdown=...)``: ``True`` (``markdown:`` with the defaults), ``False`` (none) or
+a mapping of profiles, prefix -> ``True`` (the defaults) or options."""
 
 
 class Settings:
@@ -65,7 +92,7 @@ search_mode = DEFAULT_SEARCH
 # `configure(markdown=...)` and added to each template's expression types when it compiles
 # (`chameleon_rs.tales.native_types`), unless the template class defines the prefix itself.
 # Replaced whole, never mutated.
-markdown_profiles: dict[str, Any] = {}
+markdown_profiles: dict[str, _native.MarkdownProfile] = {}
 DEFAULT_MARKDOWN_CACHE: int = _native.markdown_cache_limits()[0]
 markdown_cache_size = DEFAULT_MARKDOWN_CACHE
 
@@ -78,7 +105,7 @@ _MARKDOWN_OPTIONS = frozenset({'raw_html', 'images', 'inline', 'heading_ids', 'c
 _EXTENSIONS = ('table', 'strikethrough', 'tasklist', 'autolink', 'footnotes')
 
 
-def _markdown_profile(name: Any, options: Any) -> Any:
+def _markdown_profile(name: object, options: Any) -> _native.MarkdownProfile:
     """One validated profile: ``options`` is ``True`` (the defaults) or a mapping of them."""
     if not isinstance(name, str) or not _PREFIX.fullmatch(name):
         msg = f'markdown: profile names are expression prefixes (lowercase, like "md-comment"), not {name!r}'
@@ -146,7 +173,7 @@ def _markdown_profile(name: Any, options: Any) -> Any:
     )
 
 
-def markdown_settings(markdown: Any) -> dict[str, Any]:
+def markdown_settings(markdown: object) -> dict[str, _native.MarkdownProfile]:
     """``configure(markdown=...)``'s value as profiles: ``True`` is ``{'markdown': {}}``,
     ``False`` none, a mapping one profile per prefix."""
     if markdown is True:
@@ -159,7 +186,7 @@ def markdown_settings(markdown: Any) -> dict[str, Any]:
     return {name: _markdown_profile(name, options) for name, options in markdown.items()}
 
 
-def check_folder(template_folder: Any, error: type[Exception] = TemplateError) -> None:
+def check_folder(template_folder: str | os.PathLike[str] | None, error: type[Exception] = TemplateError) -> None:
     """chameleon_partials' and chameleon-flask's checks, with their messages."""
     if not template_folder:
         msg = 'The template_folder must be specified.'
@@ -170,7 +197,7 @@ def check_folder(template_folder: Any, error: type[Exception] = TemplateError) -
 
 
 def build(
-    template_folder: Any = None,
+    template_folder: str | os.PathLike[str] | None = None,
     auto_reload: bool | None = None,
     restricted_namespace: bool | None = None,
     *,
@@ -207,12 +234,12 @@ def install(*, partials_settings: Any = _KEEP, flask_settings: Any = _KEEP) -> N
 
 
 def configure(
-    template_folder: Any = None,
+    template_folder: str | os.PathLike[str] | None = None,
     *,
     auto_reload: bool | None = None,
     restricted_namespace: bool | None = None,
     partial_search: str | None = None,
-    markdown: Any = None,
+    markdown: MarkdownSetting | None = None,
     markdown_cache: int | None = None,
 ) -> Settings | None:
     """Configures chameleon-rs for the whole process: where templates loaded by name live, for

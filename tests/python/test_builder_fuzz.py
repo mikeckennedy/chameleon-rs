@@ -113,7 +113,7 @@ def node(depth: int) -> Any:
 def describe(e: BaseException) -> tuple[Any, ...]:
     if hasattr(e, 'offset') and hasattr(e, 'location'):
         cls = next(c.__name__ for c in type(e).__mro__ if c.__name__ in CLASSES)
-        return (cls, e.args[0], str(e.token), e.offset, e.location)
+        return (cls, e.args[0], str(e.token), e.offset, e.location)  # ty: ignore[unresolved-attribute]
     return (type(e).__name__, str(e))
 
 

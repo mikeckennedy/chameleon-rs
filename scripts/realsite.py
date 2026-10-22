@@ -92,10 +92,11 @@ def _refuse_network() -> None:
     def getaddrinfo(host: Any, *args: Any, **kwargs: Any) -> Any:
         raise _NetworkRefused(f'realsite: name resolution refused ({host!r})')
 
-    socket.socket.connect = connect  # type: ignore[method-assign]
-    socket.socket.connect_ex = connect_ex  # type: ignore[method-assign]
-    socket.getaddrinfo = getaddrinfo  # type: ignore[assignment]
-    socket.create_connection = lambda address, *a, **k: (_ for _ in ()).throw(  # type: ignore[assignment]
+    # Monkeypatched for the run, with looser signatures than the originals.
+    socket.socket.connect = connect  # ty: ignore[invalid-assignment]
+    socket.socket.connect_ex = connect_ex  # ty: ignore[invalid-assignment]
+    socket.getaddrinfo = getaddrinfo  # ty: ignore[invalid-assignment]
+    socket.create_connection = lambda address, *a, **k: (_ for _ in ()).throw(  # ty: ignore[invalid-assignment]
         _NetworkRefused(f'realsite: network access refused ({address!r})')
     )
 
@@ -109,8 +110,8 @@ def _reseed(url: str) -> None:
     def urandom(n: int) -> bytes:
         return generator.randbytes(n)
 
-    os.urandom = urandom
-    random._urandom = urandom  # type: ignore[attr-defined]  # SystemRandom, hence `secrets`
+    os.urandom = urandom  # ty: ignore[invalid-assignment] - monkeypatched for the run
+    random._urandom = urandom  # ty: ignore[unresolved-attribute] - SystemRandom, hence `secrets`
 
 
 # ---------------------------------------------------------------------------------------------

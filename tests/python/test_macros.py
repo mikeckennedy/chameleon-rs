@@ -311,8 +311,8 @@ def test_macro_lookup() -> None:
         template = engine.PageTemplate(body)
         assert template.macros.names == ['a_b', 'x_y', 'ü']
         for name in ('a-b', 'a_b', 'x_y', 'ü'):
-            assert template.macros[name].include
-            assert template[name].include
+            assert template.macros[name].include is not None
+            assert template[name].include is not None
         for name in ('x.y', 'nope'):
             with pytest.raises(KeyError) as info:
                 template.macros[name]
@@ -341,7 +341,7 @@ def test_included_macro_does_not_share_a_scope_its_caller_holds() -> None:
     results = []
     for engine in (chameleon, chameleon_rs):
         template = engine.PageTemplate(source)
-        scope = engine.utils.Scope(x='old', __translate=None, __decode=None, __on_error_handler=None)
+        scope = engine.utils.Scope(x='old', __translate=None, __decode=None, __on_error_handler=None)  # ty: ignore[unresolved-attribute]
         scope['ctx'] = scope
         scope['macros'] = template.macros
         stream: list[str] = []

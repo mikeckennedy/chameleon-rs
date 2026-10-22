@@ -1575,6 +1575,18 @@ extend-macro whose slot sits in an `i18n:name`, with a recursive translated fill
 `test_macros.test_extended_slot_inside_a_name_with_a_recursive_translated_fill`, a strict
 xfail; present since Phase 8). Wheels are built with `make build-pgo`.
 
+Typing (done): the package is PEP 561 typed (`py.typed` and `_native.pyi` ship in the wheel and
+the sdist, `Typing :: Typed` classifier), and `ty check` (config in `pyproject.toml`
+`[tool.ty]`, Python 3.12, part of `make lint`) reports zero diagnostics. `_native.pyi` matches
+the PyO3 module, `_testing` included; `configure(markdown=...)` takes `MarkdownOptions`
+TypedDicts; `chameleon_rs.flask.template` and `concurrent` keep the view's / helper's
+parameters. `# ty: ignore[rule]` stays only where code mirrors Chameleon's signatures
+(`PageTextTemplateFile.render` returns `bytes`, `Token.split`, `TemplateLoader.load`'s
+`filename`, `PageTemplate.builtins`) or sets attributes the type system cannot see (function
+attributes, zip paths, shadow mode's patching of stock Chameleon), each with its reason.
+`tests/python/test_typing.py` checks the stubs cover the extension and the public API is
+annotated.
+
 ## Risks
 
 | Risk | Impact | Mitigation |

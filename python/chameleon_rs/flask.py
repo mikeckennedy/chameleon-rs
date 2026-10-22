@@ -51,9 +51,9 @@ from __future__ import annotations
 import inspect
 import os
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from functools import wraps
-from typing import Any, NoReturn
+from typing import Any, NoReturn, Protocol, overload
 
 import flask
 import werkzeug.sansio.response
@@ -234,6 +234,32 @@ async def response_async(
     return flask.Response(response=html, content_type=content_type, status=status_code)
 
 
+class TemplateDecorator(Protocol):
+    """What ``@template(...)`` returns: decorates a view, sync or async, into one that returns
+    a ``flask.Response``."""
+
+    @overload
+    def __call__[**P](self, f: Callable[P, Awaitable[Any]], /) -> Callable[P, Coroutine[Any, Any, flask.Response]]: ...
+    @overload
+    def __call__[**P](self, f: Callable[P, Any], /) -> Callable[P, flask.Response]: ...
+
+
+@overload
+def template[**P](
+    template_file: Callable[P, Awaitable[Any]], /
+) -> Callable[P, Coroutine[Any, Any, flask.Response]]: ...
+@overload
+def template[**P](template_file: Callable[P, Any], /) -> Callable[P, flask.Response]: ...
+@overload
+def template(
+    template_file: str | None = None,
+    content_type: str = 'text/html',
+    status_code: int = 200,
+    *,
+    mimetype: str | None = None,
+    concurrent: bool | None = None,
+    offload: bool = False,
+) -> TemplateDecorator: ...
 def template(
     template_file: Callable[..., Any] | str | None = None,
     content_type: str = 'text/html',
@@ -271,7 +297,7 @@ def template(
             module = f.__module__
             if '.' in module:
                 module = module.split('.')[-1]
-            view = f.__name__
+            view = f.__name__  # ty: ignore[unresolved-attribute] - views are functions
             view_template = f'{module}/{view}.html'
 
             if not os.path.exists(os.path.join(template_path, view_template)):

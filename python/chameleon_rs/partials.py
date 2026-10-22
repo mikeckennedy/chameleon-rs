@@ -108,7 +108,8 @@ class PartialRenderer:
 # A render error lists its arguments as `<{type name} {__name__!r} at ...>`: chameleon_partials'
 # `render_partial` is a function, so the type is named as functions are (as `_native` names
 # `Scope`); `__qualname__` stays `PartialRenderer`.
-PartialRenderer.__name__ = 'function'
+# (The class's own name: the `__name__` property above is the instances'.)
+PartialRenderer.__name__ = 'function'  # ty: ignore[invalid-assignment]
 
 render_partial = PartialRenderer()
 

@@ -11,7 +11,7 @@ import bisect
 import re
 from collections import OrderedDict
 from collections.abc import Iterable, Iterator, Mapping
-from typing import Any
+from typing import Any, cast
 
 from chameleon_rs._native import parse_elements
 from chameleon_rs.exc import ParseError, TemplateError
@@ -71,7 +71,7 @@ def groupdict(m, token):
 
 
 def match_tag(token, regex=match_tag_prefix_and_name):
-    m = regex.match(token)
+    m = cast('re.Match[str]', regex.match(token))
     d = groupdict(m, token)
 
     end = m.end()

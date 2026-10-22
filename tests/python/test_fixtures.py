@@ -69,7 +69,7 @@ def render(engine: str, filename: str, language: str | None) -> Any:
     path = os.path.join(INPUTS, filename)
     text = filename.endswith('.txt')
     implicit = 'implicit-i18n' in filename
-    options = {
+    options: dict[str, Any] = {
         'strict': False,
         'implicit_i18n_translate': implicit,
         'implicit_i18n_attributes': ('alt', 'title') if implicit else (),
@@ -78,7 +78,7 @@ def render(engine: str, filename: str, language: str | None) -> Any:
     }
     if engine == 'chameleon':
         module: Any = chameleon.zpt.template
-        loader = chameleon.loader.TemplateLoader(INPUTS)
+        loader: Any = chameleon.loader.TemplateLoader(INPUTS)
     else:
         module = chameleon_rs
         loader = chameleon_rs.loader.TemplateLoader(INPUTS)

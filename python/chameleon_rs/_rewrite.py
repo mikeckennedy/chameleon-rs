@@ -251,7 +251,7 @@ def function(
     except (TypeError, ValueError):
         code = compile(ast.unparse(module), '<template expression>', 'exec')
     # Like the namespace Chameleon execs its generated module in: `__builtins__` is the dict.
-    namespace = {'__builtins__': builtins.__dict__, **MODULE_GLOBALS, **env}
+    namespace: dict[str, Any] = {'__builtins__': builtins.__dict__, **MODULE_GLOBALS, **env}
     exec(code, namespace)  # noqa: S102 - code built from the template's own expressions
     return namespace[name]
 

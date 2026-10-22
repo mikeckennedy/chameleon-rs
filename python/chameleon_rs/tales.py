@@ -240,6 +240,7 @@ class TalesExpr:
 
             assignments.append(self.translate_proxy(engine, remaining, target))
 
+        body: list[ast.stmt]
         for i, assignment in enumerate(reversed(assignments)):
             if i == 0:
                 body = assignment

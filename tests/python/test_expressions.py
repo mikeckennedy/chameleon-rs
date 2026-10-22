@@ -47,7 +47,7 @@ class Methods:
         return f'm{args}'
 
     def fails(self) -> str:
-        return self.missing  # type: ignore[attr-defined, no-any-return]
+        return self.missing  # ty: ignore[unresolved-attribute] - raises AttributeError on purpose
 
     @property
     def prop(self) -> Any:
@@ -338,7 +338,8 @@ def _non_strict(engine: Any, source: str) -> Any:
     try:
         return engine.PageTemplate(source, strict=False)()
     except Exception as e:  # noqa: BLE001 - comparing exceptions across engines
-        return (type(e).__name__, e.offset, str(e.token), tuple(e.location), e.args[0])
+        # A TemplateError of either engine.
+        return (type(e).__name__, e.offset, str(e.token), tuple(e.location), e.args[0])  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.parametrize('source', NON_STRICT)
@@ -517,7 +518,8 @@ class SymbolExpr:
 
     def __call__(self, target: ast.Name, engine: Any) -> list[ast.stmt]:
         func = chameleon.astutil.Symbol(os.path.basename)
-        call = ast.Call(func=func, args=[ast.Constant(self.expression)], keywords=[])
+        # Chameleon's own AST node, which its code generator accepts as an expression.
+        call = ast.Call(func=func, args=[ast.Constant(self.expression)], keywords=[])  # ty: ignore[invalid-argument-type]
         return [ast.Assign(targets=[target], value=call)]
 
 

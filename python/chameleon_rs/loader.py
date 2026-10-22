@@ -19,12 +19,14 @@ import shutil
 import sys
 import tempfile
 import warnings
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
-from pathlib import Path
 from threading import RLock
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from importlib.resources.abc import Traversable
 
 lock = RLock()
 acquire_lock = lock.acquire
@@ -47,11 +49,14 @@ def cache[F: Callable[..., Any]](func: F) -> F:
 
 
 @contextlib.contextmanager
-def import_package_resource(name: str) -> Iterator[Path]:
-    path: Path = importlib.resources.files(name)  # type: ignore[assignment]
+def import_package_resource(name: str) -> Generator[Traversable]:
+    path = importlib.resources.files(name)
     yield path
-    if hasattr(path.root, 'close'):
-        path.root.close()
+    # A `pathlib.Path` or a `zipfile.Path` (whose `root`, a zip file, is closed): `root` is not
+    # part of the `Traversable` protocol.
+    root = path.root  # ty: ignore[unresolved-attribute]
+    if hasattr(root, 'close'):
+        root.close()
 
 
 class TemplateLoader:
@@ -105,7 +110,9 @@ class TemplateLoader:
                     if not os.path.isabs(path) and ':' in path:
                         package_name, path = path.split(':', 1)
                         with import_package_resource(package_name) as files:
-                            if files.joinpath(path).joinpath(spec).exists():
+                            # `exists` (a `pathlib.Path` or `zipfile.Path` method) is not part
+                            # of the `Traversable` protocol.
+                            if files.joinpath(path).joinpath(spec).exists():  # ty: ignore[unresolved-attribute]
                                 spec = posixpath.join(path, spec)
                                 break
                     else:

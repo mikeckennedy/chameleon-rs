@@ -122,9 +122,12 @@ class _Installed:
         self.lock = threading.Lock()
         # The source of string templates, which Chameleon does not keep (`keep_body`).
         self.bodies: weakref.WeakKeyDictionary[Any, str] = weakref.WeakKeyDictionary()
-        self.originals = {cls: cls.__dict__['render'] for cls in (stock.PageTemplate, stock.PageTextTemplateFile)}
+        self.originals: dict[type, Callable[..., Any]] = {
+            cls: cls.__dict__['render'] for cls in (stock.PageTemplate, stock.PageTextTemplateFile)
+        }
+        # Stock Chameleon's classes are patched in place (and restored by `remove`).
         for cls in self.originals:
-            cls.render = self.wrap(cls)
+            cls.render = self.wrap(cls)  # ty: ignore[unresolved-attribute]
         base = sys.modules['chameleon.template'].BaseTemplate
         self.cook = base.__dict__['cook']
         bodies, cook = self.bodies, self.cook
@@ -133,13 +136,13 @@ class _Installed:
             cook(template, body)
             bodies[template] = body
 
-        remember_body.__wrapped__ = cook  # type: ignore[attr-defined]
+        remember_body.__wrapped__ = cook  # ty: ignore[unresolved-attribute]
         base.cook = remember_body
         self.base = base
 
     def remove(self) -> None:
         for cls, render in self.originals.items():
-            cls.render = render
+            cls.render = render  # ty: ignore[unresolved-attribute]
         self.base.cook = self.cook
 
     def twin(self, template: Any) -> Any:
@@ -192,7 +195,7 @@ class _Installed:
                 return original(self, *args, **kw)
             return shadow.both(self, twin, original, args, kw)
 
-        render.__wrapped__ = original  # type: ignore[attr-defined]
+        render.__wrapped__ = original  # ty: ignore[unresolved-attribute]
         return render
 
     def both(
@@ -276,7 +279,7 @@ def _summary(outcome: tuple[bool, Any]) -> tuple[bool, Any]:
 
 def _diff(first: str, second: str) -> str:
     """A unified diff, lines split after each ``>`` and cut at 200 characters, at most 4 KB."""
-    lines = [
+    before, after = [
         [
             line if len(line) <= _DIFF_LINE else line[:_DIFF_LINE] + '...\n'
             for line in t.replace('>', '>\n').splitlines(True)
@@ -285,7 +288,7 @@ def _diff(first: str, second: str) -> str:
     ]
     out: list[str] = []
     size = 0
-    for line in difflib.unified_diff(*lines, 'chameleon', 'chameleon-rs', n=1):
+    for line in difflib.unified_diff(before, after, 'chameleon', 'chameleon-rs', n=1):
         size += len(line)
         if size > _DIFF_BYTES:
             out.append('... (diff cut at 4 KB)\n')

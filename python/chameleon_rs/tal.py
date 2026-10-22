@@ -221,7 +221,7 @@ class RepeatItem:
     @descriptorint
     def index(self) -> int:
         try:
-            remaining = self._iterator.__length_hint__()  # type: ignore[attr-defined]
+            remaining = self._iterator.__length_hint__()  # ty: ignore[unresolved-attribute] - else AttributeError
         except AttributeError:
             remaining = len(tuple(copy.copy(self._iterator)))
         return self.length - remaining - 1

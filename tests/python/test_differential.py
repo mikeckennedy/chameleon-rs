@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import chameleon
+import chameleon.tal
 import chameleon_rs
 import pytest
 

@@ -414,7 +414,7 @@ def test_compat_api(folder: Path) -> None:
     assert cp.template_path == str(folder)
     assert cp.extend_model(None) == {'render_partial': cp.render_partial}
     with pytest.raises(cp.PartialsException):
-        cp.extend_model([])  # type: ignore[arg-type]
+        cp.extend_model([])  # ty: ignore[invalid-argument-type] - the wrong type on purpose
     model = cp.extend_model({'name': 'n'})
     assert chameleon_rs.PageTemplate('${render_partial("card.pt", name=name)}')(**model) == '<b>n</b>'
 

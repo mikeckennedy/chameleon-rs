@@ -194,7 +194,7 @@ class BaseTemplate:
     strict = True
 
     # How values are shown in a formatted render error.
-    value_repr = staticmethod(value_repr)
+    value_repr: staticmethod[[object], object] = staticmethod(value_repr)
 
     source: str | None
 
@@ -296,7 +296,7 @@ class BaseTemplate:
 
         return join(stream)
 
-    async def render_async(self, **__kw: Any) -> Any:
+    async def render_async(self, **__kw: Any) -> str:
         """``render`` as a coroutine. A template with a render function of its own (Chameleon's
         protocol) renders synchronously; ``PageTemplate`` suspends on awaitable values."""
         return self.render(**__kw)
@@ -348,7 +348,7 @@ class BaseTemplateFile(BaseTemplate):
 
     def __init__(
         self,
-        filename: Any,
+        filename: str | os.PathLike[str],
         auto_reload: bool | None = None,
         package_name: str | None = None,
         post_init_hook: Callable[[], object] | None = None,
@@ -414,9 +414,10 @@ class BaseTemplateFile(BaseTemplate):
                 if isinstance(joined, pathlib.Path):
                     return joined.stat().st_mtime
 
-                # Assume this is a zip-like path object:
-                filename = joined.at  # type: ignore[attr-defined]
-                timetuple = path.root.getinfo(filename).date_time  # type: ignore[attr-defined]
+                # Assume this is a zip-like path object (a `zipfile.Path`: `at` and `root` are
+                # not part of the `Traversable` protocol):
+                filename = joined.at  # ty: ignore[unresolved-attribute]
+                timetuple = path.root.getinfo(filename).date_time  # ty: ignore[unresolved-attribute]
                 return datetime.datetime(*timetuple).timestamp()
         try:
             return os.path.getmtime(filename)
@@ -570,6 +571,7 @@ class PageTemplate(BaseTemplate):
     _defaults_key: tuple[Any, ...] | None = None
     _encoded: tuple[tuple[Any, ...], dict[str, Any]] | None = None
 
+    # `body` is any type: in PageTemplateFile's MRO this passes the filename on.
     def __init__(self, body: Any, **config: Any) -> None:
         self.macros = Macros(self)
         self._partial_renderer = PartialRenderer(self)
@@ -578,8 +580,9 @@ class PageTemplate(BaseTemplate):
     def __getitem__(self, name: str) -> Macro:
         return self.macros[name]
 
+    # Read-only here, a writable class attribute in BaseTemplate: as in Chameleon.
     @property
-    def builtins(self) -> dict[str, Any]:  # type: ignore[override]
+    def builtins(self) -> dict[str, Any]:  # ty: ignore[invalid-property-type-override]
         """The template builtins: names every expression can use (a render keyword of the
         same name overrides them)."""
         return self._builtins()
@@ -669,7 +672,7 @@ class PageTemplate(BaseTemplate):
                 # For a value that is not bytes this is `simple_translate` itself: the native
                 # conversion takes its fast path (chameleon_partials and the integrations
                 # render with `encoding='utf-8'`).
-                translate.__chameleon_rs_simple__ = True  # type: ignore[attr-defined]
+                translate.__chameleon_rs_simple__ = True  # ty: ignore[unresolved-attribute] - a function attribute
 
             def decode(inst: bytes, encoding: str = encoding) -> str:
                 return bytes.decode(inst, encoding, 'ignore')
@@ -859,9 +862,12 @@ class PageTemplateFile(PageTemplate, BaseTemplateFile):
 
     prepend_relative_search_path = True
 
+    # The relative template loader: `loader_class(...).bind(type(self))`, set by `__init__`.
+    _loader: Callable[[str], Any]
+
     def __init__(
         self,
-        filename: Any,
+        filename: str | os.PathLike[str],
         loader_class: type[TemplateLoader] = TemplateLoader,
         package_name: str | None = None,
         search_path: Iterable[str] | str | None = None,
@@ -928,11 +934,15 @@ class PageTextTemplateFile(PageTemplateFile):
 
     mode = 'text'
 
-    def render(self, encoding: str | None = None, **kw: Any) -> bytes:  # type: ignore[override]
+    # `bytes` where the base class returns `str`, as Chameleon's PageTextTemplateFile does.
+    def render(self, encoding: str | None = None, **kw: Any) -> bytes:  # ty: ignore[invalid-method-override]
         result = super().render(encoding, **kw)
         return result.encode(self.encoding or 'utf-8')
 
-    async def render_async(self, encoding: str | None = None, *, offload: bool = False, **kw: Any) -> bytes:  # type: ignore[override]
+    # `bytes`, as `render`.
+    async def render_async(  # ty: ignore[invalid-method-override]
+        self, encoding: str | None = None, *, offload: bool = False, **kw: Any
+    ) -> bytes:
         if type(self).render is not PageTextTemplateFile.render:
             return await _overridden(self, encoding, kw, offload)  # type: ignore[no-any-return]
         result = await super().render_async(encoding, offload=offload, **kw)

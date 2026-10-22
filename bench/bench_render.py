@@ -194,7 +194,7 @@ def bench_event_loop() -> None:
 
 
 if __name__ == '__main__':
-    print(f'Python {sys.version.split()[0]}, GIL enabled: {sys._is_gil_enabled()}')
+    print(f'Python {sys.version.split()[0]}, GIL enabled: {getattr(sys, "_is_gil_enabled", lambda: True)()}')
     bench_output_check()
     bench_listing()
     bench_dashboard()

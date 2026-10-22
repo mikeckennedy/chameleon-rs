@@ -131,7 +131,7 @@ class descriptorstr:
 
     def __init__(self, function: Callable[[Any], str]) -> None:
         self.function = function
-        self.__name__ = function.__name__
+        self.__name__ = function.__name__  # ty: ignore[unresolved-attribute] - a function
 
     def __get__(self, context: object, cls: type[object]) -> callablestr:
         return callablestr(self.function(context))
@@ -142,7 +142,7 @@ class descriptorint:
 
     def __init__(self, function: Callable[[Any], int]) -> None:
         self.function = function
-        self.__name__ = function.__name__
+        self.__name__ = function.__name__  # ty: ignore[unresolved-attribute] - a function
 
     def __get__(self, context: object, cls: type[object]) -> callableint:
         return callableint(self.function(context))
@@ -223,13 +223,13 @@ def limit_string(s: str, max_length: int = 53) -> str:
     return s
 
 
-def value_repr(value: object) -> str:
+def value_repr(value: object) -> str | int | float:
     """How a template's arguments are shown in a render error (``BaseTemplate.value_repr``)."""
     if isinstance(value, str):
         short = limit_string(value)
         return short.replace('\n', '\\n')
     if isinstance(value, (int, float)):
-        return value  # type: ignore[return-value]
+        return value  # a number as is, as in Chameleon
     if isinstance(value, dict):
         return '{...} (%d)' % len(value)  # noqa: UP031 - Chameleon's formatting
 
@@ -244,13 +244,14 @@ def value_repr(value: object) -> str:
 
 def create_formatted_exception(
     exc: BaseException,
-    cls: type[object],
+    cls: type[BaseException],
     formatter: Callable[..., str],
     base: type[BaseException] = Exception,
 ) -> BaseException:
     """A copy of ``exc`` whose class derives from ``cls`` and ``base`` (so ``except KeyError``
     still catches it) and whose ``__str__`` is ``formatter``."""
     try:
+        new: type[BaseException]
         try:
             new = type(
                 cls.__name__,
@@ -267,9 +268,9 @@ def create_formatted_exception(
 
         inst: BaseException
         try:
-            inst = BaseException.__new__(new)  # type: ignore[type-var]
+            inst = BaseException.__new__(new)
         except TypeError:
-            inst = cls.__new__(new)  # type: ignore[call-overload]
+            inst = cls.__new__(new)
 
         BaseException.__init__(inst, *exc.args)
         inst.__dict__ = exc.__dict__

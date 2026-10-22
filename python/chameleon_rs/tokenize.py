@@ -38,11 +38,14 @@ class Token(str):
         inst.filename = filename or ''
         return inst
 
-    @overload  # type: ignore[override]
+    @overload
     def __getitem__(self, index: slice) -> Token: ...
 
     @overload
     def __getitem__(self, index: SupportsIndex) -> str: ...
+
+    @overload
+    def __getitem__(self, index: SupportsIndex | slice) -> str: ...
 
     def __getitem__(self, index: SupportsIndex | slice) -> str:
         s = str.__getitem__(self, index)
@@ -66,7 +69,10 @@ class Token(str):
         s = str.replace(self, old, new, count)
         return Token(s, self.pos, self.source, self.filename)
 
-    def split(self, sep: str | None = None, maxsplit: SupportsIndex = -1) -> list[Token]:  # type: ignore[override]
+    # `list[Token]`, as in Chameleon; not a `list[str]` (lists are invariant).
+    def split(  # ty: ignore[invalid-method-override]
+        self, sep: str | None = None, maxsplit: SupportsIndex = -1
+    ) -> list[Token]:
         l_ = str.split(self, sep, maxsplit)
         pos = self.pos
         for i, s in enumerate(l_):
