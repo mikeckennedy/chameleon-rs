@@ -1477,6 +1477,50 @@ Carried forward:
   start where the render reaches them.
 - `bench_ab.py` cannot compare partial renders in one process (see above).
 
+## Phase 11b: The `markdown:` expression
+
+Vision section 6, scoped with Michael (2026-10-21; he confirmed profiles as their own
+prefixes, safe by default, and a Rust-only converter): a built-in `markdown:` expression type that
+converts a value from Markdown to HTML at render time. It is opt-in, because Chameleon has nothing
+like it, and only new templates use it. The existing apps keep converting in their viewmodels, so
+no current output has to match.
+
+- **Syntax.** `${markdown: page.body}` and `tal:content="markdown: page.body"`. The text after the
+  prefix is an ordinary expression, so `|` fallbacks work: `markdown: page.body | 'Coming soon'`.
+  The result is markup, like `structure:`, and isn't escaped again. `None` and `''` render nothing.
+  Any other non-string value goes through `str()`.
+- **Dialect.** CommonMark plus the GitHub extensions: tables, strikethrough, task lists, extended
+  autolinks and footnotes. Fenced code blocks get `class="language-xxx"`, so client-side
+  highlighters (highlight.js, Prism) work. Server-side highlighting is out of scope.
+- **Converter.** comrak (pure Rust, GFM-spec compliant) with `default-features = false`, so no
+  syntect or clap. It compiles into the wheel, so the package keeps zero runtime Python
+  dependencies. pulldown-cmark was rejected because it has no extended autolinks. There's no
+  Python converter hook. Add one only if someone needs mistune or markdown2 output.
+- **Settings.** `configure(markdown=...)`, read once. Rendering never parses settings. Each profile
+  is its own prefix, because Chameleon's prefix pattern `[a-z][a-z0-9\-_]*` can't take
+  `markdown[comments]:`. For example: `configure(markdown={'markdown': {}, 'md-comment':
+  {'raw_html': 'escape', 'images': False}})`. A bare `configure(markdown=True)` registers
+  `markdown:` with the defaults. Per-profile options:
+  - `raw_html`: `'escape'` (the default: raw HTML shows as text) or `'allow'` (trusted content
+    only).
+  - `images`: `True`, or `False` to render an image as its alt text, so untrusted text can't
+    trigger a remote request.
+  - `inline`: drops the wrapping `<p>` from single-paragraph output, for titles and one-liners.
+  - `heading_ids`: adds GitHub-style heading IDs, optionally with a prefix.
+  - `classes`: CSS classes per element, for example `{'table': 'table is-striped', 'pre': 'code'}`.
+  - `extensions`: switches individual GFM extensions off.
+- **Cache.** A bounded in-process LRU cache keyed by (profile, text), shared across threads and
+  safe on 3.14t. Its size is a setting, and `0` turns it off.
+- **Where it lives.** The conversion is in `chameleon-core` behind a `markdown` cargo feature (on
+  in the wheel). The expression type is registered through the existing `expression_types`
+  bridge, so a custom `markdown` prefix that an app registers itself still wins.
+
+Exit gate: the CommonMark and GFM spec examples pass (vendored as test data); a pytest suite
+covers each option, the escaping default, fallbacks, `None`, macros and `render_async`;
+converting a 5 KB document is faster than mistune, and a cache hit costs under 1 µs; nothing
+changes when `markdown` isn't configured (upstream suite, real-site corpus identical, A/B bench
+flat).
+
 ## Phase 12: Release
 
 Wheels for macOS, Linux and Windows (maturin), docs, a migration guide, the free-threading

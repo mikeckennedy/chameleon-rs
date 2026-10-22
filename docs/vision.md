@@ -225,6 +225,10 @@ real workloads and keep making it faster, without giving up any compatibility.
 
 ## 6. A `markdown:` expression type
 
+> **Status (2026-10-21):** scoped as plan.md Phase 11b: CommonMark plus GFM through comrak,
+> profiles as separate prefixes, raw HTML escaped by default. The notes below are the original
+> sketch.
+
 The idea: `${markdown: episode.notes}`, or `tal:content="markdown: episode.notes"`, converts
 the value from Markdown to HTML at render time and inserts it as markup.
 
