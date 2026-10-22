@@ -12,10 +12,11 @@ Chameleon exactly, and new capabilities are opt-in.
 > **Status (2026-10-21):** built in Phase 9 (architecture.md, Phase 9 amendments). Settings went
 > to a module-level `chameleon_rs.configure(template_folder=..., auto_reload=...,
 > restricted_namespace=...)`, process-wide, as an immutable object swapped whole (safe under
-> free-threading); `register_extensions` sets the partials' folder (it is an alias). Resolution
-> defaults to chameleon_partials' (the configured folder only); looking on the calling template's
-> search path and walking up from its folder is an opt-in, `configure(partial_search='caller')`
-> (whether it should be the default is Michael's call). Still open below: a `partials/` prefix
+> free-threading); `register_extensions` sets the partials' folder (it is an alias). Where
+> partials live, decided by Michael: the registered folder, then the calling template's search
+> path, then walking up from its folder (`partial_search='caller'`, the default; it only turns
+> chameleon_partials' "not found" errors into renders), or chameleon_partials' lookup exactly with
+> `configure(partial_search='registered')`. Still open below: a `partials/` prefix
 > convention, a partials-only reload override, renaming or turning off `render_partial`,
 > `CHAMELEON_*` environment variables, and per-loader settings.
 

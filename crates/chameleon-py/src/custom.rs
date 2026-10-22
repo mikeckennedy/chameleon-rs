@@ -117,6 +117,7 @@ impl SubEval {
             builtins: Some(self.builtins.bind(py).clone()),
             unit: 0,
             target: None,
+            marker: render.marker.clone(),
             serial: self.serial,
             domain: self.domain.as_ref().map(|d| d.bind(py).clone()),
             context: self.context.as_ref().map(|c| c.bind(py).clone()),

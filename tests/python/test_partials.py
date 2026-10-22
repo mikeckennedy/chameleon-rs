@@ -236,11 +236,12 @@ def test_partials_match_chameleon_partials(folder: Path, files: dict[str, str], 
     compare(folder, files, **model)
 
 
-def test_default_resolution_is_the_configured_folder_only(folder: Path) -> None:
-    # As chameleon_partials: nothing configured is its `PartialsException`; a file next to the
-    # caller but not in the folder is not found.
+def test_registered_search_is_chameleon_partials_lookup(folder: Path) -> None:
+    # `partial_search='registered'`: exactly chameleon_partials. Nothing registered is its
+    # `PartialsException`; a file next to the caller but not in the folder is not found.
     write(folder, {'conf/x.pt': 'configured', 'page/x.pt': 'relative', 'page/p.pt': '${render_partial("x.pt")}'})
     page = chameleon_rs.PageTemplateFile(str(folder / 'page' / 'p.pt'))
+    chameleon_rs.configure(partial_search='registered')
     with pytest.raises(chameleon_rs.partials.PartialsException, match='register_extensions'):
         page()
     chameleon_rs.configure(template_folder=str(folder))
@@ -250,7 +251,9 @@ def test_default_resolution_is_the_configured_folder_only(folder: Path) -> None:
     assert page() == 'configured'
 
 
-def test_caller_search_is_opt_in(folder: Path) -> None:
+def test_caller_search_is_the_default(folder: Path) -> None:
+    # Owner-approved: where chameleon_partials raises (not registered, or not in the folder), the
+    # caller's folders are searched; nothing that rendered there renders differently.
     write(
         folder,
         {
@@ -261,6 +264,7 @@ def test_caller_search_is_opt_in(folder: Path) -> None:
         },
     )
     page = chameleon_rs.PageTemplateFile(str(folder / 'home' / 'index.pt'))
+    assert page() == 'near|far1sib'
     chameleon_rs.configure(partial_search='caller')
     assert page() == 'near|far1sib'
     with pytest.raises(ValueError, match='partial_search'):
@@ -295,8 +299,9 @@ def test_string_templates_use_the_configured_folder(folder: Path) -> None:
 
 
 def test_the_global_render_partial_in_a_model_resolves_as_called(folder: Path) -> None:
-    # Passed in a model (`extend_model`), the global renderer has no template: with caller
-    # search on, a native call still does not search the caller's folders (calling it would not).
+    # Passed in a model (`extend_model`), the global renderer has no template: even with caller
+    # search (the default), a native call does not search the caller's folders (calling it
+    # would not).
     write(folder, {'p.pt': '${render_partial("card.pt", name=1)}', 'card.pt': '<b>${name}</b>'})
     chameleon_rs.configure(partial_search='caller')
     page = chameleon_rs.PageTemplateFile(str(folder / 'p.pt'))

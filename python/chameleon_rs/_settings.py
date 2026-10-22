@@ -50,11 +50,13 @@ flask: Settings | None = None
 generation = 0
 _lock = threading.Lock()
 
-# Where `render_partial` looks besides the configured folder: `'folder'` (the default: only the
-# configured folder, as chameleon_partials) or `'caller'` (opt-in: then the calling template's
-# search path, its folder and each folder above it).
-PARTIAL_SEARCH = ('folder', 'caller')
-search_mode = 'folder'
+# Where `render_partial` looks: `'caller'` (the default, approved by Michael: the registered
+# folder, then the calling template's search path, its folder and each folder above it; it only
+# ever turns chameleon_partials' "not found" error into a render) or `'registered'`
+# (chameleon_partials' own lookup: the registered folder only).
+PARTIAL_SEARCH = ('caller', 'registered')
+DEFAULT_SEARCH = 'caller'
+search_mode = DEFAULT_SEARCH
 
 
 def check_folder(template_folder: Any, error: type[Exception] = TemplateError) -> None:
@@ -117,9 +119,10 @@ def configure(
     ``template_folder``: an existing directory. ``auto_reload``: recompile a template when its
     file changes (checked at most once per file per render for partials). ``restricted_namespace``:
     ``False`` allows attributes such as Alpine.js's ``@click`` (chameleon-flask's option).
-    ``partial_search``: ``'folder'`` (the default, as chameleon_partials: partials are looked for
-    in the template folder only) or ``'caller'`` (opt-in: also on the calling template's search
-    path, then in its folder and each folder above it). A setting left out keeps its current
+    ``partial_search``: ``'caller'`` (the default: partials are looked for in the template
+    folder, then on the calling template's search path, then in its folder and each folder above
+    it) or ``'registered'`` (chameleon_partials' lookup: the template folder only, a path not
+    there being an error). A setting left out keeps its current
     value; the first call that sets anything but ``partial_search`` must give the folder.
     Applies every time it is called (there is no ``cache_init``).
 
@@ -144,5 +147,5 @@ def clear() -> None:
     """Forgets the process-wide configuration, both slots and ``partial_search`` (tests reset
     with it)."""
     global search_mode
-    search_mode = 'folder'
+    search_mode = DEFAULT_SEARCH
     install(partials_settings=None, flask_settings=None)

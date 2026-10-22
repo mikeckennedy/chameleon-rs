@@ -978,15 +978,18 @@ chameleon_partials at `f54ca1a` on Chameleon (its `render_partial` calls
   chameleon_partials' order (keywords, `render_partial`, defaults, `repeat`, then defines).
   A keyword named like a default or `repeat` wins, as `setdefault` does there.
 - **Path resolution** (`chameleon_rs.partials.resolve`, Python, cached per renderer template
-  and path until the configuration changes). By default exactly chameleon_partials': the
-  configured partials folder (its loader, so `spec` handling and the `Template not found: x.`
-  `ValueError` are Chameleon's), and with no folder configured chameleon_partials'
-  `PartialsException`. Opt-in (`configure(partial_search='caller')`, review fix 4: the owner
-  signed off on the folder only), then the calling template's search path (the `search_path`
-  it was created with, so a `PageTemplateLoader`'s folders), then its own folder and each folder
-  above it; package-resource entries are not searched, and a file found there becomes a
-  template of the caller's class with its settings (shared between callers when the settings
-  are hashable). A renderer resolves relative to *its own* template, whether called or run as
+  and path until the configuration changes): the registered partials folder (its loader, so
+  `spec` handling and the `Template not found: x.` `ValueError` are Chameleon's), then the
+  calling template's search path (the `search_path` it was created with, so a
+  `PageTemplateLoader`'s folders), then its own folder and each folder above it;
+  package-resource entries are not searched, and a file found there becomes a template of the
+  caller's class with its settings (shared between callers when the settings are hashable).
+  **A deliberate difference from chameleon_partials, approved by Michael (2026-10-21):** the
+  caller-folder search only runs where chameleon_partials raises (no folder registered, or the
+  path not in it), so it never changes a page that rendered under the original; it turns that
+  error into a render. `configure(partial_search='registered')` restores chameleon_partials'
+  lookup exactly (the registered folder only; unregistered is its `PartialsException`);
+  `'caller'` is the default. A renderer resolves relative to *its own* template, whether called or run as
   a frame (review fix 3): a template's builtin is bound to that template, the global
   `chameleon_rs.render_partial` (passed in a model by `extend_model`) to none, as calling it
   would. Called from Python, the renderer renders through `template.render(encoding='utf-8',
@@ -1348,9 +1351,10 @@ chameleon_partials' semantics (the partial sees only its keyword arguments plus
 calling template's directory; resolved once and cached. A partial renders as a native frame
 writing straight into the caller's buffer. The old `chameleon_partials.render_partial` passed
 in a model is recognized and routed to the native path. *(As built in Phase 9: resolution is
-chameleon_partials' (the configured folder only) by default; the search path and walking up
-from the caller are opt-in, `configure(partial_search='caller')`. See the Phase 9
-amendments.)*
+the registered folder, then (by default, an owner-approved difference that only turns
+chameleon_partials' "not found" errors into renders) the caller's search path and walking up
+from its folder; `configure(partial_search='registered')` gives chameleon_partials' lookup
+exactly. See the Phase 9 amendments.)*
 
 ## D11. Known, deliberate differences
 

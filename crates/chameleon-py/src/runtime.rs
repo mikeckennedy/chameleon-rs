@@ -42,7 +42,7 @@ pub(crate) struct PyRuntime<'a, 'py> {
 impl<'a, 'py> PyRuntime<'a, 'py> {
     pub(crate) fn new(render: &'a RenderCtx<'py>, code: Bound<'py, Program>, scope: Bound<'py, Scope>) -> Self {
         let py = code.py();
-        let frame = FrameCx::new(None, 0, py.None().into_bound(py));
+        let frame = FrameCx::new(None, 0, py.None().into_bound(py), render.marker.clone());
         Self { py, render, code, scope, frame }
     }
 
@@ -153,6 +153,10 @@ impl Eval for PyRuntime<'_, '_> {
         // The frames of a native partial's render use its unit (builtins, defaults,
         // `rcontext`); there are none on the stack in most renders.
         if let Some((unit, target)) = self.render.partials.changed(self.frame.unit) {
+            self.frame.marker = match &target {
+                Some(t) => t.program.get().marker.bind(py).clone(),
+                None => self.render.marker.clone(),
+            };
             self.frame.unit = unit;
             self.frame.target = target;
         }

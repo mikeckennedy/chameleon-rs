@@ -2,17 +2,21 @@
 # chameleon_partials/__init__.py at f54ca1a: `register_extensions`, `HTML`, `render_partial`,
 # `extend_model`, `PartialsException`), modified: built into chameleon-rs, `render_partial`
 # is in every template without being passed in the model and renders as a native frame of the
-# caller's render; optionally, paths also resolve against the calling template's folders.
+# caller's render; paths not in the registered folder also resolve against the calling
+# template's folders (unless `partial_search='registered'`).
 """Built-in partials (D10): ``render_partial(path, **kwargs)`` in any template renders another
 template file with ``kwargs`` as its model, straight into the page.
 
 A path is looked for in the folder given to ``chameleon_rs.configure(template_folder=...)`` (or
-to the alias ``register_extensions``), as chameleon_partials does: a path not there raises
-``ValueError('Template not found: <path>.')``, and with no folder configured a call raises
-``PartialsException``. Opt-in, ``chameleon_rs.configure(partial_search='caller')`` also looks,
-after the configured folder (if any), on the calling template's search path (the folders of the
-``PageTemplateLoader`` that loaded it), then in its own folder and each folder above it.
-Resolutions are cached until the configuration changes.
+to the alias ``register_extensions``), as chameleon_partials does; then, by default, on the
+calling template's search path (the folders of the ``PageTemplateLoader`` that loaded it), then
+in its own folder and each folder above it. Found nowhere is
+``ValueError('Template not found: <path>.')``. With ``chameleon_rs.configure(
+partial_search='registered')`` only the registered folder is searched, exactly as
+chameleon_partials (and with no folder registered a call raises ``PartialsException``): the
+default differs only where chameleon_partials raises. A renderer with no template (the global
+``chameleon_rs.render_partial``) always uses the registered folder only. Resolutions are cached
+until the configuration changes.
 
 The partial sees only its keyword arguments and ``render_partial`` (chameleon_partials'
 semantics), and is rendered as with ``encoding='utf-8'``. Called from Python,

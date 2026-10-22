@@ -463,6 +463,9 @@ pub(crate) struct FrameCx<'py> {
     /// own) and its template.
     pub(crate) unit: u64,
     pub(crate) target: Option<std::rc::Rc<crate::partials::Target<'py>>>,
+    /// The object `default` evaluates to: the render's template's, or the unit's (kept here,
+    /// set when the unit changes: every converted value compares with it).
+    pub(crate) marker: Bound<'py, PyAny>,
     pub(crate) serial: u64,
     pub(crate) domain: Option<Bound<'py, PyString>>,
     pub(crate) context: Option<Bound<'py, PyString>>,
@@ -471,8 +474,13 @@ pub(crate) struct FrameCx<'py> {
 
 impl<'py> FrameCx<'py> {
     /// A frame with no i18n domain or context.
-    pub(crate) fn new(builtins: Option<Bound<'py, PyDict>>, serial: u64, target_language: Bound<'py, PyAny>) -> Self {
-        Self { builtins, unit: 0, target: None, serial, domain: None, context: None, target_language }
+    pub(crate) fn new(
+        builtins: Option<Bound<'py, PyDict>>,
+        serial: u64,
+        target_language: Bound<'py, PyAny>,
+        marker: Bound<'py, PyAny>,
+    ) -> Self {
+        Self { builtins, unit: 0, target: None, marker, serial, domain: None, context: None, target_language }
     }
 }
 
@@ -530,10 +538,7 @@ impl<'py> Cx<'_, 'py> {
 
     /// The object `default` evaluates to: the render's template's (a native partial's own).
     pub(crate) fn marker(&self) -> &Bound<'py, PyAny> {
-        match &self.frame.target {
-            Some(target) => target.program.get().marker.bind(self.scope.py()),
-            None => &self.render.marker,
-        }
+        &self.frame.marker
     }
 
     /// The active frame's template builtins.

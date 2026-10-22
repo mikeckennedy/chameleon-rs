@@ -1113,11 +1113,45 @@ chameleon_partials or chameleon_flask, nothing else should need to change (`regi
 `chameleon_rs.configure(template_folder=...)`. To keep the original packages instead, use
 `install(integrations=False)`. Still to do: the real-app crawl and locust runs on the built-ins.
 
+Review fixes (2026-10-21, after the Rust Architect's review; each reproduced against the
+originals first, with the review's probes):
+- **Blocker:** the setup calls shared one settings slot, so `register_extensions` made a later
+  `global_init` a no-op (Alpine.js templates with `restricted_namespace=False` failed), a
+  `global_init` swallowed a later `register_extensions`, and `chameleon_flask.render` worked
+  after only `register_extensions`. Each consumer has its own slot again (`partials`, `flask`),
+  each alias sets only its own with its own `cache_init`; `configure()` sets both. Tests for
+  each ordering.
+- `translate=`/`encoding=` keywords now take the Python call (they change chameleon_partials'
+  render; the native frame ignored them). A renderer resolves relative to its own template, so
+  the global `render_partial` passed in a model (`extend_model`) raises `PartialsException` when
+  nothing is registered, as the original.
+- Resolution (owner's decision): the caller-folder search stays the default
+  (`partial_search='caller'`) as a deliberate difference that only turns chameleon_partials'
+  "not found" errors into renders; `configure(partial_search='registered')` gives the original
+  lookup exactly. Tests for both.
+- A partial uses its own `default_marker` (kept in the frame context, set when the unit
+  changes); `HTML` has no `repr` of its own; `PartialRenderer`'s type prints as `function` in
+  error argument lists; siblings with unhashable settings are not cached; `response()` keeps a
+  `mimetype` keyword in the model, as chameleon-flask.
+- The render fuzzer also renders each generated body as a partial (once, and in a loop) against
+  chameleon_partials: 20,000 examples, no differences. The Makefile uses pinned sources fetched as
+  tarballs (no `.git`) as they are.
+
+After the fixes: 2,633 pytest passed, 7 skipped, 3 strict xfails; upstream 227 on each engine;
+`make lint` green; integration 40/16/39/6 on the originals, 16/6 on the built-ins. A/B against
+435599f, release, 8 rounds, each scenario started below load 6: listing -1.6, +4.3, -0.5 ns;
+partial listing +58, +48, +61 ns per item (10.3-10.5x Chameleon + chameleon_partials in the same
+runs; `bench_skeleton.py` 687-689 ns against 7,348-7,377, 10.7x); macro +13.0, +9.9, +5.4 ns,
+over the +5 ns tolerance (it straddled it before the fixes too: -14 to +11): carried.
+
 Carried forward:
-- **Phase 11:** `render_async` for `@template` on async views (they render synchronously now);
-  the partial units must survive a suspended render (they live in the render context).
-- The macro-scenario A/B on a quiet machine (see above); the owner's real-app crawl and locust
-  runs (exit gate item).
+- **Phase 11:** `render_async` for `@template` on async views (they render synchronously now).
+  The partial unit stack lives in the `RenderCtx` as `Bound` references: fine for a synchronous
+  render and for releasing the GIL around one; a render that suspends needs the units in the
+  `VmState` as `Py<...>`.
+- The macro scenario's +5-13 ns against 435599f (frame-context work on activation): find it or
+  accept it.
+- The owner's real-app crawl and locust runs on the built-ins (exit gate item).
 
 ## Phase 10: Performance pass
 
