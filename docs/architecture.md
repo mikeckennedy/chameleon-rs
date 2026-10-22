@@ -1398,6 +1398,18 @@ Release blockers. Each behaviour checked against Chameleon's generated code firs
     misordered app fails every request with the error.
   - **Quart:** `before_serving` (the app fails to start) plus the same one-shot guard on
     `asgi_app` for HTTP/WebSocket scopes (Quart's test client does not serve).
+  Review fixes: the check is memoized per app (a middleware wrapped around `wsgi_app` after
+  `configure(app=...)`, such as ProxyFix, keeps the Flask guard in place, which then costs one
+  flag test per request instead of a scan); views are compared by `_views._key` (a bound
+  method by its function and instance, since `obj.method` is a new equal object each time,
+  anything else by identity); `check_views(app, ignore=[...])` and `configure(app=...,
+  check_order=False)` (and `global_init`'s) are the escape hatch for a function routed raw whose
+  `@template` wrapper is used elsewhere (called from another view, routed on another app),
+  which looks exactly like the mistake at runtime; `app=` must be an application (`TypeError`
+  for an `APIRouter` or a blueprint); `global_init` validates the folder before hooking the
+  app; listeners are keyed by module name and each integration syncs `template_path` when
+  imported (it was stale when imported after `chameleon_rs.configure()`, e.g. lazily through
+  `compat.install()`). Callables that cannot be weakly referenced are remembered by identity.
   Detecting at decoration time was considered and left out: when `@template` wraps a function
   some route already has, that is either the mistake or a view also registered raw on purpose
   (JSON on one route, HTML on another), and the two can only be told apart once all routes

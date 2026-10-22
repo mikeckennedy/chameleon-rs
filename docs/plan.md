@@ -1755,6 +1755,32 @@ compile-time only). `bench/bench_ab.py c96e950`, release, listing, 8 rounds, two
 tolerance; 6.5-6.7x Chameleon in the same runs. The view wrappers add a Python method call or
 two per request, outside the render.
 
+Review fixes (2026-10-22, after the Rust Architect's review: no blockers, the `late_error`
+fix confirmed; each reproduced with the review's probes first):
+- The check is memoized per app: with a middleware wrapped around `wsgi_app` after
+  `configure(app=...)` (ProxyFix), the Flask guard ran the full scan on every request (0.27 ms
+  with 300 routes); now once. Test: ProxyFix, five requests, one check; misordered still fails.
+- False positives: a bound method routed raw and, decorated, on another route was flagged
+  (`covered` compared by `id()`, membership by equality); views are now keyed by function and
+  instance. A function routed raw whose `@template` wrapper is used elsewhere (called from
+  another view, routed on another app) cannot be told from the mistake: escape hatch
+  `check_views(app, ignore=[...])` and `check_order=False` on `configure`/`global_init`,
+  documented with the trade-off.
+- `template_path` was stale when the integration was imported after `chameleon_rs.configure()`
+  (lazily through `compat.install()`): synced on import. Listeners keyed by module name (no
+  pile-up on re-import).
+- Nits: non-weakrefable callables are found (checked by identity first); `global_init(...,
+  app=)` validates the folder before hooking the app; `app=` an `APIRouter` / blueprint is a
+  `TypeError`; `fastapi_chameleon.__version__` / `__author__` (and chameleon-flask's); the
+  decorator docstrings state that `concurrent`/`offload` apply to async views only, the Flask
+  docs that its check runs on the first request; a test that a user lifespan's state reaches
+  the view through the wrapped lifespan.
+- Verification after the fixes: pytest 3,043 passed, 2 skipped, 7 strict xfails (corpus set);
+  upstream 227 passed + 6 xpassed on each engine; Rust 102 + 3 + 9; `make lint` clean (ty 0);
+  integration 40/16/39/6 on the originals, 40/16/6 on the built-ins (fastapi-chameleon,
+  chameleon-flask, chameleon_partials). A/B against c96e950 (release, listing, 8 rounds, load
+  1.9-2.0): +2.3 ns (range -3..+3) and -1.9 ns (range -11..+2), 6.4x Chameleon.
+
 Open for Michael:
 - Per-app settings for FastAPI (`configure(app=...)` applies settings process-wide today): an
   injected `Request` parameter in the wrapper's signature, or a middleware with a context

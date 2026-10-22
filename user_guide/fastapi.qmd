@@ -96,6 +96,11 @@ included with `include_router` and mounted apps are checked too. A function regi
 purpose (say, JSON on one route) and also decorated on another route is not flagged.
 `fastapi_chameleon.check_views(app)` runs the same check on demand.
 
+One pattern can't be told from the mistake: a function routed raw on this app whose
+`@template` wrapper is used somewhere else (called from another view, or routed on another
+app). For such an app, pass `check_order=False` to `configure()` and keep the check in a
+test with `fastapi_chameleon.check_views(app, ignore=[that_function])`.
+
 ## Sync and async views
 
 - An `async def` view renders its page with `render_async` on the event loop. A model value

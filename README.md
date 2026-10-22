@@ -61,8 +61,12 @@ event loop); a sync view renders in FastAPI's thread pool, as before.
 `@app.route`, `@blueprint.get`). Written above it, the router registers the bare view, the
 template never renders and the route quietly returns JSON. An app given to `configure(...,
 app=app)` (or `global_init(..., app=app)`) checks this when it starts (FastAPI and Quart: at
-startup; Flask: before its first request) and raises `chameleon_rs.web.DecoratorOrderError`
-naming the view and the fix; `check_views(app)` runs the same check on demand.
+startup; Flask, which has no startup hook: before its first request) and raises
+`chameleon_rs.web.DecoratorOrderError` naming the view and the fix; `check_views(app)` runs the
+same check on demand. One pattern looks the same as the mistake: a function routed raw on this
+app whose `@template` wrapper is used elsewhere (called from another view, or routed on another
+app). For that, pass `check_order=False` to `configure`/`global_init` and call
+`check_views(app, ignore=[that_function])` in a test.
 
 ## Async rendering
 

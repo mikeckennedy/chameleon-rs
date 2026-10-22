@@ -72,8 +72,14 @@ def about():
 # @blueprint.route, ...) on about() at app.py:12 (route GET /about): ...
 ```
 
-Blueprints are included. `chameleon_flask.check_views(app)` runs the same check on demand, for
-example in a test. Once the check passes, the app runs without it.
+Flask has no startup hook, so the check runs on the first request. Blueprints are included.
+`chameleon_flask.check_views(app)` runs the same check on demand, for example in a test. Once
+the check passes, the app runs without it.
+
+One pattern can't be told from the mistake: a function routed raw on this app whose
+`@template` wrapper is used somewhere else (called from another view, or routed on another
+app). For such an app, pass `check_order=False` to `configure()` and keep the check in a test
+with `chameleon_flask.check_views(app, ignore=[that_function])`.
 
 ## What a view can return
 

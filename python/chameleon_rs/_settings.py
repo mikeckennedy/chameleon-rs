@@ -82,8 +82,9 @@ partials: Settings | None = None
 views: dict[str, Settings | None] = dict.fromkeys(VIEW_SLOTS)
 generation = 0
 _lock = threading.Lock()
-# Called after every change (the integrations keep their legacy `template_path` in step).
-listeners: list[Callable[[], None]] = []
+# Called after every change, keyed by module name (so a re-imported module replaces its own):
+# the integrations keep their legacy `template_path` in step.
+listeners: dict[str, Callable[[], None]] = {}
 
 # Where `render_partial` looks: `'caller'` (the default, approved by Michael: the registered
 # folder, then the calling template's search path, its folder and each folder above it; it only
@@ -247,7 +248,7 @@ def install(*, partials_settings: Any = _KEEP, views_settings: Mapping[str, Sett
     from chameleon_rs import partials as partials_module
 
     partials_module._configured(partials)
-    for listener in listeners:
+    for listener in list(listeners.values()):
         listener()
 
 

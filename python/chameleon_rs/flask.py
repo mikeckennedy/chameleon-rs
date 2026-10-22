@@ -49,7 +49,7 @@ Errors: ``chameleon_rs.web.TemplateError`` and ``NotFound``; chameleon-flask's
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable, Coroutine, Iterator, Mapping
+from collections.abc import Callable, Coroutine, Iterable, Iterator, Mapping
 from typing import Any, NoReturn, Protocol, overload
 
 import flask
@@ -151,6 +151,11 @@ class _Flask(_views.Integration):
         for endpoint, view in list(app.view_functions.items()):
             yield view, ', '.join(rules.get(endpoint, [])) or endpoint
 
+    def check_app(self, app: Any) -> None:
+        if not (hasattr(app, 'view_functions') and hasattr(app, 'url_map') and hasattr(app, 'extensions')):
+            msg = f'app= takes a Flask or Quart application, not {type(app).__name__} (a blueprint is checked through the app it is registered on)'
+            raise TypeError(msg)
+
     def watch(self, app: Any, check: Callable[[], None]) -> None:
         # Quart: when the app starts serving (`before_serving`), and before its first request
         # (the test client does not serve). Flask has no start event: before its first request,
@@ -192,24 +197,31 @@ def configure(
     auto_reload: bool | None = None,
     restricted_namespace: bool | None = None,
     app: Any = None,
+    check_order: bool = True,
 ) -> None:
     """Configures where templates live and how they load: for the whole process (the same as
     ``chameleon_rs.configure``: for views and for ``render_partial``), or, with ``app``, for that
     Flask app's views only (stored in ``app.extensions['chameleon_rs']``). Settings left out keep
     their current values.
 
-    With ``app``, the app also checks its views before its first request (Quart: when it starts
-    serving): a view registered by its route before ``@template`` wrapped it (``@template``
-    written above ``@app.route``) raises ``chameleon_rs.web.DecoratorOrderError``.
+    With ``app``, the app also checks its views (Flask has no startup hook: before its first
+    request; Quart: when it starts serving, and before its first request): a view registered by
+    its route before ``@template`` wrapped it (``@template`` written above ``@app.route``) raises
+    ``chameleon_rs.web.DecoratorOrderError``. ``check_order=False`` turns that off, for an app
+    whose routes call a function raw that is also used through a ``@template`` wrapper not
+    routed on this app (call ``check_views(app, ignore=[...])`` in a test instead).
+    Raises ``TypeError`` if ``app`` is not a Flask or Quart application.
 
     Raises ``FlaskChameleonException`` if the folder is missing or not a directory.
     """
     if app is not None:
+        _flask.check_app(app)
         base = app.extensions.get(EXTENSION) or _settings.views['flask']
         app.extensions[EXTENSION] = _settings.build(
             template_folder, auto_reload, restricted_namespace, base=base, error=FlaskChameleonException
         )
-        _flask.watch_app(app)
+        if check_order:
+            _flask.watch_app(app)
         return
     settings = _settings.build(
         template_folder,
@@ -228,14 +240,18 @@ def global_init(
     restricted_namespace: bool = True,
     *,
     app: Any = None,
+    check_order: bool = True,
 ) -> None:
     """chameleon-flask's setup call: configures the views' templates only (partials keep their
     own folder, from ``register_extensions``). With ``cache_init`` (the default) a call after
-    the views' folder is configured does nothing. ``app``: check that app's views when it
-    starts, as ``configure(app=...)`` does (the settings stay process-wide)."""
+    the views' folder is configured does nothing. ``app``: check that app's views before its
+    first request, as ``configure(app=...)`` does (the settings stay process-wide;
+    ``check_order=False`` turns the check off)."""
     if app is not None:
-        _flask.watch_app(app)
+        _flask.check_app(app)
     _flask.global_init(template_folder, auto_reload, cache_init, restricted_namespace)
+    if app is not None and check_order:
+        _flask.watch_app(app)
 
 
 def clear() -> None:
@@ -244,11 +260,16 @@ def clear() -> None:
     _flask.clear()
 
 
-def check_views(app: Any) -> None:
+def check_views(app: Any, ignore: Iterable[Any] = ()) -> None:
     """Raises ``chameleon_rs.web.DecoratorOrderError`` if a route of ``app`` (blueprints
     included) calls a view that ``@template`` wrapped after the route registered it. Runs by
-    itself when the app starts, for an app given to ``configure(app=...)``."""
-    _flask.check_views(app)
+    itself before the app's first request, for an app given to ``configure(app=...)``.
+
+    It cannot tell the mistake from a function routed raw on purpose whose ``@template``
+    wrapper is used elsewhere (called from another view, or routed on another app): list such
+    functions in ``ignore``."""
+    _flask.check_app(app)
+    _flask.check_views(app, ignore)
 
 
 def _sync() -> None:
@@ -257,7 +278,8 @@ def _sync() -> None:
     template_path = _flask.template_path()
 
 
-_settings.listeners.append(_sync)
+_settings.listeners[__name__] = _sync
+_sync()  # configured before this module was imported: the legacy global already says so
 
 
 def _current_settings() -> _settings.Settings | None:
@@ -351,7 +373,8 @@ def template(
     render concurrently (``PageTemplate``'s ``concurrent`` setting, for this view; ``False``
     turns a template's setting off, ``None``, the default, keeps it).
     ``offload=True`` (async views, experimental): the page renders in a worker thread
-    (``render_async(offload=True)``).
+    (``render_async(offload=True)``). Both apply to ``async def`` views only: a sync view
+    renders with ``render`` and ignores them.
 
     Typing: the decorated view is typed as returning ``flask.Response`` (a coroutine of one for
     an ``async def`` view). A response the view returns itself passes through unchanged, so with
@@ -405,3 +428,15 @@ def generic_error(template_file: str, status_code: int, template_data: Mapping[s
 # chameleon-flask's submodules (`chameleon_flask.engine`, `chameleon_flask.exceptions`) are
 # this module (`chameleon_rs.compat.install()` maps their names here).
 engine = exceptions = sys.modules[__name__]
+
+__author__ = 'Michael Kennedy <michael@talkpython.fm>'
+
+
+def __getattr__(name: str) -> Any:
+    # chameleon-flask's `__version__`: chameleon-rs's (read on first use, as the package's).
+    if name == '__version__':
+        import chameleon_rs
+
+        return chameleon_rs.__version__
+    msg = f'module {__name__!r} has no attribute {name!r}'
+    raise AttributeError(msg)

@@ -777,3 +777,148 @@ def _typing_checks() -> None:
     assert_type(aview(1), Coroutine[Any, Any, Response])
     assert_type(bview(), Coroutine[Any, Any, Response])
     assert_type(ours.response('x.pt', 'text/plain', 200, a=1), Response)
+
+
+# --- Review fixes ---------------------------------------------------------------------------
+
+
+def test_bound_methods_routed_raw_and_decorated_are_not_flagged(folder: Path) -> None:
+    class Views:
+        def page(self) -> dict[str, int]:
+            return {'a': 1}
+
+    views = Views()
+    app = fastapi.FastAPI()
+    app.get('/api')(views.page)
+    app.get('/html')(ours.template('home/index.pt')(views.page))
+    ours.check_views(app)
+
+    misordered = fastapi.FastAPI()
+    misordered.get('/html')(views.page)
+    ours.template('home/index.pt')(views.page)
+    with pytest.raises(chameleon_rs.web.DecoratorOrderError, match=r'Views\.page\(\)'):
+        ours.check_views(misordered)
+
+
+def test_a_wrapper_used_elsewhere_needs_the_escape_hatch(folder: Path) -> None:
+    # Routed raw here, its @template wrapper called from another view: indistinguishable from
+    # the mistake at runtime, so `ignore=` or `check_order=False`.
+    def data() -> dict[str, int]:
+        return {'a': 2}
+
+    html = ours.template('home/index.pt')(data)
+
+    def make() -> Any:
+        app = fastapi.FastAPI()
+        app.get('/api')(data)
+
+        @app.get('/html')
+        def page() -> Any:
+            return html()
+
+        return app
+
+    with pytest.raises(chameleon_rs.web.DecoratorOrderError):
+        ours.check_views(make())
+    ours.check_views(make(), ignore=[data])
+    ours.check_views(make(), ignore=[html])
+    app = make()
+    ours.configure(app=app, check_order=False)
+    with TestClient(app) as client:
+        assert client.get('/html').text == '<h1>Hello 2 -!</h1>'
+    app = make()
+    ours.global_init(str(folder), app=app, check_order=False)
+    assert app not in chameleon_rs._views._watched
+
+
+def test_the_check_runs_once(folder: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = []
+    real = chameleon_rs._views.Integration.check_views
+
+    def counting(self: Any, app: Any, ignore: Any = ()) -> None:
+        calls.append(app)
+        real(self, app, ignore)
+
+    monkeypatch.setattr(chameleon_rs._views.Integration, 'check_views', counting)
+    app = fastapi.FastAPI()
+    ours.configure(app=app)
+
+    @app.get('/')
+    @ours.template('home/index.pt')
+    def index() -> Any:
+        return {'a': 1}
+
+    with TestClient(app) as client:
+        for _ in range(3):
+            client.get('/')
+    plain = TestClient(app)
+    for _ in range(3):
+        plain.get('/')
+    assert len(calls) == 1
+
+
+def test_app_must_be_an_application(folder: Path) -> None:
+    router = fastapi.APIRouter()
+    with pytest.raises(TypeError, match='FastAPI or Starlette application, not APIRouter'):
+        ours.configure(app=router)
+    with pytest.raises(TypeError, match='FastAPI or Starlette application'):
+        ours.check_views(router)
+    with pytest.raises(TypeError):
+        ours.global_init(str(folder), app=router)
+
+
+def test_global_init_checks_the_folder_before_hooking_the_app(tmp_path: Path) -> None:
+    app = fastapi.FastAPI()
+    with pytest.raises(ours.FastAPIChameleonException):
+        ours.global_init(str(tmp_path / 'missing'), cache_init=False, app=app)
+    assert app not in chameleon_rs._views._watched
+    with pytest.raises(ours.FastAPIChameleonException):
+        ours.configure(str(tmp_path / 'missing'), app=app)
+    assert app not in chameleon_rs._views._watched
+
+
+def test_a_user_lifespan_and_its_state_pass_through(folder: Path) -> None:
+    import contextlib
+
+    events = []
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app: Any) -> Any:
+        events.append('start')
+        yield {'greeting': 'hi'}
+        events.append('end')
+
+    app = fastapi.FastAPI(lifespan=lifespan)
+
+    @app.get('/')
+    @ours.template('home/index.pt')
+    def index(request: fastapi.Request) -> Any:
+        return {'a': request.state.greeting}
+
+    ours.configure(app=app)
+    with TestClient(app) as client:
+        assert client.get('/').text == '<h1>Hello hi -!</h1>'
+    assert events == ['start', 'end']
+
+
+def test_module_imported_after_configure_knows_the_folder(folder: Path) -> None:
+    import subprocess
+
+    code = (
+        'import chameleon_rs, chameleon_rs.compat\n'
+        f'chameleon_rs.configure({str(folder)!r})\n'
+        'chameleon_rs.compat.install()\n'
+        'import fastapi_chameleon, chameleon_rs.flask\n'
+        'print(fastapi_chameleon.template_path == chameleon_rs.flask.template_path == '
+        f'{str(folder)!r})\n'
+        'print(fastapi_chameleon.__author__, fastapi_chameleon.__version__ == chameleon_rs.__version__)\n'
+    )
+    result = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, check=False)
+    assert result.stdout == 'True\nMichael Kennedy <michael@talkpython.fm> True\n', result.stderr
+
+
+def test_reimporting_does_not_pile_up_listeners() -> None:
+    before = dict(chameleon_rs._settings.listeners)
+    importlib.reload(ours)
+    importlib.reload(ours)
+    assert chameleon_rs._settings.listeners.keys() == before.keys()

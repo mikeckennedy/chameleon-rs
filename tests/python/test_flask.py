@@ -654,3 +654,53 @@ def test_quart_correct_order(folder: Path) -> None:
             return resp.status_code, await resp.get_data(as_text=True)
 
     assert asyncio.run(run()) == (200, '<h1>Hello q -!</h1>')
+
+
+def test_middleware_wrapping_the_app_after_configure(folder: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The one-shot guard cannot take itself out under a middleware added later (ProxyFix): it
+    # stays, but checks only once.
+    from werkzeug.middleware.proxy_fix import ProxyFix
+
+    calls = []
+    real = chameleon_rs._views.Integration.check_views
+
+    def counting(self: Any, app: Any, ignore: Any = ()) -> None:
+        calls.append(app)
+        real(self, app, ignore)
+
+    monkeypatch.setattr(chameleon_rs._views.Integration, 'check_views', counting)
+    app = flask.Flask('proxied')
+    ours.configure(app=app)
+    app.wsgi_app = ProxyFix(app.wsgi_app)
+
+    @app.get('/')
+    @ours.template('home/index.pt')
+    def index() -> Any:
+        return {'a': 1}
+
+    client = app.test_client()
+    for _ in range(5):
+        assert client.get('/').get_data(as_text=True) == '<h1>Hello 1 -!</h1>'
+    assert len(calls) == 1
+
+    bad = misordered_flask_app()
+    bad.wsgi_app = ProxyFix(bad.wsgi_app)
+    with pytest.raises(chameleon_rs.web.DecoratorOrderError):
+        bad.test_client().get('/fine')
+
+
+def test_flask_escape_hatch_and_app_type(folder: Path) -> None:
+    def data() -> Any:
+        return {'a': 2}
+
+    html = ours.template('home/index.pt')(data)
+    app = flask.Flask('hatch')
+    app.add_url_rule('/api', 'api', data)
+    app.add_url_rule('/html', 'html', lambda: html())
+    with pytest.raises(chameleon_rs.web.DecoratorOrderError):
+        ours.check_views(app)
+    ours.check_views(app, ignore=[data])
+    ours.configure(app=app, check_order=False)
+    assert app.test_client().get('/html').get_data(as_text=True) == '<h1>Hello 2 -!</h1>'
+    with pytest.raises(TypeError, match='Flask or Quart application, not Blueprint'):
+        ours.configure(app=flask.Blueprint('b', __name__))

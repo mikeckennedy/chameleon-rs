@@ -147,6 +147,14 @@ class _FastAPI(_views.Integration):
     def routes(self, app: Any) -> Iterator[tuple[Any, str]]:
         yield from _walk(getattr(app, 'routes', ()), '', set())
 
+    def check_app(self, app: Any) -> None:
+        if not (hasattr(app, 'router') and hasattr(app, 'build_middleware_stack') and hasattr(app, 'routes')):
+            msg = (
+                f'app= takes a FastAPI or Starlette application, not {type(app).__name__} '
+                '(an APIRouter is checked through the app that includes it)'
+            )
+            raise TypeError(msg)
+
     def watch(self, app: Any, check: Callable[[], None]) -> None:
         # At startup, inside the lifespan (so a server reports a failed startup and exits),
         # and before the first request when no lifespan ran.
@@ -212,6 +220,7 @@ def configure(
     auto_reload: bool | None = None,
     restricted_namespace: bool | None = None,
     app: Any = None,
+    check_order: bool = True,
 ) -> None:
     """Configures where templates live and how they load, for the whole process (the same as
     ``chameleon_rs.configure``: for views and for ``render_partial``). Settings left out keep
@@ -221,13 +230,19 @@ def configure(
     or before its first request when no lifespan runs): a view its routes registered before
     ``@template`` wrapped it (``@template`` written above ``@app.get``) raises
     ``chameleon_rs.web.DecoratorOrderError``. Sub-routers and mounted apps are included. With
-    only ``app`` given, the settings are left as they are.
+    only ``app`` given, the settings are left as they are. ``check_order=False`` turns the check
+    off, for an app whose routes call a function raw that is also used through a ``@template``
+    wrapper not routed on this app (call ``check_views(app, ignore=[...])`` in a test instead).
 
-    Raises ``FastAPIChameleonException`` if the folder is missing or not a directory.
+    Raises ``FastAPIChameleonException`` if the folder is missing or not a directory, and
+    ``TypeError`` if ``app`` is not a FastAPI or Starlette application (an ``APIRouter`` is
+    checked through the app that includes it).
     """
     if app is not None:
-        _fastapi.watch_app(app)
+        _fastapi.check_app(app)
         if template_folder is None and auto_reload is None and restricted_namespace is None:
+            if check_order:
+                _fastapi.watch_app(app)
             return
     settings = _settings.build(
         template_folder,
@@ -237,6 +252,8 @@ def configure(
         error=FastAPIChameleonException,
     )
     _settings.install(partials_settings=settings, views_settings={'fastapi': settings})
+    if app is not None and check_order:
+        _fastapi.watch_app(app)
 
 
 def global_init(
@@ -246,16 +263,19 @@ def global_init(
     restricted_namespace: bool = True,
     *,
     app: Any = None,
+    check_order: bool = True,
 ) -> None:
     """fastapi-chameleon's setup call: configures the views' templates only (partials keep
     their own folder, from ``register_extensions``). With ``cache_init`` (the default) a call
     after the views' folder is configured does nothing. ``app``: check that app's views when it
-    starts, as ``configure(app=...)`` does.
+    starts, as ``configure(app=...)`` does (``check_order=False`` turns the check off).
 
     Raises ``FastAPIChameleonException`` if the folder is missing or not a directory."""
     if app is not None:
-        _fastapi.watch_app(app)
+        _fastapi.check_app(app)
     _fastapi.global_init(template_folder, auto_reload, cache_init, restricted_namespace)
+    if app is not None and check_order:
+        _fastapi.watch_app(app)
 
 
 def clear() -> None:
@@ -264,11 +284,16 @@ def clear() -> None:
     _fastapi.clear()
 
 
-def check_views(app: Any) -> None:
+def check_views(app: Any, ignore: Iterable[Any] = ()) -> None:
     """Raises ``chameleon_rs.web.DecoratorOrderError`` if a route of ``app`` (sub-routers and
     mounted apps included) calls a view that ``@template`` wrapped after the route registered
-    it. Runs by itself when the app starts, for an app given to ``configure(app=...)``."""
-    _fastapi.check_views(app)
+    it. Runs by itself when the app starts, for an app given to ``configure(app=...)``.
+
+    It cannot tell the mistake from a function routed raw on purpose whose ``@template``
+    wrapper is used elsewhere (called from another view, or routed on another app): list such
+    functions in ``ignore``."""
+    _fastapi.check_app(app)
+    _fastapi.check_views(app, ignore)
 
 
 def _sync() -> None:
@@ -277,7 +302,8 @@ def _sync() -> None:
     template_path = _fastapi.template_path()
 
 
-_settings.listeners.append(_sync)
+_settings.listeners[__name__] = _sync
+_sync()  # configured before this module was imported: the legacy global already says so
 
 
 def render(template_file: str, **template_data: Any) -> str:
@@ -356,7 +382,8 @@ def template(
     render concurrently (``PageTemplate``'s ``concurrent`` setting, for this view; ``False``
     turns a template's setting off, ``None``, the default, keeps it).
     ``offload=True`` (async views, experimental): the page renders in a worker thread
-    (``render_async(offload=True)``).
+    (``render_async(offload=True)``). Both apply to ``async def`` views only: a sync view
+    renders with ``render`` and ignores them.
 
     Typing: the decorated view keeps its parameters and is typed as returning
     ``fastapi.Response`` (a coroutine of one for an ``async def`` view); a response the view
@@ -407,3 +434,15 @@ def generic_error(template_file: str, status_code: int, template_data: Mapping[s
 # fastapi-chameleon's submodules (`fastapi_chameleon.engine`, `fastapi_chameleon.exceptions`)
 # are this module (`chameleon_rs.compat.install()` maps their names here).
 engine = exceptions = sys.modules[__name__]
+
+__author__ = 'Michael Kennedy <michael@talkpython.fm>'
+
+
+def __getattr__(name: str) -> Any:
+    # fastapi-chameleon's `__version__`: chameleon-rs's (read on first use, as the package's).
+    if name == '__version__':
+        import chameleon_rs
+
+        return chameleon_rs.__version__
+    msg = f'module {__name__!r} has no attribute {name!r}'
+    raise AttributeError(msg)

@@ -201,10 +201,11 @@ class Integration:
 
     # --- The decorator-order check ----------------------------------------------------------
 
-    def check_views(self, app: Any) -> None:
+    def check_views(self, app: Any, ignore: Iterable[Any] = ()) -> None:
         """Raises ``DecoratorOrderError`` naming each view of ``app`` that a route registered
-        before ``@template`` wrapped it."""
-        problems = misordered(self.routes(app))
+        before ``@template`` wrapped it. ``ignore``: views not to flag (the function a route
+        calls, or its ``@template`` wrapper)."""
+        problems = misordered(self.routes(app), ignore)
         if not problems:
             return
         lines = [
@@ -215,18 +216,28 @@ class Integration:
         ]
         raise DecoratorOrderError('\n'.join(lines))
 
+    def check_app(self, app: Any) -> None:
+        """Raises ``TypeError`` unless ``app`` is an application this integration can watch."""
+        raise NotImplementedError
+
     def watch_app(self, app: Any) -> None:
         """Runs ``check_views(app)`` when the app starts (once per app, however often this is
-        called)."""
+        called; once the check passed, it does nothing)."""
+        self.check_app(app)
         if app in _watched:
             return
         _watched[app] = True
         app_ref = weakref.ref(app)
+        passed = False
 
         def check() -> None:
+            nonlocal passed
+            if passed:
+                return
             current = app_ref()
             if current is not None:
                 self.check_views(current)
+            passed = True
 
         self.watch(app, check)
 
@@ -234,8 +245,10 @@ class Integration:
 # --- Views wrapped by @template, for the decorator-order check ------------------------------
 
 # Every function @template wrapped, with the functions it wraps in turn (`__wrapped__`), and
-# the wrappers @template made. Weak: views defined in tests come and go. Objects that cannot be
-# weakly referenced (rare: callable instances without `__weakref__`) are kept by identity.
+# the wrappers @template made. Weak: views defined in tests come and go. Membership is by
+# equality, so a bound method (a new object each time `obj.method` is read) matches.
+# Callables that cannot be weakly referenced (instances of classes without `__weakref__`) are
+# kept by identity in `_strong_originals`.
 _originals: weakref.WeakSet[Any] = weakref.WeakSet()
 _wrappers: weakref.WeakSet[Any] = weakref.WeakSet()
 _strong_originals: dict[int, Any] = {}
@@ -252,6 +265,16 @@ def _chain(f: Any) -> Iterator[Any]:
         f = getattr(f, '__wrapped__', None)
 
 
+def _key(f: Any) -> Any:
+    """What identifies a view: a bound method by its function and instance (reading
+    ``obj.method`` makes a new, equal object each time), anything else by identity."""
+    func = getattr(f, '__func__', None)
+    owner = getattr(f, '__self__', None)
+    if func is not None and owner is not None:
+        return ('method', id(func), id(owner))
+    return id(f)
+
+
 def _remember(f: Any, wrapper: Any) -> None:
     for g in _chain(f):
         try:
@@ -262,10 +285,12 @@ def _remember(f: Any, wrapper: Any) -> None:
 
 
 def _is_original(f: Any) -> bool:
+    if _strong_originals.get(id(f)) is f:
+        return True
     try:
         return f in _originals
     except TypeError:
-        return _strong_originals.get(id(f)) is f
+        return False
 
 
 def _is_wrapper(f: Any) -> bool:
@@ -275,24 +300,26 @@ def _is_wrapper(f: Any) -> bool:
         return False
 
 
-def misordered(routes: Iterable[tuple[Any, str]]) -> list[tuple[Any, str]]:
+def misordered(routes: Iterable[tuple[Any, str]], ignore: Iterable[Any] = ()) -> list[tuple[Any, str]]:
     """The routes whose view is a function ``@template`` wrapped after the route registered it:
     a route calls such a function itself, not through a ``@template`` wrapper, and no route of
     the app calls the wrapper (a view registered raw on purpose and also decorated, registered
-    again, is not flagged)."""
+    again, is not flagged). Views in ``ignore`` (or wrapped by a wrapper in it) are not flagged."""
     routes = list(routes)
-    covered: set[int] = set()
+    covered: set[Any] = set()
+    for view in ignore:
+        covered.update(_key(h) for h in _chain(view))
     for endpoint, _where in routes:
         for g in _chain(endpoint):
             if _is_wrapper(g):
-                covered.update(id(h) for h in _chain(getattr(g, '__wrapped__', None)))
+                covered.update(_key(h) for h in _chain(getattr(g, '__wrapped__', None)))
                 break
     problems = []
     for endpoint, where in routes:
         for g in _chain(endpoint):
             if _is_wrapper(g):
                 break
-            if _is_original(g) and id(g) not in covered:
+            if _is_original(g) and _key(g) not in covered:
                 problems.append((g, where))
                 break
     return problems
