@@ -371,3 +371,28 @@ def test_caught_errors_cost_does_not_grow_with_the_template() -> None:
         times[engine.__name__] = min(timeit.repeat(lambda t=template: t(items=items), number=1, repeat=3))
     # Generous: we measure about 0.6x Chameleon; a per-error scan of the source is 100x+.
     assert times['chameleon_rs'] < 5 * times['chameleon'] + 0.005, times
+
+
+# An `on-error` fallback whose static attribute has a filter from `tal:attributes` makes
+# Chameleon's compiler use `None` as an AST node, which fails (`AttributeError`) only when the
+# generated code is processed, after every expression of the template compiled: an invalid
+# expression anywhere in the template is reported instead (found by the async render fuzzer).
+FALLBACK_FILTER_ERRORS = [
+    ('<p a="1" tal:on-error="string:E" tal:attributes="x; v | 1/z"></p>', 'ExpressionError'),
+    ('<p a="1" tal:on-error="string:E" tal:attributes="x; v | "></p>', 'ExpressionError'),
+    ('<p a="1" tal:on-error="string:E" tal:attributes="x; v 1/"></p>', 'ExpressionError'),
+    ('<p a="1" tal:on-error="string:E" tal:attributes="x">${1/}</p>', 'ExpressionError'),
+    ('<p a="1" tal:on-error="${1/}" tal:attributes="x"></p>', 'ExpressionError'),
+    ('<div><p a="1" tal:on-error="string:E" tal:attributes="x"></p><b tal:content="| 1/z"/></div>', 'ExpressionError'),
+    ('<div><b tal:content="| 1/z"/><p a="1" tal:on-error="string:E" tal:attributes="x"></p></div>', 'ExpressionError'),
+    ('<p a="1" tal:on-error="string:E" tal:attributes="x"><i tal:define="econtext 1"/></p>', 'TranslationError'),
+    ('<p a="1" tal:on-error="string:E" tal:attributes="x"><i metal:use-macro="1/"/></p>', 'ExpressionError'),
+    # Without another error, Chameleon's own AttributeError.
+    ('<p a="1" tal:on-error="string:E" tal:attributes="x"></p>', 'AttributeError'),
+    ('<p a="1" tal:on-error="string:E" tal:attributes="a; v 1"></p>', 'AttributeError'),
+]
+
+
+@pytest.mark.parametrize(('source', 'kind'), FALLBACK_FILTER_ERRORS)
+def test_an_expression_error_wins_over_the_fallback_filter_error(source: str, kind: str) -> None:
+    assert same(source)[:2] == ('raise', kind)
