@@ -194,7 +194,7 @@ class BaseTemplate:
     strict = True
 
     # How values are shown in a formatted render error.
-    value_repr: staticmethod[[object], object] = staticmethod(value_repr)
+    value_repr: ClassVar[Callable[[object], object]] = staticmethod(value_repr)
 
     source: str | None
 

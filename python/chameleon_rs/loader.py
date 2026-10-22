@@ -49,11 +49,13 @@ def cache[F: Callable[..., Any]](func: F) -> F:
 
 
 @contextlib.contextmanager
-def import_package_resource(name: str) -> Generator[Traversable]:
+def import_package_resource(name: str) -> Generator[Traversable, None, None]:
     path = importlib.resources.files(name)
     yield path
     # A `pathlib.Path` or a `zipfile.Path` (whose `root`, a zip file, is closed): `root` is not
-    # part of the `Traversable` protocol.
+    # part of the `Traversable` protocol. A namespace package's `MultiplexedPath` has no `root`,
+    # so this raises `AttributeError` for one: as in Chameleon ("FIXME: we should restrict
+    # ourselves to the Traversable protocol"), kept for parity.
     root = path.root  # ty: ignore[unresolved-attribute]
     if hasattr(root, 'close'):
         root.close()
@@ -111,7 +113,8 @@ class TemplateLoader:
                         package_name, path = path.split(':', 1)
                         with import_package_resource(package_name) as files:
                             # `exists` (a `pathlib.Path` or `zipfile.Path` method) is not part
-                            # of the `Traversable` protocol.
+                            # of the `Traversable` protocol (a `MultiplexedPath` lacks it: as in
+                            # Chameleon, see `import_package_resource`).
                             if files.joinpath(path).joinpath(spec).exists():  # ty: ignore[unresolved-attribute]
                                 spec = posixpath.join(path, spec)
                                 break

@@ -1584,8 +1584,12 @@ parameters. `# ty: ignore[rule]` stays only where code mirrors Chameleon's signa
 (`PageTextTemplateFile.render` returns `bytes`, `Token.split`, `TemplateLoader.load`'s
 `filename`, `PageTemplate.builtins`) or sets attributes the type system cannot see (function
 attributes, zip paths, shadow mode's patching of stock Chameleon), each with its reason.
-`tests/python/test_typing.py` checks the stubs cover the extension and the public API is
-annotated.
+`tests/python/test_typing.py` checks the stubs against the extension (names both ways, and
+parameter names, kinds and defaults from PyO3's text signatures), that the public API is
+annotated, and that `typing.get_type_hints` works on every public class. ty is pinned
+(`ty==0.0.90` in the dev group) so an upgrade cannot break the zero-diagnostics gate unnoticed.
+Found on the way, a bench-only fix: `bench/bench_render.py` called `sys._is_gil_enabled()`,
+which does not exist before Python 3.13; it now falls back to "GIL enabled".
 
 ## Risks
 

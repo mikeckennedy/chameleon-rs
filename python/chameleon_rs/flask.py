@@ -51,7 +51,7 @@ from __future__ import annotations
 import inspect
 import os
 import sys
-from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from collections.abc import Callable, Coroutine, Mapping
 from functools import wraps
 from typing import Any, NoReturn, Protocol, overload
 
@@ -239,14 +239,16 @@ class TemplateDecorator(Protocol):
     a ``flask.Response``."""
 
     @overload
-    def __call__[**P](self, f: Callable[P, Awaitable[Any]], /) -> Callable[P, Coroutine[Any, Any, flask.Response]]: ...
+    def __call__[**P](
+        self, f: Callable[P, Coroutine[Any, Any, Any]], /
+    ) -> Callable[P, Coroutine[Any, Any, flask.Response]]: ...
     @overload
     def __call__[**P](self, f: Callable[P, Any], /) -> Callable[P, flask.Response]: ...
 
 
 @overload
 def template[**P](
-    template_file: Callable[P, Awaitable[Any]], /
+    template_file: Callable[P, Coroutine[Any, Any, Any]], /
 ) -> Callable[P, Coroutine[Any, Any, flask.Response]]: ...
 @overload
 def template[**P](template_file: Callable[P, Any], /) -> Callable[P, flask.Response]: ...
@@ -277,7 +279,14 @@ def template(
     render concurrently (``PageTemplate``'s ``concurrent`` setting, for this view; ``False``
     turns a template's setting off, ``None``, the default, keeps it).
     ``offload=True`` (async views, experimental): the page renders in a worker thread
-    (``render_async(offload=True)``)."""
+    (``render_async(offload=True)``).
+
+    Typing: the decorated view is typed as returning ``flask.Response`` (a coroutine of one for
+    an ``async def`` view). A response the view returns itself passes through unchanged, so with
+    Quart (or a bare werkzeug response) the object is that framework's response, not a
+    ``flask.Response``. A view counts as async when it is an ``async def`` function
+    (``inspect.iscoroutinefunction``); type checkers go by its return type, so a plain
+    function returning a coroutine is typed as async but runs as a sync view."""
     wrapped_function = None
     if callable(template_file):
         wrapped_function = template_file

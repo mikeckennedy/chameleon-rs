@@ -22,7 +22,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from enum import Enum
 from html import entities as htmlentitydefs
 from types import TracebackType
-from typing import Any, Literal, NoReturn
+from typing import Any, Literal, NoReturn, Protocol
 
 from chameleon_rs import _native
 
@@ -126,12 +126,20 @@ class callableint(int):
         return self
 
 
+class _Getter[R](Protocol):
+    """A named function of the instance (what ``descriptorstr`` / ``descriptorint`` wrap)."""
+
+    __name__: str
+
+    def __call__(self, context: Any, /) -> R: ...
+
+
 class descriptorstr:
     __slots__ = '__name__', 'function'
 
-    def __init__(self, function: Callable[[Any], str]) -> None:
+    def __init__(self, function: _Getter[str]) -> None:
         self.function = function
-        self.__name__ = function.__name__  # ty: ignore[unresolved-attribute] - a function
+        self.__name__ = function.__name__
 
     def __get__(self, context: object, cls: type[object]) -> callablestr:
         return callablestr(self.function(context))
@@ -140,9 +148,9 @@ class descriptorstr:
 class descriptorint:
     __slots__ = '__name__', 'function'
 
-    def __init__(self, function: Callable[[Any], int]) -> None:
+    def __init__(self, function: _Getter[int]) -> None:
         self.function = function
-        self.__name__ = function.__name__  # ty: ignore[unresolved-attribute] - a function
+        self.__name__ = function.__name__
 
     def __get__(self, context: object, cls: type[object]) -> callableint:
         return callableint(self.function(context))
