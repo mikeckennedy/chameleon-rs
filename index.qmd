@@ -1,5 +1,6 @@
 ---
-title: "chameleon-rs"
+# pagetitle, not title: the hero already shows the name, so no page heading above it.
+pagetitle: "chameleon-rs"
 ---
 
 **chameleon-rs** is a Rust implementation of the

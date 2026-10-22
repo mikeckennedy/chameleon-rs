@@ -71,6 +71,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <meta name="quarto:offset" content="../">
 <link href="../user-guide/configuration.html" rel="next">
 <link href="../user-guide/template-language.html" rel="prev">
+<link href="../favicon.ico" rel="icon">
 <script src="../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
 <script src="../site_libs/quarto-html/popper.min.js"></script>
@@ -110,6 +111,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 }</script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script>document.head.appendChild(Object.assign(document.createElement('link'),{rel:'stylesheet',href:(document.querySelector('meta[name="quarto:offset"]')||{content:''}).content+'termshow.css'}));</script>
+<meta name="gd-logo-dark" content="chameleon-rs-logo-dark.png">
+<link rel="icon" type="image/x-icon" href="https://mkennedy.codes/docs/chameleon-rs/favicon.ico" sizes="48x48">
+<link rel="icon" type="image/png" sizes="32x32" href="https://mkennedy.codes/docs/chameleon-rs/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="https://mkennedy.codes/docs/chameleon-rs/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="https://mkennedy.codes/docs/chameleon-rs/apple-touch-icon.png">
 <script src="../theme-init.js"></script>
 
 
@@ -119,9 +125,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <meta property="og:description" content="A partial is a template file rendered inside another template, with its own small model. Use them for anything you repeat: a card in a listing, a form...">
   <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/user-guide/partials.html">
   <meta property="og:site_name" content="chameleon-rs">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/chameleon-rs-slogan.png">
+  <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Partials – chameleon-rs | chameleon-rs">
   <meta name="twitter:description" content="A partial is a template file rendered inside another template, with its own small model. Use them for anything you repeat: a card in a listing, a form...">
+  <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/chameleon-rs-slogan.png">
 </head>
 
 <body class="nav-sidebar floating nav-fixed quarto-light">
@@ -131,6 +139,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../chameleon-rs-logo-light.png" alt="chameleon-rs" class="navbar-logo light-content">
+    <img src="../chameleon-rs-logo-light.png" alt="chameleon-rs" class="navbar-logo dark-content">
+    </a>
     <a class="navbar-brand" href="../index.html">
     <span class="navbar-title">chameleon-rs</span>
     </a>
@@ -345,7 +357,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 └── admin/users/
     ├── list.pt      ${render_partial('row.pt', user=user)}
     └── row.pt       ${render_partial('shared/badge.pt', label='admin')}</code></pre>
-<div id="b8140d91" class="cell" data-execution_count="2">
+<div id="60c65d41" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplateLoader</span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -377,7 +389,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="calling-it-from-python" class="level1">
 <h1>Calling it from Python</h1>
 <p><a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">chameleon_rs.render_partial</a> renders a partial from Python code: in a view that returns an HTMX fragment, in an email builder, or in a test. It returns an <a href="../reference/partials.HTML.html#chameleon_rs.partials.HTML" class="gdls-link gdls-code">HTML</a> object. Its <code>html_text</code> attribute is the markup, and its <code>__html__</code> method means a template inserts it without escaping:</p>
-<div id="e5d3323b" class="cell" data-execution_count="3">
+<div id="932dfdbc" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>fragment <span class="op">=</span> chameleon_rs.render_partial(<span class="st">'shared/badge.pt'</span>, label<span class="op">=</span><span class="st">'new'</span>)</span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="bu">type</span>(fragment).<span class="va">__name__</span>, <span class="bu">repr</span>(fragment.html_text))</span></code></pre></div>
 <div class="cell-output cell-output-stdout">
@@ -795,7 +807,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <footer class="footer">
   <div class="nav-footer">
 <div class="nav-footer-center">
-<p>Developed by <a href="https://talkpython.fm"><strong>Michael&nbsp;Kennedy</strong></a>.<br>Site created with <strong>Great&nbsp;Docs</strong>.</p>
+<p>Developed by <a href="https://mkennedy.codes"><strong>Michael&nbsp;Kennedy</strong></a>.<br>Site created with <strong>Great&nbsp;Docs</strong>.</p>
 </div>
 </div>
 </footer>

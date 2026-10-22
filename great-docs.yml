@@ -7,6 +7,23 @@
 
 display_name: chameleon-rs
 
+# The originals in assets/ are opaque; the -light/-dark navbar copies have the background
+# removed (and, for dark mode, the black body parts lightened).
+logo:
+  light: assets/chameleon-rs-logo-light.png
+  dark: assets/chameleon-rs-logo-dark.png
+  alt: chameleon-rs
+  show_title: true
+favicon: assets/chameleon-rs-logo-light.png
+
+hero:
+  enabled: true
+  logo: assets/chameleon-rs-slogan.png
+  logo_height: 220px
+
+social_cards:
+  image: assets/chameleon-rs-slogan.png
+
 # The distribution is chameleon-rs; the import name can't be inferred from it.
 module: chameleon_rs
 
@@ -114,9 +131,9 @@ jupyter: python3
 authors:
   - name: Michael Kennedy
     role: Author
-    email: michael@talkpython.fm
+    email: michael@mkennedy.tech
     github: mikeckennedy
-    homepage: https://talkpython.fm
+    homepage: https://mkennedy.codes
 
 reference:
   title: "API Reference"

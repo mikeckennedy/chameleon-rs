@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mikeckennedy/chameleon-rust/main/assets/chameleon-rs-slogan.png" alt="chameleon-rs: Chameleon templates, Rust speed" width="850">
+</p>
+
 # chameleon-rs
 
 A Rust implementation of the [Chameleon](https://github.com/malthe/chameleon) page template

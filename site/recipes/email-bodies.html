@@ -72,6 +72,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <meta name="quarto:offset" content="../">
 <link href="../recipes/htmx-fragments.html" rel="next">
 <link href="../recipes/index.html" rel="prev">
+<link href="../favicon.ico" rel="icon">
 <script src="../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
 <script src="../site_libs/quarto-html/popper.min.js"></script>
@@ -111,6 +112,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 }</script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script>document.head.appendChild(Object.assign(document.createElement('link'),{rel:'stylesheet',href:(document.querySelector('meta[name="quarto:offset"]')||{content:''}).content+'termshow.css'}));</script>
+<meta name="gd-logo-dark" content="chameleon-rs-logo-dark.png">
+<link rel="icon" type="image/x-icon" href="https://mkennedy.codes/docs/chameleon-rs/favicon.ico" sizes="48x48">
+<link rel="icon" type="image/png" sizes="32x32" href="https://mkennedy.codes/docs/chameleon-rs/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="https://mkennedy.codes/docs/chameleon-rs/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="https://mkennedy.codes/docs/chameleon-rs/apple-touch-icon.png">
 <script src="../theme-init.js"></script>
 
 
@@ -119,9 +125,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <meta property="og:description" content="Render HTML and plain-text email from the same templates as your site.">
   <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/recipes/email-bodies.html">
   <meta property="og:site_name" content="chameleon-rs">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/chameleon-rs-slogan.png">
+  <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Email bodies – chameleon-rs | chameleon-rs">
   <meta name="twitter:description" content="Render HTML and plain-text email from the same templates as your site.">
+  <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/chameleon-rs-slogan.png">
 </head>
 
 <body class="nav-sidebar floating nav-fixed quarto-light">
@@ -131,6 +139,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../chameleon-rs-logo-light.png" alt="chameleon-rs" class="navbar-logo light-content">
+    <img src="../chameleon-rs-logo-light.png" alt="chameleon-rs" class="navbar-logo dark-content">
+    </a>
     <a class="navbar-brand" href="../index.html">
     <span class="navbar-title">chameleon-rs</span>
     </a>
@@ -253,7 +265,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 <p>An email needs an HTML body and a plain-text one. Render both from templates, with <a href="../reference/PageTemplate.html#chameleon_rs.PageTemplate" class="gdls-link gdls-code">PageTemplate</a> for HTML and <a href="../reference/PageTextTemplate.html#chameleon_rs.PageTextTemplate" class="gdls-link gdls-code">PageTextTemplate</a> for text. A text template uses the same <code>${...}</code> expressions but doesn’t escape HTML or parse tags.</p>
-<div id="63d838c8" class="cell" data-execution_count="1">
+<div id="4d341455" class="cell" data-execution_count="1">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplate, PageTextTemplate</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>html_body <span class="op">=</span> PageTemplate(<span class="st">"""</span><span class="op">\</span></span>
@@ -655,7 +667,7 @@ Your order #1042 has shipped:
 <footer class="footer">
   <div class="nav-footer">
 <div class="nav-footer-center">
-<p>Developed by <a href="https://talkpython.fm"><strong>Michael&nbsp;Kennedy</strong></a>.<br>Site created with <strong>Great&nbsp;Docs</strong>.</p>
+<p>Developed by <a href="https://mkennedy.codes"><strong>Michael&nbsp;Kennedy</strong></a>.<br>Site created with <strong>Great&nbsp;Docs</strong>.</p>
 </div>
 </div>
 </footer>

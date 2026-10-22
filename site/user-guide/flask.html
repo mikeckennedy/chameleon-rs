@@ -71,6 +71,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <meta name="quarto:offset" content="../">
 <link href="../user-guide/compatibility.html" rel="next">
 <link href="../user-guide/configuration.html" rel="prev">
+<link href="../favicon.ico" rel="icon">
 <script src="../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
 <script src="../site_libs/quarto-html/popper.min.js"></script>
@@ -110,6 +111,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 }</script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script>document.head.appendChild(Object.assign(document.createElement('link'),{rel:'stylesheet',href:(document.querySelector('meta[name="quarto:offset"]')||{content:''}).content+'termshow.css'}));</script>
+<meta name="gd-logo-dark" content="chameleon-rs-logo-dark.png">
+<link rel="icon" type="image/x-icon" href="https://mkennedy.codes/docs/chameleon-rs/favicon.ico" sizes="48x48">
+<link rel="icon" type="image/png" sizes="32x32" href="https://mkennedy.codes/docs/chameleon-rs/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="https://mkennedy.codes/docs/chameleon-rs/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="https://mkennedy.codes/docs/chameleon-rs/apple-touch-icon.png">
 <script src="../theme-init.js"></script>
 
 
@@ -119,9 +125,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <meta property="og:description" content="The view returns the template’s model, and @template renders it into a flask.Response:">
   <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/user-guide/flask.html">
   <meta property="og:site_name" content="chameleon-rs">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/chameleon-rs-slogan.png">
+  <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Flask and Quart – chameleon-rs | chameleon-rs">
   <meta name="twitter:description" content="The view returns the template’s model, and @template renders it into a flask.Response:">
+  <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/chameleon-rs-slogan.png">
 </head>
 
 <body class="nav-sidebar floating nav-fixed quarto-light">
@@ -131,6 +139,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../chameleon-rs-logo-light.png" alt="chameleon-rs" class="navbar-logo light-content">
+    <img src="../chameleon-rs-logo-light.png" alt="chameleon-rs" class="navbar-logo dark-content">
+    </a>
     <a class="navbar-brand" href="../index.html">
     <span class="navbar-title">chameleon-rs</span>
     </a>
@@ -320,7 +332,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p><code>import chameleon_rs</code> doesn’t import Flask. Only <code>import chameleon_rs.flask</code> does.</p>
 <section id="a-first-view" class="level1">
 <h1>A first view</h1>
-<div id="bc146170" class="cell" data-execution_count="2">
+<div id="f1f942bc" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> flask</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.flask <span class="im">as</span> chameleon_flask</span>
@@ -335,7 +347,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'message'</span>: <span class="st">'Hello'</span>, <span class="st">'videos'</span>: [<span class="st">'intro'</span>, <span class="st">'partials'</span>]}</span></code></pre></div>
 </div>
 <p>The view returns the template’s model, and <code>@template</code> renders it into a <code>flask.Response</code>:</p>
-<div id="912220cc" class="cell" data-execution_count="3">
+<div id="525f95a8" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>client <span class="op">=</span> app.test_client()</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(client.get(<span class="st">'/'</span>).text)</span></code></pre></div>
 <div class="cell-output cell-output-stdout">
@@ -366,7 +378,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="error-pages" class="level1">
 <h1>Error pages</h1>
 <p>Inside a decorated view, <a href="../reference/flask.not_found.html#chameleon_rs.flask.not_found" class="gdls-link gdls-code">not_found()</a> and <a href="../reference/flask.error.html#chameleon_rs.flask.error" class="gdls-link gdls-code">error()</a> stop the view and render an error page:</p>
-<div id="e5ee84d0" class="cell" data-execution_count="4">
+<div id="866962dd" class="cell" data-execution_count="4">
 <div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> flask.Flask(<span class="va">__name__</span>)</span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -823,7 +835,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <footer class="footer">
   <div class="nav-footer">
 <div class="nav-footer-center">
-<p>Developed by <a href="https://talkpython.fm"><strong>Michael&nbsp;Kennedy</strong></a>.<br>Site created with <strong>Great&nbsp;Docs</strong>.</p>
+<p>Developed by <a href="https://mkennedy.codes"><strong>Michael&nbsp;Kennedy</strong></a>.<br>Site created with <strong>Great&nbsp;Docs</strong>.</p>
 </div>
 </div>
 </footer>
