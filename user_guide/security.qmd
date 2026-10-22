@@ -14,8 +14,9 @@ and what to do there. Everything here behaves exactly as in Chameleon unless it 
   attribute's own quote character (`"` as `&quot;`, `'` as `&#39;`).
 - **`markdown:`**: in element content, raw HTML in the text is escaped and `javascript:`,
   `vbscript:`, `file:` and `data:` links are removed, unless a profile sets
-  `raw_html='allow'`. In an attribute value the result is escaped like any string.
-  See [Markdown](markdown.qmd).
+  `raw_html='allow'`. In an attribute value the result is escaped like any string. For text
+  from users, give a `heading_ids` profile a prefix, so headings can't take ids your page's
+  scripts rely on. See [Markdown](markdown.qmd).
 
 Nothing is escaped for `structure`, `structure:`, or an object with an `__html__` method
 (such as `Markup`). Use them only for markup you made or have already sanitized.
@@ -52,7 +53,8 @@ A name that comes from a request must never reach a lookup that accepts any path
   `chameleon_rs.litestar.ChameleonEngine` and `chameleon_rs.robyn.ChameleonTemplate`. They
   refuse names that leave their folder: absolute paths, `..` out of it, `package:path`
   specs, backslashes on the Jinja-style APIs. A refused name is "not found", like a missing
-  file.
+  file. The check is on the name, so a symlink that you put inside the folder is still
+  followed, wherever it points (Jinja's `FileSystemLoader` does the same).
 - **Names from code only**: the decorator APIs (`@template`, `render`, `response` in each
   integration), `PageTemplateLoader` and `load:` expressions. They accept `../` and absolute
   paths, as the original libraries and Chameleon do.

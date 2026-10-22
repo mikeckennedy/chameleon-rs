@@ -1213,8 +1213,9 @@ changes while it isn't configured.
   template keeps the profiles in effect when it compiled.
 - **Evaluation.** `None` and `''` give empty `Markup`; the `default` marker passes through
   (the element keeps its content); other non-strings go through `str()`; lone surrogates
-  become U+FFFD (one each, through UTF-16); the result is `Markup`, emitted unescaped like
-  `structure:`. In an async render an awaitable value is awaited and then converted, as for
+  become U+FFFD (one each, through UTF-16); the result is `MarkdownMarkup` (a `Markup`), emitted unescaped in content like
+  `structure:`, and escaped like a string in an attribute value (its own quoted `href` would
+  close the attribute). In an async render an awaitable value is awaited and then converted, as for
   `structure:` (D9: the expression's final value becomes a coroutine doing both, which the
   render awaits; wrapping the awaitable itself once wrote its `repr` and never ran it). A panic in comrak is caught
   (`catch_unwind`) and raised as `RuntimeError` naming the profile: an `Exception`

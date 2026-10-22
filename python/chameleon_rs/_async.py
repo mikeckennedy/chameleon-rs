@@ -56,9 +56,16 @@ def concurrent[**P](fn: Callable[P, Awaitable[Any]]) -> Callable[P, ConcurrentCa
     return wrapper
 
 
-async def _then[T](awaitable: Awaitable[T], convert: Callable[[T], Any]) -> Any:
+def _then(awaitable: Awaitable[Any], convert: Callable[[Any], Any]) -> Awaitable[Any]:
     # `structure:` / `markdown:` of an awaitable in an asynchronous render: the expression's
     # final value, which the render awaits like any other (the value awaited, then converted).
+    # A `@concurrent` call stays one, so it still runs alongside the others.
+    if isinstance(awaitable, ConcurrentCall):
+        return ConcurrentCall(_convert(awaitable.awaitable, convert))
+    return _convert(awaitable, convert)
+
+
+async def _convert(awaitable: Awaitable[Any], convert: Callable[[Any], Any]) -> Any:
     return convert(await awaitable)
 
 

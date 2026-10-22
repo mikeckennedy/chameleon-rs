@@ -1186,3 +1186,27 @@ def test_structure_of_an_awaitable_is_awaited(source: str, expected: str) -> Non
         warnings.simplefilter('error', RuntimeWarning)
         assert asyncio.run(main()) == expected
         gc.collect()
+
+
+@pytest.mark.parametrize('prefix', ['', 'structure: ', 'markdown: '])
+def test_a_concurrent_call_under_structure_or_markdown_stays_concurrent(prefix: str) -> None:
+    # Wrapping a `@concurrent` call in `structure:` / `markdown:` once made it run on its own.
+    chameleon_rs.configure(markdown=True)
+    running = 0
+    most = 0
+
+    @concurrent
+    async def slow(value: str) -> str:
+        nonlocal running, most
+        running += 1
+        most = max(most, running)
+        await asyncio.sleep(0.01)
+        running -= 1
+        return value
+
+    source = ''.join(f'<p>${{{prefix}slow("x")}}</p>' for _ in range(3))
+    try:
+        asyncio.run(PageTemplate(source).render_async(slow=slow))
+    finally:
+        chameleon_rs._settings.clear()
+    assert most == 3
