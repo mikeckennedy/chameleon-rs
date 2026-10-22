@@ -709,3 +709,35 @@ def test_type_names_in_messages(source: str) -> None:
         chameleon_rs.PageTemplate(source)()
     assert got.value.args == want.value.args
     assert "'Scope'" in str(got.value) or "'ImportableMarker'" in str(got.value)
+
+
+def _hijack(*args: Any, **kwargs: Any) -> str:
+    return 'HIJACK'
+
+
+CODE_BLOCK_BUILTINS = [
+    ('<div><?python y = len("abc") ?>${y}</div>', {'len': _hijack}),
+    ('<?python def f(a): return len(a) ?>${python: f("abc")}', {'len': _hijack}),
+    ('<?python y = [str(i) for i in [1]] ?>${y}', {'str': _hijack}),
+    ('<?python y = (lambda s: sorted(s))([2, 1]) ?>${y}', {'sorted': _hijack}),
+    ('<?python y = isinstance(1, int) ?>${y}', {'isinstance': _hijack, 'int': str}),
+    ('<div>${len("abc")}</div>', {'len': _hijack}),
+    ('<?python len = 5 ?>${len}<?python y = len("ab") ?>${y}', {}),
+    ('<?python len = 5 ?>${len}', {}),
+    ('<?python len = 5 ?>${len is not None}', {'len': _hijack}),
+    ('<?python len = 5 ?><p tal:content="python: len + 1"/>', {}),
+]
+
+
+@pytest.mark.parametrize(('source', 'data'), CODE_BLOCK_BUILTINS)
+def test_render_data_cannot_replace_builtins_in_code_blocks(source: str, data: dict[str, Any]) -> None:
+    # Security: Chameleon's code blocks call builtins directly; only expressions look them up in
+    # the scope first (`get('len', len)`). Render data named `len` must not reach a block.
+    def outcome(engine: Any) -> str:
+        try:
+            return engine.PageTemplate(source)(**data)
+        except Exception as e:  # noqa: BLE001 - comparing exceptions across engines
+            return f'{type(e).__name__}: {str(e).splitlines()[0]}'
+
+    assert outcome(chameleon_rs) == outcome(chameleon)
+    assert 'HIJACK' not in outcome(chameleon_rs) or '${len(' in source

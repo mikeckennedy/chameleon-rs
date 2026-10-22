@@ -68,7 +68,13 @@ class Rewriter(ast.NodeTransformer):
         template_builtins: Iterable[str] = (),
         own: Callable[[str], bool] | None = None,
         local_names: set[str] | None = None,
+        code_block: bool = False,
     ) -> None:
+        # A `<?python ?>` block: Python's builtins are called directly, as in Chameleon's
+        # generated code (`econtext['y'] = len(...)`), never looked up in the scope first, so
+        # render data named `len` or `str` can't replace them there (expressions do look
+        # them up: `get('len', len)`).
+        self.code_block = code_block
         # The outermost scope is the template's: names a code block defined (a `def`, its
         # parameters, an import) stay plain names in every expression compiled after it, as
         # Chameleon's one visitor per template keeps them.
@@ -117,6 +123,11 @@ class Rewriter(ast.NodeTransformer):
         if node.id in self.scopes[-1]:
             if len(self.scopes) == 1:
                 self.uses_locals = True
+                if not self.code_block and node.id in BUILTINS and isinstance(node.ctx, ast.Load):
+                    # A builtin a code block rebound: still `get(name, name)`, its fallback
+                    # now that render-local value, as in Chameleon.
+                    get = ast.Attribute(value=_econtext(), attr='get', ctx=ast.Load())
+                    return ast.Call(func=get, args=[ast.Constant(node.id), node], keywords=[])
             return node
         return self.transform(node)
 
@@ -137,6 +148,12 @@ class Rewriter(ast.NodeTransformer):
         if name in DEFAULTS:
             self.locals.add(name)
             self.reads.add(DEFAULTS[name])
+            return node
+        if self.code_block and name in BUILTINS:
+            # Loaded or bound as a plain name, a local of Chameleon's render function; bound,
+            # it is one for the rest of the template.
+            if isinstance(node.ctx, ast.Store):
+                self.scopes[-1].add(name)
             return node
         if isinstance(node.ctx, ast.Store):
             self.writes.add(name)
@@ -337,7 +354,7 @@ def compile_code(
         return None
     if constants is not None:
         tree = _Constants(constants).visit(tree)
-    rewriter = Rewriter({}, template_builtins, local_names=local_names)
+    rewriter = Rewriter({}, template_builtins, local_names=local_names, code_block=True)
     body = [rewriter.visit(statement) for statement in tree.body]
     bound_names.update(_bound(body))
     module = ast.fix_missing_locations(ast.Module(body=body, type_ignores=[]))
