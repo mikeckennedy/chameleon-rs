@@ -37,3 +37,6 @@ venv/
 
 # Agent worktrees (Claude Code isolation); never commit them.
 /.claude/worktrees/
+
+# Great Docs' build directory; the deployable site is mirrored into site/ (committed).
+/great-docs/

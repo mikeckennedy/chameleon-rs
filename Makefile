@@ -29,10 +29,10 @@ INTEGRATION_SUITES := fastapi-chameleon chameleon-flask chameleon-robyn chameleo
 checkout = if [ -d $(1)/.git ]; then git -C $(1) checkout -q $(2); else echo "$(1): not a git clone, used as is"; fi
 
 .PHONY: dev reference build build-release build-profiling build-pgo test test-rust test-python \
-	test-upstream test-upstream-rust integration test-integration lint fmt bench
+	test-upstream test-upstream-rust integration test-integration lint fmt bench docs docs-serve
 
 dev: reference
-	uv pip install --python $(PY) --group dev -e temp/chameleon -e temp/chameleon_partials
+	uv pip install --python $(PY) --group dev --group docs -e temp/chameleon -e temp/chameleon_partials
 	$(MAKE) build
 
 reference: temp/chameleon temp/chameleon_partials
@@ -145,3 +145,12 @@ bench: build-release
 	$(PY) bench/bench_split.py
 	$(PY) bench/bench_compile.py
 	$(PY) bench/bench_skeleton.py
+
+# The docs site (docs/docs-site-plan.md): Great Docs imports chameleon_rs, so build first.
+# Needs Quarto on PATH. The site is mirrored into site/ (committed), served at
+# https://mkennedy.codes/docs/chameleon-rs/.
+docs: build
+	$(PY) scripts/build_docs.py
+
+docs-serve:
+	$(PY) scripts/serve_docs.py

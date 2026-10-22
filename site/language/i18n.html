@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+<link rel="canonical" href="https://mkennedy.codes/docs/chameleon-rs/language/i18n.html">
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.38">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Translation (I18N) – chameleon-rs | chameleon-rs</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../language/syntax.html" rel="next">
+<link href="../language/macros.html" rel="prev">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-aa1552726bdd3cb78d40c93fdbd5382a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>document.head.appendChild(Object.assign(document.createElement('link'),{rel:'stylesheet',href:(document.querySelector('meta[name="quarto:offset"]')||{content:''}).content+'termshow.css'}));</script>
+<script src="../theme-init.js"></script>
+
+
+  <meta name="description" content="Adapted from Chameleon’s language reference (source), modified for chameleon-rs. Used under Chameleon’s license; see LICENSE.txt and COPYRIGHT.txt in...">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Translation (I18N) – chameleon-rs | chameleon-rs">
+  <meta property="og:description" content="Adapted from Chameleon’s language reference (source), modified for chameleon-rs. Used under Chameleon’s license; see LICENSE.txt and COPYRIGHT.txt in...">
+  <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/language/i18n.html">
+  <meta property="og:site_name" content="chameleon-rs">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Translation (I18N) – chameleon-rs | chameleon-rs">
+  <meta name="twitter:description" content="Adapted from Chameleon’s language reference (source), modified for chameleon-rs. Used under Chameleon’s license; see LICENSE.txt and COPYRIGHT.txt in...">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../index.html">
+    <span class="navbar-title">chameleon-rs</span>
+    </a>
+  </div>
+            <div id="quarto-search" class=""></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="../user-guide/getting-started.html"> 
+<span class="menu-text">User Guide</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link active" href="../language/index.html" aria-current="page"> 
+<span class="menu-text">Language Reference</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../recipes/index.html"> 
+<span class="menu-text">Recipes</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../reference/index.html"> 
+<span class="menu-text">API Reference</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item">
+    <span class="nav-link">
+<div id="github-widget" data-owner="mikeckennedy" data-repo="chameleon-rust"></div>
+    </span>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <h1 class="quarto-secondary-nav-title no-breadcrumbs">Translation (I18N)</h1>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../language/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Language Reference</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../language/tal.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Basics (TAL)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../language/expressions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Expressions (TALES)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../language/macros.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Macros (METAL)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../language/i18n.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Translation (I18N)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../language/syntax.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inline syntax</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../language/extensions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Extensions and differences</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul class="collapse">
+  <li><a href="#messages" id="toc-messages" class="nav-link active" data-scroll-target="#messages">Messages</a></li>
+  <li><a href="#translation-function" id="toc-translation-function" class="nav-link" data-scroll-target="#translation-function">Translation function</a></li>
+  <li><a href="#using-zopes-translation-framework" id="toc-using-zopes-translation-framework" class="nav-link" data-scroll-target="#using-zopes-translation-framework">Using Zope’s translation framework</a></li>
+  <li><a href="#translation-domains-without-gettext" id="toc-translation-domains-without-gettext" class="nav-link" data-scroll-target="#translation-domains-without-gettext">Translation domains without gettext</a></li>
+  <li><a href="#namespace" id="toc-namespace" class="nav-link" data-scroll-target="#namespace">Namespace</a></li>
+  <li><a href="#statements" id="toc-statements" class="nav-link" data-scroll-target="#statements">Statements</a>
+  <ul class="collapse">
+  <li><a href="#i18ntranslate" id="toc-i18ntranslate" class="nav-link" data-scroll-target="#i18ntranslate"><code>i18n:translate</code></a></li>
+  <li><a href="#i18ndomain" id="toc-i18ndomain" class="nav-link" data-scroll-target="#i18ndomain"><code>i18n:domain</code></a></li>
+  <li><a href="#i18ncontext" id="toc-i18ncontext" class="nav-link" data-scroll-target="#i18ncontext"><code>i18n:context</code></a></li>
+  <li><a href="#i18nsource" id="toc-i18nsource" class="nav-link" data-scroll-target="#i18nsource"><code>i18n:source</code></a></li>
+  <li><a href="#i18ntarget" id="toc-i18ntarget" class="nav-link" data-scroll-target="#i18ntarget"><code>i18n:target</code></a></li>
+  <li><a href="#i18nname" id="toc-i18nname" class="nav-link" data-scroll-target="#i18nname"><code>i18n:name</code></a></li>
+  <li><a href="#i18nattributes" id="toc-i18nattributes" class="nav-link" data-scroll-target="#i18nattributes"><code>i18n:attributes</code></a></li>
+  <li><a href="#i18ndata" id="toc-i18ndata" class="nav-link" data-scroll-target="#i18ndata"><code>i18n:data</code></a></li>
+  <li><a href="#i18ncomment" id="toc-i18ncomment" class="nav-link" data-scroll-target="#i18ncomment"><code>i18n:comment</code></a></li>
+  <li><a href="#i18nignore" id="toc-i18nignore" class="nav-link" data-scroll-target="#i18nignore"><code>i18n:ignore</code></a></li>
+  <li><a href="#i18nignore-attributes" id="toc-i18nignore-attributes" class="nav-link" data-scroll-target="#i18nignore-attributes"><code>i18n:ignore-attributes</code></a></li>
+  </ul></li>
+  <li><a href="#relation-with-tal-processing" id="toc-relation-with-tal-processing" class="nav-link" data-scroll-target="#relation-with-tal-processing">Relation with TAL processing</a></li>
+  <li><a href="#relation-with-metal-processing" id="toc-relation-with-metal-processing" class="nav-link" data-scroll-target="#relation-with-metal-processing">Relation with METAL processing</a></li>
+  <li><a href="#extracting-translatable-messages" id="toc-extracting-translatable-messages" class="nav-link" data-scroll-target="#extracting-translatable-messages">Extracting translatable messages</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title d-none d-lg-block">Translation (I18N)</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<div class="callout callout-style-simple callout-note no-icon">
+<div class="callout-body d-flex">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-body-container">
+<p>Adapted from <a href="https://chameleon.readthedocs.io/">Chameleon’s language reference</a> (<a href="https://github.com/malthe/chameleon">source</a>), modified for chameleon-rs. Used under Chameleon’s license; see <code>LICENSE.txt</code> and <code>COPYRIGHT.txt</code> in the repository.</p>
+</div>
+</div>
+</div>
+<p>Translation of template contents and attributes is supported via the <code>i18n</code> namespace and message objects.</p>
+<section id="messages" class="level1">
+<h1>Messages</h1>
+<p>The translation machinery defines a message as <em>any object</em> which is not a string or a number and which does not provide an <code>__html__</code> method.</p>
+<p>When any such object is inserted into the template, the translate function is invoked first to see if it needs translation. The result is always coerced to a native string before it’s inserted into the template.</p>
+</section>
+<section id="translation-function" class="level1">
+<h1>Translation function</h1>
+<p>The simplest way to hook into the translation machinery is to provide a translation function to the template constructor or at render-time. In either case it should be passed as the keyword argument <code>translate</code>.</p>
+<p>The function has the following signature:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> translate(msgid, domain<span class="op">=</span><span class="va">None</span>, mapping<span class="op">=</span><span class="va">None</span>, context<span class="op">=</span><span class="va">None</span>, target_language<span class="op">=</span><span class="va">None</span>, default<span class="op">=</span><span class="va">None</span>):</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    ...</span></code></pre></div>
+<p>The result should be a string. If another type of object is returned, it’s automatically coerced into a string.</p>
+<p>For example:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplate</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>GERMAN <span class="op">=</span> {<span class="st">'Apple'</span>: <span class="st">'Apfel'</span>}</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> translate(msgid, domain<span class="op">=</span><span class="va">None</span>, mapping<span class="op">=</span><span class="va">None</span>, context<span class="op">=</span><span class="va">None</span>, target_language<span class="op">=</span><span class="va">None</span>, default<span class="op">=</span><span class="va">None</span>):</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> GERMAN.get(msgid, default)</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>template <span class="op">=</span> PageTemplate(<span class="st">'&lt;p i18n:translate=""&gt;Apple&lt;/p&gt;'</span>, translate<span class="op">=</span>translate)</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(template())  <span class="co"># &lt;p&gt;Apfel&lt;/p&gt;</span></span></code></pre></div>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Warning
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Return <code>default</code> (or the message id) for a message you can’t translate, not <code>None</code>. A <code>None</code> result renders a message object as an empty string and drops a translated attribute, but raises <code>TypeError</code> for the content of an <code>i18n:translate</code> element. Chameleon behaves the same way.</p>
+</div>
+</div>
+<p>If <a href="https://pypi.org/project/zope.i18n/">zope.i18n</a> is available, the translation machinery defaults to using its translation function. Note that this function requires messages to conform to the message class from <a href="https://pypi.org/project/zope.i18nmessageid/">zope.i18nmessageid</a>; specifically, messages must have attributes <code>domain</code>, <code>mapping</code> and <code>default</code>. Example use:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> zope.i18nmessageid <span class="im">import</span> MessageFactory</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>_ <span class="op">=</span> MessageFactory(<span class="st">"food"</span>)</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>apple <span class="op">=</span> _(<span class="st">"Apple"</span>)</span></code></pre></div>
+<p>There’s currently no further support for other translation frameworks.</p>
+</section>
+<section id="using-zopes-translation-framework" class="level1">
+<h1>Using Zope’s translation framework</h1>
+<p>The translation function from <code>zope.i18n</code> relies on <em>translation domains</em> to provide translations.</p>
+<p>These are components that are registered for some translation domain identifier and which implement a <code>translate</code> method that translates messages for that domain.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>To register translation domain components, the Zope Component Architecture must be used (see <a href="https://pypi.org/project/zope.component/">zope.component</a>).</p>
+</div>
+</div>
+<p>The easiest way to configure translation domains is to use the <code>registerTranslations</code> ZCML-directive; this requires the use of the <a href="https://pypi.org/project/zope.configuration/">zope.configuration</a> package. This will set up translation domains and gettext catalogs automatically:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode xml"><code class="sourceCode xml"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>&lt;<span class="kw">configure</span> <span class="ot">xmlns=</span><span class="st">"http://namespaces.zope.org/zope"</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>           <span class="ot">xmlns:i18n=</span><span class="st">"http://xml.zope.org/namespaces/i18n"</span>&gt;</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>   &lt;<span class="kw">i18n:registerTranslations</span> <span class="ot">directory=</span><span class="st">"locales"</span> /&gt;</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>&lt;/<span class="kw">configure</span>&gt;</span></code></pre></div>
+<p>The <code>./locales</code> directory must follow a particular directory structure:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="ex">./locales/en/LC_MESSAGES</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="ex">./locales/de/LC_MESSAGES</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="ex">...</span></span></code></pre></div>
+<p>In each of the <code>LC_MESSAGES</code> directories, one <a href="https://en.wikipedia.org/wiki/Gettext">GNU gettext</a> file in the <code>.po</code> format must be present per translation domain:</p>
+<pre class="text"><code># ./locales/de/LC_MESSAGES/food.po
+
+msgid ""
+msgstr ""
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Apple"
+msgstr "Apfel"</code></pre>
+<p>It may be necessary to compile the message catalog using the <code>msgfmt</code> utility. This will produce a <code>.mo</code> file.</p>
+</section>
+<section id="translation-domains-without-gettext" class="level1">
+<h1>Translation domains without gettext</h1>
+<p>The following example demonstrates how to manually set up and configure a translation domain for which messages are provided directly:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> zope <span class="im">import</span> component</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> zope.i18n.simpletranslationdomain <span class="im">import</span> SimpleTranslationDomain</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>food <span class="op">=</span> SimpleTranslationDomain(<span class="st">"food"</span>, {</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    (<span class="st">'de'</span>, <span class="st">'Apple'</span>): <span class="st">'Apfel'</span>,</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>component.provideUtility(food, food.domain)</span></code></pre></div>
+<p>An example of a custom translation domain class:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> zope <span class="im">import</span> component, interface</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> zope.i18n.interfaces <span class="im">import</span> ITranslationDomain</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="at">@interface.implementer</span>(ITranslationDomain)</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> TranslationDomain:</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> translate(<span class="va">self</span>, msgid, mapping<span class="op">=</span><span class="va">None</span>, context<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>                  target_language<span class="op">=</span><span class="va">None</span>, default<span class="op">=</span><span class="va">None</span>):</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>        ...</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>component.provideUtility(TranslationDomain(), name<span class="op">=</span><span class="st">"custom"</span>)</span></code></pre></div>
+<p>This approach can be used to integrate other translation catalog implementations.</p>
+</section>
+<section id="namespace" class="level1">
+<h1>Namespace</h1>
+<p>The <code>i18n</code> namespace URI and recommended prefix are currently defined as:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>xmlns:i18n="http://xml.zope.org/namespaces/i18n"</span></code></pre></div>
+<p>This is not a URL, but merely a unique identifier. Do not expect a browser to resolve it successfully.</p>
+</section>
+<section id="statements" class="level1">
+<h1>Statements</h1>
+<p>The allowable <code>i18n</code> statements are:</p>
+<ul>
+<li><code>i18n:translate</code></li>
+<li><code>i18n:domain</code></li>
+<li><code>i18n:context</code></li>
+<li><code>i18n:source</code></li>
+<li><code>i18n:target</code></li>
+<li><code>i18n:name</code></li>
+<li><code>i18n:attributes</code></li>
+<li><code>i18n:data</code></li>
+<li><code>i18n:comment</code></li>
+<li><code>i18n:ignore</code></li>
+<li><code>i18n:ignore-attributes</code></li>
+</ul>
+<section id="i18ntranslate" class="level2">
+<h2 class="anchored" data-anchor-id="i18ntranslate"><code>i18n:translate</code></h2>
+<p>This attribute is used to mark units of text for translation. If this attribute is specified with an empty string as the value, the message ID is computed from the content of the element bearing this attribute. Otherwise, the value of the element gives the message ID.</p>
+</section>
+<section id="i18ndomain" class="level2">
+<h2 class="anchored" data-anchor-id="i18ndomain"><code>i18n:domain</code></h2>
+<p>The <code>i18n:domain</code> attribute is used to specify the domain to be used to get the translation. If not specified, the translation services will use a default domain. The value of the attribute is used directly; it is not a TALES expression.</p>
+</section>
+<section id="i18ncontext" class="level2">
+<h2 class="anchored" data-anchor-id="i18ncontext"><code>i18n:context</code></h2>
+<p>The <code>i18n:context</code> attribute is used to specify the context to be used to get the translation. If not specified, the translation services will use a default context. The context is generally used to distinguish identical texts in different contexts (because in a translation this may not be the case). The value of the attribute is used literally; it is not an expression.</p>
+</section>
+<section id="i18nsource" class="level2">
+<h2 class="anchored" data-anchor-id="i18nsource"><code>i18n:source</code></h2>
+<p>The <code>i18n:source</code> attribute specifies the language of the text to be translated. The default is <code>nothing</code>, which means we don’t provide this information to the translation services.</p>
+</section>
+<section id="i18ntarget" class="level2">
+<h2 class="anchored" data-anchor-id="i18ntarget"><code>i18n:target</code></h2>
+<p>The <code>i18n:target</code> attribute specifies the language of the translation we want to get. If the value is <code>default</code>, the language negotiation services will be used to choose the destination language. If the value is <code>nothing</code>, no translation will be performed; this can be used to suppress translation within a larger translated unit. Any other value must be a language code.</p>
+<p>The attribute value is a TALES expression; the result of evaluating the expression is the language code or one of the reserved values.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><code>i18n:target</code> is primarily used for hints to text extraction tools and translation teams. If you had some text that should only be translated to e.g.&nbsp;German, then it probably shouldn’t be wrapped in an <code>i18n:translate</code> span.</p>
+</div>
+</div>
+</section>
+<section id="i18nname" class="level2">
+<h2 class="anchored" data-anchor-id="i18nname"><code>i18n:name</code></h2>
+<p>Name the content of the current element for use in interpolation within translated content. This allows a replaceable component in content to be re-ordered by translation. For example:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> i18n:translate</span><span class="op">=</span><span class="st">''</span><span class="dt">&gt;</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> tal:replace</span><span class="op">=</span><span class="st">'context.name'</span><span class="ot"> i18n:name</span><span class="op">=</span><span class="st">'name'</span><span class="ot"> </span><span class="dt">/&gt;</span> was born in</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> tal:replace</span><span class="op">=</span><span class="st">'context.country_of_birth'</span><span class="ot"> i18n:name</span><span class="op">=</span><span class="st">'country'</span><span class="ot"> </span><span class="dt">/&gt;</span>.</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">span</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>would cause this text to be passed to the translation service:</p>
+<pre class="text"><code>"${name} was born in ${country}."</code></pre>
+</section>
+<section id="i18nattributes" class="level2">
+<h2 class="anchored" data-anchor-id="i18nattributes"><code>i18n:attributes</code></h2>
+<p>This attribute will allow us to translate attributes of HTML tags, such as the <code>alt</code> attribute in the <code>img</code> tag. The <code>i18n:attributes</code> attribute specifies a list of attributes to be translated with optional message IDs for each; if multiple attribute names are given, they must be separated by semicolons. Message IDs used in this context must not include whitespace.</p>
+<p>Note that the value of the particular attributes come either from the HTML attribute value itself or from the data inserted by <code>tal:attributes</code>.</p>
+<p>If an attribute is to be both computed using <code>tal:attributes</code> and translated, the translation service is passed the result of the TALES expression for that attribute.</p>
+<p>An example:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">img</span><span class="ot"> src</span><span class="op">=</span><span class="st">"http://foo.com/logo"</span><span class="ot"> alt</span><span class="op">=</span><span class="st">"Visit us"</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="ot">     tal:attributes</span><span class="op">=</span><span class="st">"alt context.greeting"</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="ot">     i18n:attributes</span><span class="op">=</span><span class="st">"alt"</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="ot">     </span><span class="dt">&gt;</span></span></code></pre></div>
+<p>In this example, we let <code>tal:attributes</code> set the value of the <code>alt</code> attribute to the text “Stop by for a visit!”. This text will be passed to the translation service, which uses the result of language negotiation to translate “Stop by for a visit!” into the requested language. The example text in the template, “Visit us”, will simply be discarded.</p>
+<p>Another example, with explicit message IDs:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">img</span><span class="ot"> src</span><span class="op">=</span><span class="st">"../icons/uparrow.png"</span><span class="ot"> alt</span><span class="op">=</span><span class="st">"Up"</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="ot">     i18n:attributes</span><span class="op">=</span><span class="st">"src up-arrow-icon; alt up-arrow-alttext"</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="ot">     </span><span class="dt">&gt;</span></span></code></pre></div>
+<p>Here, the message ID <code>up-arrow-icon</code> will be used to generate the link to an icon image file, and the message ID ‘up-arrow-alttext’ will be used for the “alt” text.</p>
+</section>
+<section id="i18ndata" class="level2">
+<h2 class="anchored" data-anchor-id="i18ndata"><code>i18n:data</code></h2>
+<p>Since TAL always returns strings, we need a way in ZPT to translate objects, one of the most obvious cases being <code>datetime</code> objects. The <code>data</code> attribute will allow us to specify such an object, and <code>i18n:translate</code> will provide us with a legal format string for that object. If <code>data</code> is used, <code>i18n:translate</code> must be used to give an explicit message ID, rather than relying on a message ID computed from the content.</p>
+</section>
+<section id="i18ncomment" class="level2">
+<h2 class="anchored" data-anchor-id="i18ncomment"><code>i18n:comment</code></h2>
+<p>The <code>i18n:comment</code> attribute can be used to add extra comments for translators. It is not used by Chameleon for processing, but will be picked up by tools like <a href="https://pypi.org/project/lingua/">lingua</a>.</p>
+<p>An example:</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">h3</span><span class="ot"> i18n:comment</span><span class="op">=</span><span class="st">"Header for the news section"</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="ot">    i18n:translate</span><span class="op">=</span><span class="st">""</span><span class="dt">&gt;</span>News<span class="dt">&lt;/</span><span class="kw">h3</span><span class="dt">&gt;</span></span></code></pre></div>
+</section>
+<section id="i18nignore" class="level2">
+<h2 class="anchored" data-anchor-id="i18nignore"><code>i18n:ignore</code></h2>
+<p>The <code>i18n:ignore</code> attribute can be used to inform translation extraction tools like <a href="https://pypi.org/project/i18ndude/">i18ndude</a> to not give a warning/error on the given tag if there is no <code>i18n:translate</code> attribute.</p>
+<p>An example:</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">h1</span><span class="ot"> i18n:ignore</span><span class="op">=</span><span class="st">""</span><span class="dt">&gt;</span>News<span class="dt">&lt;/</span><span class="kw">h1</span><span class="dt">&gt;</span></span></code></pre></div>
+</section>
+<section id="i18nignore-attributes" class="level2">
+<h2 class="anchored" data-anchor-id="i18nignore-attributes"><code>i18n:ignore-attributes</code></h2>
+<p>The <code>i18n:ignore-attributes</code>, just like <code>i18n:ignore</code> is expected to be used by translation extraction tools like <a href="https://pypi.org/project/i18ndude/">i18ndude</a>. If <code>i18n:ignore</code> makes text within a tag to be ignored, <code>i18n:ignore-attributes</code> marks the given attributes as ignored.</p>
+<p>An example:</p>
+<div class="sourceCode" id="cb16"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">a</span><span class="ot"> href</span><span class="op">=</span><span class="st">"http://python.org"</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="ot">   title</span><span class="op">=</span><span class="st">"Python!"</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="ot">   i18n:ignore-attributes</span><span class="op">=</span><span class="st">"title"</span><span class="dt">&gt;</span>Python website<span class="dt">&lt;/</span><span class="kw">a</span><span class="dt">&gt;</span></span></code></pre></div>
+</section>
+</section>
+<section id="relation-with-tal-processing" class="level1">
+<h1>Relation with TAL processing</h1>
+<p>The attributes defined in the <code>i18n</code> namespace modify the behavior of the TAL interpreter for the <code>tal:attributes</code>, <code>tal:content</code>, <code>tal:repeat</code>, and <code>tal:replace</code> attributes, but otherwise do not affect TAL processing.</p>
+<p>Since these attributes only affect TAL processing by causing translations to occur at specific times, using these with a TAL processor which does not support the <code>i18n</code> namespace degrades well; the structural expectations for a template which uses the <code>i18n</code> support is no different from those for a page which does not. The only difference is that translations will not be performed in a legacy processor.</p>
+</section>
+<section id="relation-with-metal-processing" class="level1">
+<h1>Relation with METAL processing</h1>
+<p>When using translation with METAL macros, the internationalization context is considered part of the specific documents that page components are retrieved from rather than part of the combined page. This makes the internationalization context lexical rather than dynamic, making it easier for a site builder to understand the behavior of each element with respect to internationalization.</p>
+<p>Let’s look at an example to see what this means:</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">html</span><span class="ot"> i18n:translate</span><span class="op">=</span><span class="st">''</span><span class="ot"> i18n:domain</span><span class="op">=</span><span class="st">'EventsCalendar'</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="ot">      metal:use-macro</span><span class="op">=</span><span class="st">"container['master.html'].macros.thismonth"</span><span class="dt">&gt;</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> metal:fill-slot</span><span class="op">=</span><span class="st">'additional-notes'</span><span class="dt">&gt;</span></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&lt;</span><span class="kw">ol</span><span class="ot"> tal:condition</span><span class="op">=</span><span class="st">"context.notes"</span><span class="dt">&gt;</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"note context.notes"</span><span class="dt">&gt;</span></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>         <span class="dt">&lt;</span><span class="kw">tal:block</span><span class="ot"> tal:omit-tag</span><span class="op">=</span><span class="st">""</span></span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a><span class="ot">                    tal:condition</span><span class="op">=</span><span class="st">"note.heading"</span><span class="dt">&gt;</span></span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a>           <span class="dt">&lt;</span><span class="kw">strong</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"note.heading"</span><span class="dt">&gt;</span></span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a>             Note heading goes here</span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a>           <span class="dt">&lt;/</span><span class="kw">strong</span><span class="dt">&gt;</span></span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a>           <span class="dt">&lt;</span><span class="kw">br</span><span class="ot"> </span><span class="dt">/&gt;</span></span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a>         <span class="dt">&lt;/</span><span class="kw">tal:block</span><span class="dt">&gt;</span></span>
+<span id="cb17-14"><a href="#cb17-14" aria-hidden="true" tabindex="-1"></a>         <span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> tal:replace</span><span class="op">=</span><span class="st">"note.description"</span><span class="dt">&gt;</span></span>
+<span id="cb17-15"><a href="#cb17-15" aria-hidden="true" tabindex="-1"></a>           Some longer explanation for the note goes here.</span>
+<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a>         <span class="dt">&lt;/</span><span class="kw">span</span><span class="dt">&gt;</span></span>
+<span id="cb17-17"><a href="#cb17-17" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;/</span><span class="kw">li</span><span class="dt">&gt;</span></span>
+<span id="cb17-18"><a href="#cb17-18" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&lt;/</span><span class="kw">ol</span><span class="dt">&gt;</span></span>
+<span id="cb17-19"><a href="#cb17-19" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span>
+<span id="cb17-20"><a href="#cb17-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-21"><a href="#cb17-21" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">html</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>And the macro source:</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">html</span><span class="ot"> i18n:domain</span><span class="op">=</span><span class="st">'CalendarService'</span><span class="ot"> metal:define-macro</span><span class="op">=</span><span class="st">"thismonth"</span><span class="dt">&gt;</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:replace</span><span class="op">=</span><span class="st">'DateTime().Month()'</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a><span class="ot">       i18n:translate</span><span class="op">=</span><span class="st">''</span><span class="dt">&gt;</span>January<span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>  <span class="co">&lt;!-- really hairy TAL code here ;-) --&gt;</span></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> metal:define-slot</span><span class="op">=</span><span class="st">"additional-notes"</span><span class="dt">&gt;</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a>    Place for the application to add additional notes if desired.</span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">html</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>Note that the macro is using a different domain than the application (which it should be). With lexical scoping, no special markup needs to be applied to cause the slot-filler in the application to be part of the same domain as the rest of the application’s page components. If dynamic scoping were used, the internationalization context would need to be re-established in the slot-filler.</p>
+</section>
+<section id="extracting-translatable-messages" class="level1">
+<h1>Extracting translatable messages</h1>
+<p>Translators use <a href="https://www.gnu.org/software/gettext/manual/html_node/PO-Files.html">PO files</a> when translating messages. To create and update PO files you need to do two things: <em>extract</em> all messages from Python and template files and store them in a <code>.pot</code> file, and for each language <em>update</em> its <code>.po</code> file.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Earlier versions of this reference described Babel extractors (<code>chameleon_python</code>, <code>chameleon_xml</code>) shipped with Chameleon. Current Chameleon doesn’t include them. The <a href="https://pypi.org/project/lingua/">lingua</a> package extracts messages from Python code and from Chameleon templates; since chameleon-rs uses the same template language, it works on them unchanged. See lingua’s documentation for its <code>pot-create</code> command.</p>
+</div>
+</div>
+<p>Once you have a <code>.pot</code> file, the standard gettext tools update and compile the catalogs:</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="ex">msginit</span> <span class="at">-l</span> nl <span class="at">-i</span> i18n/mydomain.pot <span class="at">-o</span> i18n/nl/LC_MESSAGES/mydomain.po   <span class="co"># new language</span></span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="ex">msgmerge</span> <span class="at">--update</span> i18n/nl/LC_MESSAGES/mydomain.po i18n/mydomain.pot     <span class="co"># after re-extracting</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a><span class="fu">msgfmt</span> <span class="at">-o</span> i18n/nl/LC_MESSAGES/mydomain.mo i18n/nl/LC_MESSAGES/mydomain.po</span></code></pre></div>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/mkennedy\.codes\/docs\/chameleon-rs\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../language/macros.html" class="pagination-link" aria-label="Macros (METAL)">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Macros (METAL)</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../language/syntax.html" class="pagination-link" aria-label="Inline syntax">
+        <span class="nav-page-text">Inline syntax</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+<div class="nav-footer-center">
+<p>Developed by <a href="https://talkpython.fm"><strong>Michael&nbsp;Kennedy</strong></a>.<br>Site created with <strong>Great&nbsp;Docs</strong>.</p>
+</div>
+</div>
+</footer>
+<script src="../github-widget.js"></script>
+<script src="../copy-page.js"></script>
+<script src="../sidebar-wrap.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'sidebar-float.js';document.body.appendChild(s);})();</script>
+<script src="../sidebar-filter.js"></script>
+<script src="../dark-mode-toggle.js"></script>
+<script src="../back-to-top.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'on-this-page.js';document.body.appendChild(s);})();</script>
+<script src="../keyboard-nav.js"></script>
+<script src="../copy-code.js"></script>
+<script src="../details.js"></script>
+<script src="../mermaid-renderer.js"></script>
+<script src="../tooltips.js"></script>
+<script>(function(){var s=document.createElement('script');s.src=(document.querySelector('link[rel="canonical"]')||{href:location.href}).href.replace(/\/[^\/]*$/,'').replace(/\/[^\/]*$/,'')+'/color-swatch.js';var h=document.currentScript;h.parentNode.insertBefore(s,h.nextSibling);})()</script>
+<script src="../responsive-tables.js"></script>
+<script src="video-embed.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'termshow.js';document.body.appendChild(s);})();</script>
+<script src="../navbar-widgets.js"></script>
+
+
+
+
+</body></html>

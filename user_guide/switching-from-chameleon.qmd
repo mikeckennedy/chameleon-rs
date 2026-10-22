@@ -1,0 +1,113 @@
+---
+title: "Switching from Chameleon"
+---
+
+chameleon-rs runs code written for Chameleon unchanged. There are two ways to switch: install
+the compatibility alias and change nothing else, or change your imports.
+
+## One line: `compat.install()`
+
+Add this at the very top of your app's entry point (the module your server imports, or
+`__main__`), before anything imports Chameleon:
+
+```python
+import chameleon_rs.compat
+
+chameleon_rs.compat.install()
+```
+
+From then on:
+
+| Your code imports | It gets |
+|---|---|
+| `chameleon`, `chameleon.zpt.template`, `chameleon.tales`, ... | the chameleon-rs module of the same name |
+| `chameleon_partials` | `chameleon_rs.partials` (built in) |
+| `chameleon_flask` (and `.engine`, `.exceptions`) | `chameleon_rs.flask` (built in) |
+
+```{python}
+import chameleon_rs.compat
+
+chameleon_rs.compat.install()
+
+import chameleon
+from chameleon import PageTemplate
+
+print(chameleon.__name__)
+print(PageTemplate('<p>${1 + 1}</p>')())
+```
+
+Stock Chameleon doesn't need to be installed, and chameleon-rs never imports it. Libraries
+that use Chameleon internally, such as fastapi-chameleon and chameleon-robyn, get
+chameleon-rs the same way. Their own test suites pass on it unmodified.
+
+::: {.callout-warning}
+## Install before the first import
+
+`install()` must run before any module imports `chameleon`. If a module was already
+imported, `install()` replaces it in `sys.modules` and warns with a `RuntimeWarning` that names
+it. Objects imported from it earlier (`from chameleon import PageTemplateLoader` at the
+top of a module that's already loaded) stay stock Chameleon objects.
+:::
+
+### Keep the original chameleon_partials or chameleon-flask
+
+`install(integrations=False)` maps only `chameleon`. `chameleon_partials` and
+`chameleon_flask` then import the original packages, which still render through
+chameleon-rs's engine. Use it if you depend on behaviour of those packages that the built-ins
+don't copy. A `chameleon_partials.render_partial` from the original package, passed into a
+template, still renders natively.
+
+## Or change the imports
+
+Every public name is available from `chameleon_rs` directly:
+
+```python
+# Before
+from chameleon import PageTemplate, PageTemplateFile, PageTemplateLoader
+import chameleon_partials
+import chameleon_flask
+
+# After
+from chameleon_rs import PageTemplate, PageTemplateFile, PageTemplateLoader
+import chameleon_rs.partials as chameleon_partials
+import chameleon_rs.flask as chameleon_flask
+```
+
+The submodules mirror Chameleon's (`chameleon_rs.zpt.template`, `chameleon_rs.tales`,
+`chameleon_rs.utils`, `chameleon_rs.exc`, ...). Chameleon's code-generation internals
+(`chameleon.nodes`, `chameleon.program`, `chameleon.zpt.program`, `chameleon.benchmark`)
+have no counterpart, since chameleon-rs doesn't generate Python code. Importing them raises
+`ModuleNotFoundError`.
+
+After switching, you can simplify: `render_partial` is in every template already, so
+`extend_model()` calls and Pyramid `BeforeRender` subscribers that add it can go, and one
+`chameleon_rs.configure()` call replaces `register_extensions()` plus `global_init()`. See
+[Migrating from the helper libraries](migrating.qmd).
+
+## Check your own app first: shadow mode
+
+Before you switch a production app, you can run both engines side by side on real traffic.
+Shadow mode keeps stock Chameleon serving and repeats a sample of renders with chameleon-rs,
+then reports any difference in the output or in the exception raised:
+
+```python
+import chameleon_rs.shadow
+
+chameleon_rs.shadow.install(sample_rate=0.05)   # serve Chameleon's output, check chameleon-rs's
+# chameleon_rs.shadow.install(serve='rust')     # serve chameleon-rs's, check against Chameleon's
+```
+
+Differences are logged as warnings on the `chameleon_rs.shadow` logger, with a short diff.
+Pass `report=` to handle each `ShadowDifference` yourself.
+
+Shadow mode needs stock Chameleon installed, so don't combine it with `compat.install()`.
+Keep in mind:
+
+- Each sampled render happens twice, in the same thread, so its latency doubles. On a
+  single-threaded asyncio server, both renders block the event loop. Keep `sample_rate` well
+  below 1 (0.01 to 0.1).
+- The model is used twice: an iterator argument is used up by the first render, and callables
+  run twice. Shadow only side-effect-free renders.
+- Templates compiled before `install()` aren't shadowed.
+
+To stop, call `chameleon_rs.shadow.uninstall()`.

@@ -144,11 +144,45 @@ names, routes, paths or URL counts that would identify them. Real-app performanc
 only as aggregate ratios ("a production Quart site: renders 2.2x faster, +30% requests per
 second"), the same rule as `docs/plan.md`.
 
-## 8. Open questions for Michael
+## 8. Decisions (Michael, 2026-10-21)
 
-- **§2:** `site/` (recommended) or move the design docs to `design/`?
-- **URL slug:** `docs/chameleon-rs/` (matching the PyPI name, recommended) or
-  `docs/chameleon-rust/`?
-- **Template language:** link to Chameleon's language reference, or adapt it into this site
-  now?
-- **Start time:** start steps 1 and 3 now, or wait until Phase 11 is merged?
+- **§2:** publish to `site/`. The design docs stay in `docs/`.
+- **URL slug:** `https://mkennedy.codes/docs/chameleon-rs/`.
+- **Template language:** adapt Chameleon's reference into the site now (`language/`).
+- **Start time:** now, in the `docs-site` worktree, without touching Phase 11's files.
+
+## 9. Status (2026-10-21)
+
+Done:
+
+- Step 1 (scaffolding): `great-docs.yml`, `scripts/build_docs.py` and `serve_docs.py`, `make
+  docs` / `make docs-serve`, the `docs` dependency group, the `.gitignore` entry, the
+  pyproject `Documentation` URL, and the CI `docs` job (builds only).
+- Step 3, plus pages 11 and 12: the landing page (`index.qmd`, so it doesn't depend on the
+  README), Getting started, Switching from Chameleon (with shadow mode), Template language,
+  Partials, Configuration, Flask and Quart, Compatibility, Performance, Migrating.
+- The language reference: Chameleon's `reference.rst` adapted into seven pages in
+  `language/`. Every example was checked on both engines, which found 11 errors in the
+  original reference (fixed in the pages).
+- Recipes: HTMX fragments, testing templates, email bodies, a shared layout.
+- Step 7: the skill block and `skill_extra_body.md`.
+
+Changes from the plan:
+
+- `dynamic: false`. Runtime introspection reports a cyclic alias for `render_partial` (a
+  `PartialRenderer` instance whose class is named `function`) and falls back to static
+  analysis anyway.
+- The Flask examples run as executable cells through Flask's test client, so no separate
+  pytest is needed to keep them honest (§5).
+- Quarto 1.9.38 (the version the partials site was built with) is installed from the release
+  tarball into `~/.local/share/quarto-1.9.38`, linked from `~/.local/bin/quarto`. The
+  Homebrew cask needs sudo.
+
+Left:
+
+- Step 2 (docstring pass) and pages 7–8 (async, free-threading): after Phase 11 merges. The
+  Flask page's "renders are synchronous for now" note changes then too.
+- The Umami website id (commented out in `great-docs.yml`).
+- Logo and favicon (Michael has graphics).
+- A `CHANGELOG.md` and GitHub releases, for the changelog page (Phase 12).
+- The nginx alias for `site/` (Michael's step) and the first publish.

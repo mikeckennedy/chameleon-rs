@@ -1,0 +1,72 @@
+# chameleon_rs
+
+> A Rust implementation of the Chameleon page template engine, compatible with Chameleon's syntax and API.
+
+## Docs
+
+### API Reference
+
+#### Templates
+> Compile and render templates from strings, files and folders.
+
+- [PageTemplate](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.html): Constructor for the page template language, rendered by the Rust VM
+- [PageTemplateFile](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplateFile.html): File-based constructor: the template is read from ``filename`` (or, with
+- [PageTextTemplate](https://mkennedy.codes/docs/chameleon-rs/reference/PageTextTemplate.html): Text-based template class: only ``${...}`` interpolation, no markup, nothing escaped
+- [PageTextTemplateFile](https://mkennedy.codes/docs/chameleon-rs/reference/PageTextTemplateFile.html): File-based text template. Rendering returns ``bytes``, encoded with the template's
+- [PageTemplateLoader](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplateLoader.html)
+
+#### PageTemplate Methods
+> Methods for the PageTemplate class
+
+- [PageTemplate.__getitem__](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.__getitem__.html)
+- [PageTemplate.builtins](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.builtins.html)
+- [PageTemplate.parse](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.parse.html)
+- [PageTemplate.include](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.include.html)
+- [PageTemplate.render](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.render.html)
+- [PageTemplate.digest](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.digest.html)
+
+#### Configuration
+> Process-wide settings for templates loaded by name.
+
+- [configure](https://mkennedy.codes/docs/chameleon-rs/reference/configure.html): Configures chameleon-rs for the whole process: where templates loaded by name live, for
+- [core_version](https://mkennedy.codes/docs/chameleon-rs/reference/core_version.html): Version of the Rust core, for bug reports and for checking which build is loaded
+
+#### Partials
+> Render one template inside another. Also chameleon_partials' API.
+
+- [render_partial](https://mkennedy.codes/docs/chameleon-rs/reference/render_partial.html): The ``render_partial`` callable: ``chameleon_rs.render_partial`` (no calling template)
+- [partials.register_extensions](https://mkennedy.codes/docs/chameleon-rs/reference/partials.register_extensions.html)
+- [partials.extend_model](https://mkennedy.codes/docs/chameleon-rs/reference/partials.extend_model.html)
+- [partials.clear](https://mkennedy.codes/docs/chameleon-rs/reference/partials.clear.html)
+- [partials.PartialRenderer](https://mkennedy.codes/docs/chameleon-rs/reference/partials.PartialRenderer.html)
+- [partials.HTML](https://mkennedy.codes/docs/chameleon-rs/reference/partials.HTML.html)
+- [partials.PartialsException](https://mkennedy.codes/docs/chameleon-rs/reference/partials.PartialsException.html)
+
+#### Flask and Quart
+> chameleon-flask's API, built in. Imports Flask only when imported itself.
+
+- [flask.configure](https://mkennedy.codes/docs/chameleon-rs/reference/flask.configure.html)
+- [flask.global_init](https://mkennedy.codes/docs/chameleon-rs/reference/flask.global_init.html)
+- [flask.template](https://mkennedy.codes/docs/chameleon-rs/reference/flask.template.html)
+- [flask.render](https://mkennedy.codes/docs/chameleon-rs/reference/flask.render.html)
+- [flask.response](https://mkennedy.codes/docs/chameleon-rs/reference/flask.response.html)
+- [flask.not_found](https://mkennedy.codes/docs/chameleon-rs/reference/flask.not_found.html)
+- [flask.error](https://mkennedy.codes/docs/chameleon-rs/reference/flask.error.html)
+- [flask.clear](https://mkennedy.codes/docs/chameleon-rs/reference/flask.clear.html)
+
+#### Errors and web helpers
+> Exceptions, and the pieces shared by the framework integrations.
+
+- [TemplateError](https://mkennedy.codes/docs/chameleon-rs/reference/TemplateError.html): An error raised by Chameleon
+- [web.TemplateError](https://mkennedy.codes/docs/chameleon-rs/reference/web.TemplateError.html)
+- [web.ErrorPage](https://mkennedy.codes/docs/chameleon-rs/reference/web.ErrorPage.html)
+- [web.NotFound](https://mkennedy.codes/docs/chameleon-rs/reference/web.NotFound.html)
+- [web.model_of](https://mkennedy.codes/docs/chameleon-rs/reference/web.model_of.html)
+
+#### Compatibility
+> Make `import chameleon` resolve to chameleon-rs, or check both engines side by side.
+
+- [compat.install](https://mkennedy.codes/docs/chameleon-rs/reference/compat.install.html)
+- [shadow.install](https://mkennedy.codes/docs/chameleon-rs/reference/shadow.install.html)
+- [shadow.uninstall](https://mkennedy.codes/docs/chameleon-rs/reference/shadow.uninstall.html)
+- [shadow.ShadowDifference](https://mkennedy.codes/docs/chameleon-rs/reference/shadow.ShadowDifference.html)

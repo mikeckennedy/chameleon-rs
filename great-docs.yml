@@ -1,0 +1,178 @@
+# Great Docs configuration for chameleon-rs (docs/docs-site-plan.md).
+# See https://posit-dev.github.io/great-docs/user-guide/configuration.html
+#
+# Build with `make docs` (needs the extension built: `make build`), preview with
+# `make docs-serve`. The site is mirrored into site/ (committed), not docs/, which holds the
+# design documents.
+
+display_name: chameleon-rs
+
+# The distribution is chameleon-rs; the import name can't be inferred from it.
+module: chameleon_rs
+
+# Docstrings are prose today; the docstring pass (plan §6 step 2) moves them to Google style.
+parser: google
+
+# Static analysis. Runtime introspection reports a cyclic alias for `render_partial` (an
+# instance of PartialRenderer, whose class is named `function` to match chameleon_partials'
+# error messages) and falls back to static anyway. `core_version` is read from _native.pyi.
+dynamic: false
+
+# Subpath hosting: drives Quarto's base path so CSS/JS/nav resolve under the subdirectory.
+# Keep the trailing slash.
+site_url: "https://mkennedy.codes/docs/chameleon-rs/"
+
+# The sitemap / robots / canonical base is auto-detected from the GitHub repo and does not
+# fall back to site_url. Pin it to the real hosting domain.
+seo:
+  canonical:
+    base_url: "https://mkennedy.codes/docs/chameleon-rs/"
+
+repo: https://github.com/mikeckennedy/chameleon-rust
+github_style: widget
+source:
+  enabled: true
+  branch: main
+  # The package lives in python/, not at the repo root.
+  path: python/chameleon_rs
+  placement: usage
+
+pypi: true
+
+# Great Docs defaults this to true, which renders an empty "MCP" tab.
+mcp:
+  enabled: false
+
+# The design notes and build artifacts are not site content.
+exclude:
+  - _native
+
+user_guide:
+  - section: "Get started"
+    contents:
+      - getting-started.qmd
+      - switching-from-chameleon.qmd
+  - section: "Templates"
+    contents:
+      - template-language.qmd
+      - partials.qmd
+      - configuration.qmd
+  - section: "Web frameworks"
+    contents:
+      - flask.qmd
+  - section: "Background"
+    contents:
+      - compatibility.qmd
+      - performance.qmd
+      - migrating.qmd
+
+sections:
+  - title: Language Reference
+    dir: language
+    navbar_after: User Guide
+  - title: Recipes
+    dir: recipes
+    index: true
+    navbar_after: Language Reference
+
+skill:
+  extra_body: skill_extra_body.md
+  gotchas:
+    - "chameleon_rs.compat.install() must run before anything imports chameleon, chameleon_partials or chameleon_flask; a module already imported keeps stock Chameleon's objects."
+    - "render_partial looks in the configured template folder, then on the calling template's search path and in its folder and each folder above it. chameleon_rs.configure(partial_search='registered') restores chameleon_partials' lookup (configured folder only)."
+    - "render_partial is a builtin in every template; you don't need extend_model() or a BeforeRender subscriber (both still work)."
+    - "configure() applies on every call (there is no cache_init); the first call must give template_folder."
+    - "template.source does not exist as Python code: with keep_source=True it is a dump of the compiled program."
+    - "Custom expression types that return Python AST work through a bridge at fallback speed; types that depend on Chameleon's compiler internals are not supported."
+  best_practices:
+    - "Call chameleon_rs.configure(template_folder=..., auto_reload=dev_mode) once at startup, before the first render."
+    - "To switch an existing app, add `import chameleon_rs.compat; chameleon_rs.compat.install()` as the first lines of the entry point, and leave the rest of the code unchanged."
+    - "Prefer ${render_partial('shared/card.pt', item=item)} as a whole expression: it renders as a native frame of the page, with no Python call."
+    - "Build template folder paths with (Path(__file__).parent / 'templates').as_posix()."
+    - "In tests, reset with chameleon_rs.partials.clear() (or chameleon_rs.flask.clear()) between configurations."
+  decision_table:
+    - need: "Run an existing Chameleon app on chameleon-rs with no code changes"
+      use: "chameleon_rs.compat.install() at the top of the entry point"
+    - need: "Render a template string"
+      use: "chameleon_rs.PageTemplate(source)(**model)"
+    - need: "Load templates by name from folders"
+      use: "chameleon_rs.PageTemplateLoader([folder])['page.pt'](**model)"
+    - need: "Insert a reusable HTML fragment"
+      use: "${render_partial('shared/fragment.pt', key=value)}"
+    - need: "Get a rendered fragment as a string from Python (HTMX, email, tests)"
+      use: "chameleon_rs.render_partial(path, **model).html_text"
+    - need: "Render Chameleon templates from Flask or Quart views"
+      use: "chameleon_rs.flask: configure(folder), then @template('page.pt') on the view"
+
+# Umami analytics. Needs this site's own website id (the partials site has its own):
+# include_in_header:
+#   - text: |
+#       <script async src="https://uma.mkennedy.codes/script.js" data-website-id="TODO"></script>
+
+jupyter: python3
+
+authors:
+  - name: Michael Kennedy
+    role: Author
+    email: michael@talkpython.fm
+    github: mikeckennedy
+    homepage: https://talkpython.fm
+
+reference:
+  title: "API Reference"
+  desc: >-
+    The public API of chameleon-rs. It mirrors Chameleon's (PageTemplate,
+    PageTemplateFile, PageTemplateLoader, ...), plus built-in partials, process-wide
+    configuration and the Flask/Quart integration.
+  sections:
+    - title: Templates
+      desc: "Compile and render templates from strings, files and folders."
+      contents:
+        - PageTemplate
+        - PageTemplateFile
+        - PageTextTemplate
+        - PageTextTemplateFile
+        - PageTemplateLoader
+    - title: Configuration
+      desc: "Process-wide settings for templates loaded by name."
+      contents:
+        - configure
+        - core_version
+    - title: Partials
+      desc: "Render one template inside another. Also chameleon_partials' API."
+      contents:
+        - render_partial
+        - partials.register_extensions
+        - partials.extend_model
+        - partials.clear
+        - partials.PartialRenderer
+        - partials.HTML
+        - partials.PartialsException
+    - title: Flask and Quart
+      desc: "chameleon-flask's API, built in. Imports Flask only when imported itself."
+      contents:
+        - flask.configure
+        - flask.global_init
+        - flask.template
+        - flask.render
+        - flask.response
+        - flask.not_found
+        - flask.error
+        - flask.clear
+    - title: Errors and web helpers
+      desc: "Exceptions, and the pieces shared by the framework integrations."
+      contents:
+        # Its members are inherited exception plumbing (__copy__, __str__, ...).
+        - name: TemplateError
+          members: false
+        - web.TemplateError
+        - web.ErrorPage
+        - web.NotFound
+        - web.model_of
+    - title: Compatibility
+      desc: "Make `import chameleon` resolve to chameleon-rs, or check both engines side by side."
+      contents:
+        - compat.install
+        - shadow.install
+        - shadow.uninstall
+        - shadow.ShadowDifference

@@ -1,0 +1,1246 @@
+----------------------------------------------------------------------
+This is the API documentation for the chameleon_rs library.
+----------------------------------------------------------------------
+
+
+## Templates
+
+Compile and render templates from strings, files and folders.
+
+
+PageTemplate(body: 'Any', **config: 'Any') -> 'None'
+
+Constructor for the page template language, rendered by the Rust VM.
+
+Takes a string input as the only positional argument::
+
+  template = PageTemplate("<div>Hello, ${name}.</div>")
+
+Output is of type ``str``. See the module docs for the configuration keywords.
+
+Every template has the builtin ``render_partial(path, **kwargs)`` (D10, see
+``chameleon_rs.partials``), which a render keyword or ``extra_builtins`` entry of the same
+name overrides.
+
+PageTemplateFile(filename: 'Any', loader_class: 'type[TemplateLoader]' = <class 'chameleon_rs.loader.TemplateLoader'>, package_name: 'str | None' = None, search_path: 'Iterable[str] | str | None' = None, **config: 'Any') -> 'None'
+
+File-based constructor: the template is read from ``filename`` (or, with
+``package_name``, from that package's resources) when first used.
+
+File templates have the ``load:`` expression type, which loads templates relative to
+this one: ``search_path`` (a path or a sequence of paths; with
+``prepend_relative_search_path``, the default, the template's own directory comes first)
+and ``loader_class`` (``TemplateLoader``), which gets the same configuration keywords.
+
+PageTextTemplate(body: 'Any', **config: 'Any') -> 'None'
+
+Text-based template class: only ``${...}`` interpolation, no markup, nothing escaped.
+
+Takes a non-XML input::
+
+  template = PageTextTemplate("Hello, ${name}.")
+
+PageTextTemplateFile(filename: 'Any', loader_class: 'type[TemplateLoader]' = <class 'chameleon_rs.loader.TemplateLoader'>, package_name: 'str | None' = None, search_path: 'Iterable[str] | str | None' = None, **config: 'Any') -> 'None'
+
+File-based text template. Rendering returns ``bytes``, encoded with the template's
+``encoding`` (UTF-8 by default), as Chameleon's does.
+
+TemplateLoader(search_path: 'Sequence[str] | str | None' = None, default_extension: 'str | None' = None, *, formats: 'Mapping[str, type[PageTemplateFile]] | None' = None, **kwargs: 'Any') -> 'None'
+
+
+## PageTemplate Methods
+
+Methods for the PageTemplate class
+
+
+__getitem__(self, name: 'str') -> 'Macro'
+
+builtins
+
+The template builtins: names every expression can use (a render keyword of the
+same name overrides them).
+
+parse(self, body: 'str') -> 'Any'
+
+include
+
+The whole template as a macro (``metal:use-macro="template"``): Chameleon's
+``include(stream, econtext, rcontext, ...)``, which renders the main function into
+``stream``.
+
+render(self, encoding: 'str | None' = None, **kw: 'Any') -> 'str'
+
+Render template to string.
+
+If provided, the ``encoding`` argument overrides the template default value.
+Additional keyword arguments are passed as template variables; ``translate``
+overrides the template's translation function and ``target_language`` is the
+language passed to it when no ``i18n:target`` applies.
+
+digest(self, body: 'str', names: 'Collection[str]') -> 'str'
+
+
+## Configuration
+
+Process-wide settings for templates loaded by name.
+
+
+configure(template_folder: 'Any' = None, *, auto_reload: 'bool | None' = None, restricted_namespace: 'bool | None' = None, partial_search: 'str | None' = None) -> 'Settings | None'
+
+Configures chameleon-rs for the whole process: where templates loaded by name live, for
+``render_partial`` and the framework integrations (``chameleon_rs.flask``), and how they load.
+
+``template_folder``: an existing directory. ``auto_reload``: recompile a template when its
+file changes (checked at most once per file per render for partials). ``restricted_namespace``:
+``False`` allows attributes such as Alpine.js's ``@click`` (chameleon-flask's option).
+``partial_search``: ``'caller'`` (the default: partials are looked for in the template
+folder, then on the calling template's search path, then in its folder and each folder above
+it) or ``'registered'`` (chameleon_partials' lookup: the template folder only, a path not
+there being an error). A setting left out keeps its current
+value; the first call that sets anything but ``partial_search`` must give the folder.
+Applies every time it is called (there is no ``cache_init``).
+
+Raises ``chameleon_rs.web.TemplateError`` for a missing folder, ``ValueError`` for an
+unknown ``partial_search``.
+
+core_version()
+
+Version of the Rust core, for bug reports and for checking which build is loaded.
+
+
+## Partials
+
+Render one template inside another. Also chameleon_partials' API.
+
+
+render_partial(template_file: 'str', **template_data: 'Any') -> 'HTML'
+
+The ``render_partial`` callable: ``chameleon_rs.render_partial`` (no calling template)
+or a template's own (its ``render_partial`` builtin, the calling template for
+``partial_search='caller'``). Written as a whole ``${render_partial(...)}``
+expression it is not called at all: the partial renders as a native frame.
+
+register_extensions(template_folder: 'str', auto_reload: 'bool' = False, cache_init: 'bool' = True) -> 'None'
+
+chameleon_partials' setup call: configures the folder ``render_partial`` uses (only
+that; ``chameleon_rs.configure`` also configures the framework integrations). A second call
+is ignored unless ``cache_init`` is false. Raises ``PartialsException`` for a missing
+folder.
+
+extend_model(model: 'dict[str, Any] | None') -> 'dict[str, Any]'
+
+Adds ``render_partial`` to a view model (chameleon_partials' helper; not needed with the
+built-in, which every template has). Returns the model (a new dict for ``None``).
+
+clear() -> 'None'
+
+Forgets the folder partials use, for tests.
+
+function(template: 'Any' = None) -> 'None'
+
+The ``render_partial`` callable: ``chameleon_rs.render_partial`` (no calling template)
+or a template's own (its ``render_partial`` builtin, the calling template for
+``partial_search='caller'``). Written as a whole ``${render_partial(...)}``
+expression it is not called at all: the partial renders as a native frame.
+
+HTML(html_text: 'str') -> 'None'
+
+Rendered markup, as ``render_partial`` returns it from Python: ``__html__`` gives the
+text (``html_text``), so a template inserts it without escaping.
+
+PartialsException
+
+Raised when partials are configured or used incorrectly: registering a folder that does
+not exist, or rendering a partial from Python before any folder is configured. Errors from
+the templates themselves (``ValueError`` for a missing file) propagate unchanged.
+
+
+## Flask and Quart
+
+chameleon-flask's API, built in. Imports Flask only when imported itself.
+
+
+
+## Errors and web helpers
+
+Exceptions, and the pieces shared by the framework integrations.
+
+
+TemplateError(msg: 'str', token: 'str' = '') -> 'None'
+
+An error raised by Chameleon.
+
+    >>> from chameleon_rs.config import SOURCE_EXPRESSION_MARKER_LENGTH
+from chameleon_rs.tokenize import Token
+    >>> token = Token('token')
+    >>> message = 'message'
+
+    Make sure the exceptions can be copied:
+
+    >>> from copy import copy
+    >>> copy(TemplateError(message, token))
+    TemplateError('message', 'token')
+
+    And pickle/unpickled:
+
+    >>> from pickle import dumps, loads
+    >>> loads(dumps(TemplateError(message, token), -1))
+    TemplateError('message', 'token')
+
+TemplateError
+
+A template integration was configured or used incorrectly: no template folder
+configured, a folder that does not exist, a view returning something that is not a model
+or a response. (Not a template compile error: that is ``chameleon_rs.TemplateError``.)
+
+ErrorPage(template_file: 'str', status_code: 'int', message: 'str | None' = None, template_data: 'Mapping[str, Any] | None' = None) -> 'None'
+
+Raised inside a decorated view to answer with an error page: the decorator renders
+``template_file`` with ``template_data`` and ``status_code``.
+
+NotFound(message: 'str | None' = None, template_file: 'str' = 'errors/404.pt', template_data: 'Mapping[str, Any] | None' = None) -> 'None'
+
+Raised by ``not_found()``: the decorator renders ``template_file`` (``errors/404.pt``
+by default) with status 404.
+
+model_of(value: 'Any') -> 'dict[str, Any] | None'
+
+The template model a view returned: a ``dict`` as is; any other ``Mapping`` as a
+``dict``; a dataclass instance as its fields (shallow: field values are not converted);
+an object with a callable ``model_dump()`` (Pydantic, duck-typed) as what it returns.
+``None`` for anything else.
+
+
+## Compatibility
+
+Make `import chameleon` resolve to chameleon-rs, or check both engines side by side.
+
+
+
+----------------------------------------------------------------------
+This is the User Guide documentation for the package.
+----------------------------------------------------------------------
+
+
+## Get started
+
+### Getting started
+
+This page installs chameleon-rs, renders a template from a string, then sets up a folder of
+template files the way a web app would.
+
+## Install
+
+```bash
+uv pip install chameleon-rs
+```
+
+chameleon-rs supports CPython 3.12 and later, including the free-threaded build. The wheel
+contains the compiled engine and has no dependencies.
+
+## Render a template string
+
+`PageTemplate` compiles a template from a string. Calling it renders the template, with the
+keyword arguments as the template's variables:
+
+```{python}
+from chameleon_rs import PageTemplate
+
+page = PageTemplate("""
+<div class="greeting">
+  <h1>Hello, ${name}!</h1>
+  <ul tal:condition="items">
+    <li tal:repeat="item items">${repeat.item.number}. ${item}</li>
+  </ul>
+</div>
+""")
+
+print(page(name='World', items=['templates', 'in', 'Rust']))
+```
+
+The template compiles once, when it's first rendered. Every later render reuses the compiled
+program, so keep template objects around (module level, or in a loader) rather than building
+one per request.
+
+`${...}` inserts a value with HTML escaping. To insert markup as-is, use `structure:`, or pass
+an object with an `__html__` method:
+
+```{python}
+page = PageTemplate('<p>${text}</p> <p>${structure: text}</p>')
+print(page(text='<b>bold</b>'))
+```
+
+## Render templates from files
+
+`PageTemplateFile` loads one file. `PageTemplateLoader` loads templates by name from one or
+more folders, and caches each compiled template:
+
+```{python}
+#| echo: false
+import pathlib, tempfile
+
+folder = pathlib.Path(tempfile.mkdtemp()) / 'templates'
+(folder / 'home').mkdir(parents=True)
+(folder / 'shared').mkdir()
+(folder / 'home' / 'index.pt').write_text(
+    '<html>\n'
+    '  <body>\n'
+    '    <h1>${title}</h1>\n'
+    '    <div tal:repeat="video videos">\n'
+    "      ${render_partial('shared/video.pt', video=video)}\n"
+    '    </div>\n'
+    '  </body>\n'
+    '</html>\n'
+)
+(folder / 'shared' / 'video.pt').write_text('<a href="/videos/${video.id}">${video.title}</a>')
+template_folder = str(folder)
+```
+
+Suppose your templates live in a folder like this:
+
+```text
+templates/
+├── home/
+│   └── index.pt
+└── shared/
+    └── video.pt
+```
+
+with `home/index.pt`:
+
+```html
+<html>
+  <body>
+    <h1>${title}</h1>
+    <div tal:repeat="video videos">
+      ${render_partial('shared/video.pt', video=video)}
+    </div>
+  </body>
+</html>
+```
+
+and `shared/video.pt`:
+
+```html
+<a href="/videos/${video.id}">${video.title}</a>
+```
+
+Configure the folder once at startup with `chameleon_rs.configure()`, then load templates by
+name:
+
+```{python}
+from dataclasses import dataclass
+
+import chameleon_rs
+from chameleon_rs import PageTemplateLoader
+
+
+@dataclass
+class Video:
+    id: int
+    title: str
+
+
+chameleon_rs.configure(template_folder=template_folder)
+templates = PageTemplateLoader([template_folder])
+
+page = templates['home/index.pt']
+print(page(title='Latest videos', videos=[Video(1, 'Intro'), Video(2, 'Partials')]))
+```
+
+`render_partial` is available in every template, with nothing to register or pass in.
+`configure()` tells it where to find partials. See [Partials](partials.qmd).
+
+In a real app, build the folder path relative to your code, so it doesn't depend on the
+working directory:
+
+```python
+from pathlib import Path
+
+import chameleon_rs
+
+template_folder = (Path(__file__).parent / 'templates').as_posix()
+chameleon_rs.configure(template_folder=template_folder, auto_reload=dev_mode)
+```
+
+`auto_reload=True` recompiles a template when its file changes. Turn it on in development and
+leave it off in production.
+
+## Next steps
+
+- Already have a Chameleon app? See [Switching from Chameleon](switching-from-chameleon.qmd).
+- Using Flask or Quart? See [Flask and Quart](flask.qmd).
+- The [language reference](../language/index.qmd) covers TAL, METAL, i18n and expressions.
+
+
+### Switching from Chameleon
+
+chameleon-rs runs code written for Chameleon unchanged. There are two ways to switch: install
+the compatibility alias and change nothing else, or change your imports.
+
+## One line: `compat.install()`
+
+Add this at the very top of your app's entry point (the module your server imports, or
+`__main__`), before anything imports Chameleon:
+
+```python
+import chameleon_rs.compat
+
+chameleon_rs.compat.install()
+```
+
+From then on:
+
+| Your code imports | It gets |
+|---|---|
+| `chameleon`, `chameleon.zpt.template`, `chameleon.tales`, ... | the chameleon-rs module of the same name |
+| `chameleon_partials` | `chameleon_rs.partials` (built in) |
+| `chameleon_flask` (and `.engine`, `.exceptions`) | `chameleon_rs.flask` (built in) |
+
+```{python}
+import chameleon_rs.compat
+
+chameleon_rs.compat.install()
+
+import chameleon
+from chameleon import PageTemplate
+
+print(chameleon.__name__)
+print(PageTemplate('<p>${1 + 1}</p>')())
+```
+
+Stock Chameleon doesn't need to be installed, and chameleon-rs never imports it. Libraries
+that use Chameleon internally, such as fastapi-chameleon and chameleon-robyn, get
+chameleon-rs the same way. Their own test suites pass on it unmodified.
+
+::: {.callout-warning}
+## Install before the first import
+
+`install()` must run before any module imports `chameleon`. If a module was already
+imported, `install()` replaces it in `sys.modules` and warns with a `RuntimeWarning` that names
+it. Objects imported from it earlier (`from chameleon import PageTemplateLoader` at the
+top of a module that's already loaded) stay stock Chameleon objects.
+:::
+
+### Keep the original chameleon_partials or chameleon-flask
+
+`install(integrations=False)` maps only `chameleon`. `chameleon_partials` and
+`chameleon_flask` then import the original packages, which still render through
+chameleon-rs's engine. Use it if you depend on behaviour of those packages that the built-ins
+don't copy. A `chameleon_partials.render_partial` from the original package, passed into a
+template, still renders natively.
+
+## Or change the imports
+
+Every public name is available from `chameleon_rs` directly:
+
+```python
+# Before
+from chameleon import PageTemplate, PageTemplateFile, PageTemplateLoader
+import chameleon_partials
+import chameleon_flask
+
+# After
+from chameleon_rs import PageTemplate, PageTemplateFile, PageTemplateLoader
+import chameleon_rs.partials as chameleon_partials
+import chameleon_rs.flask as chameleon_flask
+```
+
+The submodules mirror Chameleon's (`chameleon_rs.zpt.template`, `chameleon_rs.tales`,
+`chameleon_rs.utils`, `chameleon_rs.exc`, ...). Chameleon's code-generation internals
+(`chameleon.nodes`, `chameleon.program`, `chameleon.zpt.program`, `chameleon.benchmark`)
+have no counterpart, since chameleon-rs doesn't generate Python code. Importing them raises
+`ModuleNotFoundError`.
+
+After switching, you can simplify: `render_partial` is in every template already, so
+`extend_model()` calls and Pyramid `BeforeRender` subscribers that add it can go, and one
+`chameleon_rs.configure()` call replaces `register_extensions()` plus `global_init()`. See
+[Migrating from the helper libraries](migrating.qmd).
+
+## Check your own app first: shadow mode
+
+Before you switch a production app, you can run both engines side by side on real traffic.
+Shadow mode keeps stock Chameleon serving and repeats a sample of renders with chameleon-rs,
+then reports any difference in the output or in the exception raised:
+
+```python
+import chameleon_rs.shadow
+
+chameleon_rs.shadow.install(sample_rate=0.05)   # serve Chameleon's output, check chameleon-rs's
+# chameleon_rs.shadow.install(serve='rust')     # serve chameleon-rs's, check against Chameleon's
+```
+
+Differences are logged as warnings on the `chameleon_rs.shadow` logger, with a short diff.
+Pass `report=` to handle each `ShadowDifference` yourself.
+
+Shadow mode needs stock Chameleon installed, so don't combine it with `compat.install()`.
+Keep in mind:
+
+- Each sampled render happens twice, in the same thread, so its latency doubles. On a
+  single-threaded asyncio server, both renders block the event loop. Keep `sample_rate` well
+  below 1 (0.01 to 0.1).
+- The model is used twice: an iterator argument is used up by the first render, and callables
+  run twice. Shadow only side-effect-free renders.
+- Templates compiled before `install()` aren't shadowed.
+
+To stop, call `chameleon_rs.shadow.uninstall()`.
+
+
+
+## Templates
+
+### Template language
+
+chameleon-rs implements Chameleon's template language unchanged: the same TAL attributes,
+METAL macros, i18n attributes, `${...}` interpolation and expression types, with the same
+output. Templates you wrote for Chameleon work as they are.
+
+This page is a quick tour. The [language reference](../language/index.qmd) covers every
+statement in detail.
+
+## A tour in one template
+
+```{python}
+from chameleon_rs import PageTemplate
+
+page = PageTemplate("""
+<section tal:define="count len(items)">
+  <h2>${title} <small tal:condition="count">(${count})</small></h2>
+  <p tal:condition="not count">Nothing here yet.</p>
+  <ul>
+    <li tal:repeat="item items"
+        class="${'odd' if repeat.item.odd else 'even'}"
+        tal:content="item.upper()">placeholder</li>
+  </ul>
+  <a href="${url}" tal:attributes="title url">More</a>
+</section>
+""")
+
+print(page(title='Tags', items=['rust', 'python', 'html'], url='/tags'))
+```
+
+## The pieces
+
+| Syntax | What it does |
+|---|---|
+| `${expr}` | Insert a value, HTML-escaped. Works in text and in attribute values. |
+| `${structure: expr}` | Insert markup without escaping. Objects with `__html__` are also inserted as-is. |
+| `tal:define="name expr"` | Bind a variable for the element and its children (`global` for the rest of the template). |
+| `tal:condition="expr"` | Keep the element only if the expression is true. |
+| `tal:repeat="item items"` | Repeat the element for each item. `repeat.item` gives `index`, `number`, `odd`, `even`, `start`, `end`, `length`, ... |
+| `tal:content="expr"` / `tal:replace="expr"` | Replace the element's content, or the whole element. |
+| `tal:attributes="name expr; ..."` | Set or remove attributes. |
+| `tal:omit-tag=""` | Drop the element's tags and keep its content. |
+| `tal:switch` / `tal:case` | Choose one of several branches. |
+| `tal:on-error="expr"` | Render a fallback if the element raises. |
+| `metal:define-macro` / `metal:use-macro` / `metal:fill-slot` | Layouts and reusable fragments. See below. |
+| `i18n:translate`, `i18n:attributes`, `i18n:name`, `i18n:domain` | Mark text for translation. |
+
+Expressions are Python by default. Other expression types are written with a prefix:
+`string:`, `exists:`, `not:`, `import:`, `load:` and `structure:`.
+
+## Layouts with METAL
+
+A layout defines a macro with slots, and each page fills them:
+
+```{python}
+layout = PageTemplate("""
+<html metal:define-macro="layout">
+  <head><title metal:define-slot="title">Site</title></head>
+  <body><main metal:define-slot="content"></main></body>
+</html>
+""")
+
+page = PageTemplate("""
+<html metal:use-macro="layout.macros['layout']">
+  <title metal:fill-slot="title">Home</title>
+  <main metal:fill-slot="content"><p>Welcome, ${user}.</p></main>
+</html>
+""")
+
+print(page(layout=layout, user='Ada'))
+```
+
+In a template loaded from a file, `load:` loads the layout relative to the page:
+`metal:use-macro="load: ../shared/_layout.pt"`.
+
+## Partials
+
+chameleon-rs adds one builtin, `render_partial`, to every template:
+`${render_partial('shared/card.pt', item=item)}`. See [Partials](partials.qmd).
+
+
+### Partials
+
+A partial is a template file rendered inside another template, with its own small model. Use
+them for anything you repeat: a card in a listing, a form field, a table row, a fragment you
+also return on its own to HTMX.
+
+chameleon-rs has partials built in. Every template can call `render_partial`, with nothing
+to register or pass in:
+
+```html
+<div tal:repeat="video videos">
+  ${render_partial('shared/partials/video_card.pt', video=video, show_date=True)}
+</div>
+```
+
+`render_partial(path, **kwargs)` renders the template at `path` with `kwargs` as its
+variables, and inserts the result unescaped. Written as a whole `${...}` expression, as above,
+it doesn't make a Python call at all: the partial renders as a native frame of the page. That
+makes a listing of partials about 10x faster than Chameleon with chameleon_partials.
+
+## Tell chameleon-rs where templates live
+
+```python
+import chameleon_rs
+
+chameleon_rs.configure(template_folder=template_folder)
+```
+
+Call it once at startup. See [Configuration](configuration.qmd) for its other options.
+
+## How a path is found
+
+```{python}
+#| echo: false
+import pathlib, tempfile
+
+root = pathlib.Path(tempfile.mkdtemp()) / 'templates'
+for sub in ('shared', 'admin/users'):
+    (root / sub).mkdir(parents=True)
+(root / 'shared' / 'badge.pt').write_text('<span class="badge">${label}</span>')
+(root / 'admin' / 'users' / 'row.pt').write_text('<tr><td>${user}</td><td>${render_partial("shared/badge.pt", label="admin")}</td></tr>')
+(root / 'admin' / 'users' / 'list.pt').write_text(
+    '<table>\n'
+    '  <tal:row repeat="user users">${render_partial(\'row.pt\', user=user)}</tal:row>\n'
+    '</table>\n'
+)
+template_folder = str(root)
+```
+
+By default, `render_partial` looks for the path in these places, in order:
+
+1. The configured template folder.
+2. The calling template's search path: the folders of the `PageTemplateLoader` that loaded
+   it.
+3. The calling template's own folder, then each folder above it.
+
+If the path isn't found anywhere, the render raises `ValueError('Template not found: <path>.')`.
+
+So a page can use partials that sit next to it, with a short path:
+
+```text
+templates/
+├── shared/
+│   └── badge.pt
+└── admin/users/
+    ├── list.pt      ${render_partial('row.pt', user=user)}
+    └── row.pt       ${render_partial('shared/badge.pt', label='admin')}
+```
+
+```{python}
+import chameleon_rs
+from chameleon_rs import PageTemplateLoader
+
+chameleon_rs.configure(template_folder=template_folder)
+templates = PageTemplateLoader([template_folder])
+
+print(templates['admin/users/list.pt'](users=['ada', 'grace']))
+```
+
+`row.pt` isn't in the template folder's root, so it's found next to `list.pt`.
+`shared/badge.pt` is found in the template folder.
+
+Each resolution is cached until the configuration changes, so the search happens once per
+path and calling template.
+
+### chameleon_partials' lookup: `partial_search='registered'`
+
+chameleon_partials resolves every path against the registered folder only, and treats any
+other path as an error. To get exactly that behaviour:
+
+```python
+chameleon_rs.configure(partial_search='registered')
+```
+
+The default only differs from chameleon_partials where chameleon_partials would raise, so
+templates that work there work the same way here.
+
+## What a partial sees
+
+A partial sees only the keyword arguments you pass it, plus `render_partial` itself. It
+doesn't see the calling template's variables. Pass what it needs explicitly:
+
+```html
+${render_partial('shared/user_card.pt', user=user, is_admin=is_admin)}
+```
+
+## Calling it from Python
+
+`chameleon_rs.render_partial` renders a partial from Python code: in a view that returns an
+HTMX fragment, in an email builder, or in a test. It returns an `HTML` object. Its
+`html_text` attribute is the markup, and its `__html__` method means a template inserts it
+without escaping:
+
+```{python}
+fragment = chameleon_rs.render_partial('shared/badge.pt', label='new')
+print(type(fragment).__name__, repr(fragment.html_text))
+```
+
+From Python there's no calling template, so the path is looked up in the configured folder
+only. If no folder is configured, it raises `chameleon_rs.partials.PartialsException`.
+
+## chameleon_partials' API
+
+`chameleon_rs.partials` is also chameleon_partials' API, so code written for it keeps
+working. With `chameleon_rs.compat.install()`, `import chameleon_partials` gives this module.
+
+| chameleon_partials | chameleon-rs |
+|---|---|
+| `register_extensions(folder, auto_reload=False, cache_init=True)` | Still works. Configures partials only. `chameleon_rs.configure()` configures partials and the framework integrations. |
+| `render_partial(path, **model)` | Same, and also a builtin in every template. |
+| `extend_model(model)` | Still works, but isn't needed: every template already has `render_partial`. |
+| `PartialsException` | Same. Also a subclass of `chameleon_rs.web.TemplateError`. |
+| `HTML` | Same (`html_text`, `__html__`). |
+| `has_registered_extensions = False` (test reset) | Still works. `chameleon_rs.partials.clear()` is the direct call. |
+
+::: {.callout-note}
+## Reserved names
+
+As in chameleon_partials, a partial renders as if called with `encoding='utf-8'`, so don't
+use `encoding` as a model name. `translate`, `target_language` and `repeat` also have special
+meanings in any Chameleon template.
+:::
+
+
+### Configuration
+
+chameleon-rs has three layers of configuration:
+
+1. **`chameleon_rs.configure()`**: process-wide settings for templates loaded by name, used by
+   `render_partial` and the framework integrations.
+2. **Template options**: keyword arguments to the template classes and `PageTemplateLoader`,
+   exactly as in Chameleon.
+3. **Environment variables**: Chameleon's `CHAMELEON_*` variables.
+
+## `chameleon_rs.configure()`
+
+```python
+import chameleon_rs
+
+chameleon_rs.configure(
+    template_folder='templates',
+    auto_reload=False,
+    restricted_namespace=True,
+    partial_search='caller',
+)
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `template_folder` | none, required on the first call | An existing directory. Partials and the framework integrations load templates by name from it. |
+| `auto_reload` | `False` | Recompile a template when its file changes. For partials, each file is checked at most once per render. Use it in development only. |
+| `restricted_namespace` | `True` | `False` allows attributes with other namespaces or prefixes, such as Alpine.js's `@click` or Vue's `v-on:click`. |
+| `partial_search` | `'caller'` | Where `render_partial` looks: `'caller'` searches the template folder, then the calling template's search path and folders. `'registered'` searches the template folder only, as chameleon_partials does. See [Partials](partials.qmd#how-a-path-is-found). |
+
+How it behaves:
+
+- **An option you leave out keeps its current value.** So
+  `configure(partial_search='registered')` changes only the search mode.
+- **Every call applies.** There's no `cache_init` as in chameleon_partials and
+  chameleon-flask, so a second call with a different folder takes effect.
+- **It's safe with threads.** Each configuration is an immutable object that's swapped in whole,
+  so a render running at the same time never sees half of one. Still, call it at startup,
+  not per request.
+- It returns the new settings, and raises `chameleon_rs.web.TemplateError` for a missing
+  folder, or `ValueError` for an unknown `partial_search`.
+
+```{python}
+#| echo: false
+import tempfile
+template_folder = tempfile.mkdtemp()
+```
+
+```{python}
+import chameleon_rs
+
+settings = chameleon_rs.configure(template_folder=template_folder, auto_reload=True)
+print(settings.auto_reload, settings.restricted_namespace)
+
+# Leaving options out keeps them: auto_reload is still True.
+settings = chameleon_rs.configure(partial_search='registered')
+print(settings.auto_reload)
+```
+
+For tests, `chameleon_rs.partials.clear()` and `chameleon_rs.flask.clear()` forget the
+configuration again.
+
+`chameleon_rs.flask.configure(..., app=app)` sets a configuration for one Flask or Quart app
+only. See [Flask and Quart](flask.qmd#one-configuration-per-app).
+
+## Template options
+
+The template classes take Chameleon's options as keyword arguments, or as class attributes on
+a subclass. `PageTemplateLoader` passes any extra keyword arguments on to each template it
+loads.
+
+```python
+from chameleon_rs import PageTemplateFile, PageTemplateLoader
+
+page = PageTemplateFile('templates/home.pt', auto_reload=True, encoding='utf-8')
+templates = PageTemplateLoader(['templates'], '.pt', restricted_namespace=False)
+```
+
+The common ones:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `auto_reload` | `False` (or `CHAMELEON_RELOAD`) | File templates recompile when their file changes. |
+| `encoding` | none | Lets you pass encoded byte strings as values. |
+| `translate` | none | The translation function for `i18n:` attributes: `translate(msgid, domain=None, mapping=None, default=None, context=None, target_language=None)`. |
+| `boolean_attributes` | the HTML set, in HTML mode | Attributes rendered as `name="name"` for a true value and dropped for a false one. |
+| `strict` | `True` | Compile every expression up front. `False` only requires an expression to be valid when it's evaluated. |
+| `restricted_namespace` | `True` | `False` passes unknown namespaces and prefixes through, for Alpine.js or Vue. |
+| `trim_attribute_space` | `False` | Strip extra whitespace between attributes. |
+| `implicit_i18n_translate` | `False` | Mark the text in every element for translation. |
+| `implicit_i18n_attributes` | empty | Attribute names (lowercase) to mark for translation. |
+| `on_error_handler` | none | Called with the exception in a `tal:on-error` fallback. |
+| `default_expression` | `'python'` | The expression type used when there's no prefix. |
+| `extra_builtins` | empty | Extra names available in every template. |
+| `keep_body` / `keep_source` | `False` | Keep the template's source text, or a readable dump of its compiled program. |
+
+The rest are also accepted, as in Chameleon: `default_marker`, `value_repr`, `tokenizer`,
+`debug`, `enable_data_attributes`, `enable_comment_interpolation` and `expression_types`.
+File templates also take `search_path`, `package_name`, `loader_class` and
+`prepend_relative_search_path`.
+
+::: {.callout-note}
+## `source` is a program dump, not Python
+
+Chameleon compiles a template to a Python module, and `template.source` is that module's
+code. chameleon-rs compiles to a native program instead, so with `keep_source=True`,
+`source` holds a readable dump of the program. Nothing in Chameleon's own tests depends on
+it being Python.
+:::
+
+## Environment variables
+
+These are read once, when chameleon-rs is imported, as Chameleon reads them. The values `y`,
+`yes`, `t`, `true`, `on` and `1` (any case) count as true.
+
+| Variable | Effect |
+|---|---|
+| `CHAMELEON_RELOAD` | The default for `auto_reload`: file templates reload when their file changes. |
+| `CHAMELEON_EAGER` | File templates compile when they're created, not on first use. Handy in a test that checks every template in a project compiles. |
+| `CHAMELEON_DEBUG` | Templates keep their body and a dump of their compiled program, and use a module loader in a temporary directory. |
+| `CHAMELEON_CACHE` | A directory, which must exist. Chameleon writes the generated Python modules there. chameleon-rs checks the directory but doesn't write compiled programs to disk: compiling is fast enough not to need it. |
+
+Unknown `CHAMELEON_*` variables are logged as warnings, as in Chameleon.
+
+
+
+## Web frameworks
+
+### Flask and Quart
+
+`chameleon_rs.flask` renders templates from Flask and Quart views. It has chameleon-flask's
+API, so moving an app over is an import change, or no change at all with
+`chameleon_rs.compat.install()`.
+
+`import chameleon_rs` doesn't import Flask. Only `import chameleon_rs.flask` does.
+
+## A first view
+
+```{python}
+#| echo: false
+import pathlib, tempfile
+
+folder = pathlib.Path(tempfile.mkdtemp()) / 'templates'
+for sub in ('home', 'errors', 'shared'):
+    (folder / sub).mkdir(parents=True)
+(folder / 'home' / 'index.pt').write_text(
+    '<h1>${message}</h1>\n'
+    '<ul><li tal:repeat="v videos">${render_partial(\'shared/video.pt\', video=v)}</li></ul>'
+)
+(folder / 'shared' / 'video.pt').write_text('<a href="/videos/${video}">${video}</a>')
+(folder / 'errors' / '404.pt').write_text('<h1>Not found: ${path}</h1>')
+template_folder = str(folder)
+dev_mode = True
+```
+
+```{python}
+import flask
+
+import chameleon_rs.flask as chameleon_flask
+
+app = flask.Flask(__name__)
+chameleon_flask.configure(template_folder=template_folder, auto_reload=dev_mode)
+
+
+@app.get('/')
+@chameleon_flask.template('home/index.pt')
+def index():
+    return {'message': 'Hello', 'videos': ['intro', 'partials']}
+```
+
+The view returns the template's model, and `@template` renders it into a `flask.Response`:
+
+```{python}
+client = app.test_client()
+print(client.get('/').text)
+```
+
+`configure()` here is the same call as `chameleon_rs.configure()`, so it also tells
+`render_partial` where templates live.
+
+## What a view can return
+
+- **A model:** a `dict`, any other mapping, a dataclass instance (its fields, shallowly) or a
+  Pydantic model (anything with a callable `model_dump()`).
+- **A response:** a `flask.Response`, a Quart response or a werkzeug response passes
+  through unchanged. Use it for redirects.
+
+Anything else raises `chameleon_rs.flask.FlaskChameleonException`.
+
+## The `@template` decorator
+
+```python
+@chameleon_flask.template('home/index.pt')                            # a template path
+@chameleon_flask.template('feed.pt', content_type='application/xml')  # or mimetype=
+@chameleon_flask.template('home/created.pt', status_code=201)
+@chameleon_flask.template                                             # no arguments
+```
+
+With no path, it renders `{module}/{function}.html`, where `{module}` is the last part of the
+view's module name. If there's no `.html` file in the template folder, it uses
+`{module}/{function}.pt`. It checks once, when the view is decorated.
+
+It works on sync views, Flask's async views and Quart views alike.
+
+## Error pages
+
+Inside a decorated view, `not_found()` and `error()` stop the view and render an error page:
+
+```{python}
+app = flask.Flask(__name__)
+
+
+@app.get('/videos/<name>')
+@chameleon_flask.template('home/index.pt')
+def video(name):
+    if name != 'intro':
+        chameleon_flask.not_found(path=flask.request.path)   # renders errors/404.pt
+    return {'message': name, 'videos': [name]}
+
+
+response = app.test_client().get('/videos/missing')
+print(response.status_code, response.text)
+```
+
+- `not_found(template_file='errors/404.pt', **data)` renders the page with status 404.
+- `error(template_file, status_code=500, **data)` renders any error page.
+- `generic_error(template_file, status_code, template_data)` is fastapi-chameleon's name for
+  `error()`.
+
+They raise `chameleon_rs.web.NotFound` and `chameleon_rs.web.ErrorPage`, which the decorator
+turns into the response.
+
+## Rendering without the decorator
+
+```python
+html = chameleon_flask.render('emails/welcome.pt', user=user)            # a str
+resp = chameleon_flask.response('feed.pt', content_type='application/xml', items=items)
+```
+
+`render()` and `response()` work anywhere, such as in a view that builds its own response or
+in a background job. Both raise `FlaskChameleonException` if nothing has been configured.
+
+## One configuration per app
+
+Pass `app=` to give one Flask or Quart app its own template folder. It's stored in
+`app.extensions['chameleon_rs']` and used while that app handles a request. Other apps, and
+code outside a request, use the process-wide configuration.
+
+```python
+chameleon_flask.configure(template_folder='admin/templates', app=admin_app)
+```
+
+## Quart
+
+The same module works with Quart, with no extra install:
+
+```python
+import quart
+
+import chameleon_rs.flask as chameleon_flask
+
+app = quart.Quart(__name__)
+chameleon_flask.configure(template_folder=template_folder)
+
+
+@app.get('/')
+@chameleon_flask.template('home/index.pt')
+async def index():
+    videos = await load_videos()
+    return {'message': 'Hello', 'videos': videos}
+```
+
+::: {.callout-note}
+## Renders are synchronous for now
+
+An async view awaits your code, then renders the template synchronously, as chameleon-flask
+does. Async rendering, which doesn't block the event loop, is in progress.
+:::
+
+## Coming from chameleon-flask
+
+| chameleon-flask | chameleon-rs |
+|---|---|
+| `global_init(folder, auto_reload=False, cache_init=True)` | Still works. It configures the views only, as before, and ignores a second call. `configure()` sets views and partials together, and every call applies. |
+| `@template`, `render`, `response`, `not_found` | Same. `not_found` also takes the template as `template_file=`, as well as `four04template_file=`. |
+| — | `error()`, any status code. |
+| `FlaskChameleonException`, `FlaskChameleonNotFoundException` | Same, now subclasses of `chameleon_rs.web.TemplateError` and `NotFound`. `except chameleon_rs.web.TemplateError` catches them all. |
+| Views return a `dict` | Also mappings, dataclasses and Pydantic models. |
+
+
+
+## Background
+
+### Compatibility
+
+chameleon-rs's goal is to produce exactly what Chameleon produces, for every template, and
+to raise the same errors. This page says how that's measured, and lists the few places where
+chameleon-rs knowingly differs.
+
+## How it's measured
+
+Each level is a check that runs on every change:
+
+| Check | Result |
+|---|---|
+| **Chameleon's own test suite.** All 233 tests, vendored unmodified, run against chameleon-rs. | Every test that passes on Chameleon passes on chameleon-rs: 227 of 227. The other 6 depend on the test environment and are skipped on both engines. |
+| **Fixture renders.** Every input template in Chameleon's test suite, rendered by both engines. | All 122 byte-identical. |
+| **Differential fuzzing.** Generated templates, models and expressions, rendered by both engines and compared. | No differences in 20,000 examples per generator. |
+| **Integration suites.** The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn and chameleon_partials, unmodified, on chameleon-rs. | All pass. |
+| **Real sites.** Every page of two production Flask/Quart apps, crawled with both engines: anonymous and signed in, with all their partials and layouts. | Every page byte-identical. |
+
+The upstream suite and the fuzzers compare output byte for byte, and they also compare the
+type and message of any error a template raises.
+
+## What's identical
+
+- **The template language**: TAL, METAL, i18n, `${...}`, every expression type, and
+  whitespace and attribute handling, down to the byte.
+- **The Python API**: the template classes and their options, `PageTemplateLoader`, macros,
+  `translate` functions, `tal:on-error` handlers, and `CHAMELEON_*` environment variables.
+- **The modules**: `chameleon_rs.compat.install()` maps each Chameleon module to the
+  chameleon-rs module of the same name.
+- **Errors**: the same exception types, and the same formatted messages with the template
+  position and expression.
+- **The helper libraries**: chameleon_partials' and chameleon-flask's APIs, built in.
+
+## Known differences
+
+These are deliberate. Each comes from chameleon-rs compiling to a native program rather than
+to Python source code.
+
+| Area | Chameleon | chameleon-rs |
+|---|---|---|
+| `template.source` | The generated Python module's code. | With `keep_source=True`, a readable dump of the compiled program. It isn't Python. |
+| Custom expression types | A class whose compiler returns Python AST statements. | Supported through a bridge that wraps the AST in a Python function, at the speed of an ordinary Python call. Types that depend on Chameleon's compiler internals beyond that interface aren't supported. |
+| `CHAMELEON_CACHE` | Writes the generated modules to disk and loads them on the next start. | Checks the directory but writes nothing. Compiling is about 70x faster than Chameleon, so there's little to cache. |
+| Code-generation modules | `chameleon.nodes`, `chameleon.program`, `chameleon.zpt.program`, `chameleon.benchmark`. | Not provided, since chameleon-rs doesn't generate code. Importing them raises `ModuleNotFoundError`. |
+
+The built-in partials have one behaviour change, which you can turn off: a path that isn't in
+the configured template folder is also looked for next to the calling template, where
+chameleon_partials would raise. `configure(partial_search='registered')` restores the
+original lookup. See [Partials](partials.qmd#how-a-path-is-found).
+
+## Found a difference?
+
+If a template renders differently on chameleon-rs than on Chameleon, that's a bug. Please
+[open an issue](https://github.com/mikeckennedy/chameleon-rust/issues) with the template, the
+model, and both outputs. [Shadow mode](switching-from-chameleon.qmd#check-your-own-app-first-shadow-mode)
+can find such templates in a running app.
+
+
+### Performance
+
+chameleon-rs compiles a template to a native program and runs it in Rust. The template's own
+work (the loops, conditions, escaping, macro and slot calls, partials and output assembly)
+happens without Python bytecode. Python only runs where the template calls into your code: an
+attribute lookup, a method call, a helper.
+
+## Synthetic benchmarks
+
+Times per render, or per item for listings. Both engines ran in the same process, interleaved,
+on a release build of chameleon-rs without profile-guided optimization.
+
+| Scenario | chameleon-rs | Chameleon | Speedup |
+|---|---|---|---|
+| Listing, per item | 431 ns | 2,835 ns | 6.6x |
+| Macro call filling a slot, per item | 676 ns | 4,648 ns | 6.9x |
+| App-shaped page, inline cards | 69.6 µs | 301 µs | 4.3x |
+| Report page, 1,000 rows through a partial | 1.40 ms | 4.87 ms | 3.5x |
+| Translated element, per item | 1,520 ns | 2,870 ns | 1.9x |
+| Partial listing, per item (native `render_partial` vs chameleon_partials) | 654–680 ns | 7,300 ns | 10.9x |
+| chameleon_partials through `compat.install()`, per item | 2,500 ns | 7,300 ns | 2.9x |
+
+Profile-guided builds (`make build-pgo`) are about 10% faster again.
+
+The pages that gain least spend their time in the application's Python: the report page's
+rows call property getters and formatting helpers, which cost the same on both engines.
+
+## Compile time and the first request
+
+| | chameleon-rs | Chameleon | Speedup |
+|---|---|---|---|
+| Compile 118 templates, total | 9.6 ms | 657 ms | 68x |
+| Compile one template, median | 0.053 ms | 3.8 ms | 72x |
+| First request of an app page (compile, load the layout, first render) | 1.4 ms | 54 ms | 39x |
+
+This matters after every deploy, every worker restart and every `auto_reload` change.
+
+## Real applications
+
+On real pages, the template engine is only part of the work. In a production Quart site,
+measured page by page with both engines on the same data:
+
+- **Template rendering** was 2.2x faster in total, with a median of 2.9x per page.
+- **Whole requests**, including the app's database and Python code, were 1.3x faster.
+- **Under load**, with 20 concurrent users on one single-threaded worker, throughput rose 34%,
+  median latency fell from 170 ms to 120 ms, and p99 latency fell from 255 ms to 195 ms.
+
+The HTML was identical on every page. In chameleon-rs's renders there, the engine's own code
+was only 3–6% of the time. The rest was CPython work the templates trigger: attribute
+lookups, small helpers and properties, and conversions.
+
+## Getting the most out of it
+
+- **Keep templates loaded.** Reuse `PageTemplateLoader` instances and template objects.
+  Building a template per request recompiles it every time.
+- **Leave `auto_reload` off in production.** It checks the file's modification time on every
+  render.
+- **Write partials as a whole expression:** `${render_partial('card.pt', item=item)}`. Then
+  the partial renders natively, without a Python call.
+- **Prepare data in the view.** Expensive properties and helpers called inside a loop cost
+  the same on either engine.
+
+## Reproduce the numbers
+
+The benchmarks are in the repository's `bench/` folder. Build a release first:
+
+```bash
+make dev             # one-time setup: venv, reference Chameleon, extension
+make build-release
+venv/bin/python bench/bench_ab.py <git-ref> --scenario listing   # also: macro, page
+venv/bin/python bench/bench_page.py
+venv/bin/python bench/bench_skeleton.py
+venv/bin/python bench/bench_macros.py
+venv/bin/python bench/bench_first.py
+```
+
+Each script prints chameleon-rs's and Chameleon's times from the same run. Run them on a quiet
+machine. Background load moves the absolute numbers much more than the ratios.
+
+
+### Migrating from the helper libraries
+
+chameleon-rs builds in what chameleon_partials and chameleon-flask provide. With
+`chameleon_rs.compat.install()` you don't have to change anything: the old imports give the
+built-ins. This page is for when you want to move to the new names, and drop the old setup
+code that's no longer needed.
+
+## At a glance
+
+| Before | After |
+|---|---|
+| `from chameleon import PageTemplateLoader` | `from chameleon_rs import PageTemplateLoader` |
+| `chameleon_partials.register_extensions(folder, auto_reload=dev)` and `chameleon_flask.global_init(folder, auto_reload=dev)` | One call: `chameleon_rs.configure(template_folder=folder, auto_reload=dev)` |
+| `return chameleon_partials.extend_model(model)` in every view | `return model`: `render_partial` is in every template |
+| A Pyramid `BeforeRender` subscriber that adds `render_partial` | Remove it |
+| `import chameleon_flask` | `import chameleon_rs.flask as chameleon_flask` |
+| `chameleon_partials.render_partial(path, **m).html_text` | `chameleon_rs.render_partial(path, **m).html_text` |
+| `except chameleon_partials.PartialsException`, `except chameleon_flask.exceptions.FlaskChameleonException` | Still work. `except chameleon_rs.web.TemplateError` catches both |
+| `has_registered_extensions = False` in test teardown | `chameleon_rs.partials.clear()` |
+
+## chameleon_partials
+
+```python
+# Before
+import chameleon_partials
+
+chameleon_partials.register_extensions(template_folder, auto_reload=dev_mode)
+
+
+def index(request):
+    model = {'videos': videos}
+    return chameleon_partials.extend_model(model)
+```
+
+```python
+# After
+import chameleon_rs
+
+chameleon_rs.configure(template_folder=template_folder, auto_reload=dev_mode)
+
+
+def index(request):
+    return {'videos': videos}
+```
+
+Templates don't change. `${render_partial('shared/partials/video.pt', video=v)}` works
+as before, and runs natively.
+
+Things to know:
+
+- **Every `configure()` call applies.** `register_extensions` ignored a second call unless you
+  passed `cache_init=False`. `register_extensions` itself still behaves the old way.
+- **Partial paths can also be relative to the calling template.** A path that isn't in the
+  template folder is looked for next to the calling template, where chameleon_partials would
+  raise. Templates that worked before render exactly the same.
+  `configure(partial_search='registered')` turns the extra lookup off.
+- **Configuring is thread-safe.** Configuration is swapped in whole, so a render never sees
+  half of one.
+
+## chameleon-flask
+
+```python
+# Before
+import chameleon_flask
+
+chameleon_flask.global_init(template_folder, auto_reload=dev_mode)
+```
+
+```python
+# After
+import chameleon_rs.flask as chameleon_flask
+
+chameleon_flask.configure(template_folder=template_folder, auto_reload=dev_mode)
+```
+
+Views, `@template`, `render`, `response` and `not_found` stay the same. New in chameleon-rs:
+
+- `configure()` also sets the partials folder, so you need only one setup call.
+- `error(template_file, status_code=500, **data)` renders any error page.
+- Views can return mappings, dataclasses and Pydantic models, not only `dict`.
+- `configure(..., app=app)` gives one app its own configuration.
+
+See [Flask and Quart](flask.qmd).
+
+## fastapi-chameleon and chameleon-robyn
+
+chameleon-rs doesn't build these in yet. Keep using them, with `chameleon_rs.compat.install()`
+at the top of your entry point: they import `chameleon`, so they render with chameleon-rs.
+Their test suites pass unmodified on it.
+
+## Pitfalls
+
+- **Install the alias first.** `chameleon_rs.compat.install()` must run before the first
+  `import chameleon`, including imports inside your framework integration. Put it in the entry
+  point itself, above every other import.
+- **Don't mix shadow mode with the alias.** Shadow mode needs stock Chameleon as `chameleon`.
+- **`template.source` isn't Python.** Code that read the generated module (rare, mostly
+  debugging tools) gets a program dump instead. See [Compatibility](compatibility.qmd#known-differences).
+

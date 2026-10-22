@@ -1,0 +1,1532 @@
+[
+  {
+    "objectID": "user-guide/template-language.html",
+    "href": "user-guide/template-language.html",
+    "title": "Template language",
+    "section": "",
+    "text": "chameleon-rs implements Chameleon’s template language unchanged: the same TAL attributes, METAL macros, i18n attributes, ${...} interpolation and expression types, with the same output. Templates you wrote for Chameleon work as they are.\nThis page is a quick tour. The language reference covers every statement in detail.\n\nA tour in one template\n\nfrom chameleon_rs import PageTemplate\n\npage = PageTemplate(\"\"\"\n&lt;section tal:define=\"count len(items)\"&gt;\n  &lt;h2&gt;${title} &lt;small tal:condition=\"count\"&gt;(${count})&lt;/small&gt;&lt;/h2&gt;\n  &lt;p tal:condition=\"not count\"&gt;Nothing here yet.&lt;/p&gt;\n  &lt;ul&gt;\n    &lt;li tal:repeat=\"item items\"\n        class=\"${'odd' if repeat.item.odd else 'even'}\"\n        tal:content=\"item.upper()\"&gt;placeholder&lt;/li&gt;\n  &lt;/ul&gt;\n  &lt;a href=\"${url}\" tal:attributes=\"title url\"&gt;More&lt;/a&gt;\n&lt;/section&gt;\n\"\"\")\n\nprint(page(title='Tags', items=['rust', 'python', 'html'], url='/tags'))\n\n\n&lt;section&gt;\n  &lt;h2&gt;Tags &lt;small&gt;(3)&lt;/small&gt;&lt;/h2&gt;\n  \n  &lt;ul&gt;\n    &lt;li\n        class=\"even\"&gt;RUST&lt;/li&gt;\n    &lt;li\n        class=\"odd\"&gt;PYTHON&lt;/li&gt;\n    &lt;li\n        class=\"even\"&gt;HTML&lt;/li&gt;\n  &lt;/ul&gt;\n  &lt;a href=\"/tags\" title=\"/tags\"&gt;More&lt;/a&gt;\n&lt;/section&gt;\n\n\n\n\n\nThe pieces\n\n\n\n\n\n\n\nSyntax\nWhat it does\n\n\n\n\n${expr}\nInsert a value, HTML-escaped. Works in text and in attribute values.\n\n\n${structure: expr}\nInsert markup without escaping. Objects with __html__ are also inserted as-is.\n\n\ntal:define=\"name expr\"\nBind a variable for the element and its children (global for the rest of the template).\n\n\ntal:condition=\"expr\"\nKeep the element only if the expression is true.\n\n\ntal:repeat=\"item items\"\nRepeat the element for each item. repeat.item gives index, number, odd, even, start, end, length, …\n\n\ntal:content=\"expr\" / tal:replace=\"expr\"\nReplace the element’s content, or the whole element.\n\n\ntal:attributes=\"name expr; ...\"\nSet or remove attributes.\n\n\ntal:omit-tag=\"\"\nDrop the element’s tags and keep its content.\n\n\ntal:switch / tal:case\nChoose one of several branches.\n\n\ntal:on-error=\"expr\"\nRender a fallback if the element raises.\n\n\nmetal:define-macro / metal:use-macro / metal:fill-slot\nLayouts and reusable fragments. See below.\n\n\ni18n:translate, i18n:attributes, i18n:name, i18n:domain\nMark text for translation.\n\n\n\nExpressions are Python by default. Other expression types are written with a prefix: string:, exists:, not:, import:, load: and structure:.\n\n\nLayouts with METAL\nA layout defines a macro with slots, and each page fills them:\n\nlayout = PageTemplate(\"\"\"\n&lt;html metal:define-macro=\"layout\"&gt;\n  &lt;head&gt;&lt;title metal:define-slot=\"title\"&gt;Site&lt;/title&gt;&lt;/head&gt;\n  &lt;body&gt;&lt;main metal:define-slot=\"content\"&gt;&lt;/main&gt;&lt;/body&gt;\n&lt;/html&gt;\n\"\"\")\n\npage = PageTemplate(\"\"\"\n&lt;html metal:use-macro=\"layout.macros['layout']\"&gt;\n  &lt;title metal:fill-slot=\"title\"&gt;Home&lt;/title&gt;\n  &lt;main metal:fill-slot=\"content\"&gt;&lt;p&gt;Welcome, ${user}.&lt;/p&gt;&lt;/main&gt;\n&lt;/html&gt;\n\"\"\")\n\nprint(page(layout=layout, user='Ada'))\n\n\n&lt;html&gt;\n  &lt;head&gt;&lt;title&gt;Home&lt;/title&gt;&lt;/head&gt;\n  &lt;body&gt;&lt;main&gt;&lt;p&gt;Welcome, Ada.&lt;/p&gt;&lt;/main&gt;&lt;/body&gt;\n&lt;/html&gt;\n\n\n\nIn a template loaded from a file, load: loads the layout relative to the page: metal:use-macro=\"load: ../shared/_layout.pt\".\n\n\nPartials\nchameleon-rs adds one builtin, render_partial, to every template: ${render_partial('shared/card.pt', item=item)}. See Partials.",
+    "crumbs": [
+      "User Guide",
+      "Templates",
+      "Template language"
+    ]
+  },
+  {
+    "objectID": "user-guide/performance.html",
+    "href": "user-guide/performance.html",
+    "title": "Performance",
+    "section": "",
+    "text": "chameleon-rs compiles a template to a native program and runs it in Rust. The template’s own work (the loops, conditions, escaping, macro and slot calls, partials and output assembly) happens without Python bytecode. Python only runs where the template calls into your code: an attribute lookup, a method call, a helper.\n\nSynthetic benchmarks\nTimes per render, or per item for listings. Both engines ran in the same process, interleaved, on a release build of chameleon-rs without profile-guided optimization.\n\n\n\n\n\n\n\n\n\nScenario\nchameleon-rs\nChameleon\nSpeedup\n\n\n\n\nListing, per item\n431 ns\n2,835 ns\n6.6x\n\n\nMacro call filling a slot, per item\n676 ns\n4,648 ns\n6.9x\n\n\nApp-shaped page, inline cards\n69.6 µs\n301 µs\n4.3x\n\n\nReport page, 1,000 rows through a partial\n1.40 ms\n4.87 ms\n3.5x\n\n\nTranslated element, per item\n1,520 ns\n2,870 ns\n1.9x\n\n\nPartial listing, per item (native render_partial vs chameleon_partials)\n654–680 ns\n7,300 ns\n10.9x\n\n\nchameleon_partials through compat.install(), per item\n2,500 ns\n7,300 ns\n2.9x\n\n\n\nProfile-guided builds (make build-pgo) are about 10% faster again.\nThe pages that gain least spend their time in the application’s Python: the report page’s rows call property getters and formatting helpers, which cost the same on both engines.\n\n\nCompile time and the first request\n\n\n\n\n\n\n\n\n\n\nchameleon-rs\nChameleon\nSpeedup\n\n\n\n\nCompile 118 templates, total\n9.6 ms\n657 ms\n68x\n\n\nCompile one template, median\n0.053 ms\n3.8 ms\n72x\n\n\nFirst request of an app page (compile, load the layout, first render)\n1.4 ms\n54 ms\n39x\n\n\n\nThis matters after every deploy, every worker restart and every auto_reload change.\n\n\nReal applications\nOn real pages, the template engine is only part of the work. In a production Quart site, measured page by page with both engines on the same data:\n\nTemplate rendering was 2.2x faster in total, with a median of 2.9x per page.\nWhole requests, including the app’s database and Python code, were 1.3x faster.\nUnder load, with 20 concurrent users on one single-threaded worker, throughput rose 34%, median latency fell from 170 ms to 120 ms, and p99 latency fell from 255 ms to 195 ms.\n\nThe HTML was identical on every page. In chameleon-rs’s renders there, the engine’s own code was only 3–6% of the time. The rest was CPython work the templates trigger: attribute lookups, small helpers and properties, and conversions.\n\n\nGetting the most out of it\n\nKeep templates loaded. Reuse PageTemplateLoader instances and template objects. Building a template per request recompiles it every time.\nLeave auto_reload off in production. It checks the file’s modification time on every render.\nWrite partials as a whole expression: ${render_partial('card.pt', item=item)}. Then the partial renders natively, without a Python call.\nPrepare data in the view. Expensive properties and helpers called inside a loop cost the same on either engine.\n\n\n\nReproduce the numbers\nThe benchmarks are in the repository’s bench/ folder. Build a release first:\nmake dev             # one-time setup: venv, reference Chameleon, extension\nmake build-release\nvenv/bin/python bench/bench_ab.py &lt;git-ref&gt; --scenario listing   # also: macro, page\nvenv/bin/python bench/bench_page.py\nvenv/bin/python bench/bench_skeleton.py\nvenv/bin/python bench/bench_macros.py\nvenv/bin/python bench/bench_first.py\nEach script prints chameleon-rs’s and Chameleon’s times from the same run. Run them on a quiet machine. Background load moves the absolute numbers much more than the ratios.",
+    "crumbs": [
+      "User Guide",
+      "Background",
+      "Performance"
+    ]
+  },
+  {
+    "objectID": "user-guide/migrating.html",
+    "href": "user-guide/migrating.html",
+    "title": "Migrating from the helper libraries",
+    "section": "",
+    "text": "chameleon-rs builds in what chameleon_partials and chameleon-flask provide. With chameleon_rs.compat.install() you don’t have to change anything: the old imports give the built-ins. This page is for when you want to move to the new names, and drop the old setup code that’s no longer needed.\n\nAt a glance\n\n\n\n\n\n\n\nBefore\nAfter\n\n\n\n\nfrom chameleon import PageTemplateLoader\nfrom chameleon_rs import PageTemplateLoader\n\n\nchameleon_partials.register_extensions(folder, auto_reload=dev) and chameleon_flask.global_init(folder, auto_reload=dev)\nOne call: chameleon_rs.configure(template_folder=folder, auto_reload=dev)\n\n\nreturn chameleon_partials.extend_model(model) in every view\nreturn model: render_partial is in every template\n\n\nA Pyramid BeforeRender subscriber that adds render_partial\nRemove it\n\n\nimport chameleon_flask\nimport chameleon_rs.flask as chameleon_flask\n\n\nchameleon_partials.render_partial(path, **m).html_text\nchameleon_rs.render_partial(path, **m).html_text\n\n\nexcept chameleon_partials.PartialsException, except chameleon_flask.exceptions.FlaskChameleonException\nStill work. except chameleon_rs.web.TemplateError catches both\n\n\nhas_registered_extensions = False in test teardown\nchameleon_rs.partials.clear()\n\n\n\n\n\nchameleon_partials\n# Before\nimport chameleon_partials\n\nchameleon_partials.register_extensions(template_folder, auto_reload=dev_mode)\n\n\ndef index(request):\n    model = {'videos': videos}\n    return chameleon_partials.extend_model(model)\n# After\nimport chameleon_rs\n\nchameleon_rs.configure(template_folder=template_folder, auto_reload=dev_mode)\n\n\ndef index(request):\n    return {'videos': videos}\nTemplates don’t change. ${render_partial('shared/partials/video.pt', video=v)} works as before, and runs natively.\nThings to know:\n\nEvery configure() call applies. register_extensions ignored a second call unless you passed cache_init=False. register_extensions itself still behaves the old way.\nPartial paths can also be relative to the calling template. A path that isn’t in the template folder is looked for next to the calling template, where chameleon_partials would raise. Templates that worked before render exactly the same. configure(partial_search='registered') turns the extra lookup off.\nConfiguring is thread-safe. Configuration is swapped in whole, so a render never sees half of one.\n\n\n\nchameleon-flask\n# Before\nimport chameleon_flask\n\nchameleon_flask.global_init(template_folder, auto_reload=dev_mode)\n# After\nimport chameleon_rs.flask as chameleon_flask\n\nchameleon_flask.configure(template_folder=template_folder, auto_reload=dev_mode)\nViews, @template, render, response and not_found stay the same. New in chameleon-rs:\n\nconfigure() also sets the partials folder, so you need only one setup call.\nerror(template_file, status_code=500, **data) renders any error page.\nViews can return mappings, dataclasses and Pydantic models, not only dict.\nconfigure(..., app=app) gives one app its own configuration.\n\nSee Flask and Quart.\n\n\nfastapi-chameleon and chameleon-robyn\nchameleon-rs doesn’t build these in yet. Keep using them, with chameleon_rs.compat.install() at the top of your entry point: they import chameleon, so they render with chameleon-rs. Their test suites pass unmodified on it.\n\n\nPitfalls\n\nInstall the alias first. chameleon_rs.compat.install() must run before the first import chameleon, including imports inside your framework integration. Put it in the entry point itself, above every other import.\nDon’t mix shadow mode with the alias. Shadow mode needs stock Chameleon as chameleon.\ntemplate.source isn’t Python. Code that read the generated module (rare, mostly debugging tools) gets a program dump instead. See Compatibility.",
+    "crumbs": [
+      "User Guide",
+      "Background",
+      "Migrating from the helper libraries"
+    ]
+  },
+  {
+    "objectID": "user-guide/flask.html",
+    "href": "user-guide/flask.html",
+    "title": "Flask and Quart",
+    "section": "",
+    "text": "chameleon_rs.flask renders templates from Flask and Quart views. It has chameleon-flask’s API, so moving an app over is an import change, or no change at all with chameleon_rs.compat.install().\nimport chameleon_rs doesn’t import Flask. Only import chameleon_rs.flask does.\n\nA first view\n\nimport flask\n\nimport chameleon_rs.flask as chameleon_flask\n\napp = flask.Flask(__name__)\nchameleon_flask.configure(template_folder=template_folder, auto_reload=dev_mode)\n\n\n@app.get('/')\n@chameleon_flask.template('home/index.pt')\ndef index():\n    return {'message': 'Hello', 'videos': ['intro', 'partials']}\n\nThe view returns the template’s model, and @template renders it into a flask.Response:\n\nclient = app.test_client()\nprint(client.get('/').text)\n\n&lt;h1&gt;Hello&lt;/h1&gt;\n&lt;ul&gt;&lt;li&gt;&lt;a href=\"/videos/intro\"&gt;intro&lt;/a&gt;&lt;/li&gt;\n&lt;li&gt;&lt;a href=\"/videos/partials\"&gt;partials&lt;/a&gt;&lt;/li&gt;&lt;/ul&gt;\n\n\nconfigure() here is the same call as chameleon_rs.configure(), so it also tells render_partial where templates live.\n\n\nWhat a view can return\n\nA model: a dict, any other mapping, a dataclass instance (its fields, shallowly) or a Pydantic model (anything with a callable model_dump()).\nA response: a flask.Response, a Quart response or a werkzeug response passes through unchanged. Use it for redirects.\n\nAnything else raises chameleon_rs.flask.FlaskChameleonException.\n\n\nThe @template decorator\n@chameleon_flask.template('home/index.pt')                            # a template path\n@chameleon_flask.template('feed.pt', content_type='application/xml')  # or mimetype=\n@chameleon_flask.template('home/created.pt', status_code=201)\n@chameleon_flask.template                                             # no arguments\nWith no path, it renders {module}/{function}.html, where {module} is the last part of the view’s module name. If there’s no .html file in the template folder, it uses {module}/{function}.pt. It checks once, when the view is decorated.\nIt works on sync views, Flask’s async views and Quart views alike.\n\n\nError pages\nInside a decorated view, not_found() and error() stop the view and render an error page:\n\napp = flask.Flask(__name__)\n\n\n@app.get('/videos/&lt;name&gt;')\n@chameleon_flask.template('home/index.pt')\ndef video(name):\n    if name != 'intro':\n        chameleon_flask.not_found(path=flask.request.path)   # renders errors/404.pt\n    return {'message': name, 'videos': [name]}\n\n\nresponse = app.test_client().get('/videos/missing')\nprint(response.status_code, response.text)\n\n404 &lt;h1&gt;Not found: /videos/missing&lt;/h1&gt;\n\n\n\nnot_found(template_file='errors/404.pt', **data) renders the page with status 404.\nerror(template_file, status_code=500, **data) renders any error page.\ngeneric_error(template_file, status_code, template_data) is fastapi-chameleon’s name for error().\n\nThey raise chameleon_rs.web.NotFound and chameleon_rs.web.ErrorPage, which the decorator turns into the response.\n\n\nRendering without the decorator\nhtml = chameleon_flask.render('emails/welcome.pt', user=user)            # a str\nresp = chameleon_flask.response('feed.pt', content_type='application/xml', items=items)\nrender() and response() work anywhere, such as in a view that builds its own response or in a background job. Both raise FlaskChameleonException if nothing has been configured.\n\n\nOne configuration per app\nPass app= to give one Flask or Quart app its own template folder. It’s stored in app.extensions['chameleon_rs'] and used while that app handles a request. Other apps, and code outside a request, use the process-wide configuration.\nchameleon_flask.configure(template_folder='admin/templates', app=admin_app)\n\n\nQuart\nThe same module works with Quart, with no extra install:\nimport quart\n\nimport chameleon_rs.flask as chameleon_flask\n\napp = quart.Quart(__name__)\nchameleon_flask.configure(template_folder=template_folder)\n\n\n@app.get('/')\n@chameleon_flask.template('home/index.pt')\nasync def index():\n    videos = await load_videos()\n    return {'message': 'Hello', 'videos': videos}\n\n\n\n\n\n\nNoteRenders are synchronous for now\n\n\n\nAn async view awaits your code, then renders the template synchronously, as chameleon-flask does. Async rendering, which doesn’t block the event loop, is in progress.\n\n\n\n\nComing from chameleon-flask\n\n\n\n\n\n\n\nchameleon-flask\nchameleon-rs\n\n\n\n\nglobal_init(folder, auto_reload=False, cache_init=True)\nStill works. It configures the views only, as before, and ignores a second call. configure() sets views and partials together, and every call applies.\n\n\n@template, render, response, not_found\nSame. not_found also takes the template as template_file=, as well as four04template_file=.\n\n\n—\nerror(), any status code.\n\n\nFlaskChameleonException, FlaskChameleonNotFoundException\nSame, now subclasses of chameleon_rs.web.TemplateError and NotFound. except chameleon_rs.web.TemplateError catches them all.\n\n\nViews return a dict\nAlso mappings, dataclasses and Pydantic models.",
+    "crumbs": [
+      "User Guide",
+      "Web frameworks",
+      "Flask and Quart"
+    ]
+  },
+  {
+    "objectID": "user-guide/compatibility.html",
+    "href": "user-guide/compatibility.html",
+    "title": "Compatibility",
+    "section": "",
+    "text": "chameleon-rs’s goal is to produce exactly what Chameleon produces, for every template, and to raise the same errors. This page says how that’s measured, and lists the few places where chameleon-rs knowingly differs.\n\nHow it’s measured\nEach level is a check that runs on every change:\n\n\n\n\n\n\n\nCheck\nResult\n\n\n\n\nChameleon’s own test suite. All 233 tests, vendored unmodified, run against chameleon-rs.\nEvery test that passes on Chameleon passes on chameleon-rs: 227 of 227. The other 6 depend on the test environment and are skipped on both engines.\n\n\nFixture renders. Every input template in Chameleon’s test suite, rendered by both engines.\nAll 122 byte-identical.\n\n\nDifferential fuzzing. Generated templates, models and expressions, rendered by both engines and compared.\nNo differences in 20,000 examples per generator.\n\n\nIntegration suites. The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn and chameleon_partials, unmodified, on chameleon-rs.\nAll pass.\n\n\nReal sites. Every page of two production Flask/Quart apps, crawled with both engines: anonymous and signed in, with all their partials and layouts.\nEvery page byte-identical.\n\n\n\nThe upstream suite and the fuzzers compare output byte for byte, and they also compare the type and message of any error a template raises.\n\n\nWhat’s identical\n\nThe template language: TAL, METAL, i18n, ${...}, every expression type, and whitespace and attribute handling, down to the byte.\nThe Python API: the template classes and their options, PageTemplateLoader, macros, translate functions, tal:on-error handlers, and CHAMELEON_* environment variables.\nThe modules: chameleon_rs.compat.install() maps each Chameleon module to the chameleon-rs module of the same name.\nErrors: the same exception types, and the same formatted messages with the template position and expression.\nThe helper libraries: chameleon_partials’ and chameleon-flask’s APIs, built in.\n\n\n\nKnown differences\nThese are deliberate. Each comes from chameleon-rs compiling to a native program rather than to Python source code.\n\n\n\n\n\n\n\n\nArea\nChameleon\nchameleon-rs\n\n\n\n\ntemplate.source\nThe generated Python module’s code.\nWith keep_source=True, a readable dump of the compiled program. It isn’t Python.\n\n\nCustom expression types\nA class whose compiler returns Python AST statements.\nSupported through a bridge that wraps the AST in a Python function, at the speed of an ordinary Python call. Types that depend on Chameleon’s compiler internals beyond that interface aren’t supported.\n\n\nCHAMELEON_CACHE\nWrites the generated modules to disk and loads them on the next start.\nChecks the directory but writes nothing. Compiling is about 70x faster than Chameleon, so there’s little to cache.\n\n\nCode-generation modules\nchameleon.nodes, chameleon.program, chameleon.zpt.program, chameleon.benchmark.\nNot provided, since chameleon-rs doesn’t generate code. Importing them raises ModuleNotFoundError.\n\n\n\nThe built-in partials have one behaviour change, which you can turn off: a path that isn’t in the configured template folder is also looked for next to the calling template, where chameleon_partials would raise. configure(partial_search='registered') restores the original lookup. See Partials.\n\n\nFound a difference?\nIf a template renders differently on chameleon-rs than on Chameleon, that’s a bug. Please open an issue with the template, the model, and both outputs. Shadow mode can find such templates in a running app.",
+    "crumbs": [
+      "User Guide",
+      "Background",
+      "Compatibility"
+    ]
+  },
+  {
+    "objectID": "reference/web.model_of.html",
+    "href": "reference/web.model_of.html",
+    "title": "web.model_of()",
+    "section": "",
+    "text": "The template model a view returned: a dict as is; any other Mapping as a\n\n\nUsage\nSource\n\n\nweb.model_of(value)\n\n\ndict; a dataclass instance as its fields (shallow: field values are not converted); an object with a callable model_dump() (Pydantic, duck-typed) as what it returns. None for anything else.",
+    "crumbs": [
+      "API Reference",
+      "Errors and web helpers",
+      "[web.model_of()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/web.NotFound.html",
+    "href": "reference/web.NotFound.html",
+    "title": "web.NotFound",
+    "section": "",
+    "text": "Raised by not_found(): the decorator renders template_file (errors/404.pt\n\n\nUsage\nSource\n\n\nweb.NotFound()\n\n\nby default) with status 404.",
+    "crumbs": [
+      "API Reference",
+      "Errors and web helpers",
+      "[web.NotFound]{.doc-object-name .doc-class .doc-label .doc-label-class}"
+    ]
+  },
+  {
+    "objectID": "reference/shadow.uninstall.html",
+    "href": "reference/shadow.uninstall.html",
+    "title": "shadow.uninstall()",
+    "section": "",
+    "text": "Stops shadow mode, restoring stock Chameleon’s render methods.\n\n\nUsage\nSource\n\n\nshadow.uninstall()",
+    "crumbs": [
+      "API Reference",
+      "Compatibility",
+      "[shadow.uninstall()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/shadow.ShadowDifference.html",
+    "href": "reference/shadow.ShadowDifference.html",
+    "title": "shadow.ShadowDifference",
+    "section": "",
+    "text": "One render whose outcome differs between the engines.\n\n\nUsage\nSource\n\n\nshadow.ShadowDifference(filename, served, chameleon, rust, diff)\n\n\nParameter Attributes\n\n\nfilename: str\n\n\n\nserved: str\n\nThe engine whose outcome the application received ('chameleon' or 'rust').\n\nchameleon: str\n\nChameleon’s full output, or its exception as Type: message (may hold personal data).\n\nrust: str\n\nchameleon-rs’s full output, or its exception (Type: message).\n\ndiff: str\n\nA unified diff of the two (lines split after each &gt; and cut at 200 characters), at most 4 KB.",
+    "crumbs": [
+      "API Reference",
+      "Compatibility",
+      "[shadow.ShadowDifference]{.doc-object-name .doc-class .doc-label .doc-label-dataclass}"
+    ]
+  },
+  {
+    "objectID": "reference/partials.register_extensions.html",
+    "href": "reference/partials.register_extensions.html",
+    "title": "partials.register_extensions()",
+    "section": "",
+    "text": "chameleon_partials’ setup call: configures the folder render_partial uses (only\n\n\nUsage\nSource\n\n\npartials.register_extensions(\n    template_folder, auto_reload=False, cache_init=True\n)\n\n\nthat; chameleon_rs.configure also configures the framework integrations). A second call is ignored unless cache_init is false. Raises PartialsException for a missing folder.",
+    "crumbs": [
+      "API Reference",
+      "Partials",
+      "[partials.register_extensions()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/partials.clear.html",
+    "href": "reference/partials.clear.html",
+    "title": "partials.clear()",
+    "section": "",
+    "text": "Forgets the folder partials use, for tests.\n\n\nUsage\nSource\n\n\npartials.clear()",
+    "crumbs": [
+      "API Reference",
+      "Partials",
+      "[partials.clear()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/partials.PartialRenderer.html",
+    "href": "reference/partials.PartialRenderer.html",
+    "title": "partials.PartialRenderer",
+    "section": "",
+    "text": "The render_partial callable: chameleon_rs.render_partial (no calling template)",
+    "crumbs": [
+      "API Reference",
+      "Partials",
+      "[partials.PartialRenderer]{.doc-object-name .doc-class .doc-label .doc-label-class}"
+    ]
+  },
+  {
+    "objectID": "reference/partials.PartialRenderer.html#template",
+    "href": "reference/partials.PartialRenderer.html#template",
+    "title": "partials.PartialRenderer",
+    "section": "template",
+    "text": "template\n\nThe template this render_partial resolves relative to (None: none).\n\n\ntemplate: Any",
+    "crumbs": [
+      "API Reference",
+      "Partials",
+      "[partials.PartialRenderer]{.doc-object-name .doc-class .doc-label .doc-label-class}"
+    ]
+  },
+  {
+    "objectID": "reference/index.html",
+    "href": "reference/index.html",
+    "title": "API Reference",
+    "section": "",
+    "text": "The public API of chameleon-rs. It mirrors Chameleon’s (PageTemplate, PageTemplateFile, PageTemplateLoader, …), plus built-in partials, process-wide configuration and the Flask/Quart integration.\n\n\nTemplates\n\nCompile and render templates from strings, files and folders.\n\n\nPageTemplate\n\nConstructor for the page template language, rendered by the Rust VM.\n\nPageTemplateFile\n\nFile-based constructor: the template is read from filename (or, with\n\nPageTextTemplate\n\nText-based template class: only ${...} interpolation, no markup, nothing escaped.\n\nPageTextTemplateFile\n\nFile-based text template. Rendering returns bytes, encoded with the template’s\n\nPageTemplateLoader\n\n\n\n\n\n\nPageTemplate Methods\n\nMethods for the PageTemplate class\n\n\nPageTemplate.__getitem__()\n\n\n\nPageTemplate.builtins\n\nThe template builtins: names every expression can use (a render keyword of the\n\nPageTemplate.parse()\n\n\n\nPageTemplate.include\n\nThe whole template as a macro (metal:use-macro=\"template\"): Chameleon’s\n\nPageTemplate.render()\n\nRender template to string.\n\nPageTemplate.digest()\n\n\n\n\n\n\nConfiguration\n\nProcess-wide settings for templates loaded by name.\n\n\nconfigure()\n\nConfigures chameleon-rs for the whole process: where templates loaded by name live, for\n\ncore_version()\n\nVersion of the Rust core, for bug reports and for checking which build is loaded.\n\n\n\n\nPartials\n\nRender one template inside another. Also chameleon_partials’ API.\n\n\nrender_partial\n\n\n\npartials.register_extensions()\n\nchameleon_partials’ setup call: configures the folder render_partial uses (only\n\npartials.extend_model()\n\nAdds render_partial to a view model (chameleon_partials’ helper; not needed with the\n\npartials.clear()\n\nForgets the folder partials use, for tests.\n\npartials.PartialRenderer\n\nThe render_partial callable: chameleon_rs.render_partial (no calling template)\n\npartials.HTML\n\nRendered markup, as render_partial returns it from Python: __html__ gives the\n\npartials.PartialsException\n\nRaised when partials are configured or used incorrectly: registering a folder that does\n\n\n\n\nFlask and Quart\n\nchameleon-flask’s API, built in. Imports Flask only when imported itself.\n\n\nflask.configure()\n\nConfigures where templates live and how they load: for the whole process (the same as\n\nflask.global_init()\n\nchameleon-flask’s setup call: configures the views’ templates only (partials keep their\n\nflask.template()\n\nDecorates a Flask or Quart view (sync or async) to render a template with what it\n\nflask.render()\n\nRenders a template (path relative to the template folder) to a str.\n\nflask.response()\n\nRenders a template to a flask.Response. (Unlike @template, mimetype is not a\n\nflask.not_found()\n\nEnds the current @template view with a 404 page: template_file\n\nflask.error()\n\nEnds the current @template view with an error page: template_file rendered with\n\nflask.clear()\n\nForgets the views’ process-wide configuration, so a later configure() /\n\n\n\n\nErrors and web helpers\n\nExceptions, and the pieces shared by the framework integrations.\n\n\nTemplateError\n\nAn error raised by Chameleon.\n\nweb.TemplateError\n\nA template integration was configured or used incorrectly: no template folder\n\nweb.ErrorPage\n\nRaised inside a decorated view to answer with an error page: the decorator renders\n\nweb.NotFound\n\nRaised by not_found(): the decorator renders template_file (errors/404.pt\n\nweb.model_of()\n\nThe template model a view returned: a dict as is; any other Mapping as a\n\n\n\n\nCompatibility\n\nMake import chameleon resolve to chameleon-rs, or check both engines side by side.\n\n\ncompat.install()\n\nMakes import chameleon (and its submodules) resolve to chameleon-rs and, with\n\nshadow.install()\n\nStarts shadow mode: from now on, a sample_rate share of the outermost renders of\n\nshadow.uninstall()\n\nStops shadow mode, restoring stock Chameleon’s render methods.\n\nshadow.ShadowDifference\n\nOne render whose outcome differs between the engines.",
+    "crumbs": [
+      "API Reference",
+      "API Index"
+    ]
+  },
+  {
+    "objectID": "reference/flask.response.html",
+    "href": "reference/flask.response.html",
+    "title": "flask.response()",
+    "section": "",
+    "text": "Renders a template to a flask.Response. (Unlike @template, mimetype is not a\n\n\nUsage\nSource\n\n\nflask.response(\n    template_file, content_type=\"text/html\", status_code=200, **template_data\n)\n\n\nkeyword here: as in chameleon-flask, every other keyword is the model.)",
+    "crumbs": [
+      "API Reference",
+      "Flask and Quart",
+      "[flask.response()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/flask.not_found.html",
+    "href": "reference/flask.not_found.html",
+    "title": "flask.not_found()",
+    "section": "",
+    "text": "Ends the current @template view with a 404 page: template_file\n\n\nUsage\nSource\n\n\nflask.not_found(\n    template_file=None, *, four04template_file=None, **template_data\n)\n\n\n(errors/404.pt by default; four04template_file= is chameleon-flask’s name for it) rendered with template_data, as text/html.\nRaises FlaskChameleonNotFoundException (a chameleon_rs.web.NotFound), which the decorator turns into the response.",
+    "crumbs": [
+      "API Reference",
+      "Flask and Quart",
+      "[flask.not_found()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/flask.error.html",
+    "href": "reference/flask.error.html",
+    "title": "flask.error()",
+    "section": "",
+    "text": "Ends the current @template view with an error page: template_file rendered with\n\n\nUsage\nSource\n\n\nflask.error(template_file, status_code=500, **template_data)\n\n\ntemplate_data and status_code, as text/html.",
+    "crumbs": [
+      "API Reference",
+      "Flask and Quart",
+      "[flask.error()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/flask.clear.html",
+    "href": "reference/flask.clear.html",
+    "title": "flask.clear()",
+    "section": "",
+    "text": "Forgets the views’ process-wide configuration, so a later configure() /\n\n\nUsage\nSource\n\n\nflask.clear()\n\n\nglobal_init() starts afresh. Mostly useful in tests.",
+    "crumbs": [
+      "API Reference",
+      "Flask and Quart",
+      "[flask.clear()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/configure.html",
+    "href": "reference/configure.html",
+    "title": "configure()",
+    "section": "",
+    "text": "Configures chameleon-rs for the whole process: where templates loaded by name live, for\n\n\nUsage\nSource\n\n\nconfigure(\n    template_folder=None,\n    *,\n    auto_reload=None,\n    restricted_namespace=None,\n    partial_search=None\n)\n\n\nrender_partial and the framework integrations (chameleon_rs.flask), and how they load.\ntemplate_folder: an existing directory. auto_reload: recompile a template when its file changes (checked at most once per file per render for partials). restricted_namespace: False allows attributes such as Alpine.js’s @click (chameleon-flask’s option). partial_search: 'caller' (the default: partials are looked for in the template folder, then on the calling template’s search path, then in its folder and each folder above it) or 'registered' (chameleon_partials’ lookup: the template folder only, a path not there being an error). A setting left out keeps its current value; the first call that sets anything but partial_search must give the folder. Applies every time it is called (there is no cache_init).\nRaises chameleon_rs.web.TemplateError for a missing folder, ValueError for an unknown partial_search.",
+    "crumbs": [
+      "API Reference",
+      "Configuration",
+      "[configure()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/TemplateError.html",
+    "href": "reference/TemplateError.html",
+    "title": "TemplateError",
+    "section": "",
+    "text": "An error raised by Chameleon.\n\n\nUsage\nSource\n\n\nTemplateError()\n\n\n\n\n\nfrom chameleon_rs.config import SOURCE_EXPRESSION_MARKER_LENGTH from chameleon_rs.tokenize import Token token = Token(‘token’) message = ‘message’\n\n\n\nMake sure the exceptions can be copied:\n\n\n\nfrom copy import copy copy(TemplateError(message, token)) TemplateError(‘message’, ‘token’)\n\n\n\nAnd pickle/unpickled:\n\n\n\nfrom pickle import dumps, loads loads(dumps(TemplateError(message, token), -1)) TemplateError(‘message’, ‘token’)",
+    "crumbs": [
+      "API Reference",
+      "Errors and web helpers",
+      "[TemplateError]{.doc-object-name .doc-class .doc-label .doc-label-exception}"
+    ]
+  },
+  {
+    "objectID": "reference/PageTextTemplate.html",
+    "href": "reference/PageTextTemplate.html",
+    "title": "PageTextTemplate",
+    "section": "",
+    "text": "Text-based template class: only ${...} interpolation, no markup, nothing escaped.\n\n\nUsage\nSource\n\n\nPageTextTemplate(body, **config)\n\n\nTakes a non-XML input::\ntemplate = PageTextTemplate(“Hello, ${name}.”)",
+    "crumbs": [
+      "API Reference",
+      "Templates",
+      "[PageTextTemplate]{.doc-object-name .doc-class .doc-label .doc-label-class}"
+    ]
+  },
+  {
+    "objectID": "reference/PageTemplateFile.html",
+    "href": "reference/PageTemplateFile.html",
+    "title": "PageTemplateFile",
+    "section": "",
+    "text": "File-based constructor: the template is read from filename (or, with\n\n\nUsage\nSource\n\n\nPageTemplateFile()\n\n\npackage_name, from that package’s resources) when first used.\nFile templates have the load: expression type, which loads templates relative to this one: search_path (a path or a sequence of paths; with prepend_relative_search_path, the default, the template’s own directory comes first) and loader_class (TemplateLoader), which gets the same configuration keywords.",
+    "crumbs": [
+      "API Reference",
+      "Templates",
+      "[PageTemplateFile]{.doc-object-name .doc-class .doc-label .doc-label-class}"
+    ]
+  },
+  {
+    "objectID": "reference/PageTemplate.html",
+    "href": "reference/PageTemplate.html",
+    "title": "PageTemplate",
+    "section": "",
+    "text": "Constructor for the page template language, rendered by the Rust VM.\n\n\nUsage\nSource\n\n\nPageTemplate()\n\n\nTakes a string input as the only positional argument::\ntemplate = PageTemplate(“\n\nHello, ${name}.\n\n“)\nOutput is of type str. See the module docs for the configuration keywords.\nEvery template has the builtin render_partial(path, **kwargs) (D10, see chameleon_rs.partials), which a render keyword or extra_builtins entry of the same name overrides.",
+    "crumbs": [
+      "API Reference",
+      "Templates",
+      "[PageTemplate]{.doc-object-name .doc-class .doc-label .doc-label-class}"
+    ]
+  },
+  {
+    "objectID": "reference/PageTemplate.include.html",
+    "href": "reference/PageTemplate.include.html",
+    "title": "PageTemplate.include",
+    "section": "",
+    "text": "The whole template as a macro (metal:use-macro=\"template\"): Chameleon’s\n\n\nPageTemplate.include: Macro\n\n\ninclude(stream, econtext, rcontext, ...), which renders the main function into stream.",
+    "crumbs": [
+      "API Reference",
+      "PageTemplate Methods",
+      "[PageTemplate.include]{.doc-object-name .doc-attribute .doc-label .doc-label-property}"
+    ]
+  },
+  {
+    "objectID": "reference/PageTemplate.builtins.html",
+    "href": "reference/PageTemplate.builtins.html",
+    "title": "PageTemplate.builtins",
+    "section": "",
+    "text": "The template builtins: names every expression can use (a render keyword of the\n\n\nPageTemplate.builtins: dict[str, Any]\n\n\nsame name overrides them).",
+    "crumbs": [
+      "API Reference",
+      "PageTemplate Methods",
+      "[PageTemplate.builtins]{.doc-object-name .doc-attribute .doc-label .doc-label-property}"
+    ]
+  },
+  {
+    "objectID": "recipes/testing-templates.html",
+    "href": "recipes/testing-templates.html",
+    "title": "Testing templates with pytest",
+    "section": "",
+    "text": "Every template compiles\nA typo in a TAL attribute or an expression is a compile error. Chameleon compiles a template when it’s first rendered, so a broken template can go unnoticed until someone opens that page. This test compiles all of them:\n# tests/test_templates_compile.py\nfrom pathlib import Path\n\nimport pytest\n\nfrom chameleon_rs import PageTemplateFile\n\nTEMPLATES = Path(__file__).parent.parent / 'myapp' / 'templates'\n\n\n@pytest.mark.parametrize('path', sorted(TEMPLATES.rglob('*.pt')), ids=str)\ndef test_template_compiles(path):\n    PageTemplateFile(str(path)).cook_check()\ncook_check() compiles without rendering, so the test needs no model. chameleon-rs compiles in about 0.05 ms per template, so even a few hundred templates take well under a second.\nThe CHAMELEON_EAGER=1 environment variable does the same at load time: file templates then compile as soon as they’re created.\n\n\nTest the rendered output\nRender a partial with the model your view would pass, and assert on the HTML:\nimport chameleon_rs\n\n\n@pytest.fixture(autouse=True)\ndef templates():\n    chameleon_rs.configure(template_folder=str(TEMPLATES))\n    yield\n    chameleon_rs.partials.clear()\n\n\ndef test_video_card_shows_title():\n    html = chameleon_rs.render_partial('shared/video_card.pt', video=Video(1, 'Intro')).html_text\n    assert '&lt;a href=\"/videos/1\"&gt;Intro&lt;/a&gt;' in html\nThe fixture’s clear() forgets the configuration, so tests that configure a different folder don’t leak into each other.\nFor a Flask app, use its test client. See HTMX fragments for an example.\n\n\nCompare against Chameleon\nWhile you’re migrating, a test can render the same template with both engines and compare. Install stock Chameleon in the test environment only:\nimport chameleon\nimport chameleon_rs\n\n\ndef test_same_output_as_chameleon():\n    path = str(TEMPLATES / 'home' / 'index.pt')\n    model = {'title': 'Home', 'videos': []}\n    assert chameleon_rs.PageTemplateFile(path)(**model) == chameleon.PageTemplateFile(path)(**model)\nOn a running staging app, shadow mode does this for every render.",
+    "crumbs": [
+      "Recipes",
+      "Testing templates with pytest"
+    ]
+  },
+  {
+    "objectID": "recipes/index.html",
+    "href": "recipes/index.html",
+    "title": "Recipes",
+    "section": "",
+    "text": "Email bodies\n\n\nRender HTML and plain-text email from the same templates as your site.\n\n \n\nHTMX fragments\n\n\nRender the same partial inside a page and on its own, for HTMX swaps.\n\n \n\nA shared layout\n\n\nOne layout macro for every page, with slots for the title, content and scripts.\n\n \n\nTesting templates with pytest\n\n\nCheck every template compiles, and test rendered output.",
+    "crumbs": [
+      "Recipes"
+    ]
+  },
+  {
+    "objectID": "recipes/email-bodies.html",
+    "href": "recipes/email-bodies.html",
+    "title": "Email bodies",
+    "section": "",
+    "text": "An email needs an HTML body and a plain-text one. Render both from templates, with PageTemplate for HTML and PageTextTemplate for text. A text template uses the same ${...} expressions but doesn’t escape HTML or parse tags.\n\nfrom chameleon_rs import PageTemplate, PageTextTemplate\n\nhtml_body = PageTemplate(\"\"\"\\\n&lt;p&gt;Hi ${user},&lt;/p&gt;\n&lt;p&gt;Your order &lt;strong&gt;#${order.id}&lt;/strong&gt; has shipped:&lt;/p&gt;\n&lt;ul&gt;&lt;li tal:repeat=\"item order.items\"&gt;${item}&lt;/li&gt;&lt;/ul&gt;\n\"\"\")\n\ntext_body = PageTextTemplate(\"\"\"\\\nHi ${user},\n\nYour order #${order.id} has shipped:\n${'\\\\n'.join('- ' + item for item in order.items)}\n\"\"\")\n\n\nclass Order:\n    id = 1042\n    items = ['Rust & Python mug', 'Sticker &lt;3']\n\n\nprint(html_body(user='Ada', order=Order()))\nprint(text_body(user='Ada', order=Order()))\n\n&lt;p&gt;Hi Ada,&lt;/p&gt;\n&lt;p&gt;Your order &lt;strong&gt;#1042&lt;/strong&gt; has shipped:&lt;/p&gt;\n&lt;ul&gt;&lt;li&gt;Rust &amp; Python mug&lt;/li&gt;\n&lt;li&gt;Sticker &lt;3&lt;/li&gt;&lt;/ul&gt;\n\nHi Ada,\n\nYour order #1042 has shipped:\n- Rust & Python mug\n- Sticker &lt;3\n\n\n\nThe HTML body escapes & and &lt;, and the text body leaves them alone.\nIn an app, keep the email templates in your template folder (for example emails/), and load them with PageTemplateLoader, or PageTextTemplateFile for the text version. Emails can use partials too. render_partial works in any template, so the footer you share with the site can live in one file:\n&lt;p&gt;Hi ${user},&lt;/p&gt;\n...\n${render_partial('emails/_footer.pt', unsubscribe_url=unsubscribe_url)}\nThen pass the two strings to your mail library, such as email.message.EmailMessage’s set_content() and add_alternative(..., subtype='html').",
+    "crumbs": [
+      "Recipes",
+      "Email bodies"
+    ]
+  },
+  {
+    "objectID": "language/syntax.html",
+    "href": "language/syntax.html",
+    "title": "Inline syntax",
+    "section": "",
+    "text": "Adapted from Chameleon’s language reference (source), modified for chameleon-rs. Used under Chameleon’s license; see LICENSE.txt and COPYRIGHT.txt in the repository.\n\n\n\n\n${...} operator\nThe ${...} notation is short-hand for text insertion. The Python-expression inside the braces is evaluated and the result included in the output (all inserted text is escaped by default):\n&lt;div id=\"section-${index + 1}\"&gt;\n  ${content}\n&lt;/div&gt;\nTo escape this behavior, double the dollar sign: $${...} renders as the literal text ${...}.\n\n\n\n\n\n\nNote\n\n\n\nOlder versions of Chameleon also accepted a backslash, \\${...}. That is no longer supported (Chameleon 3.x changelog): the backslash is output as is and the expression is still evaluated.\n\n\nNote that if an object implements the __html__ method, the result of this method will be inserted as-is (without XML escaping).\n\n\nCode blocks\nThe &lt;?python ... ?&gt; notation allows you to embed Python code in templates:\n&lt;div&gt;\n  &lt;?python numbers = map(str, range(1, 10)) ?&gt;\n  Please input a number from the range ${\", \".join(numbers)}.\n&lt;/div&gt;\nThe scope of name assignments is up to the nearest macro definition, or the template, if macros are not used.\nNote that code blocks can span multiple lines and start on the next line of where the processing instruction begins:\n&lt;?python\n  foo = [1, 2, 3]\n?&gt;\nYou can use this to debug templates:\n&lt;div&gt;\n  &lt;?python import pdb; pdb.set_trace() ?&gt;\n&lt;/div&gt;\n\n\nMarkup comments\nYou can apply the “!” and “?” modifiers to change how comments are processed:\n\nDrop\n\n&lt;!--! This comment will be dropped from output --&gt;\n\nVerbatim\n\n&lt;!--? This comment will be included verbatim --&gt;\nThat is, evaluation of ${...} expressions is disabled if the comment opens with the “?” character. The “?” itself is removed from the output.\n\n\nIn an ordinary comment, ${...} expressions are evaluated.",
+    "crumbs": [
+      "Language Reference",
+      "Inline syntax"
+    ]
+  },
+  {
+    "objectID": "language/index.html",
+    "href": "language/index.html",
+    "title": "Language reference",
+    "section": "",
+    "text": "Adapted from Chameleon’s language reference (source), modified for chameleon-rs. Used under Chameleon’s license; see LICENSE.txt and COPYRIGHT.txt in the repository.\n\n\n\nchameleon-rs uses Chameleon’s template language unchanged. This reference can be read as a general introduction to the page templates language. It’s split into parts that correspond to the main language features:\n\n\n\nPage\nWhat it covers\n\n\n\n\nBasics (TAL)\nThe statements that define variables, test conditions, repeat, replace and omit elements, and set attributes.\n\n\nExpressions (TALES)\nThe expression types (python, string, exists, not, import, load, structure) and the built-in names.\n\n\nMacros (METAL)\nDefining, using and extending macros, and filling their slots.\n\n\nTranslation (I18N)\nThe i18n namespace, translation functions and message extraction.\n\n\nInline syntax\nThe ${...} operator, &lt;?python ?&gt; code blocks and markup comments.\n\n\nExtensions and differences\nWhat Chameleon adds to the page templates language, and how it differs from Zope’s.\n\n\n\n\nSyntax\nYou can safely skip this section if you’re familiar with how template languages work or just want to learn by example.\nAn attribute language is a programming language designed to render documents written in XML or HTML markup. The input must be a well-formed document. The output from the template is usually XML-like but isn’t required to be well-formed.\nThe statements of the language are document tags with special attributes, and look like this:\n&lt;p namespace-prefix:command=\"argument\"&gt; ... &lt;/p&gt;\nIn the above example, the attribute namespace-prefix:command=\"argument\" is the statement, and the entire paragraph tag is the statement’s element. The statement’s element is the portion of the document on which this statement operates.\nThe namespace prefixes are typically declared once, at the top of a template (note that prefix declarations for the template language namespaces are omitted from the template output):\n&lt;html xmlns=\"http://www.w3.org/1999/xhtml\"\n      xmlns:tal=\"http://xml.zope.org/namespaces/tal\"\n      xmlns:metal=\"http://xml.zope.org/namespaces/metal\"\n      xmlns:i18n=\"http://xml.zope.org/namespaces/i18n\"&gt;\n  ...\n&lt;/html&gt;\nThankfully, sane namespace prefix defaults are in place to let us skip most of the boilerplate:\n&lt;html xmlns=\"http://www.w3.org/1999/xhtml\"&gt;\n  &lt;body&gt;\n    &lt;p tal:content=\"text\"&gt; ... &lt;/p&gt;\n  &lt;/body&gt;\n&lt;/html&gt;\nNote how tal is used without an explicit namespace declaration. Chameleon sets up defaults for metal and i18n as well.\n\n\n\n\n\n\nNote\n\n\n\nDefault prefixes are a special feature of Chameleon.\n\n\nIf the enable_data_attributes option is set then you can use data-prefix-command=\"argument\" in addition to the namespace prefix attributes:\nfrom chameleon_rs import PageTemplate\n\ntemplate = PageTemplate('&lt;p data-tal-content=\"text\"&gt;...&lt;/p&gt;', enable_data_attributes=True)\n\n\nchameleon-rs and this reference\nEvery statement, expression type and built-in name described here behaves in chameleon-rs as it does in Chameleon; the examples on these pages were rendered with both engines to check. The engine underneath is different, which shows in three places, none of them in the template language itself:\n\nChameleon compiles a template to Python source code, available as template.source. chameleon-rs compiles it to a native program; with keep_source=True, template.source is a readable dump of that program, not Python code.\nCustom expression types (classes that return Python AST) work through a bridge, at the speed of an ordinary Python call. Types that depend on Chameleon’s compiler internals beyond that interface aren’t supported.\nChameleon’s CHAMELEON_CACHE (compiled templates cached on disk as Python modules) has no equivalent. Compiling is fast enough that it isn’t needed.\n\nSee Compatibility for how compatibility is measured.",
+    "crumbs": [
+      "Language Reference"
+    ]
+  },
+  {
+    "objectID": "language/extensions.html",
+    "href": "language/extensions.html",
+    "title": "Extensions and differences",
+    "section": "",
+    "text": "Adapted from Chameleon’s language reference (source), modified for chameleon-rs. Used under Chameleon’s license; see LICENSE.txt and COPYRIGHT.txt in the repository.",
+    "crumbs": [
+      "Language Reference",
+      "Extensions and differences"
+    ]
+  },
+  {
+    "objectID": "language/extensions.html#new-expression-types",
+    "href": "language/extensions.html#new-expression-types",
+    "title": "Extensions and differences",
+    "section": "New expression types",
+    "text": "New expression types\nThe structure expression wraps an expression result as structure:\n&lt;div&gt;${structure: body.text}&lt;/div&gt;\nThe import expression imports module globals:\n&lt;div tal:define=\"compile import: re.compile\"&gt;\n  ...\n&lt;/div&gt;\nThe load expression loads templates relative to the current template:\n&lt;div tal:define=\"compile load: main.pt\"&gt;\n  ...\n&lt;/div&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Extensions and differences"
+    ]
+  },
+  {
+    "objectID": "language/extensions.html#tuple-unpacking",
+    "href": "language/extensions.html#tuple-unpacking",
+    "title": "Extensions and differences",
+    "section": "Tuple unpacking",
+    "text": "Tuple unpacking\nThe tal:define and tal:repeat statements support tuple unpacking:\ntal:define=\"(a, b, c) [1, 2, 3]\"\nExtended iterable unpacking using the asterisk character is not currently supported (even for versions of Python that support it natively).",
+    "crumbs": [
+      "Language Reference",
+      "Extensions and differences"
+    ]
+  },
+  {
+    "objectID": "language/extensions.html#dictionary-lookup-as-fallback-after-attribute-error",
+    "href": "language/extensions.html#dictionary-lookup-as-fallback-after-attribute-error",
+    "title": "Extensions and differences",
+    "section": "Dictionary lookup as fallback after attribute error",
+    "text": "Dictionary lookup as fallback after attribute error\nIf attribute lookup (using the obj.&lt;name&gt; syntax) raises an AttributeError exception, a secondary lookup is attempted using dictionary lookup: obj['&lt;name&gt;'].\nChameleon does this by rewriting all attribute lookups to a custom lookup call, and chameleon-rs does the same lookup natively:\ndef lookup_attr(obj, key):\n    try:\n        return getattr(obj, key)\n    except AttributeError as exc:\n        try:\n            get = obj.__getitem__\n        except AttributeError:\n            raise exc\n        try:\n            return get(key)\n        except KeyError:\n            raise exc",
+    "crumbs": [
+      "Language Reference",
+      "Extensions and differences"
+    ]
+  },
+  {
+    "objectID": "language/extensions.html#inline-string-substitution",
+    "href": "language/extensions.html#inline-string-substitution",
+    "title": "Extensions and differences",
+    "section": "Inline string substitution",
+    "text": "Inline string substitution\nIn element attributes and in the text or tail of an element, string expression interpolation is available using the ${...} syntax:\n&lt;span class=\"content-${item_type}\"&gt;\n   ${title or item_id}\n&lt;/span&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Extensions and differences"
+    ]
+  },
+  {
+    "objectID": "language/extensions.html#code-blocks",
+    "href": "language/extensions.html#code-blocks",
+    "title": "Extensions and differences",
+    "section": "Code blocks",
+    "text": "Code blocks\nUsing &lt;?python ... ?&gt; notation, you can embed Python statements in your templates:\n&lt;div&gt;\n  &lt;?python numbers = map(str, range(1, 10)) ?&gt;\n  Please input a number from the range ${\", \".join(numbers)}.\n&lt;/div&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Extensions and differences"
+    ]
+  },
+  {
+    "objectID": "language/extensions.html#literal-content",
+    "href": "language/extensions.html#literal-content",
+    "title": "Extensions and differences",
+    "section": "Literal content",
+    "text": "Literal content\nWhile the tal:content and tal:replace attributes both support the structure keyword which inserts the content as a literal (without XML-escape), an object may also provide an __html__ method to the same effect.\nThe result of the method will be inserted as structure.",
+    "crumbs": [
+      "Language Reference",
+      "Extensions and differences"
+    ]
+  },
+  {
+    "objectID": "language/extensions.html#switch-statement",
+    "href": "language/extensions.html#switch-statement",
+    "title": "Extensions and differences",
+    "section": "Switch statement",
+    "text": "Switch statement\nTwo new attributes have been added: tal:switch and tal:case. A case attribute works like a condition and only allows content if the value matches that of the nearest parent switch value.",
+    "crumbs": [
+      "Language Reference",
+      "Extensions and differences"
+    ]
+  },
+  {
+    "objectID": "language/extensions.html#partials-chameleon-rs",
+    "href": "language/extensions.html#partials-chameleon-rs",
+    "title": "Extensions and differences",
+    "section": "Partials (chameleon-rs)",
+    "text": "Partials (chameleon-rs)\nchameleon-rs adds a built-in render_partial function to every template, which renders another template file into the page:\n&lt;div tal:repeat=\"item items\"&gt;\n  ${render_partial('shared/card.pt', item=item)}\n&lt;/div&gt;\nIt’s the API of the chameleon_partials package, built in. See Partials.",
+    "crumbs": [
+      "Language Reference",
+      "Extensions and differences"
+    ]
+  },
+  {
+    "objectID": "language/extensions.html#default-expression",
+    "href": "language/extensions.html#default-expression",
+    "title": "Extensions and differences",
+    "section": "Default expression",
+    "text": "Default expression\nThe default expression type is Python.",
+    "crumbs": [
+      "Language Reference",
+      "Extensions and differences"
+    ]
+  },
+  {
+    "objectID": "language/extensions.html#template-arguments",
+    "href": "language/extensions.html#template-arguments",
+    "title": "Extensions and differences",
+    "section": "Template arguments",
+    "text": "Template arguments\nArguments passed by keyword to the render- or call method are inserted directly into the template execution namespace. This is different from ZPT where these are only available through the options dictionary.\nZope:\n&lt;div tal:content=\"options/title\" /&gt;\nChameleon:\n&lt;div tal:content=\"title\" /&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Extensions and differences"
+    ]
+  },
+  {
+    "objectID": "language/extensions.html#special-symbols",
+    "href": "language/extensions.html#special-symbols",
+    "title": "Extensions and differences",
+    "section": "Special symbols",
+    "text": "Special symbols\nThe CONTEXTS symbol is not available.\nThe z3c.pt package works as a compatibility layer for Chameleon. The template classes in this package provide an implementation which is fully compatible with ZPT.",
+    "crumbs": [
+      "Language Reference",
+      "Extensions and differences"
+    ]
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "chameleon-rs",
+    "section": "",
+    "text": "View on PyPI Browse source code\n\n\n\nSkills llms.txt llms-full.txt\n\n\n\n\n\n\nMichael Kennedy\n\n\n\nAuthor\n\n  \n\n\n\n\nRequires: Python &gt;=3.12\nchameleon-rs is a Rust implementation of the Chameleon page template engine for Python. It aims to be a drop-in replacement: the same template language, the same Python API, byte-identical output, and much faster rendering."
+  },
+  {
+    "objectID": "index.html#why-chameleon-rs",
+    "href": "index.html#why-chameleon-rs",
+    "title": "chameleon-rs",
+    "section": "Why chameleon-rs",
+    "text": "Why chameleon-rs\n\nDrop-in. Chameleon’s own test suite passes unmodified, and two production Flask/Quart sites render byte-identical HTML on every page. An existing app switches with one line at startup, and nothing else changes.\nFast. Rendering is about 4x to 7x faster than Chameleon on synthetic pages, and about 2.2x faster across real application pages, where the app’s own Python code takes most of the time. Templates compile about 70x faster, so the first request after a deploy or reload is quick too.\nPartials built in. Every template can call ${render_partial('shared/card.pt', item=item)}. The partial renders natively inside the page, about 10x faster than Chameleon with chameleon_partials.\nFlask and Quart built in. chameleon_rs.flask has chameleon-flask’s API.\nNo runtime dependencies. The package uses only the standard library. Stock Chameleon doesn’t need to be installed."
+  },
+  {
+    "objectID": "index.html#install",
+    "href": "index.html#install",
+    "title": "chameleon-rs",
+    "section": "Install",
+    "text": "Install\nuv pip install chameleon-rs\nchameleon-rs needs Python 3.12 or later. The wheels include the compiled engine, so you don’t need a Rust toolchain."
+  },
+  {
+    "objectID": "index.html#switch-an-existing-app",
+    "href": "index.html#switch-an-existing-app",
+    "title": "chameleon-rs",
+    "section": "Switch an existing app",
+    "text": "Switch an existing app\nPut this at the very top of your app’s entry point, before anything imports Chameleon:\nimport chameleon_rs.compat\n\nchameleon_rs.compat.install()\nFrom then on, import chameleon, import chameleon_partials and import chameleon_flask all give you chameleon-rs. See Switching from Chameleon."
+  },
+  {
+    "objectID": "index.html#where-to-next",
+    "href": "index.html#where-to-next",
+    "title": "chameleon-rs",
+    "section": "Where to next",
+    "text": "Where to next\n\nGetting started: render a first template and set up a template folder.\nLanguage reference: TAL, METAL, i18n and ${...}, the language you already know from Chameleon.\nCompatibility: what’s identical, the few known differences, and how compatibility is measured.\nPerformance: the benchmarks and how to reproduce them."
+  },
+  {
+    "objectID": "language/expressions.html",
+    "href": "language/expressions.html",
+    "title": "Expressions (TALES)",
+    "section": "",
+    "text": "Adapted from Chameleon’s language reference (source), modified for chameleon-rs. Used under Chameleon’s license; see LICENSE.txt and COPYRIGHT.txt in the repository.\nThe Template Attribute Language Expression Syntax (TALES) standard describes expressions that supply TAL and METAL with data. TALES is one possible expression syntax for these languages, but they are not bound to this definition. Similarly, TALES could be used in a context having nothing to do with TAL or METAL.\nTALES expressions are described below with any delimiter or quote markup from higher language layers removed. Here is the basic definition of TALES syntax:\nHere are some simple examples:\nThe optional type prefix determines the semantics and syntax of the expression string that follows it. A given implementation of TALES can define any number of expression types, with whatever syntax you like. It also determines which expression type is indicated by omitting the prefix.",
+    "crumbs": [
+      "Language Reference",
+      "Expressions (TALES)"
+    ]
+  },
+  {
+    "objectID": "language/expressions.html#syntax",
+    "href": "language/expressions.html#syntax",
+    "title": "Expressions (TALES)",
+    "section": "Syntax",
+    "text": "Syntax\nPython expression syntax:\nAny valid Python language expression",
+    "crumbs": [
+      "Language Reference",
+      "Expressions (TALES)"
+    ]
+  },
+  {
+    "objectID": "language/expressions.html#description",
+    "href": "language/expressions.html#description",
+    "title": "Expressions (TALES)",
+    "section": "Description",
+    "text": "Description\nPython expressions are executed natively within the template. There is no built-in security apparatus.\n\n\n\n\n\n\nNote\n\n\n\nchameleon-rs: Chameleon translates the whole template, expressions included, into Python source code. chameleon-rs compiles the template into a native program; each expression is either evaluated by a native fast path with the same semantics or compiled by CPython. Either way it’s ordinary Python, with access to everything in scope.",
+    "crumbs": [
+      "Language Reference",
+      "Expressions (TALES)"
+    ]
+  },
+  {
+    "objectID": "language/expressions.html#syntax-1",
+    "href": "language/expressions.html#syntax-1",
+    "title": "Expressions (TALES)",
+    "section": "Syntax",
+    "text": "Syntax\nString expression syntax:\nstring_expression ::= ( plain_string | [ varsub ] )*\nvarsub            ::= ( '$' Variable ) | ( '${ Expression }' )\nplain_string      ::= ( '$$' | non_dollar )*\nnon_dollar        ::= any character except '$'",
+    "crumbs": [
+      "Language Reference",
+      "Expressions (TALES)"
+    ]
+  },
+  {
+    "objectID": "language/expressions.html#description-1",
+    "href": "language/expressions.html#description-1",
+    "title": "Expressions (TALES)",
+    "section": "Description",
+    "text": "Description\nString expressions interpret the expression string as text. If no expression string is supplied the resulting string is empty. The string can contain variable substitutions of the form $name or ${expression}, where name is a variable name, and expression is a TALES-expression. The escaped string value of the expression is inserted into the string.\n\n\n\n\n\n\nNote\n\n\n\nTo prevent a $ from being interpreted this way, it must be escaped as $$. Using a backslash-escape is not supported.",
+    "crumbs": [
+      "Language Reference",
+      "Expressions (TALES)"
+    ]
+  },
+  {
+    "objectID": "language/expressions.html#examples",
+    "href": "language/expressions.html#examples",
+    "title": "Expressions (TALES)",
+    "section": "Examples",
+    "text": "Examples\nBasic string formatting:\n&lt;span tal:replace=\"string:$this and $that\"&gt;\n  Spam and Eggs\n&lt;/span&gt;\n\n&lt;p tal:content=\"string:${request.form['total']}\"&gt;\n  total: 12\n&lt;/p&gt;\nIncluding a dollar sign:\n&lt;p tal:content=\"string:$$$cost\"&gt;\n  cost: $42.00\n&lt;/p&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Expressions (TALES)"
+    ]
+  },
+  {
+    "objectID": "language/expressions.html#syntax-2",
+    "href": "language/expressions.html#syntax-2",
+    "title": "Expressions (TALES)",
+    "section": "Syntax",
+    "text": "Syntax\nLoad expression syntax:\nRelative or absolute file path",
+    "crumbs": [
+      "Language Reference",
+      "Expressions (TALES)"
+    ]
+  },
+  {
+    "objectID": "language/expressions.html#description-2",
+    "href": "language/expressions.html#description-2",
+    "title": "Expressions (TALES)",
+    "section": "Description",
+    "text": "Description\nThe template will be loaded using the same template class as the calling template.",
+    "crumbs": [
+      "Language Reference",
+      "Expressions (TALES)"
+    ]
+  },
+  {
+    "objectID": "language/expressions.html#examples-1",
+    "href": "language/expressions.html#examples-1",
+    "title": "Expressions (TALES)",
+    "section": "Examples",
+    "text": "Examples\nLoading a template and using it as a macro:\n&lt;div tal:define=\"master load: ../master.pt\" metal:use-macro=\"master\" /&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Expressions (TALES)"
+    ]
+  },
+  {
+    "objectID": "language/i18n.html",
+    "href": "language/i18n.html",
+    "title": "Translation (I18N)",
+    "section": "",
+    "text": "Adapted from Chameleon’s language reference (source), modified for chameleon-rs. Used under Chameleon’s license; see LICENSE.txt and COPYRIGHT.txt in the repository.\nTranslation of template contents and attributes is supported via the i18n namespace and message objects.",
+    "crumbs": [
+      "Language Reference",
+      "Translation (I18N)"
+    ]
+  },
+  {
+    "objectID": "language/i18n.html#i18ntranslate",
+    "href": "language/i18n.html#i18ntranslate",
+    "title": "Translation (I18N)",
+    "section": "i18n:translate",
+    "text": "i18n:translate\nThis attribute is used to mark units of text for translation. If this attribute is specified with an empty string as the value, the message ID is computed from the content of the element bearing this attribute. Otherwise, the value of the element gives the message ID.",
+    "crumbs": [
+      "Language Reference",
+      "Translation (I18N)"
+    ]
+  },
+  {
+    "objectID": "language/i18n.html#i18ndomain",
+    "href": "language/i18n.html#i18ndomain",
+    "title": "Translation (I18N)",
+    "section": "i18n:domain",
+    "text": "i18n:domain\nThe i18n:domain attribute is used to specify the domain to be used to get the translation. If not specified, the translation services will use a default domain. The value of the attribute is used directly; it is not a TALES expression.",
+    "crumbs": [
+      "Language Reference",
+      "Translation (I18N)"
+    ]
+  },
+  {
+    "objectID": "language/i18n.html#i18ncontext",
+    "href": "language/i18n.html#i18ncontext",
+    "title": "Translation (I18N)",
+    "section": "i18n:context",
+    "text": "i18n:context\nThe i18n:context attribute is used to specify the context to be used to get the translation. If not specified, the translation services will use a default context. The context is generally used to distinguish identical texts in different contexts (because in a translation this may not be the case). The value of the attribute is used literally; it is not an expression.",
+    "crumbs": [
+      "Language Reference",
+      "Translation (I18N)"
+    ]
+  },
+  {
+    "objectID": "language/i18n.html#i18nsource",
+    "href": "language/i18n.html#i18nsource",
+    "title": "Translation (I18N)",
+    "section": "i18n:source",
+    "text": "i18n:source\nThe i18n:source attribute specifies the language of the text to be translated. The default is nothing, which means we don’t provide this information to the translation services.",
+    "crumbs": [
+      "Language Reference",
+      "Translation (I18N)"
+    ]
+  },
+  {
+    "objectID": "language/i18n.html#i18ntarget",
+    "href": "language/i18n.html#i18ntarget",
+    "title": "Translation (I18N)",
+    "section": "i18n:target",
+    "text": "i18n:target\nThe i18n:target attribute specifies the language of the translation we want to get. If the value is default, the language negotiation services will be used to choose the destination language. If the value is nothing, no translation will be performed; this can be used to suppress translation within a larger translated unit. Any other value must be a language code.\nThe attribute value is a TALES expression; the result of evaluating the expression is the language code or one of the reserved values.\n\n\n\n\n\n\nNote\n\n\n\ni18n:target is primarily used for hints to text extraction tools and translation teams. If you had some text that should only be translated to e.g. German, then it probably shouldn’t be wrapped in an i18n:translate span.",
+    "crumbs": [
+      "Language Reference",
+      "Translation (I18N)"
+    ]
+  },
+  {
+    "objectID": "language/i18n.html#i18nname",
+    "href": "language/i18n.html#i18nname",
+    "title": "Translation (I18N)",
+    "section": "i18n:name",
+    "text": "i18n:name\nName the content of the current element for use in interpolation within translated content. This allows a replaceable component in content to be re-ordered by translation. For example:\n&lt;span i18n:translate=''&gt;\n  &lt;span tal:replace='context.name' i18n:name='name' /&gt; was born in\n  &lt;span tal:replace='context.country_of_birth' i18n:name='country' /&gt;.\n&lt;/span&gt;\nwould cause this text to be passed to the translation service:\n\"${name} was born in ${country}.\"",
+    "crumbs": [
+      "Language Reference",
+      "Translation (I18N)"
+    ]
+  },
+  {
+    "objectID": "language/i18n.html#i18nattributes",
+    "href": "language/i18n.html#i18nattributes",
+    "title": "Translation (I18N)",
+    "section": "i18n:attributes",
+    "text": "i18n:attributes\nThis attribute will allow us to translate attributes of HTML tags, such as the alt attribute in the img tag. The i18n:attributes attribute specifies a list of attributes to be translated with optional message IDs for each; if multiple attribute names are given, they must be separated by semicolons. Message IDs used in this context must not include whitespace.\nNote that the value of the particular attributes come either from the HTML attribute value itself or from the data inserted by tal:attributes.\nIf an attribute is to be both computed using tal:attributes and translated, the translation service is passed the result of the TALES expression for that attribute.\nAn example:\n&lt;img src=\"http://foo.com/logo\" alt=\"Visit us\"\n     tal:attributes=\"alt context.greeting\"\n     i18n:attributes=\"alt\"\n     &gt;\nIn this example, we let tal:attributes set the value of the alt attribute to the text “Stop by for a visit!”. This text will be passed to the translation service, which uses the result of language negotiation to translate “Stop by for a visit!” into the requested language. The example text in the template, “Visit us”, will simply be discarded.\nAnother example, with explicit message IDs:\n&lt;img src=\"../icons/uparrow.png\" alt=\"Up\"\n     i18n:attributes=\"src up-arrow-icon; alt up-arrow-alttext\"\n     &gt;\nHere, the message ID up-arrow-icon will be used to generate the link to an icon image file, and the message ID ‘up-arrow-alttext’ will be used for the “alt” text.",
+    "crumbs": [
+      "Language Reference",
+      "Translation (I18N)"
+    ]
+  },
+  {
+    "objectID": "language/i18n.html#i18ndata",
+    "href": "language/i18n.html#i18ndata",
+    "title": "Translation (I18N)",
+    "section": "i18n:data",
+    "text": "i18n:data\nSince TAL always returns strings, we need a way in ZPT to translate objects, one of the most obvious cases being datetime objects. The data attribute will allow us to specify such an object, and i18n:translate will provide us with a legal format string for that object. If data is used, i18n:translate must be used to give an explicit message ID, rather than relying on a message ID computed from the content.",
+    "crumbs": [
+      "Language Reference",
+      "Translation (I18N)"
+    ]
+  },
+  {
+    "objectID": "language/i18n.html#i18ncomment",
+    "href": "language/i18n.html#i18ncomment",
+    "title": "Translation (I18N)",
+    "section": "i18n:comment",
+    "text": "i18n:comment\nThe i18n:comment attribute can be used to add extra comments for translators. It is not used by Chameleon for processing, but will be picked up by tools like lingua.\nAn example:\n&lt;h3 i18n:comment=\"Header for the news section\"\n    i18n:translate=\"\"&gt;News&lt;/h3&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Translation (I18N)"
+    ]
+  },
+  {
+    "objectID": "language/i18n.html#i18nignore",
+    "href": "language/i18n.html#i18nignore",
+    "title": "Translation (I18N)",
+    "section": "i18n:ignore",
+    "text": "i18n:ignore\nThe i18n:ignore attribute can be used to inform translation extraction tools like i18ndude to not give a warning/error on the given tag if there is no i18n:translate attribute.\nAn example:\n&lt;h1 i18n:ignore=\"\"&gt;News&lt;/h1&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Translation (I18N)"
+    ]
+  },
+  {
+    "objectID": "language/i18n.html#i18nignore-attributes",
+    "href": "language/i18n.html#i18nignore-attributes",
+    "title": "Translation (I18N)",
+    "section": "i18n:ignore-attributes",
+    "text": "i18n:ignore-attributes\nThe i18n:ignore-attributes, just like i18n:ignore is expected to be used by translation extraction tools like i18ndude. If i18n:ignore makes text within a tag to be ignored, i18n:ignore-attributes marks the given attributes as ignored.\nAn example:\n&lt;a href=\"http://python.org\"\n   title=\"Python!\"\n   i18n:ignore-attributes=\"title\"&gt;Python website&lt;/a&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Translation (I18N)"
+    ]
+  },
+  {
+    "objectID": "language/macros.html",
+    "href": "language/macros.html",
+    "title": "Macros (METAL)",
+    "section": "",
+    "text": "Adapted from Chameleon’s language reference (source), modified for chameleon-rs. Used under Chameleon’s license; see LICENSE.txt and COPYRIGHT.txt in the repository.\nThe Macro Expansion Template Attribute Language (METAL) standard is a facility for HTML/XML macro preprocessing. It can be used in conjunction with or independently of TAL and TALES.\nMacros provide a way to define a chunk of presentation in one template, and share it in others, so that changes to the macro are immediately reflected in all of the places that share it. Additionally, macros are always fully expanded, even in a template’s source text, so that the template appears very similar to its final rendering.\nA single Page Template can accommodate multiple macros.",
+    "crumbs": [
+      "Language Reference",
+      "Macros (METAL)"
+    ]
+  },
+  {
+    "objectID": "language/macros.html#syntax",
+    "href": "language/macros.html#syntax",
+    "title": "Macros (METAL)",
+    "section": "Syntax",
+    "text": "Syntax\nmetal:define-macro syntax:\nargument ::= Name",
+    "crumbs": [
+      "Language Reference",
+      "Macros (METAL)"
+    ]
+  },
+  {
+    "objectID": "language/macros.html#description",
+    "href": "language/macros.html#description",
+    "title": "Macros (METAL)",
+    "section": "Description",
+    "text": "Description\nThe metal:define-macro statement defines a macro. The macro is named by the statement expression, and is defined as the element and its sub-tree.",
+    "crumbs": [
+      "Language Reference",
+      "Macros (METAL)"
+    ]
+  },
+  {
+    "objectID": "language/macros.html#examples",
+    "href": "language/macros.html#examples",
+    "title": "Macros (METAL)",
+    "section": "Examples",
+    "text": "Examples\nSimple macro definition:\n&lt;p metal:define-macro=\"copyright\"&gt;\n  Copyright 2011, &lt;em&gt;Foobar&lt;/em&gt; Inc.\n&lt;/p&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Macros (METAL)"
+    ]
+  },
+  {
+    "objectID": "language/macros.html#syntax-1",
+    "href": "language/macros.html#syntax-1",
+    "title": "Macros (METAL)",
+    "section": "Syntax",
+    "text": "Syntax\nmetal:define-slot syntax:\nargument ::= Name",
+    "crumbs": [
+      "Language Reference",
+      "Macros (METAL)"
+    ]
+  },
+  {
+    "objectID": "language/macros.html#description-1",
+    "href": "language/macros.html#description-1",
+    "title": "Macros (METAL)",
+    "section": "Description",
+    "text": "Description\nThe metal:define-slot statement defines a macro customization point or slot. When a macro is used, its slots can be replaced, in order to customize the macro. Slot definitions provide default content for the slot. You will get the default slot contents if you decide not to customize the macro when using it.\nThe metal:define-slot statement must be used inside a metal:define-macro statement.\nSlot names must be unique within a macro.",
+    "crumbs": [
+      "Language Reference",
+      "Macros (METAL)"
+    ]
+  },
+  {
+    "objectID": "language/macros.html#examples-1",
+    "href": "language/macros.html#examples-1",
+    "title": "Macros (METAL)",
+    "section": "Examples",
+    "text": "Examples\nSimple macro with slot:\n&lt;p metal:define-macro=\"hello\"&gt;\n  Hello &lt;b metal:define-slot=\"name\"&gt;World&lt;/b&gt;\n&lt;/p&gt;\nThis example defines a macro with one slot named name. When you use this macro you can customize the b element by filling the name slot.",
+    "crumbs": [
+      "Language Reference",
+      "Macros (METAL)"
+    ]
+  },
+  {
+    "objectID": "language/macros.html#syntax-2",
+    "href": "language/macros.html#syntax-2",
+    "title": "Macros (METAL)",
+    "section": "Syntax",
+    "text": "Syntax\nmetal:fill-slot syntax:\nargument ::= Name",
+    "crumbs": [
+      "Language Reference",
+      "Macros (METAL)"
+    ]
+  },
+  {
+    "objectID": "language/macros.html#description-2",
+    "href": "language/macros.html#description-2",
+    "title": "Macros (METAL)",
+    "section": "Description",
+    "text": "Description\nThe metal:fill-slot statement customizes a macro by replacing a slot in the macro with the statement element (and its content).\nThe metal:fill-slot statement must be used inside a metal:use-macro statement.\nSlot names must be unique within a macro.\nIf the named slot does not exist within the macro, the slot contents will be silently dropped.",
+    "crumbs": [
+      "Language Reference",
+      "Macros (METAL)"
+    ]
+  },
+  {
+    "objectID": "language/macros.html#examples-2",
+    "href": "language/macros.html#examples-2",
+    "title": "Macros (METAL)",
+    "section": "Examples",
+    "text": "Examples\nGiven this macro:\n&lt;p metal:define-macro=\"hello\"&gt;\n  Hello &lt;b metal:define-slot=\"name\"&gt;World&lt;/b&gt;\n&lt;/p&gt;\nYou can fill the name slot like so:\n&lt;p metal:use-macro=\"container['master.html'].macros.hello\"&gt;\n  Hello &lt;b metal:fill-slot=\"name\"&gt;Kevin Bacon&lt;/b&gt;\n&lt;/p&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Macros (METAL)"
+    ]
+  },
+  {
+    "objectID": "language/macros.html#syntax-3",
+    "href": "language/macros.html#syntax-3",
+    "title": "Macros (METAL)",
+    "section": "Syntax",
+    "text": "Syntax\nmetal:use-macro syntax:\nargument ::= expression",
+    "crumbs": [
+      "Language Reference",
+      "Macros (METAL)"
+    ]
+  },
+  {
+    "objectID": "language/macros.html#description-3",
+    "href": "language/macros.html#description-3",
+    "title": "Macros (METAL)",
+    "section": "Description",
+    "text": "Description\nThe metal:use-macro statement replaces the statement element with a macro. The statement expression describes a macro definition. While the macro runs, the macroname variable is bound to the name it was called with: the use-macro expression as written, after its last / (for container['master.html'].macros.hello that is the whole expression text).\n\n\n\n\n\n\nNote\n\n\n\nIn Chameleon the expression may point to a template instance; in this case it will be rendered in its entirety.",
+    "crumbs": [
+      "Language Reference",
+      "Macros (METAL)"
+    ]
+  },
+  {
+    "objectID": "language/macros.html#syntax-4",
+    "href": "language/macros.html#syntax-4",
+    "title": "Macros (METAL)",
+    "section": "Syntax",
+    "text": "Syntax\nmetal:extend-macro syntax:\nargument ::= expression",
+    "crumbs": [
+      "Language Reference",
+      "Macros (METAL)"
+    ]
+  },
+  {
+    "objectID": "language/macros.html#description-4",
+    "href": "language/macros.html#description-4",
+    "title": "Macros (METAL)",
+    "section": "Description",
+    "text": "Description\nTo extend an existing macro, choose a name for the macro and add a define-macro attribute to a document element with the name as the argument. Add an extend-macro attribute to the document element with an expression referencing the base macro as the argument. The extend-macro must be used in conjunction with define-macro, and must not be used with use-macro. The element’s subtree is the macro body.",
+    "crumbs": [
+      "Language Reference",
+      "Macros (METAL)"
+    ]
+  },
+  {
+    "objectID": "language/macros.html#examples-3",
+    "href": "language/macros.html#examples-3",
+    "title": "Macros (METAL)",
+    "section": "Examples",
+    "text": "Examples\n&lt;div metal:define-macro=\"page-header\"\n     metal:extend-macro=\"standard_macros['page-header']\"&gt;\n  &lt;div metal:fill-slot=\"breadcrumbs\"&gt;\n    You are here:\n    &lt;div metal:define-slot=\"breadcrumbs\"/&gt;\n  &lt;/div&gt;\n&lt;/div&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Macros (METAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html",
+    "href": "language/tal.html",
+    "title": "Basics (TAL)",
+    "section": "",
+    "text": "Adapted from Chameleon’s language reference (source), modified for chameleon-rs. Used under Chameleon’s license; see LICENSE.txt and COPYRIGHT.txt in the repository.\nThe template attribute language is used to create dynamic XML-like content. It allows elements of a document to be replaced, repeated, or omitted.",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#syntax",
+    "href": "language/tal.html#syntax",
+    "title": "Basics (TAL)",
+    "section": "Syntax",
+    "text": "Syntax\ntal:attributes syntax:\nargument             ::= attribute_statement [';' attribute_statement]*\nattribute_statement  ::= (attribute_name expression | expression)\nattribute_name       ::= [namespace-prefix ':'] Name\nnamespace-prefix     ::= Name",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#description",
+    "href": "language/tal.html#description",
+    "title": "Basics (TAL)",
+    "section": "Description",
+    "text": "Description\nThe tal:attributes statement replaces the value of an attribute (or drops, or creates an attribute) with a dynamic value. The value of each expression is converted to a string, if necessary.\n\n\n\n\n\n\nNote\n\n\n\nYou can qualify an attribute name with a namespace prefix, for example html:table, if you are generating an XML document with multiple namespaces.\n\n\nIf an attribute expression evaluates to None, the attribute is deleted from the statement element (or simply not inserted).\nIf an attribute statement is just an expression, it must evaluate to a Python dict (or implement the methods update() and items() from the dictionary specification).\nIf the expression evaluates to the symbol default (a symbol which is always available when evaluating attributes), its value is defined as the default static attribute value. If there is no such default value, a return value of default will drop the attribute.\nIf you use tal:attributes on an element with an active tal:replace command, the tal:attributes statement is ignored.\nIf you use tal:attributes on an element with a tal:repeat statement, the replacement is made on each repetition of the element, and the replacement expression is evaluated fresh for each repetition.\n\n\n\n\n\n\nNote\n\n\n\nIf you want to include a semicolon (“;”) in an expression, it must be escaped by doubling it (“;;”). Similarly, you can escape expression interpolation using the “\\(\" symbol by doubling\nit (\"\\)$”).",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#examples",
+    "href": "language/tal.html#examples",
+    "title": "Basics (TAL)",
+    "section": "Examples",
+    "text": "Examples\nReplacing a link:\n&lt;a href=\"/sample/link.html\"\n   tal:attributes=\"href context.url()\"\n   &gt;\n   ...\n&lt;/a&gt;\nReplacing two attributes:\n&lt;textarea rows=\"80\" cols=\"20\"\n          tal:attributes=\"rows request.rows();cols request.cols()\"\n    /&gt;\nInserting several attributes from a dict:\n&lt;a tal:attributes=\"{'href': '/x', 'class': 'c'}\"&gt;x&lt;/a&gt;\nwhich renders as &lt;a href=\"/x\" class=\"c\"&gt;x&lt;/a&gt;.\nA checkbox input:\n&lt;input type=\"checkbox\" tal:attributes=\"checked True\" /&gt;\nchecked is a boolean attribute: a true value renders it as checked=\"checked\", and a false value drops it. In HTML templates the standard HTML boolean attributes (checked, selected, disabled and the rest) are treated this way by default. The boolean_attributes option replaces that set; XML templates have none unless you pass it:\nfrom chameleon_rs import PageTemplate, PageTemplateLoader\n\ntemplate = PageTemplate('&lt;input type=\"checkbox\" tal:attributes=\"checked True\" /&gt;',\n                        boolean_attributes={\"selected\", \"checked\"})\n# or\ntemplates = PageTemplateLoader(path, boolean_attributes={\"selected\", \"checked\"})",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#syntax-1",
+    "href": "language/tal.html#syntax-1",
+    "title": "Basics (TAL)",
+    "section": "Syntax",
+    "text": "Syntax\ntal:condition syntax:\nargument ::= expression",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#description-1",
+    "href": "language/tal.html#description-1",
+    "title": "Basics (TAL)",
+    "section": "Description",
+    "text": "Description\nThe tal:condition statement includes the statement element in the template only if the condition is met, and omits it otherwise. If its expression evaluates to a true value, then normal processing of the element continues, otherwise the statement element is immediately removed from the template. For these purposes, the value nothing is false.\n\n\n\n\n\n\nNote\n\n\n\nLike Python itself, ZPT considers None, zero, empty strings, empty sequences, empty dictionaries, and instances which return zero from __len__ or false from __bool__ to be false; all other values are true.\n\n\n\n\n\n\n\n\nNote\n\n\n\ndefault is defined only where a statement has a default to fall back on (tal:attributes, tal:content, tal:replace, tal:case). In tal:condition, tal:define and tal:repeat it raises NameError, in Chameleon as in chameleon-rs.",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#examples-1",
+    "href": "language/tal.html#examples-1",
+    "title": "Basics (TAL)",
+    "section": "Examples",
+    "text": "Examples\nTest a variable before inserting it:\n&lt;p tal:condition=\"request.message\" tal:content=\"request.message\" /&gt;\nTesting for odd/even in a repeat-loop:\n&lt;div tal:repeat=\"item range(10)\"&gt;\n  &lt;p tal:condition=\"repeat.item.even\"&gt;Even&lt;/p&gt;\n  &lt;p tal:condition=\"repeat.item.odd\"&gt;Odd&lt;/p&gt;\n&lt;/div&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#syntax-2",
+    "href": "language/tal.html#syntax-2",
+    "title": "Basics (TAL)",
+    "section": "Syntax",
+    "text": "Syntax\ntal:content syntax:\nargument ::= (['text'] | 'structure') expression",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#description-2",
+    "href": "language/tal.html#description-2",
+    "title": "Basics (TAL)",
+    "section": "Description",
+    "text": "Description\nRather than replacing an entire element, you can insert text or structure in place of its children with the tal:content statement. The statement argument is exactly like that of tal:replace, and is interpreted in the same fashion. If the expression evaluates to nothing (or None), the statement element is left childless. If the expression evaluates to default, then the element’s contents are evaluated.\nThe default replacement behavior is text, which replaces angle-brackets and ampersands with their HTML entity equivalents. The structure keyword passes the replacement text through unchanged, allowing HTML/XML markup to be inserted. This can break your page if the text contains unanticipated markup (eg. text submitted via a web form), which is the reason that it is not the default.\n\n\n\n\n\n\nNote\n\n\n\nThe structure keyword exists to provide backwards compatibility. In Chameleon, the structure: expression type provides the same functionality (also for inline expressions).",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#examples-2",
+    "href": "language/tal.html#examples-2",
+    "title": "Basics (TAL)",
+    "section": "Examples",
+    "text": "Examples\nInserting the user name:\n&lt;p tal:content=\"user.getUserName()\"&gt;Fred Farkas&lt;/p&gt;\nInserting HTML/XML:\n&lt;p tal:content=\"structure context.getStory()\"&gt;\n   Marked &lt;b&gt;up&lt;/b&gt; content goes here.\n&lt;/p&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#syntax-3",
+    "href": "language/tal.html#syntax-3",
+    "title": "Basics (TAL)",
+    "section": "Syntax",
+    "text": "Syntax\ntal:define syntax:\nvariable_name  ::= Name | '(' Name [',' Name]* ')'\ndefine_var     ::= variable_name expression\ndefine_scope   ::= (['local'] | 'global') define_var\nargument       ::= define_scope [';' define_scope]*",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#description-3",
+    "href": "language/tal.html#description-3",
+    "title": "Basics (TAL)",
+    "section": "Description",
+    "text": "Description\nThe tal:define statement defines variables. When you define a local variable in a statement element, you can use that variable in that element and the elements it contains. If you redefine a variable in a contained element, the new definition hides the outer element’s definition within the inner element.\nNote that valid variable names are any Python identifier string including underscore, although two or more leading underscores are disallowed (used internally by the compiler). Further, names are case-sensitive.\nVariable names support basic iterable unpacking when surrounded by parenthesis. This also applies to the variable established by tal:repeat.\n\n\n\n\n\n\nNote\n\n\n\nThis is a Chameleon-specific language extension.\n\n\nPython builtins are always “in scope”, and may be redefined (such as help or len).\nThe names econtext and rcontext are reserved: defining them is a compile error. Defining translate or decode has no effect (the template’s own translation function and decoder are used).\nIf the expression associated with a variable evaluates to nothing, then that variable has the value nothing, and may be used as such in further expressions.\nYou can define two different kinds of variables: local and global. When you define a local variable in a statement element, you can only use that variable in that element and the elements it contains. If you redefine a local variable in a contained element, the new definition hides the outer element’s definition within the inner element. When you define a global variable, you can use it in any element processed after the defining element. If you redefine a global variable, you replace its definition for the rest of the template.\n\n\n\n\n\n\nTip\n\n\n\nGlobal variables may be changed by the execution of a macro if that macro also declares the variable to be global.\n\n\nTo set the definition scope of a variable, use the keywords local or global in front of the assignment. The default setting is local; thus, in practice, only the global keyword is used.\n\n\n\n\n\n\nNote\n\n\n\nIf you want to include a semicolon (“;”) in an expression, it must be escaped by doubling it (“;;”).",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#examples-3",
+    "href": "language/tal.html#examples-3",
+    "title": "Basics (TAL)",
+    "section": "Examples",
+    "text": "Examples\nDefining a variable:\ntal:define=\"company_name 'Zope Corp, Inc.'\"\nDefining two variables, where the second depends on the first:\ntal:define=\"mytitle context.title; tlen len(mytitle)\"\nDefining a local and global variable:\ntal:define=\"global mytitle context.title; tlen len(mytitle)\"\nUnpacking a sequence:\ntal:define=\"(key,value) ('a', 42)\"",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#syntax-4",
+    "href": "language/tal.html#syntax-4",
+    "title": "Basics (TAL)",
+    "section": "Syntax",
+    "text": "Syntax\ntal:case and tal:switch syntax:\nargument ::= expression",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#description-4",
+    "href": "language/tal.html#description-4",
+    "title": "Basics (TAL)",
+    "section": "Description",
+    "text": "Description\nThe switch and case construct is a short-hand syntax for matching a set of expressions against a single parent.\nThe tal:switch statement is used to set a new parent expression and the contained tal:case statements are then matched in sequence such that only the first match succeeds.\nNote that the symbol default affirms the case precisely when no previous case has been successful. It should therefore be placed last.\n\n\n\n\n\n\nNote\n\n\n\nThese statements are only available in Chameleon (2.x and later) and are not part of the ZPT specification.",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#examples-4",
+    "href": "language/tal.html#examples-4",
+    "title": "Basics (TAL)",
+    "section": "Examples",
+    "text": "Examples\n&lt;ul tal:switch=\"item.type\"&gt;\n  &lt;li tal:case=\"'document'\"&gt;\n    Document\n  &lt;/li&gt;\n  &lt;li tal:case=\"'folder'\"&gt;\n    Folder\n  &lt;/li&gt;\n  &lt;li tal:case=\"default\"&gt;\n    Other\n  &lt;/li&gt;\n&lt;/ul&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#syntax-5",
+    "href": "language/tal.html#syntax-5",
+    "title": "Basics (TAL)",
+    "section": "Syntax",
+    "text": "Syntax\ntal:omit-tag syntax:\nargument ::= [ expression ]",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#description-5",
+    "href": "language/tal.html#description-5",
+    "title": "Basics (TAL)",
+    "section": "Description",
+    "text": "Description\nThe tal:omit-tag statement leaves the contents of an element in place while omitting the surrounding start and end tags.\nIf the expression evaluates to a false value, then normal processing of the element continues and the tags are not omitted. If the expression evaluates to a true value, or no expression is provided, the statement element is replaced with its contents.\n\n\n\n\n\n\nNote\n\n\n\nLike Python itself, ZPT considers None, zero, empty strings, empty sequences, empty dictionaries, and instances which return zero from __len__ or false from __bool__ to be false; all other values are true.",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#examples-5",
+    "href": "language/tal.html#examples-5",
+    "title": "Basics (TAL)",
+    "section": "Examples",
+    "text": "Examples\nUnconditionally omitting a tag:\n&lt;div tal:omit-tag=\"\" comment=\"This tag will be removed\"&gt;\n  &lt;i&gt;...but this text will remain.&lt;/i&gt;\n&lt;/div&gt;\nConditionally omitting a tag:\n&lt;b tal:omit-tag=\"not:bold\"&gt;I may be bold.&lt;/b&gt;\nThe above example will omit the b tag if the variable bold is false.\nCreating ten paragraph tags, with no enclosing tag:\n&lt;span tal:repeat=\"n range(10)\"\n      tal:omit-tag=\"\"&gt;\n  &lt;p tal:content=\"n\"&gt;1&lt;/p&gt;\n&lt;/span&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#syntax-6",
+    "href": "language/tal.html#syntax-6",
+    "title": "Basics (TAL)",
+    "section": "Syntax",
+    "text": "Syntax\ntal:repeat syntax:\nargument      ::= variable_name expression\nvariable_name ::= Name",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#description-6",
+    "href": "language/tal.html#description-6",
+    "title": "Basics (TAL)",
+    "section": "Description",
+    "text": "Description\nThe tal:repeat statement replicates a sub-tree of your document once for each item in a sequence. The expression should evaluate to a sequence. If the sequence is empty, then the statement element is deleted, otherwise it is repeated for each value in the sequence.\nThe variable_name is used to define a local variable and a repeat variable. For each repetition, the local variable is set to the current sequence element, and the repeat variable is set to an iteration object.",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#repeat-variables",
+    "href": "language/tal.html#repeat-variables",
+    "title": "Basics (TAL)",
+    "section": "Repeat variables",
+    "text": "Repeat variables\nYou use repeat variables to access information about the current repetition (such as the repeat index). The repeat variable has the same name as the local variable, but is only accessible through the built-in variable named repeat.\nThe following information is available from the repeat variable:\n\n\n\n\n\n\n\nAttribute\nDescription\n\n\n\n\nindex\nRepetition number, starting from zero.\n\n\nnumber\nRepetition number, starting from one.\n\n\neven\nTrue for even-indexed repetitions (0, 2, 4, …).\n\n\nodd\nTrue for odd-indexed repetitions (1, 3, 5, …).\n\n\nparity\nFor odd-indexed repetitions, this is ‘odd’, else ‘even’.\n\n\nstart\nTrue for the starting repetition (index 0).\n\n\nend\nTrue for the ending, or final, repetition.\n\n\nlength\nLength of the sequence, which will be the total number of repetitions.\n\n\nletter\nRepetition number as a lower-case letter: “a” - “z”, then “ba” - “bz”, “ca” - “cz”, …, “zz”, “baa”, and so forth (the index written in base 26, with “a” as zero).\n\n\nLetter\nUpper-case version of letter.\n\n\nroman\nRepetition number as a lower-case roman numeral: “i”, “ii”, “iii”, “iv”, “v”, etc.\n\n\nRoman\nUpper-case version of roman.\n\n\n\nThe true and false values are not booleans: even and odd are the strings 'even' and 'odd' when true and '' when false, and start and end are 1 or 0. They test the same way in a condition, but print differently.\nYou can access the contents of the repeat variable using either dictionary- or attribute-style access, e.g. repeat['item'].start or repeat.item.start.\n\n\n\n\n\n\nNote\n\n\n\nFor legacy compatibility, the attributes odd, even, number, letter, Letter, roman, and Roman are callable (returning self).\n\n\n\n\n\n\n\n\nNote\n\n\n\nEarlier versions of this document, and the Zope Page Templates Reference, referred to first and last attributes for use with sorted sequences. These are not implemented in Chameleon or the Zope reference implementation zope.tales. Instead, you can use itertools.groupby, as in the example below.",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#examples-6",
+    "href": "language/tal.html#examples-6",
+    "title": "Basics (TAL)",
+    "section": "Examples",
+    "text": "Examples\nIterating over a sequence of strings:\n&lt;p tal:repeat=\"txt ('one', 'two', 'three')\"&gt;\n   &lt;span tal:replace=\"txt\" /&gt;\n&lt;/p&gt;\nInserting a sequence of table rows, and using the repeat variable to number the rows:\n&lt;table&gt;\n  &lt;tr tal:repeat=\"item here.cart\"&gt;\n      &lt;td tal:content=\"repeat.item.number\"&gt;1&lt;/td&gt;\n      &lt;td tal:content=\"item.description\"&gt;Widget&lt;/td&gt;\n      &lt;td tal:content=\"item.price\"&gt;$1.50&lt;/td&gt;\n  &lt;/tr&gt;\n&lt;/table&gt;\nNested repeats:\n&lt;table border=\"1\"&gt;\n  &lt;tr tal:repeat=\"row range(10)\"&gt;\n    &lt;td tal:repeat=\"column range(10)\"&gt;\n      &lt;span tal:define=\"x repeat.row.number;\n                        y repeat.column.number;\n                        z x * y\"\n            tal:replace=\"string:$x * $y = $z\"&gt;1 * 1 = 1&lt;/span&gt;\n    &lt;/td&gt;\n  &lt;/tr&gt;\n&lt;/table&gt;\nGrouping objects by type, drawing a rule between elements of different types:\n&lt;div tal:repeat=\"(type,objects) list(map(lambda g: (g[0], list(g[1])), itertools.groupby(objects, key=lambda o: o.meta_type)))\"\n     tal:define=\"itertools import:itertools\"&gt;\n  &lt;h2 tal:content=\"type\"&gt;Meta Type&lt;/h2&gt;\n  &lt;p tal:repeat=\"object objects\"\n     tal:content=\"object.id\"&gt;Object ID&lt;/p&gt;\n  &lt;hr /&gt;\n&lt;/div&gt;\n\n\n\n\n\n\nCaution\n\n\n\nIt is important to fully realize the iterator produced by itertools.groupby, as well as the iterator produced for each group, in the expression passed to tal:repeat. This is because the implementation of certain repeat variables, such as length and end requires Chameleon to look ahead in the iterator, consuming it faster than is visible. The iterator returned by itertools.groupby is shared among all of its subgroups, so without the full reification of all the iterators, incorrect results will be produced.",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#syntax-7",
+    "href": "language/tal.html#syntax-7",
+    "title": "Basics (TAL)",
+    "section": "Syntax",
+    "text": "Syntax\ntal:replace syntax:\nargument ::= ['structure'] expression",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#description-7",
+    "href": "language/tal.html#description-7",
+    "title": "Basics (TAL)",
+    "section": "Description",
+    "text": "Description\nThe tal:replace statement replaces an element with dynamic content. It replaces the statement element with either text or a structure (unescaped markup). The body of the statement is an expression with an optional type prefix. The value of the expression is converted into an escaped string unless you provide the ‘structure’ prefix. Escaping consists of converting & to &amp;, &lt; to &lt;, and &gt; to &gt;.\n\n\n\n\n\n\nNote\n\n\n\nIf the inserted object provides an __html__ method, that method is called with the result inserted as structure. This feature is not implemented by ZPT.\n\n\nIf the expression evaluates to None, the element is simply removed. If the value is default, then the element is left unchanged.",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "language/tal.html#examples-7",
+    "href": "language/tal.html#examples-7",
+    "title": "Basics (TAL)",
+    "section": "Examples",
+    "text": "Examples\nInserting a title:\n&lt;span tal:replace=\"context.title\"&gt;Title&lt;/span&gt;\nInserting HTML/XML:\n&lt;div tal:replace=\"structure table\" /&gt;",
+    "crumbs": [
+      "Language Reference",
+      "Basics (TAL)"
+    ]
+  },
+  {
+    "objectID": "recipes/htmx-fragments.html",
+    "href": "recipes/htmx-fragments.html",
+    "title": "HTMX fragments",
+    "section": "",
+    "text": "HTMX swaps a piece of the page with HTML the server returns. Write that piece as a partial, and you can render it in two places: inside the full page on the first load, and on its own when HTMX asks for it.\nThe fragment, todos/list.pt:\n&lt;ul id=\"todos\"&gt;\n  &lt;li tal:repeat=\"todo todos\"&gt;${todo}&lt;/li&gt;\n&lt;/ul&gt;\nThe page, todos/index.pt, includes it:\n&lt;h1&gt;Todos&lt;/h1&gt;\n&lt;form hx-post=\"/todos\" hx-target=\"#todos\" hx-swap=\"outerHTML\"&gt;\n  &lt;input name=\"title\"&gt;&lt;button&gt;Add&lt;/button&gt;\n&lt;/form&gt;\n${render_partial('todos/list.pt', todos=todos)}\nThe views render the page on GET and only the fragment on POST:\n\nimport flask\n\nimport chameleon_rs\nimport chameleon_rs.flask as chameleon_flask\n\napp = flask.Flask(__name__)\nchameleon_flask.configure(template_folder=template_folder)\ntodos = ['Write docs']\n\n\n@app.get('/todos')\n@chameleon_flask.template('todos/index.pt')\ndef index():\n    return {'todos': todos}\n\n\n@app.post('/todos')\ndef add():\n    todos.append(flask.request.form['title'])\n    return chameleon_rs.render_partial('todos/list.pt', todos=todos).html_text\n\n\nclient = app.test_client()\nprint(client.post('/todos', data={'title': 'Ship it'}).text)\n\n&lt;ul id=\"todos\"&gt;\n  &lt;li&gt;Write docs&lt;/li&gt;\n  &lt;li&gt;Ship it&lt;/li&gt;\n&lt;/ul&gt;\n\n\nchameleon_rs.render_partial() returns an HTML object. Its html_text is the markup. Because the fragment is one template file, the page and the HTMX response can’t drift apart.\nchameleon_flask.response('todos/list.pt', todos=todos) does the same and returns a flask.Response, if you’d rather set a content type or status code.",
+    "crumbs": [
+      "Recipes",
+      "HTMX fragments"
+    ]
+  },
+  {
+    "objectID": "recipes/shared-layout.html",
+    "href": "recipes/shared-layout.html",
+    "title": "A shared layout",
+    "section": "",
+    "text": "Most sites have one layout: the &lt;head&gt;, the navigation and the footer. Write it once as a METAL macro with slots, and have each page fill them.\nThe layout, shared/_layout.pt (the underscore marks it as not a page of its own):\n&lt;!DOCTYPE html&gt;\n&lt;html lang=\"en\" metal:define-macro=\"layout\"&gt;\n&lt;head&gt;\n  &lt;title&gt;&lt;tal:title metal:define-slot=\"title\"&gt;My site&lt;/tal:title&gt;&lt;/title&gt;\n  &lt;link rel=\"stylesheet\" href=\"/static/site.css\"&gt;\n  &lt;tal:head metal:define-slot=\"head\"&gt;&lt;/tal:head&gt;\n&lt;/head&gt;\n&lt;body&gt;\n  &lt;nav&gt;&lt;a href=\"/\"&gt;Home&lt;/a&gt; &lt;span tal:condition=\"user\"&gt;Hi, ${user}&lt;/span&gt;&lt;/nav&gt;\n  &lt;main metal:define-slot=\"content\"&gt;&lt;/main&gt;\n  &lt;tal:scripts metal:define-slot=\"scripts\"&gt;&lt;/tal:scripts&gt;\n&lt;/body&gt;\n&lt;/html&gt;\nA page, home/index.pt, loads the layout relative to itself with load: and fills the slots it needs:\n&lt;html metal:use-macro=\"load: ../shared/_layout.pt\"&gt;\n  &lt;tal:title metal:fill-slot=\"title\"&gt;Home | My site&lt;/tal:title&gt;\n  &lt;main metal:fill-slot=\"content\"&gt;\n    &lt;h1&gt;Welcome&lt;/h1&gt;\n  &lt;/main&gt;\n  &lt;script metal:fill-slot=\"scripts\" src=\"/static/home.js\"&gt;&lt;/script&gt;\n&lt;/html&gt;\n\nfrom chameleon_rs import PageTemplateLoader\n\ntemplates = PageTemplateLoader([template_folder])\nprint(templates['home/index.pt'](user='Ada'))\n\n&lt;!DOCTYPE html&gt;\n&lt;html lang=\"en\"&gt;\n&lt;head&gt;\n  &lt;title&gt;Home | My site&lt;/title&gt;\n  &lt;link rel=\"stylesheet\" href=\"/static/site.css\"&gt;\n  \n&lt;/head&gt;\n&lt;body&gt;\n  &lt;nav&gt;&lt;a href=\"/\"&gt;Home&lt;/a&gt; &lt;span&gt;Hi, Ada&lt;/span&gt;&lt;/nav&gt;\n  &lt;main&gt;\n    &lt;h1&gt;Welcome&lt;/h1&gt;\n  &lt;/main&gt;\n  &lt;script src=\"/static/home.js\"&gt;&lt;/script&gt;\n&lt;/body&gt;\n&lt;/html&gt;\n\n\n\n\nA few things to note:\n\nA slot the page doesn’t fill keeps the layout’s default content: head stays empty here.\nThe layout sees the page’s variables (user here), so pass layout data such as the signed-in user in every view’s model, or add it in one place in your framework.\ntal: and metal: elements (&lt;tal:title&gt;) render only their content. They’re handy for slots that shouldn’t add a tag.\nThe layout is compiled once and cached by the loader, like any template.",
+    "crumbs": [
+      "Recipes",
+      "A shared layout"
+    ]
+  },
+  {
+    "objectID": "reference/PageTemplate.__getitem__.html",
+    "href": "reference/PageTemplate.__getitem__.html",
+    "title": "PageTemplate.__getitem__()",
+    "section": "",
+    "text": "Usage\nSource\n\n\nPageTemplate.__getitem__(name)",
+    "crumbs": [
+      "API Reference",
+      "PageTemplate Methods",
+      "[PageTemplate.__getitem__()]{.doc-object-name .doc-function .doc-label .doc-label-method}"
+    ]
+  },
+  {
+    "objectID": "reference/PageTemplate.digest.html",
+    "href": "reference/PageTemplate.digest.html",
+    "title": "PageTemplate.digest()",
+    "section": "",
+    "text": "Usage\nSource\n\n\nPageTemplate.digest(body, names)",
+    "crumbs": [
+      "API Reference",
+      "PageTemplate Methods",
+      "[PageTemplate.digest()]{.doc-object-name .doc-function .doc-label .doc-label-method}"
+    ]
+  },
+  {
+    "objectID": "reference/PageTemplate.parse.html",
+    "href": "reference/PageTemplate.parse.html",
+    "title": "PageTemplate.parse()",
+    "section": "",
+    "text": "Usage\nSource\n\n\nPageTemplate.parse(body)",
+    "crumbs": [
+      "API Reference",
+      "PageTemplate Methods",
+      "[PageTemplate.parse()]{.doc-object-name .doc-function .doc-label .doc-label-method}"
+    ]
+  },
+  {
+    "objectID": "reference/PageTemplate.render.html",
+    "href": "reference/PageTemplate.render.html",
+    "title": "PageTemplate.render()",
+    "section": "",
+    "text": "Render template to string.\n\n\nUsage\nSource\n\n\nPageTemplate.render(encoding=None, **kw)\n\n\nIf provided, the encoding argument overrides the template default value. Additional keyword arguments are passed as template variables; translate overrides the template’s translation function and target_language is the language passed to it when no i18n:target applies.",
+    "crumbs": [
+      "API Reference",
+      "PageTemplate Methods",
+      "[PageTemplate.render()]{.doc-object-name .doc-function .doc-label .doc-label-method}"
+    ]
+  },
+  {
+    "objectID": "reference/PageTemplateLoader.html#load",
+    "href": "reference/PageTemplateLoader.html#load",
+    "title": "PageTemplateLoader",
+    "section": "load()",
+    "text": "load()\n\nLoad and return a template file.\n\n\nUsage\nSource\n\n\nload(filename, format=None)\n\n\nThe format parameter determines will parse the file. Valid options are xml and text.",
+    "crumbs": [
+      "API Reference",
+      "Templates",
+      "[PageTemplateLoader]{.doc-object-name .doc-class .doc-label .doc-label-class}"
+    ]
+  },
+  {
+    "objectID": "reference/PageTextTemplateFile.html",
+    "href": "reference/PageTextTemplateFile.html",
+    "title": "PageTextTemplateFile",
+    "section": "",
+    "text": "File-based text template. Rendering returns bytes, encoded with the template’s\n\n\nUsage\nSource\n\n\nPageTextTemplateFile()\n\n\nencoding (UTF-8 by default), as Chameleon’s does.",
+    "crumbs": [
+      "API Reference",
+      "Templates",
+      "[PageTextTemplateFile]{.doc-object-name .doc-class .doc-label .doc-label-class}"
+    ]
+  },
+  {
+    "objectID": "reference/compat.install.html",
+    "href": "reference/compat.install.html",
+    "title": "compat.install()",
+    "section": "",
+    "text": "Makes import chameleon (and its submodules) resolve to chameleon-rs and, with\n\n\nUsage\nSource\n\n\ncompat.install(*, integrations=True)\n\n\nintegrations (the default), import chameleon_partials / import chameleon_flask to the built-ins (see the module docs). Modules already imported under these names are replaced, with a RuntimeWarning naming them (code that imported them keeps its references). Idempotent; returns the module now known as chameleon.",
+    "crumbs": [
+      "API Reference",
+      "Compatibility",
+      "[compat.install()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/core_version.html",
+    "href": "reference/core_version.html",
+    "title": "core_version()",
+    "section": "",
+    "text": "Version of the Rust core, for bug reports and for checking which build is loaded.\n\n\nUsage\n\n\ncore_version()",
+    "crumbs": [
+      "API Reference",
+      "Configuration",
+      "[core_version()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/flask.configure.html",
+    "href": "reference/flask.configure.html",
+    "title": "flask.configure()",
+    "section": "",
+    "text": "Configures where templates live and how they load: for the whole process (the same as\n\n\nUsage\nSource\n\n\nflask.configure(\n    template_folder=None,\n    *,\n    auto_reload=None,\n    restricted_namespace=None,\n    app=None\n)\n\n\nchameleon_rs.configure: for views and for render_partial), or, with app, for that Flask app’s views only (stored in app.extensions['chameleon_rs']). Settings left out keep their current values.\nRaises FlaskChameleonException if the folder is missing or not a directory.",
+    "crumbs": [
+      "API Reference",
+      "Flask and Quart",
+      "[flask.configure()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/flask.global_init.html",
+    "href": "reference/flask.global_init.html",
+    "title": "flask.global_init()",
+    "section": "",
+    "text": "chameleon-flask’s setup call: configures the views’ templates only (partials keep their\n\n\nUsage\nSource\n\n\nflask.global_init(\n    template_folder,\n    auto_reload=False,\n    cache_init=True,\n    restricted_namespace=True\n)\n\n\nown folder, from register_extensions). With cache_init (the default) a call after the views’ folder is configured does nothing.",
+    "crumbs": [
+      "API Reference",
+      "Flask and Quart",
+      "[flask.global_init()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/flask.render.html",
+    "href": "reference/flask.render.html",
+    "title": "flask.render()",
+    "section": "",
+    "text": "Renders a template (path relative to the template folder) to a str.\n\n\nUsage\nSource\n\n\nflask.render(template_file, **template_data)\n\n\nRaises FlaskChameleonException if nothing is configured.",
+    "crumbs": [
+      "API Reference",
+      "Flask and Quart",
+      "[flask.render()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/flask.template.html",
+    "href": "reference/flask.template.html",
+    "title": "flask.template()",
+    "section": "",
+    "text": "Decorates a Flask or Quart view (sync or async) to render a template with what it\n\n\nUsage\nSource\n\n\nflask.template(\n    template_file=None,\n    content_type=\"text/html\",\n    status_code=200,\n    *,\n    mimetype=None\n)\n\n\nreturns: bare (@template), @template() or @template('home/index.pt', content_type=..., status_code=...). See the module docs.",
+    "crumbs": [
+      "API Reference",
+      "Flask and Quart",
+      "[flask.template()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/partials.HTML.html",
+    "href": "reference/partials.HTML.html",
+    "title": "partials.HTML",
+    "section": "",
+    "text": "Rendered markup, as render_partial returns it from Python: __html__ gives the\n\n\nUsage\nSource\n\n\npartials.HTML()\n\n\ntext (html_text), so a template inserts it without escaping.",
+    "crumbs": [
+      "API Reference",
+      "Partials",
+      "[partials.HTML]{.doc-object-name .doc-class .doc-label .doc-label-class}"
+    ]
+  },
+  {
+    "objectID": "reference/partials.PartialsException.html",
+    "href": "reference/partials.PartialsException.html",
+    "title": "partials.PartialsException",
+    "section": "",
+    "text": "Raised when partials are configured or used incorrectly: registering a folder that does\n\n\nUsage\nSource\n\n\npartials.PartialsException()\n\n\nnot exist, or rendering a partial from Python before any folder is configured. Errors from the templates themselves (ValueError for a missing file) propagate unchanged.",
+    "crumbs": [
+      "API Reference",
+      "Partials",
+      "[partials.PartialsException]{.doc-object-name .doc-class .doc-label .doc-label-class}"
+    ]
+  },
+  {
+    "objectID": "reference/partials.extend_model.html",
+    "href": "reference/partials.extend_model.html",
+    "title": "partials.extend_model()",
+    "section": "",
+    "text": "Adds render_partial to a view model (chameleon_partials’ helper; not needed with the\n\n\nUsage\nSource\n\n\npartials.extend_model(model)\n\n\nbuilt-in, which every template has). Returns the model (a new dict for None).",
+    "crumbs": [
+      "API Reference",
+      "Partials",
+      "[partials.extend_model()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/render_partial.html",
+    "href": "reference/render_partial.html",
+    "title": "render_partial",
+    "section": "",
+    "text": "render_partial=PartialRenderer()",
+    "crumbs": [
+      "API Reference",
+      "Partials",
+      "[render_partial]{.doc-object-name .doc-attribute .doc-label .doc-label-constant}"
+    ]
+  },
+  {
+    "objectID": "reference/shadow.install.html",
+    "href": "reference/shadow.install.html",
+    "title": "shadow.install()",
+    "section": "",
+    "text": "Starts shadow mode: from now on, a sample_rate share of the outermost renders of\n\n\nUsage\nSource\n\n\nshadow.install(\n    *, serve=\"chameleon\", sample_rate=1.0, report=None, log_interval=600.0\n)\n\n\nstock Chameleon page templates also renders with chameleon-rs (doubling their latency: keep it well below 1 on real traffic), and the application gets the outcome (output or exception) of the serve engine. Differences go to report (default: a capped warning on the chameleon_rs.shadow logger, once per distinct difference per log_interval seconds). Calling it again replaces the settings.",
+    "crumbs": [
+      "API Reference",
+      "Compatibility",
+      "[shadow.install()]{.doc-object-name .doc-function .doc-label .doc-label-function}"
+    ]
+  },
+  {
+    "objectID": "reference/web.ErrorPage.html",
+    "href": "reference/web.ErrorPage.html",
+    "title": "web.ErrorPage",
+    "section": "",
+    "text": "Raised inside a decorated view to answer with an error page: the decorator renders\n\n\nUsage\nSource\n\n\nweb.ErrorPage()\n\n\ntemplate_file with template_data and status_code.",
+    "crumbs": [
+      "API Reference",
+      "Errors and web helpers",
+      "[web.ErrorPage]{.doc-object-name .doc-class .doc-label .doc-label-class}"
+    ]
+  },
+  {
+    "objectID": "reference/web.TemplateError.html",
+    "href": "reference/web.TemplateError.html",
+    "title": "web.TemplateError",
+    "section": "",
+    "text": "A template integration was configured or used incorrectly: no template folder\n\n\nUsage\nSource\n\n\nweb.TemplateError()\n\n\nconfigured, a folder that does not exist, a view returning something that is not a model or a response. (Not a template compile error: that is chameleon_rs.TemplateError.)",
+    "crumbs": [
+      "API Reference",
+      "Errors and web helpers",
+      "[web.TemplateError]{.doc-object-name .doc-class .doc-label .doc-label-exception}"
+    ]
+  },
+  {
+    "objectID": "skills.html",
+    "href": "skills.html",
+    "title": "Skills",
+    "section": "",
+    "text": "A skill is a package of structured files that teaches an AI coding agent how to work with a specific tool or framework. The skill below was generated by Great Docs from this project’s documentation. Install it in your agent and it will be able to run commands, edit configuration, write content, and troubleshoot problems without step-by-step guidance from you.\n\n  \n    ▶    Install this skill\n  \n  \n    \n      \nAny agent — install with npx:\nnpx skills add https://mkennedy.codes/docs/chameleon-rs/\nCodex / OpenCode\nTell the agent:Fetch the skill file at https://mkennedy.codes/docs/chameleon-rs/skill.md and follow the instructions.\nManual — download the skill file:\ncurl -O https://mkennedy.codes/docs/chameleon-rs/skill.md\nOr browse the SKILL.md file.\n      \n    \n  \n\n\nSKILL.md\n---\nname: chameleon-rs\ndescription: &gt;\n  A Rust implementation of the Chameleon page template engine, compatible with Chameleon's syntax and API. Use when writing Python code that uses the chameleon_rs package.\nlicense: LicenseRef-Chameleon\ncompatibility: Requires Python &gt;=3.12.\n---\n\n# chameleon-rs\n\nA Rust implementation of the Chameleon page template engine, compatible with Chameleon's syntax and API.\n\n## Installation\n\n```bash\npip install chameleon-rs\n```\n\n## When to use what\n\n| Need | Use |\n|------|-----|\n| Run an existing Chameleon app on chameleon-rs with no code changes | `chameleon_rs.compat.install() at the top of the entry point` |\n| Render a template string | `chameleon_rs.PageTemplate(source)(**model)` |\n| Load templates by name from folders | `chameleon_rs.PageTemplateLoader([folder])['page.pt'](**model)` |\n| Insert a reusable HTML fragment | `${render_partial('shared/fragment.pt', key=value)}` |\n| Get a rendered fragment as a string from Python (HTMX, email, tests) | `chameleon_rs.render_partial(path, **model).html_text` |\n| Render Chameleon templates from Flask or Quart views | `chameleon_rs.flask: configure(folder), then @template('page.pt') on the view` |\n\n## API overview\n\n### Templates\n\nCompile and render templates from strings, files and folders.\n\n- `PageTemplate`: Constructor for the page template language, rendered by the Rust VM\n- `PageTemplateFile`: File-based constructor: the template is read from ``filename`` (or, with\n- `PageTextTemplate`: Text-based template class: only ``${...}`` interpolation, no markup, nothing escaped\n- `PageTextTemplateFile`: File-based text template. Rendering returns ``bytes``, encoded with the template's\n- `PageTemplateLoader`\n\n### PageTemplate Methods\n\nMethods for the PageTemplate class\n\n- `PageTemplate.__getitem__`\n- `PageTemplate.builtins`\n- `PageTemplate.parse`\n- `PageTemplate.include`\n- `PageTemplate.render`\n- `PageTemplate.digest`\n\n### Configuration\n\nProcess-wide settings for templates loaded by name.\n\n- `configure`: Configures chameleon-rs for the whole process: where templates loaded by name live, for\n- `core_version`: Version of the Rust core, for bug reports and for checking which build is loaded\n\n### Partials\n\nRender one template inside another. Also chameleon_partials' API.\n\n- `render_partial`: The ``render_partial`` callable: ``chameleon_rs.render_partial`` (no calling template)\n- `partials.register_extensions`\n- `partials.extend_model`\n- `partials.clear`\n- `partials.PartialRenderer`\n- `partials.HTML`\n- `partials.PartialsException`\n\n### Flask and Quart\n\nchameleon-flask's API, built in. Imports Flask only when imported itself.\n\n- `flask.configure`\n- `flask.global_init`\n- `flask.template`\n- `flask.render`\n- `flask.response`\n- `flask.not_found`\n- `flask.error`\n- `flask.clear`\n\n### Errors and web helpers\n\nExceptions, and the pieces shared by the framework integrations.\n\n- `TemplateError`: An error raised by Chameleon\n- `web.TemplateError`\n- `web.ErrorPage`\n- `web.NotFound`\n- `web.model_of`\n\n### Compatibility\n\nMake `import chameleon` resolve to chameleon-rs, or check both engines side by side.\n\n- `compat.install`\n- `shadow.install`\n- `shadow.uninstall`\n- `shadow.ShadowDifference`\n\n## Gotchas\n\n1. chameleon_rs.compat.install() must run before anything imports chameleon, chameleon_partials or chameleon_flask; a module already imported keeps stock Chameleon's objects.\n2. render_partial looks in the configured template folder, then on the calling template's search path and in its folder and each folder above it. chameleon_rs.configure(partial_search='registered') restores chameleon_partials' lookup (configured folder only).\n3. render_partial is a builtin in every template; you don't need extend_model() or a BeforeRender subscriber (both still work).\n4. configure() applies on every call (there is no cache_init); the first call must give template_folder.\n5. template.source does not exist as Python code: with keep_source=True it is a dump of the compiled program.\n6. Custom expression types that return Python AST work through a bridge at fallback speed; types that depend on Chameleon's compiler internals are not supported.\n\n## Best practices\n\n- Call chameleon_rs.configure(template_folder=..., auto_reload=dev_mode) once at startup, before the first render.\n- To switch an existing app, add `import chameleon_rs.compat; chameleon_rs.compat.install()` as the first lines of the entry point, and leave the rest of the code unchanged.\n- Prefer ${render_partial('shared/card.pt', item=item)} as a whole expression: it renders as a native frame of the page, with no Python call.\n- Build template folder paths with (Path(__file__).parent / 'templates').as_posix().\n- In tests, reset with chameleon_rs.partials.clear() (or chameleon_rs.flask.clear()) between configurations.\n\n## What chameleon-rs is\n\nA Rust implementation of the Chameleon page template engine (`import chameleon_rs`, PyPI\n`chameleon-rs`). Same template language (TAL, METAL, i18n, `${...}`), same Python API, the\nsame output byte for byte, and faster rendering. It has no runtime dependencies, and stock\nChameleon doesn't need to be installed.\n\n## Switching an existing Chameleon app\n\nAdd these lines at the very top of the app's entry point, above every other import:\n\n```python\nimport chameleon_rs.compat\n\nchameleon_rs.compat.install()\n```\n\nAfter that, `import chameleon`, `import chameleon_partials` and `import chameleon_flask` give\nchameleon-rs's modules. Don't change templates or other code. If `chameleon` was imported\nbefore `install()`, objects taken from it stay stock Chameleon objects, so move the call\nearlier.\n\n## A new app\n\n```python\nfrom pathlib import Path\n\nimport chameleon_rs\nfrom chameleon_rs import PageTemplateLoader\n\nfolder = (Path(__file__).parent / 'templates').as_posix()\nchameleon_rs.configure(template_folder=folder, auto_reload=dev_mode)  # once, at startup\ntemplates = PageTemplateLoader([folder])\n\nhtml = templates['home/index.pt'](title='Home', videos=videos)\n```\n\nEvery template has `render_partial` built in, with no `extend_model` and no `BeforeRender`\nsubscriber:\n\n```html\n&lt;div tal:repeat=\"video videos\"&gt;\n  ${render_partial('shared/video_card.pt', video=video)}\n&lt;/div&gt;\n```\n\nA partial sees only the keyword arguments passed to it. A path is looked for in the\nconfigured folder, then next to the calling template and in the folders above it.\n\n## Flask and Quart\n\n```python\nimport chameleon_rs.flask as chameleon_flask\n\nchameleon_flask.configure(template_folder=folder, auto_reload=dev_mode)\n\n@app.get('/')\n@chameleon_flask.template('home/index.pt')\ndef index():\n    return {'message': 'Hello'}   # a dict, mapping, dataclass or Pydantic model\n```\n\n`chameleon_flask.not_found()` and `chameleon_flask.error(template, status_code)` end a\ndecorated view with an error page. `chameleon_rs.render_partial(path, **model).html_text`\nreturns a fragment as a string, for HTMX responses.\n\n## Known differences from Chameleon\n\n- `template.source` is a dump of the compiled program, not Python code.\n- Custom expression types that return Python AST work through a bridge, at the speed of an\n  ordinary Python call.\n- `CHAMELEON_CACHE` writes nothing to disk; compiling is fast enough not to need it.\n- `chameleon.nodes`, `chameleon.program`, `chameleon.zpt.program` and `chameleon.benchmark`\n  don't exist.\n\n\n## Resources\n\n- [Full documentation](https://mkennedy.codes/docs/chameleon-rs/)\n- [llms.txt](llms.txt) — Indexed API reference for LLMs\n- [llms-full.txt](llms-full.txt) — Comprehensive documentation for LLMs\n- [Source code](https://github.com/mikeckennedy/chameleon-rust)"
+  },
+  {
+    "objectID": "user-guide/configuration.html",
+    "href": "user-guide/configuration.html",
+    "title": "Configuration",
+    "section": "",
+    "text": "chameleon-rs has three layers of configuration:\n\nchameleon_rs.configure(): process-wide settings for templates loaded by name, used by render_partial and the framework integrations.\nTemplate options: keyword arguments to the template classes and PageTemplateLoader, exactly as in Chameleon.\nEnvironment variables: Chameleon’s CHAMELEON_* variables.\n\n\nchameleon_rs.configure()\nimport chameleon_rs\n\nchameleon_rs.configure(\n    template_folder='templates',\n    auto_reload=False,\n    restricted_namespace=True,\n    partial_search='caller',\n)\n\n\n\nOption\nDefault\nMeaning\n\n\n\n\ntemplate_folder\nnone, required on the first call\nAn existing directory. Partials and the framework integrations load templates by name from it.\n\n\nauto_reload\nFalse\nRecompile a template when its file changes. For partials, each file is checked at most once per render. Use it in development only.\n\n\nrestricted_namespace\nTrue\nFalse allows attributes with other namespaces or prefixes, such as Alpine.js’s @click or Vue’s v-on:click.\n\n\npartial_search\n'caller'\nWhere render_partial looks: 'caller' searches the template folder, then the calling template’s search path and folders. 'registered' searches the template folder only, as chameleon_partials does. See Partials.\n\n\n\nHow it behaves:\n\nAn option you leave out keeps its current value. So configure(partial_search='registered') changes only the search mode.\nEvery call applies. There’s no cache_init as in chameleon_partials and chameleon-flask, so a second call with a different folder takes effect.\nIt’s safe with threads. Each configuration is an immutable object that’s swapped in whole, so a render running at the same time never sees half of one. Still, call it at startup, not per request.\nIt returns the new settings, and raises chameleon_rs.web.TemplateError for a missing folder, or ValueError for an unknown partial_search.\n\n\nimport chameleon_rs\n\nsettings = chameleon_rs.configure(template_folder=template_folder, auto_reload=True)\nprint(settings.auto_reload, settings.restricted_namespace)\n\n# Leaving options out keeps them: auto_reload is still True.\nsettings = chameleon_rs.configure(partial_search='registered')\nprint(settings.auto_reload)\n\nTrue True\nTrue\n\n\nFor tests, chameleon_rs.partials.clear() and chameleon_rs.flask.clear() forget the configuration again.\nchameleon_rs.flask.configure(..., app=app) sets a configuration for one Flask or Quart app only. See Flask and Quart.\n\n\nTemplate options\nThe template classes take Chameleon’s options as keyword arguments, or as class attributes on a subclass. PageTemplateLoader passes any extra keyword arguments on to each template it loads.\nfrom chameleon_rs import PageTemplateFile, PageTemplateLoader\n\npage = PageTemplateFile('templates/home.pt', auto_reload=True, encoding='utf-8')\ntemplates = PageTemplateLoader(['templates'], '.pt', restricted_namespace=False)\nThe common ones:\n\n\n\n\n\n\n\n\nOption\nDefault\nMeaning\n\n\n\n\nauto_reload\nFalse (or CHAMELEON_RELOAD)\nFile templates recompile when their file changes.\n\n\nencoding\nnone\nLets you pass encoded byte strings as values.\n\n\ntranslate\nnone\nThe translation function for i18n: attributes: translate(msgid, domain=None, mapping=None, default=None, context=None, target_language=None).\n\n\nboolean_attributes\nthe HTML set, in HTML mode\nAttributes rendered as name=\"name\" for a true value and dropped for a false one.\n\n\nstrict\nTrue\nCompile every expression up front. False only requires an expression to be valid when it’s evaluated.\n\n\nrestricted_namespace\nTrue\nFalse passes unknown namespaces and prefixes through, for Alpine.js or Vue.\n\n\ntrim_attribute_space\nFalse\nStrip extra whitespace between attributes.\n\n\nimplicit_i18n_translate\nFalse\nMark the text in every element for translation.\n\n\nimplicit_i18n_attributes\nempty\nAttribute names (lowercase) to mark for translation.\n\n\non_error_handler\nnone\nCalled with the exception in a tal:on-error fallback.\n\n\ndefault_expression\n'python'\nThe expression type used when there’s no prefix.\n\n\nextra_builtins\nempty\nExtra names available in every template.\n\n\nkeep_body / keep_source\nFalse\nKeep the template’s source text, or a readable dump of its compiled program.\n\n\n\nThe rest are also accepted, as in Chameleon: default_marker, value_repr, tokenizer, debug, enable_data_attributes, enable_comment_interpolation and expression_types. File templates also take search_path, package_name, loader_class and prepend_relative_search_path.\n\n\n\n\n\n\nNotesource is a program dump, not Python\n\n\n\nChameleon compiles a template to a Python module, and template.source is that module’s code. chameleon-rs compiles to a native program instead, so with keep_source=True, source holds a readable dump of the program. Nothing in Chameleon’s own tests depends on it being Python.\n\n\n\n\nEnvironment variables\nThese are read once, when chameleon-rs is imported, as Chameleon reads them. The values y, yes, t, true, on and 1 (any case) count as true.\n\n\n\n\n\n\n\nVariable\nEffect\n\n\n\n\nCHAMELEON_RELOAD\nThe default for auto_reload: file templates reload when their file changes.\n\n\nCHAMELEON_EAGER\nFile templates compile when they’re created, not on first use. Handy in a test that checks every template in a project compiles.\n\n\nCHAMELEON_DEBUG\nTemplates keep their body and a dump of their compiled program, and use a module loader in a temporary directory.\n\n\nCHAMELEON_CACHE\nA directory, which must exist. Chameleon writes the generated Python modules there. chameleon-rs checks the directory but doesn’t write compiled programs to disk: compiling is fast enough not to need it.\n\n\n\nUnknown CHAMELEON_* variables are logged as warnings, as in Chameleon.",
+    "crumbs": [
+      "User Guide",
+      "Templates",
+      "Configuration"
+    ]
+  },
+  {
+    "objectID": "user-guide/getting-started.html",
+    "href": "user-guide/getting-started.html",
+    "title": "Getting started",
+    "section": "",
+    "text": "This page installs chameleon-rs, renders a template from a string, then sets up a folder of template files the way a web app would.\n\nInstall\nuv pip install chameleon-rs\nchameleon-rs supports CPython 3.12 and later, including the free-threaded build. The wheel contains the compiled engine and has no dependencies.\n\n\nRender a template string\nPageTemplate compiles a template from a string. Calling it renders the template, with the keyword arguments as the template’s variables:\n\nfrom chameleon_rs import PageTemplate\n\npage = PageTemplate(\"\"\"\n&lt;div class=\"greeting\"&gt;\n  &lt;h1&gt;Hello, ${name}!&lt;/h1&gt;\n  &lt;ul tal:condition=\"items\"&gt;\n    &lt;li tal:repeat=\"item items\"&gt;${repeat.item.number}. ${item}&lt;/li&gt;\n  &lt;/ul&gt;\n&lt;/div&gt;\n\"\"\")\n\nprint(page(name='World', items=['templates', 'in', 'Rust']))\n\n\n&lt;div class=\"greeting\"&gt;\n  &lt;h1&gt;Hello, World!&lt;/h1&gt;\n  &lt;ul&gt;\n    &lt;li&gt;1. templates&lt;/li&gt;\n    &lt;li&gt;2. in&lt;/li&gt;\n    &lt;li&gt;3. Rust&lt;/li&gt;\n  &lt;/ul&gt;\n&lt;/div&gt;\n\n\n\nThe template compiles once, when it’s first rendered. Every later render reuses the compiled program, so keep template objects around (module level, or in a loader) rather than building one per request.\n${...} inserts a value with HTML escaping. To insert markup as-is, use structure:, or pass an object with an __html__ method:\n\npage = PageTemplate('&lt;p&gt;${text}&lt;/p&gt; &lt;p&gt;${structure: text}&lt;/p&gt;')\nprint(page(text='&lt;b&gt;bold&lt;/b&gt;'))\n\n&lt;p&gt;&lt;b&gt;bold&lt;/b&gt;&lt;/p&gt; &lt;p&gt;&lt;b&gt;bold&lt;/b&gt;&lt;/p&gt;\n\n\n\n\nRender templates from files\nPageTemplateFile loads one file. PageTemplateLoader loads templates by name from one or more folders, and caches each compiled template:\nSuppose your templates live in a folder like this:\ntemplates/\n├── home/\n│   └── index.pt\n└── shared/\n    └── video.pt\nwith home/index.pt:\n&lt;html&gt;\n  &lt;body&gt;\n    &lt;h1&gt;${title}&lt;/h1&gt;\n    &lt;div tal:repeat=\"video videos\"&gt;\n      ${render_partial('shared/video.pt', video=video)}\n    &lt;/div&gt;\n  &lt;/body&gt;\n&lt;/html&gt;\nand shared/video.pt:\n&lt;a href=\"/videos/${video.id}\"&gt;${video.title}&lt;/a&gt;\nConfigure the folder once at startup with chameleon_rs.configure(), then load templates by name:\n\nfrom dataclasses import dataclass\n\nimport chameleon_rs\nfrom chameleon_rs import PageTemplateLoader\n\n\n@dataclass\nclass Video:\n    id: int\n    title: str\n\n\nchameleon_rs.configure(template_folder=template_folder)\ntemplates = PageTemplateLoader([template_folder])\n\npage = templates['home/index.pt']\nprint(page(title='Latest videos', videos=[Video(1, 'Intro'), Video(2, 'Partials')]))\n\n&lt;html&gt;\n  &lt;body&gt;\n    &lt;h1&gt;Latest videos&lt;/h1&gt;\n    &lt;div&gt;\n      &lt;a href=\"/videos/1\"&gt;Intro&lt;/a&gt;\n    &lt;/div&gt;\n    &lt;div&gt;\n      &lt;a href=\"/videos/2\"&gt;Partials&lt;/a&gt;\n    &lt;/div&gt;\n  &lt;/body&gt;\n&lt;/html&gt;\n\n\n\nrender_partial is available in every template, with nothing to register or pass in. configure() tells it where to find partials. See Partials.\nIn a real app, build the folder path relative to your code, so it doesn’t depend on the working directory:\nfrom pathlib import Path\n\nimport chameleon_rs\n\ntemplate_folder = (Path(__file__).parent / 'templates').as_posix()\nchameleon_rs.configure(template_folder=template_folder, auto_reload=dev_mode)\nauto_reload=True recompiles a template when its file changes. Turn it on in development and leave it off in production.\n\n\nNext steps\n\nAlready have a Chameleon app? See Switching from Chameleon.\nUsing Flask or Quart? See Flask and Quart.\nThe language reference covers TAL, METAL, i18n and expressions.",
+    "crumbs": [
+      "User Guide",
+      "Get started",
+      "Getting started"
+    ]
+  },
+  {
+    "objectID": "user-guide/partials.html",
+    "href": "user-guide/partials.html",
+    "title": "Partials",
+    "section": "",
+    "text": "A partial is a template file rendered inside another template, with its own small model. Use them for anything you repeat: a card in a listing, a form field, a table row, a fragment you also return on its own to HTMX.\nchameleon-rs has partials built in. Every template can call render_partial, with nothing to register or pass in:\nrender_partial(path, **kwargs) renders the template at path with kwargs as its variables, and inserts the result unescaped. Written as a whole ${...} expression, as above, it doesn’t make a Python call at all: the partial renders as a native frame of the page. That makes a listing of partials about 10x faster than Chameleon with chameleon_partials.",
+    "crumbs": [
+      "User Guide",
+      "Templates",
+      "Partials"
+    ]
+  },
+  {
+    "objectID": "user-guide/partials.html#chameleon_partials-lookup-partial_searchregistered",
+    "href": "user-guide/partials.html#chameleon_partials-lookup-partial_searchregistered",
+    "title": "Partials",
+    "section": "chameleon_partials’ lookup: partial_search='registered'",
+    "text": "chameleon_partials’ lookup: partial_search='registered'\nchameleon_partials resolves every path against the registered folder only, and treats any other path as an error. To get exactly that behaviour:\nchameleon_rs.configure(partial_search='registered')\nThe default only differs from chameleon_partials where chameleon_partials would raise, so templates that work there work the same way here.",
+    "crumbs": [
+      "User Guide",
+      "Templates",
+      "Partials"
+    ]
+  },
+  {
+    "objectID": "user-guide/switching-from-chameleon.html",
+    "href": "user-guide/switching-from-chameleon.html",
+    "title": "Switching from Chameleon",
+    "section": "",
+    "text": "chameleon-rs runs code written for Chameleon unchanged. There are two ways to switch: install the compatibility alias and change nothing else, or change your imports.",
+    "crumbs": [
+      "User Guide",
+      "Get started",
+      "Switching from Chameleon"
+    ]
+  },
+  {
+    "objectID": "user-guide/switching-from-chameleon.html#keep-the-original-chameleon_partials-or-chameleon-flask",
+    "href": "user-guide/switching-from-chameleon.html#keep-the-original-chameleon_partials-or-chameleon-flask",
+    "title": "Switching from Chameleon",
+    "section": "Keep the original chameleon_partials or chameleon-flask",
+    "text": "Keep the original chameleon_partials or chameleon-flask\ninstall(integrations=False) maps only chameleon. chameleon_partials and chameleon_flask then import the original packages, which still render through chameleon-rs’s engine. Use it if you depend on behaviour of those packages that the built-ins don’t copy. A chameleon_partials.render_partial from the original package, passed into a template, still renders natively.",
+    "crumbs": [
+      "User Guide",
+      "Get started",
+      "Switching from Chameleon"
+    ]
+  }
+]

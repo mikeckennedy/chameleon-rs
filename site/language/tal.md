@@ -1,0 +1,577 @@
+# Basics (TAL)
+
+> **Note**
+>
+> Adapted from [Chameleon's language reference](https://chameleon.readthedocs.io/) ([source](https://github.com/malthe/chameleon)), modified for chameleon-rs. Used under Chameleon's license; see `LICENSE.txt` and `COPYRIGHT.txt` in the repository.
+
+The *template attribute language* is used to create dynamic XML-like content. It allows elements of a document to be replaced, repeated, or omitted.
+
+
+# Statements
+
+These are the available statements:
+
+| Statement | Description |
+|----|----|
+| `tal:define` | Define variables. |
+| `tal:switch` | Defines a switch condition. |
+| `tal:condition` | Include element only if expression is true. |
+| `tal:repeat` | Repeat an element. |
+| `tal:case` | Includes element only if expression is equal to parent switch. |
+| `tal:content` | Substitute the content of an element. |
+| `tal:replace` | Replace the element with dynamic content. |
+| `tal:omit-tag` | Omit the element tags, leaving only the inner content. |
+| `tal:attributes` | Dynamically change or insert element attributes. |
+| `tal:on-error` | Substitute the content of an element if processing fails. |
+
+When there is only one TAL statement per element, the order in which they are executed is simple. Starting with the root element, each element's statements are executed, then each of its child elements is visited, in order, to do the same:
+
+``` html
+<html>
+  <meta>
+    <title tal:content="context.title" />
+  </meta>
+  <body>
+    <div tal:condition="items">
+      <p>These are your items:</p>
+      <ul>
+        <li tal:repeat="item items" tal:content="item" />
+      </ul>
+    </div>
+  </body>
+</html>
+```
+
+Any combination of statements may appear on the same element, except that the `tal:content` and `tal:replace` statements may not be used on the same element.
+
+> **Note: Note**
+>
+> The `tal:case` and `tal:switch` statements are available in Chameleon only.
+
+TAL does not use the order in which statements are written in the tag to determine the order in which they are executed. When an element has multiple statements, they are executed in the order printed in the table above.
+
+There is a reasoning behind this ordering. Because users often want to set up variables for use in other statements contained within this element or subelements, `tal:define` is executed first. Then any switch statement. `tal:condition` follows, then `tal:repeat`, then `tal:case`. We are now rendering an element; first `tal:content` or `tal:replace`. Finally, before `tal:attributes`, we have `tal:omit-tag` (which is implied with `tal:replace`).
+
+A consequence: `tal:condition` runs before `tal:repeat` on the same element, so it can't use the repeat variable. Put the condition on a child element instead.
+
+> **Note: Note**
+>
+> *TALES* is used as the expression language for the "stuff in the quotes". The default syntax is simply Python, but other inputs are possible; see the section on [expressions](expressions.md).
+
+
+# `tal:attributes`
+
+Removes, updates or inserts element attributes.
+
+``` html
+tal:attributes="href request.url"
+```
+
+
+## Syntax
+
+`tal:attributes` syntax:
+
+``` text
+argument             ::= attribute_statement [';' attribute_statement]*
+attribute_statement  ::= (attribute_name expression | expression)
+attribute_name       ::= [namespace-prefix ':'] Name
+namespace-prefix     ::= Name
+```
+
+
+## Description
+
+The `tal:attributes` statement replaces the value of an attribute (or drops, or creates an attribute) with a dynamic value. The value of each expression is converted to a string, if necessary.
+
+> **Note: Note**
+>
+> You can qualify an attribute name with a namespace prefix, for example `html:table`, if you are generating an XML document with multiple namespaces.
+
+If an attribute expression evaluates to `None`, the attribute is deleted from the statement element (or simply not inserted).
+
+If an attribute statement is just an expression, it must evaluate to a Python dict (or implement the methods `update()` and `items()` from the dictionary specification).
+
+If the expression evaluates to the symbol `default` (a symbol which is always available when evaluating attributes), its value is defined as the default static attribute value. If there is no such default value, a return value of `default` will drop the attribute.
+
+If you use `tal:attributes` on an element with an active `tal:replace` command, the `tal:attributes` statement is ignored.
+
+If you use `tal:attributes` on an element with a `tal:repeat` statement, the replacement is made on each repetition of the element, and the replacement expression is evaluated fresh for each repetition.
+
+> **Note: Note**
+>
+> If you want to include a semicolon (";") in an expression, it must be escaped by doubling it (";;"). Similarly, you can escape expression interpolation using the "\\" symbol by doubling it ("\\\$").
+
+
+## Examples
+
+Replacing a link:
+
+``` html
+[...](/sample/link.html)
+```
+
+Replacing two attributes:
+
+``` html
+<textarea rows="80" cols="20"
+          tal:attributes="rows request.rows();cols request.cols()"
+    />
+```
+
+Inserting several attributes from a dict:
+
+``` html
+<a tal:attributes="{'href': '/x', 'class': 'c'}">x</a>
+```
+
+which renders as `[x](/x)`.
+
+A checkbox input:
+
+``` html
+<input type="checkbox" tal:attributes="checked True" />
+```
+
+`checked` is a *boolean attribute*: a true value renders it as `checked="checked"`, and a false value drops it. In HTML templates the standard HTML boolean attributes (`checked`, `selected`, `disabled` and the rest) are treated this way by default. The `boolean_attributes` option replaces that set; XML templates have none unless you pass it:
+
+``` python
+from chameleon_rs import PageTemplate, PageTemplateLoader
+
+template = PageTemplate('<input type="checkbox" tal:attributes="checked True" />',
+                        boolean_attributes={"selected", "checked"})
+# or
+templates = PageTemplateLoader(path, boolean_attributes={"selected", "checked"})
+```
+
+
+# `tal:condition`
+
+Conditionally includes or omits an element:
+
+``` html
+
+  ...
+
+```
+
+
+## Syntax
+
+`tal:condition` syntax:
+
+``` text
+argument ::= expression
+```
+
+
+## Description
+
+The `tal:condition` statement includes the statement element in the template only if the condition is met, and omits it otherwise. If its expression evaluates to a *true* value, then normal processing of the element continues, otherwise the statement element is immediately removed from the template. For these purposes, the value `nothing` is false.
+
+> **Note: Note**
+>
+> Like Python itself, ZPT considers `None`, zero, empty strings, empty sequences, empty dictionaries, and instances which return zero from `__len__` or false from `__bool__` to be false; all other values are true.
+
+> **Note: Note**
+>
+> `default` is defined only where a statement has a default to fall back on (`tal:attributes`, `tal:content`, `tal:replace`, `tal:case`). In `tal:condition`, `tal:define` and `tal:repeat` it raises `NameError`, in Chameleon as in chameleon-rs.
+
+
+## Examples
+
+Test a variable before inserting it:
+
+``` html
+<p tal:condition="request.message" tal:content="request.message" />
+```
+
+Testing for odd/even in a repeat-loop:
+
+``` html
+
+  <p tal:condition="repeat.item.even">Even</p>
+  <p tal:condition="repeat.item.odd">Odd</p>
+
+```
+
+
+# `tal:content`
+
+Replaces the content of an element.
+
+
+## Syntax
+
+`tal:content` syntax:
+
+``` text
+argument ::= (['text'] | 'structure') expression
+```
+
+
+## Description
+
+Rather than replacing an entire element, you can insert text or structure in place of its children with the `tal:content` statement. The statement argument is exactly like that of `tal:replace`, and is interpreted in the same fashion. If the expression evaluates to `nothing` (or `None`), the statement element is left childless. If the expression evaluates to `default`, then the element's contents are evaluated.
+
+The default replacement behavior is `text`, which replaces angle-brackets and ampersands with their HTML entity equivalents. The `structure` keyword passes the replacement text through unchanged, allowing HTML/XML markup to be inserted. This can break your page if the text contains unanticipated markup (eg. text submitted via a web form), which is the reason that it is not the default.
+
+> **Note: Note**
+>
+> The `structure` keyword exists to provide backwards compatibility. In Chameleon, the `structure:` expression type provides the same functionality (also for inline expressions).
+
+
+## Examples
+
+Inserting the user name:
+
+``` html
+<p tal:content="user.getUserName()">Fred Farkas</p>
+```
+
+Inserting HTML/XML:
+
+``` html
+<p tal:content="structure context.getStory()">
+   Marked <b>up</b> content goes here.
+</p>
+```
+
+
+# `tal:define`
+
+Defines local variables.
+
+
+## Syntax
+
+`tal:define` syntax:
+
+``` text
+variable_name  ::= Name | '(' Name [',' Name]* ')'
+define_var     ::= variable_name expression
+define_scope   ::= (['local'] | 'global') define_var
+argument       ::= define_scope [';' define_scope]*
+```
+
+
+## Description
+
+The `tal:define` statement defines variables. When you define a local variable in a statement element, you can use that variable in that element and the elements it contains. If you redefine a variable in a contained element, the new definition hides the outer element's definition within the inner element.
+
+Note that valid variable names are any Python identifier string including underscore, although two or more leading underscores are disallowed (used internally by the compiler). Further, names are case-sensitive.
+
+Variable names support basic iterable unpacking when surrounded by parenthesis. This also applies to the variable established by `tal:repeat`.
+
+> **Note: Note**
+>
+> This is a Chameleon-specific [language extension](extensions.md).
+
+Python builtins are always "in scope", and may be redefined (such as `help` or `len`).
+
+The names `econtext` and `rcontext` are reserved: defining them is a compile error. Defining `translate` or `decode` has no effect (the template's own translation function and decoder are used).
+
+If the expression associated with a variable evaluates to `nothing`, then that variable has the value `nothing`, and may be used as such in further expressions.
+
+You can define two different kinds of variables: *local* and *global*. When you define a local variable in a statement element, you can only use that variable in that element and the elements it contains. If you redefine a local variable in a contained element, the new definition hides the outer element's definition within the inner element. When you define a global variable, you can use it in any element processed after the defining element. If you redefine a global variable, you replace its definition for the rest of the template.
+
+> **Tip: Tip**
+>
+> Global variables may be changed by the execution of a macro if that macro also declares the variable to be global.
+
+To set the definition scope of a variable, use the keywords `local` or `global` in front of the assignment. The default setting is `local`; thus, in practice, only the `global` keyword is used.
+
+> **Note: Note**
+>
+> If you want to include a semicolon (";") in an expression, it must be escaped by doubling it (";;").
+
+
+## Examples
+
+Defining a variable:
+
+``` html
+tal:define="company_name 'Zope Corp, Inc.'"
+```
+
+Defining two variables, where the second depends on the first:
+
+``` html
+tal:define="mytitle context.title; tlen len(mytitle)"
+```
+
+Defining a local and global variable:
+
+``` html
+tal:define="global mytitle context.title; tlen len(mytitle)"
+```
+
+Unpacking a sequence:
+
+``` html
+tal:define="(key,value) ('a', 42)"
+```
+
+
+# `tal:switch` and `tal:case`
+
+Defines a switch clause.
+
+``` html
+<ul tal:switch="len(items) % 2">
+  <li tal:case="True">odd</li>
+  <li tal:case="False">even</li>
+</ul>
+```
+
+
+## Syntax
+
+`tal:case` and `tal:switch` syntax:
+
+``` text
+argument ::= expression
+```
+
+
+## Description
+
+The *switch* and *case* construct is a short-hand syntax for matching a set of expressions against a single parent.
+
+The `tal:switch` statement is used to set a new parent expression and the contained `tal:case` statements are then matched in sequence such that only the first match succeeds.
+
+Note that the symbol `default` affirms the case precisely when no previous case has been successful. It should therefore be placed last.
+
+> **Note: Note**
+>
+> These statements are only available in Chameleon (2.x and later) and are not part of the ZPT specification.
+
+
+## Examples
+
+``` html
+<ul tal:switch="item.type">
+  <li tal:case="'document'">
+    Document
+  </li>
+  <li tal:case="'folder'">
+    Folder
+  </li>
+  <li tal:case="default">
+    Other
+  </li>
+</ul>
+```
+
+
+# `tal:omit-tag`
+
+Removes an element, leaving its contents.
+
+
+## Syntax
+
+`tal:omit-tag` syntax:
+
+``` text
+argument ::= [ expression ]
+```
+
+
+## Description
+
+The `tal:omit-tag` statement leaves the contents of an element in place while omitting the surrounding start and end tags.
+
+If the expression evaluates to a *false* value, then normal processing of the element continues and the tags are not omitted. If the expression evaluates to a *true* value, or no expression is provided, the statement element is replaced with its contents.
+
+> **Note: Note**
+>
+> Like Python itself, ZPT considers `None`, zero, empty strings, empty sequences, empty dictionaries, and instances which return zero from `__len__` or false from `__bool__` to be false; all other values are true.
+
+
+## Examples
+
+Unconditionally omitting a tag:
+
+``` html
+
+  <i>...but this text will remain.</i>
+
+```
+
+Conditionally omitting a tag:
+
+``` html
+<b tal:omit-tag="not:bold">I may be bold.</b>
+```
+
+The above example will omit the `b` tag if the variable `bold` is false.
+
+Creating ten paragraph tags, with no enclosing tag:
+
+``` html
+<span tal:repeat="n range(10)"
+      tal:omit-tag="">
+  <p tal:content="n">1</p>
+</span>
+```
+
+
+# `tal:repeat`
+
+Repeats an element.
+
+
+## Syntax
+
+`tal:repeat` syntax:
+
+``` text
+argument      ::= variable_name expression
+variable_name ::= Name
+```
+
+
+## Description
+
+The `tal:repeat` statement replicates a sub-tree of your document once for each item in a sequence. The expression should evaluate to a sequence. If the sequence is empty, then the statement element is deleted, otherwise it is repeated for each value in the sequence.
+
+The `variable_name` is used to define a local variable and a repeat variable. For each repetition, the local variable is set to the current sequence element, and the repeat variable is set to an iteration object.
+
+
+## Repeat variables
+
+You use repeat variables to access information about the current repetition (such as the repeat index). The repeat variable has the same name as the local variable, but is only accessible through the built-in variable named `repeat`.
+
+The following information is available from the repeat variable:
+
+| Attribute | Description |
+|----|----|
+| `index` | Repetition number, starting from zero. |
+| `number` | Repetition number, starting from one. |
+| `even` | True for even-indexed repetitions (0, 2, 4, …). |
+| `odd` | True for odd-indexed repetitions (1, 3, 5, …). |
+| `parity` | For odd-indexed repetitions, this is 'odd', else 'even'. |
+| `start` | True for the starting repetition (index 0). |
+| `end` | True for the ending, or final, repetition. |
+| `length` | Length of the sequence, which will be the total number of repetitions. |
+| `letter` | Repetition number as a lower-case letter: "a" - "z", then "ba" - "bz", "ca" - "cz", …, "zz", "baa", and so forth (the index written in base 26, with "a" as zero). |
+| `Letter` | Upper-case version of *letter*. |
+| `roman` | Repetition number as a lower-case roman numeral: "i", "ii", "iii", "iv", "v", etc. |
+| `Roman` | Upper-case version of *roman*. |
+
+The true and false values are not booleans: `even` and `odd` are the strings `'even'` and `'odd'` when true and `''` when false, and `start` and `end` are `1` or `0`. They test the same way in a condition, but print differently.
+
+You can access the contents of the repeat variable using either dictionary- or attribute-style access, e.g. `repeat['item'].start` or `repeat.item.start`.
+
+> **Note: Note**
+>
+> For legacy compatibility, the attributes `odd`, `even`, `number`, `letter`, `Letter`, `roman`, and `Roman` are callable (returning `self`).
+
+> **Note: Note**
+>
+> Earlier versions of this document, and the [Zope Page Templates Reference](https://zope.readthedocs.io/en/latest/zopebook/AppendixC.html#repeat-variables), referred to `first` and `last` attributes for use with sorted sequences. These are not implemented in Chameleon or the Zope reference implementation zope.tales. Instead, you can use `itertools.groupby`, as in the example below.
+
+
+## Examples
+
+Iterating over a sequence of strings:
+
+``` html
+<p tal:repeat="txt ('one', 'two', 'three')">
+   <span tal:replace="txt" />
+</p>
+```
+
+Inserting a sequence of table rows, and using the repeat variable to number the rows:
+
+``` html
+<table>
+  <tr tal:repeat="item here.cart">
+      <td tal:content="repeat.item.number">1</td>
+      <td tal:content="item.description">Widget</td>
+      <td tal:content="item.price">$1.50</td>
+  </tr>
+</table>
+```
+
+Nested repeats:
+
+``` html
+<table border="1">
+  <tr tal:repeat="row range(10)">
+    <td tal:repeat="column range(10)">
+      <span tal:define="x repeat.row.number;
+                        y repeat.column.number;
+                        z x * y"
+            tal:replace="string:$x * $y = $z">1 * 1 = 1</span>
+    </td>
+  </tr>
+</table>
+```
+
+Grouping objects by type, drawing a rule between elements of different types:
+
+``` html
+
+  <h2 tal:content="type">Meta Type</h2>
+  <p tal:repeat="object objects"
+     tal:content="object.id">Object ID</p>
+  <hr />
+
+```
+
+> **Caution: Caution**
+>
+> It is important to fully realize the iterator produced by `itertools.groupby`, as well as the iterator produced for each group, in the expression passed to `tal:repeat`. This is because the implementation of certain repeat variables, such as `length` and `end` requires Chameleon to look ahead in the iterator, consuming it faster than is visible. The iterator returned by `itertools.groupby` is shared among all of its subgroups, so without the full reification of all the iterators, incorrect results will be produced.
+
+
+# `tal:replace`
+
+Replaces an element.
+
+
+## Syntax
+
+`tal:replace` syntax:
+
+``` text
+argument ::= ['structure'] expression
+```
+
+
+## Description
+
+The `tal:replace` statement replaces an element with dynamic content. It replaces the statement element with either text or a structure (unescaped markup). The body of the statement is an expression with an optional type prefix. The value of the expression is converted into an escaped string unless you provide the 'structure' prefix. Escaping consists of converting `&` to `&`, `<` to `<`, and `>` to `>`.
+
+> **Note: Note**
+>
+> If the inserted object provides an `__html__` method, that method is called with the result inserted as structure. This feature is not implemented by ZPT.
+
+If the expression evaluates to `None`, the element is simply removed. If the value is `default`, then the element is left unchanged.
+
+
+## Examples
+
+Inserting a title:
+
+``` html
+<span tal:replace="context.title">Title</span>
+```
+
+Inserting HTML/XML:
+
+``` html
+
+```
+
+
+# `tal:on-error`
+
+Substitutes the content of an element if processing it raises an exception. The argument is an expression, like that of `tal:content`:
+
+``` html
+<p tal:on-error="string:Not available" tal:content="context.price()">$1.50</p>
+```
+
+If evaluating anything inside the element fails, the element is rendered with the `tal:on-error` result as its content.

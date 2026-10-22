@@ -1,0 +1,11 @@
+{
+  "skills": [
+    {
+      "name": "chameleon-rs",
+      "description": "A Rust implementation of the Chameleon page template engine, compatible with Chameleon's syntax and API. Use when writing Python code that uses the chameleon_rs package.",
+      "files": [
+        "SKILL.md"
+      ]
+    }
+  ]
+}

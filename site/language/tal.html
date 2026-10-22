@@ -1,0 +1,1356 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+<link rel="canonical" href="https://mkennedy.codes/docs/chameleon-rs/language/tal.html">
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.38">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Basics (TAL) – chameleon-rs | chameleon-rs</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../language/expressions.html" rel="next">
+<link href="../language/index.html" rel="prev">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-aa1552726bdd3cb78d40c93fdbd5382a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>document.head.appendChild(Object.assign(document.createElement('link'),{rel:'stylesheet',href:(document.querySelector('meta[name="quarto:offset"]')||{content:''}).content+'termshow.css'}));</script>
+<script src="../theme-init.js"></script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+  <meta name="description" content="Adapted from Chameleon’s language reference (source), modified for chameleon-rs. Used under Chameleon’s license; see LICENSE.txt and COPYRIGHT.txt in...">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Basics (TAL) – chameleon-rs | chameleon-rs">
+  <meta property="og:description" content="Adapted from Chameleon’s language reference (source), modified for chameleon-rs. Used under Chameleon’s license; see LICENSE.txt and COPYRIGHT.txt in...">
+  <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/language/tal.html">
+  <meta property="og:site_name" content="chameleon-rs">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Basics (TAL) – chameleon-rs | chameleon-rs">
+  <meta name="twitter:description" content="Adapted from Chameleon’s language reference (source), modified for chameleon-rs. Used under Chameleon’s license; see LICENSE.txt and COPYRIGHT.txt in...">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="../index.html">
+    <span class="navbar-title">chameleon-rs</span>
+    </a>
+  </div>
+            <div id="quarto-search" class=""></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="../user-guide/getting-started.html"> 
+<span class="menu-text">User Guide</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link active" href="../language/index.html" aria-current="page"> 
+<span class="menu-text">Language Reference</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../recipes/index.html"> 
+<span class="menu-text">Recipes</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../reference/index.html"> 
+<span class="menu-text">API Reference</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item">
+    <span class="nav-link">
+<div id="github-widget" data-owner="mikeckennedy" data-repo="chameleon-rust"></div>
+    </span>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <h1 class="quarto-secondary-nav-title no-breadcrumbs">Basics (TAL)</h1>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../language/index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Language Reference</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../language/tal.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Basics (TAL)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../language/expressions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Expressions (TALES)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../language/macros.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Macros (METAL)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../language/i18n.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Translation (I18N)</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../language/syntax.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inline syntax</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../language/extensions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Extensions and differences</span></a>
+  </div>
+</li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul class="collapse">
+  <li><a href="#statements" id="toc-statements" class="nav-link active" data-scroll-target="#statements">Statements</a></li>
+  <li><a href="#talattributes" id="toc-talattributes" class="nav-link" data-scroll-target="#talattributes"><code>tal:attributes</code></a>
+  <ul class="collapse">
+  <li><a href="#syntax" id="toc-syntax" class="nav-link" data-scroll-target="#syntax">Syntax</a></li>
+  <li><a href="#description" id="toc-description" class="nav-link" data-scroll-target="#description">Description</a></li>
+  <li><a href="#examples" id="toc-examples" class="nav-link" data-scroll-target="#examples">Examples</a></li>
+  </ul></li>
+  <li><a href="#talcondition" id="toc-talcondition" class="nav-link" data-scroll-target="#talcondition"><code>tal:condition</code></a>
+  <ul class="collapse">
+  <li><a href="#syntax-1" id="toc-syntax-1" class="nav-link" data-scroll-target="#syntax-1">Syntax</a></li>
+  <li><a href="#description-1" id="toc-description-1" class="nav-link" data-scroll-target="#description-1">Description</a></li>
+  <li><a href="#examples-1" id="toc-examples-1" class="nav-link" data-scroll-target="#examples-1">Examples</a></li>
+  </ul></li>
+  <li><a href="#talcontent" id="toc-talcontent" class="nav-link" data-scroll-target="#talcontent"><code>tal:content</code></a>
+  <ul class="collapse">
+  <li><a href="#syntax-2" id="toc-syntax-2" class="nav-link" data-scroll-target="#syntax-2">Syntax</a></li>
+  <li><a href="#description-2" id="toc-description-2" class="nav-link" data-scroll-target="#description-2">Description</a></li>
+  <li><a href="#examples-2" id="toc-examples-2" class="nav-link" data-scroll-target="#examples-2">Examples</a></li>
+  </ul></li>
+  <li><a href="#taldefine" id="toc-taldefine" class="nav-link" data-scroll-target="#taldefine"><code>tal:define</code></a>
+  <ul class="collapse">
+  <li><a href="#syntax-3" id="toc-syntax-3" class="nav-link" data-scroll-target="#syntax-3">Syntax</a></li>
+  <li><a href="#description-3" id="toc-description-3" class="nav-link" data-scroll-target="#description-3">Description</a></li>
+  <li><a href="#examples-3" id="toc-examples-3" class="nav-link" data-scroll-target="#examples-3">Examples</a></li>
+  </ul></li>
+  <li><a href="#talswitch-and-talcase" id="toc-talswitch-and-talcase" class="nav-link" data-scroll-target="#talswitch-and-talcase"><code>tal:switch</code> and <code>tal:case</code></a>
+  <ul class="collapse">
+  <li><a href="#syntax-4" id="toc-syntax-4" class="nav-link" data-scroll-target="#syntax-4">Syntax</a></li>
+  <li><a href="#description-4" id="toc-description-4" class="nav-link" data-scroll-target="#description-4">Description</a></li>
+  <li><a href="#examples-4" id="toc-examples-4" class="nav-link" data-scroll-target="#examples-4">Examples</a></li>
+  </ul></li>
+  <li><a href="#talomit-tag" id="toc-talomit-tag" class="nav-link" data-scroll-target="#talomit-tag"><code>tal:omit-tag</code></a>
+  <ul class="collapse">
+  <li><a href="#syntax-5" id="toc-syntax-5" class="nav-link" data-scroll-target="#syntax-5">Syntax</a></li>
+  <li><a href="#description-5" id="toc-description-5" class="nav-link" data-scroll-target="#description-5">Description</a></li>
+  <li><a href="#examples-5" id="toc-examples-5" class="nav-link" data-scroll-target="#examples-5">Examples</a></li>
+  </ul></li>
+  <li><a href="#tal-repeat" id="toc-tal-repeat" class="nav-link" data-scroll-target="#tal-repeat"><code>tal:repeat</code></a>
+  <ul class="collapse">
+  <li><a href="#syntax-6" id="toc-syntax-6" class="nav-link" data-scroll-target="#syntax-6">Syntax</a></li>
+  <li><a href="#description-6" id="toc-description-6" class="nav-link" data-scroll-target="#description-6">Description</a></li>
+  <li><a href="#repeat-variables" id="toc-repeat-variables" class="nav-link" data-scroll-target="#repeat-variables">Repeat variables</a></li>
+  <li><a href="#examples-6" id="toc-examples-6" class="nav-link" data-scroll-target="#examples-6">Examples</a></li>
+  </ul></li>
+  <li><a href="#talreplace" id="toc-talreplace" class="nav-link" data-scroll-target="#talreplace"><code>tal:replace</code></a>
+  <ul class="collapse">
+  <li><a href="#syntax-7" id="toc-syntax-7" class="nav-link" data-scroll-target="#syntax-7">Syntax</a></li>
+  <li><a href="#description-7" id="toc-description-7" class="nav-link" data-scroll-target="#description-7">Description</a></li>
+  <li><a href="#examples-7" id="toc-examples-7" class="nav-link" data-scroll-target="#examples-7">Examples</a></li>
+  </ul></li>
+  <li><a href="#talon-error" id="toc-talon-error" class="nav-link" data-scroll-target="#talon-error"><code>tal:on-error</code></a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title d-none d-lg-block">Basics (TAL)</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<div class="callout callout-style-simple callout-note no-icon">
+<div class="callout-body d-flex">
+<div class="callout-icon-container">
+<i class="callout-icon no-icon"></i>
+</div>
+<div class="callout-body-container">
+<p>Adapted from <a href="https://chameleon.readthedocs.io/">Chameleon’s language reference</a> (<a href="https://github.com/malthe/chameleon">source</a>), modified for chameleon-rs. Used under Chameleon’s license; see <code>LICENSE.txt</code> and <code>COPYRIGHT.txt</code> in the repository.</p>
+</div>
+</div>
+</div>
+<p>The <em>template attribute language</em> is used to create dynamic XML-like content. It allows elements of a document to be replaced, repeated, or omitted.</p>
+<section id="statements" class="level1">
+<h1>Statements</h1>
+<p>These are the available statements:</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Statement</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>tal:define</code></td>
+<td>Define variables.</td>
+</tr>
+<tr class="even">
+<td><code>tal:switch</code></td>
+<td>Defines a switch condition.</td>
+</tr>
+<tr class="odd">
+<td><code>tal:condition</code></td>
+<td>Include element only if expression is true.</td>
+</tr>
+<tr class="even">
+<td><code>tal:repeat</code></td>
+<td>Repeat an element.</td>
+</tr>
+<tr class="odd">
+<td><code>tal:case</code></td>
+<td>Includes element only if expression is equal to parent switch.</td>
+</tr>
+<tr class="even">
+<td><code>tal:content</code></td>
+<td>Substitute the content of an element.</td>
+</tr>
+<tr class="odd">
+<td><code>tal:replace</code></td>
+<td>Replace the element with dynamic content.</td>
+</tr>
+<tr class="even">
+<td><code>tal:omit-tag</code></td>
+<td>Omit the element tags, leaving only the inner content.</td>
+</tr>
+<tr class="odd">
+<td><code>tal:attributes</code></td>
+<td>Dynamically change or insert element attributes.</td>
+</tr>
+<tr class="even">
+<td><code>tal:on-error</code></td>
+<td>Substitute the content of an element if processing fails.</td>
+</tr>
+</tbody>
+</table>
+<p>When there is only one TAL statement per element, the order in which they are executed is simple. Starting with the root element, each element’s statements are executed, then each of its child elements is visited, in order, to do the same:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">html</span><span class="dt">&gt;</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">meta</span><span class="dt">&gt;</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&lt;</span><span class="kw">title</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"context.title"</span><span class="ot"> </span><span class="dt">/&gt;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">meta</span><span class="dt">&gt;</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">body</span><span class="dt">&gt;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:condition</span><span class="op">=</span><span class="st">"items"</span><span class="dt">&gt;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;</span><span class="kw">p</span><span class="dt">&gt;</span>These are your items:<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;</span><span class="kw">ul</span><span class="dt">&gt;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>        <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"item items"</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"item"</span><span class="ot"> </span><span class="dt">/&gt;</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;/</span><span class="kw">ul</span><span class="dt">&gt;</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">body</span><span class="dt">&gt;</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">html</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>Any combination of statements may appear on the same element, except that the <code>tal:content</code> and <code>tal:replace</code> statements may not be used on the same element.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The <code>tal:case</code> and <code>tal:switch</code> statements are available in Chameleon only.</p>
+</div>
+</div>
+<p>TAL does not use the order in which statements are written in the tag to determine the order in which they are executed. When an element has multiple statements, they are executed in the order printed in the table above.</p>
+<p>There is a reasoning behind this ordering. Because users often want to set up variables for use in other statements contained within this element or subelements, <code>tal:define</code> is executed first. Then any switch statement. <code>tal:condition</code> follows, then <code>tal:repeat</code>, then <code>tal:case</code>. We are now rendering an element; first <code>tal:content</code> or <code>tal:replace</code>. Finally, before <code>tal:attributes</code>, we have <code>tal:omit-tag</code> (which is implied with <code>tal:replace</code>).</p>
+<p>A consequence: <code>tal:condition</code> runs before <code>tal:repeat</code> on the same element, so it can’t use the repeat variable. Put the condition on a child element instead.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><em>TALES</em> is used as the expression language for the “stuff in the quotes”. The default syntax is simply Python, but other inputs are possible; see the section on <a href="../language/expressions.html">expressions</a>.</p>
+</div>
+</div>
+</section>
+<section id="talattributes" class="level1">
+<h1><code>tal:attributes</code></h1>
+<p>Removes, updates or inserts element attributes.</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>tal:attributes="href request.url"</span></code></pre></div>
+<section id="syntax" class="level2">
+<h2 class="anchored" data-anchor-id="syntax">Syntax</h2>
+<p><code>tal:attributes</code> syntax:</p>
+<pre class="text"><code>argument             ::= attribute_statement [';' attribute_statement]*
+attribute_statement  ::= (attribute_name expression | expression)
+attribute_name       ::= [namespace-prefix ':'] Name
+namespace-prefix     ::= Name</code></pre>
+</section>
+<section id="description" class="level2">
+<h2 class="anchored" data-anchor-id="description">Description</h2>
+<p>The <code>tal:attributes</code> statement replaces the value of an attribute (or drops, or creates an attribute) with a dynamic value. The value of each expression is converted to a string, if necessary.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>You can qualify an attribute name with a namespace prefix, for example <code>html:table</code>, if you are generating an XML document with multiple namespaces.</p>
+</div>
+</div>
+<p>If an attribute expression evaluates to <code>None</code>, the attribute is deleted from the statement element (or simply not inserted).</p>
+<p>If an attribute statement is just an expression, it must evaluate to a Python dict (or implement the methods <code>update()</code> and <code>items()</code> from the dictionary specification).</p>
+<p>If the expression evaluates to the symbol <code>default</code> (a symbol which is always available when evaluating attributes), its value is defined as the default static attribute value. If there is no such default value, a return value of <code>default</code> will drop the attribute.</p>
+<p>If you use <code>tal:attributes</code> on an element with an active <code>tal:replace</code> command, the <code>tal:attributes</code> statement is ignored.</p>
+<p>If you use <code>tal:attributes</code> on an element with a <code>tal:repeat</code> statement, the replacement is made on each repetition of the element, and the replacement expression is evaluated fresh for each repetition.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>If you want to include a semicolon (“;”) in an expression, it must be escaped by doubling it (“;;”). Similarly, you can escape expression interpolation using the “<span class="math inline">\(" symbol by doubling
+it ("\)</span>$”).</p>
+</div>
+</div>
+</section>
+<section id="examples" class="level2">
+<h2 class="anchored" data-anchor-id="examples">Examples</h2>
+<p>Replacing a link:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">a</span><span class="ot"> href</span><span class="op">=</span><span class="st">"/sample/link.html"</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ot">   tal:attributes</span><span class="op">=</span><span class="st">"href context.url()"</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="ot">   </span><span class="dt">&gt;</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>   ...</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">a</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>Replacing two attributes:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">textarea</span><span class="ot"> rows</span><span class="op">=</span><span class="st">"80"</span><span class="ot"> cols</span><span class="op">=</span><span class="st">"20"</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="ot">          tal:attributes</span><span class="op">=</span><span class="st">"rows request.rows();cols request.cols()"</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="ot">    </span><span class="dt">/&gt;</span></span></code></pre></div>
+<p>Inserting several attributes from a dict:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">a</span><span class="ot"> tal:attributes</span><span class="op">=</span><span class="st">"{'href': '/x', 'class': 'c'}"</span><span class="dt">&gt;</span>x<span class="dt">&lt;/</span><span class="kw">a</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>which renders as <code>&lt;a href="/x" class="c"&gt;x&lt;/a&gt;</code>.</p>
+<p>A checkbox input:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">input</span><span class="ot"> type</span><span class="op">=</span><span class="st">"checkbox"</span><span class="ot"> tal:attributes</span><span class="op">=</span><span class="st">"checked True"</span><span class="ot"> </span><span class="dt">/&gt;</span></span></code></pre></div>
+<p><code>checked</code> is a <em>boolean attribute</em>: a true value renders it as <code>checked="checked"</code>, and a false value drops it. In HTML templates the standard HTML boolean attributes (<code>checked</code>, <code>selected</code>, <code>disabled</code> and the rest) are treated this way by default. The <code>boolean_attributes</code> option replaces that set; XML templates have none unless you pass it:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplate, PageTemplateLoader</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>template <span class="op">=</span> PageTemplate(<span class="st">'&lt;input type="checkbox" tal:attributes="checked True" /&gt;'</span>,</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>                        boolean_attributes<span class="op">=</span>{<span class="st">"selected"</span>, <span class="st">"checked"</span>})</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co"># or</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>templates <span class="op">=</span> PageTemplateLoader(path, boolean_attributes<span class="op">=</span>{<span class="st">"selected"</span>, <span class="st">"checked"</span>})</span></code></pre></div>
+</section>
+</section>
+<section id="talcondition" class="level1">
+<h1><code>tal:condition</code></h1>
+<p>Conditionally includes or omits an element:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:condition</span><span class="op">=</span><span class="st">"comments"</span><span class="dt">&gt;</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  ...</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span></code></pre></div>
+<section id="syntax-1" class="level2">
+<h2 class="anchored" data-anchor-id="syntax-1">Syntax</h2>
+<p><code>tal:condition</code> syntax:</p>
+<pre class="text"><code>argument ::= expression</code></pre>
+</section>
+<section id="description-1" class="level2">
+<h2 class="anchored" data-anchor-id="description-1">Description</h2>
+<p>The <code>tal:condition</code> statement includes the statement element in the template only if the condition is met, and omits it otherwise. If its expression evaluates to a <em>true</em> value, then normal processing of the element continues, otherwise the statement element is immediately removed from the template. For these purposes, the value <code>nothing</code> is false.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Like Python itself, ZPT considers <code>None</code>, zero, empty strings, empty sequences, empty dictionaries, and instances which return zero from <code>__len__</code> or false from <code>__bool__</code> to be false; all other values are true.</p>
+</div>
+</div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><code>default</code> is defined only where a statement has a default to fall back on (<code>tal:attributes</code>, <code>tal:content</code>, <code>tal:replace</code>, <code>tal:case</code>). In <code>tal:condition</code>, <code>tal:define</code> and <code>tal:repeat</code> it raises <code>NameError</code>, in Chameleon as in chameleon-rs.</p>
+</div>
+</div>
+</section>
+<section id="examples-1" class="level2">
+<h2 class="anchored" data-anchor-id="examples-1">Examples</h2>
+<p>Test a variable before inserting it:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:condition</span><span class="op">=</span><span class="st">"request.message"</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"request.message"</span><span class="ot"> </span><span class="dt">/&gt;</span></span></code></pre></div>
+<p>Testing for odd/even in a repeat-loop:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"item range(10)"</span><span class="dt">&gt;</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:condition</span><span class="op">=</span><span class="st">"repeat.item.even"</span><span class="dt">&gt;</span>Even<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:condition</span><span class="op">=</span><span class="st">"repeat.item.odd"</span><span class="dt">&gt;</span>Odd<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span></code></pre></div>
+</section>
+</section>
+<section id="talcontent" class="level1">
+<h1><code>tal:content</code></h1>
+<p>Replaces the content of an element.</p>
+<section id="syntax-2" class="level2">
+<h2 class="anchored" data-anchor-id="syntax-2">Syntax</h2>
+<p><code>tal:content</code> syntax:</p>
+<pre class="text"><code>argument ::= (['text'] | 'structure') expression</code></pre>
+</section>
+<section id="description-2" class="level2">
+<h2 class="anchored" data-anchor-id="description-2">Description</h2>
+<p>Rather than replacing an entire element, you can insert text or structure in place of its children with the <code>tal:content</code> statement. The statement argument is exactly like that of <code>tal:replace</code>, and is interpreted in the same fashion. If the expression evaluates to <code>nothing</code> (or <code>None</code>), the statement element is left childless. If the expression evaluates to <code>default</code>, then the element’s contents are evaluated.</p>
+<p>The default replacement behavior is <code>text</code>, which replaces angle-brackets and ampersands with their HTML entity equivalents. The <code>structure</code> keyword passes the replacement text through unchanged, allowing HTML/XML markup to be inserted. This can break your page if the text contains unanticipated markup (eg. text submitted via a web form), which is the reason that it is not the default.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The <code>structure</code> keyword exists to provide backwards compatibility. In Chameleon, the <code>structure:</code> expression type provides the same functionality (also for inline expressions).</p>
+</div>
+</div>
+</section>
+<section id="examples-2" class="level2">
+<h2 class="anchored" data-anchor-id="examples-2">Examples</h2>
+<p>Inserting the user name:</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"user.getUserName()"</span><span class="dt">&gt;</span>Fred Farkas<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>Inserting HTML/XML:</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"structure context.getStory()"</span><span class="dt">&gt;</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>   Marked <span class="dt">&lt;</span><span class="kw">b</span><span class="dt">&gt;</span>up<span class="dt">&lt;/</span><span class="kw">b</span><span class="dt">&gt;</span> content goes here.</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span></code></pre></div>
+</section>
+</section>
+<section id="taldefine" class="level1">
+<h1><code>tal:define</code></h1>
+<p>Defines local variables.</p>
+<section id="syntax-3" class="level2">
+<h2 class="anchored" data-anchor-id="syntax-3">Syntax</h2>
+<p><code>tal:define</code> syntax:</p>
+<pre class="text"><code>variable_name  ::= Name | '(' Name [',' Name]* ')'
+define_var     ::= variable_name expression
+define_scope   ::= (['local'] | 'global') define_var
+argument       ::= define_scope [';' define_scope]*</code></pre>
+</section>
+<section id="description-3" class="level2">
+<h2 class="anchored" data-anchor-id="description-3">Description</h2>
+<p>The <code>tal:define</code> statement defines variables. When you define a local variable in a statement element, you can use that variable in that element and the elements it contains. If you redefine a variable in a contained element, the new definition hides the outer element’s definition within the inner element.</p>
+<p>Note that valid variable names are any Python identifier string including underscore, although two or more leading underscores are disallowed (used internally by the compiler). Further, names are case-sensitive.</p>
+<p>Variable names support basic iterable unpacking when surrounded by parenthesis. This also applies to the variable established by <code>tal:repeat</code>.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>This is a Chameleon-specific <a href="../language/extensions.html">language extension</a>.</p>
+</div>
+</div>
+<p>Python builtins are always “in scope”, and may be redefined (such as <code>help</code> or <code>len</code>).</p>
+<p>The names <code>econtext</code> and <code>rcontext</code> are reserved: defining them is a compile error. Defining <code>translate</code> or <code>decode</code> has no effect (the template’s own translation function and decoder are used).</p>
+<p>If the expression associated with a variable evaluates to <code>nothing</code>, then that variable has the value <code>nothing</code>, and may be used as such in further expressions.</p>
+<p>You can define two different kinds of variables: <em>local</em> and <em>global</em>. When you define a local variable in a statement element, you can only use that variable in that element and the elements it contains. If you redefine a local variable in a contained element, the new definition hides the outer element’s definition within the inner element. When you define a global variable, you can use it in any element processed after the defining element. If you redefine a global variable, you replace its definition for the rest of the template.</p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Tip
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Global variables may be changed by the execution of a macro if that macro also declares the variable to be global.</p>
+</div>
+</div>
+<p>To set the definition scope of a variable, use the keywords <code>local</code> or <code>global</code> in front of the assignment. The default setting is <code>local</code>; thus, in practice, only the <code>global</code> keyword is used.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>If you want to include a semicolon (“;”) in an expression, it must be escaped by doubling it (“;;”).</p>
+</div>
+</div>
+</section>
+<section id="examples-3" class="level2">
+<h2 class="anchored" data-anchor-id="examples-3">Examples</h2>
+<p>Defining a variable:</p>
+<div class="sourceCode" id="cb17"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>tal:define="company_name 'Zope Corp, Inc.'"</span></code></pre></div>
+<p>Defining two variables, where the second depends on the first:</p>
+<div class="sourceCode" id="cb18"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>tal:define="mytitle context.title; tlen len(mytitle)"</span></code></pre></div>
+<p>Defining a local and global variable:</p>
+<div class="sourceCode" id="cb19"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>tal:define="global mytitle context.title; tlen len(mytitle)"</span></code></pre></div>
+<p>Unpacking a sequence:</p>
+<div class="sourceCode" id="cb20"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>tal:define="(key,value) ('a', 42)"</span></code></pre></div>
+</section>
+</section>
+<section id="talswitch-and-talcase" class="level1">
+<h1><code>tal:switch</code> and <code>tal:case</code></h1>
+<p>Defines a switch clause.</p>
+<div class="sourceCode" id="cb21"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">ul</span><span class="ot"> tal:switch</span><span class="op">=</span><span class="st">"len(items) % 2"</span><span class="dt">&gt;</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:case</span><span class="op">=</span><span class="st">"True"</span><span class="dt">&gt;</span>odd<span class="dt">&lt;/</span><span class="kw">li</span><span class="dt">&gt;</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:case</span><span class="op">=</span><span class="st">"False"</span><span class="dt">&gt;</span>even<span class="dt">&lt;/</span><span class="kw">li</span><span class="dt">&gt;</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">ul</span><span class="dt">&gt;</span></span></code></pre></div>
+<section id="syntax-4" class="level2">
+<h2 class="anchored" data-anchor-id="syntax-4">Syntax</h2>
+<p><code>tal:case</code> and <code>tal:switch</code> syntax:</p>
+<pre class="text"><code>argument ::= expression</code></pre>
+</section>
+<section id="description-4" class="level2">
+<h2 class="anchored" data-anchor-id="description-4">Description</h2>
+<p>The <em>switch</em> and <em>case</em> construct is a short-hand syntax for matching a set of expressions against a single parent.</p>
+<p>The <code>tal:switch</code> statement is used to set a new parent expression and the contained <code>tal:case</code> statements are then matched in sequence such that only the first match succeeds.</p>
+<p>Note that the symbol <code>default</code> affirms the case precisely when no previous case has been successful. It should therefore be placed last.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>These statements are only available in Chameleon (2.x and later) and are not part of the ZPT specification.</p>
+</div>
+</div>
+</section>
+<section id="examples-4" class="level2">
+<h2 class="anchored" data-anchor-id="examples-4">Examples</h2>
+<div class="sourceCode" id="cb23"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">ul</span><span class="ot"> tal:switch</span><span class="op">=</span><span class="st">"item.type"</span><span class="dt">&gt;</span></span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:case</span><span class="op">=</span><span class="st">"'document'"</span><span class="dt">&gt;</span></span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>    Document</span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">li</span><span class="dt">&gt;</span></span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:case</span><span class="op">=</span><span class="st">"'folder'"</span><span class="dt">&gt;</span></span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>    Folder</span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">li</span><span class="dt">&gt;</span></span>
+<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:case</span><span class="op">=</span><span class="st">"default"</span><span class="dt">&gt;</span></span>
+<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a>    Other</span>
+<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">li</span><span class="dt">&gt;</span></span>
+<span id="cb23-11"><a href="#cb23-11" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">ul</span><span class="dt">&gt;</span></span></code></pre></div>
+</section>
+</section>
+<section id="talomit-tag" class="level1">
+<h1><code>tal:omit-tag</code></h1>
+<p>Removes an element, leaving its contents.</p>
+<section id="syntax-5" class="level2">
+<h2 class="anchored" data-anchor-id="syntax-5">Syntax</h2>
+<p><code>tal:omit-tag</code> syntax:</p>
+<pre class="text"><code>argument ::= [ expression ]</code></pre>
+</section>
+<section id="description-5" class="level2">
+<h2 class="anchored" data-anchor-id="description-5">Description</h2>
+<p>The <code>tal:omit-tag</code> statement leaves the contents of an element in place while omitting the surrounding start and end tags.</p>
+<p>If the expression evaluates to a <em>false</em> value, then normal processing of the element continues and the tags are not omitted. If the expression evaluates to a <em>true</em> value, or no expression is provided, the statement element is replaced with its contents.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Like Python itself, ZPT considers <code>None</code>, zero, empty strings, empty sequences, empty dictionaries, and instances which return zero from <code>__len__</code> or false from <code>__bool__</code> to be false; all other values are true.</p>
+</div>
+</div>
+</section>
+<section id="examples-5" class="level2">
+<h2 class="anchored" data-anchor-id="examples-5">Examples</h2>
+<p>Unconditionally omitting a tag:</p>
+<div class="sourceCode" id="cb25"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:omit-tag</span><span class="op">=</span><span class="st">""</span><span class="ot"> comment</span><span class="op">=</span><span class="st">"This tag will be removed"</span><span class="dt">&gt;</span></span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">i</span><span class="dt">&gt;</span>...but this text will remain.<span class="dt">&lt;/</span><span class="kw">i</span><span class="dt">&gt;</span></span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>Conditionally omitting a tag:</p>
+<div class="sourceCode" id="cb26"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">b</span><span class="ot"> tal:omit-tag</span><span class="op">=</span><span class="st">"not:bold"</span><span class="dt">&gt;</span>I may be bold.<span class="dt">&lt;/</span><span class="kw">b</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>The above example will omit the <code>b</code> tag if the variable <code>bold</code> is false.</p>
+<p>Creating ten paragraph tags, with no enclosing tag:</p>
+<div class="sourceCode" id="cb27"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"n range(10)"</span></span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a><span class="ot">      tal:omit-tag</span><span class="op">=</span><span class="st">""</span><span class="dt">&gt;</span></span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"n"</span><span class="dt">&gt;</span>1<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">span</span><span class="dt">&gt;</span></span></code></pre></div>
+</section>
+</section>
+<section id="tal-repeat" class="level1">
+<h1><code>tal:repeat</code></h1>
+<p>Repeats an element.</p>
+<section id="syntax-6" class="level2">
+<h2 class="anchored" data-anchor-id="syntax-6">Syntax</h2>
+<p><code>tal:repeat</code> syntax:</p>
+<pre class="text"><code>argument      ::= variable_name expression
+variable_name ::= Name</code></pre>
+</section>
+<section id="description-6" class="level2">
+<h2 class="anchored" data-anchor-id="description-6">Description</h2>
+<p>The <code>tal:repeat</code> statement replicates a sub-tree of your document once for each item in a sequence. The expression should evaluate to a sequence. If the sequence is empty, then the statement element is deleted, otherwise it is repeated for each value in the sequence.</p>
+<p>The <code>variable_name</code> is used to define a local variable and a repeat variable. For each repetition, the local variable is set to the current sequence element, and the repeat variable is set to an iteration object.</p>
+</section>
+<section id="repeat-variables" class="level2">
+<h2 class="anchored" data-anchor-id="repeat-variables">Repeat variables</h2>
+<p>You use repeat variables to access information about the current repetition (such as the repeat index). The repeat variable has the same name as the local variable, but is only accessible through the built-in variable named <code>repeat</code>.</p>
+<p>The following information is available from the repeat variable:</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Attribute</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>index</code></td>
+<td>Repetition number, starting from zero.</td>
+</tr>
+<tr class="even">
+<td><code>number</code></td>
+<td>Repetition number, starting from one.</td>
+</tr>
+<tr class="odd">
+<td><code>even</code></td>
+<td>True for even-indexed repetitions (0, 2, 4, …).</td>
+</tr>
+<tr class="even">
+<td><code>odd</code></td>
+<td>True for odd-indexed repetitions (1, 3, 5, …).</td>
+</tr>
+<tr class="odd">
+<td><code>parity</code></td>
+<td>For odd-indexed repetitions, this is ‘odd’, else ‘even’.</td>
+</tr>
+<tr class="even">
+<td><code>start</code></td>
+<td>True for the starting repetition (index 0).</td>
+</tr>
+<tr class="odd">
+<td><code>end</code></td>
+<td>True for the ending, or final, repetition.</td>
+</tr>
+<tr class="even">
+<td><code>length</code></td>
+<td>Length of the sequence, which will be the total number of repetitions.</td>
+</tr>
+<tr class="odd">
+<td><code>letter</code></td>
+<td>Repetition number as a lower-case letter: “a” - “z”, then “ba” - “bz”, “ca” - “cz”, …, “zz”, “baa”, and so forth (the index written in base 26, with “a” as zero).</td>
+</tr>
+<tr class="even">
+<td><code>Letter</code></td>
+<td>Upper-case version of <em>letter</em>.</td>
+</tr>
+<tr class="odd">
+<td><code>roman</code></td>
+<td>Repetition number as a lower-case roman numeral: “i”, “ii”, “iii”, “iv”, “v”, etc.</td>
+</tr>
+<tr class="even">
+<td><code>Roman</code></td>
+<td>Upper-case version of <em>roman</em>.</td>
+</tr>
+</tbody>
+</table>
+<p>The true and false values are not booleans: <code>even</code> and <code>odd</code> are the strings <code>'even'</code> and <code>'odd'</code> when true and <code>''</code> when false, and <code>start</code> and <code>end</code> are <code>1</code> or <code>0</code>. They test the same way in a condition, but print differently.</p>
+<p>You can access the contents of the repeat variable using either dictionary- or attribute-style access, e.g.&nbsp;<code>repeat['item'].start</code> or <code>repeat.item.start</code>.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>For legacy compatibility, the attributes <code>odd</code>, <code>even</code>, <code>number</code>, <code>letter</code>, <code>Letter</code>, <code>roman</code>, and <code>Roman</code> are callable (returning <code>self</code>).</p>
+</div>
+</div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Earlier versions of this document, and the <a href="https://zope.readthedocs.io/en/latest/zopebook/AppendixC.html#repeat-variables">Zope Page Templates Reference</a>, referred to <code>first</code> and <code>last</code> attributes for use with sorted sequences. These are not implemented in Chameleon or the Zope reference implementation zope.tales. Instead, you can use <code>itertools.groupby</code>, as in the example below.</p>
+</div>
+</div>
+</section>
+<section id="examples-6" class="level2">
+<h2 class="anchored" data-anchor-id="examples-6">Examples</h2>
+<p>Iterating over a sequence of strings:</p>
+<div class="sourceCode" id="cb29"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"txt ('one', 'two', 'three')"</span><span class="dt">&gt;</span></span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>   <span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> tal:replace</span><span class="op">=</span><span class="st">"txt"</span><span class="ot"> </span><span class="dt">/&gt;</span></span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>Inserting a sequence of table rows, and using the repeat variable to number the rows:</p>
+<div class="sourceCode" id="cb30"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">table</span><span class="dt">&gt;</span></span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">tr</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"item here.cart"</span><span class="dt">&gt;</span></span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;</span><span class="kw">td</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"repeat.item.number"</span><span class="dt">&gt;</span>1<span class="dt">&lt;/</span><span class="kw">td</span><span class="dt">&gt;</span></span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;</span><span class="kw">td</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"item.description"</span><span class="dt">&gt;</span>Widget<span class="dt">&lt;/</span><span class="kw">td</span><span class="dt">&gt;</span></span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;</span><span class="kw">td</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"item.price"</span><span class="dt">&gt;</span>$1.50<span class="dt">&lt;/</span><span class="kw">td</span><span class="dt">&gt;</span></span>
+<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">tr</span><span class="dt">&gt;</span></span>
+<span id="cb30-7"><a href="#cb30-7" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">table</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>Nested repeats:</p>
+<div class="sourceCode" id="cb31"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">table</span><span class="ot"> border</span><span class="op">=</span><span class="st">"1"</span><span class="dt">&gt;</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">tr</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"row range(10)"</span><span class="dt">&gt;</span></span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&lt;</span><span class="kw">td</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"column range(10)"</span><span class="dt">&gt;</span></span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> tal:define</span><span class="op">=</span><span class="st">"x repeat.row.number;</span></span>
+<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a><span class="st">                        y repeat.column.number;</span></span>
+<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a><span class="st">                        z x * y"</span></span>
+<span id="cb31-7"><a href="#cb31-7" aria-hidden="true" tabindex="-1"></a><span class="ot">            tal:replace</span><span class="op">=</span><span class="st">"string:$x * $y = $z"</span><span class="dt">&gt;</span>1 * 1 = 1<span class="dt">&lt;/</span><span class="kw">span</span><span class="dt">&gt;</span></span>
+<span id="cb31-8"><a href="#cb31-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&lt;/</span><span class="kw">td</span><span class="dt">&gt;</span></span>
+<span id="cb31-9"><a href="#cb31-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">tr</span><span class="dt">&gt;</span></span>
+<span id="cb31-10"><a href="#cb31-10" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">table</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>Grouping objects by type, drawing a rule between elements of different types:</p>
+<div class="sourceCode" id="cb32"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"(type,objects) list(map(lambda g: (g[0], list(g[1])), itertools.groupby(objects, key=lambda o: o.meta_type)))"</span></span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a><span class="ot">     tal:define</span><span class="op">=</span><span class="st">"itertools import:itertools"</span><span class="dt">&gt;</span></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">h2</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"type"</span><span class="dt">&gt;</span>Meta Type<span class="dt">&lt;/</span><span class="kw">h2</span><span class="dt">&gt;</span></span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"object objects"</span></span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a><span class="ot">     tal:content</span><span class="op">=</span><span class="st">"object.id"</span><span class="dt">&gt;</span>Object ID<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">hr</span><span class="ot"> </span><span class="dt">/&gt;</span></span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span></code></pre></div>
+<div class="callout callout-style-default callout-caution callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Caution
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>It is important to fully realize the iterator produced by <code>itertools.groupby</code>, as well as the iterator produced for each group, in the expression passed to <code>tal:repeat</code>. This is because the implementation of certain repeat variables, such as <code>length</code> and <code>end</code> requires Chameleon to look ahead in the iterator, consuming it faster than is visible. The iterator returned by <code>itertools.groupby</code> is shared among all of its subgroups, so without the full reification of all the iterators, incorrect results will be produced.</p>
+</div>
+</div>
+</section>
+</section>
+<section id="talreplace" class="level1">
+<h1><code>tal:replace</code></h1>
+<p>Replaces an element.</p>
+<section id="syntax-7" class="level2">
+<h2 class="anchored" data-anchor-id="syntax-7">Syntax</h2>
+<p><code>tal:replace</code> syntax:</p>
+<pre class="text"><code>argument ::= ['structure'] expression</code></pre>
+</section>
+<section id="description-7" class="level2">
+<h2 class="anchored" data-anchor-id="description-7">Description</h2>
+<p>The <code>tal:replace</code> statement replaces an element with dynamic content. It replaces the statement element with either text or a structure (unescaped markup). The body of the statement is an expression with an optional type prefix. The value of the expression is converted into an escaped string unless you provide the ‘structure’ prefix. Escaping consists of converting <code>&amp;</code> to <code>&amp;amp;</code>, <code>&lt;</code> to <code>&amp;lt;</code>, and <code>&gt;</code> to <code>&amp;gt;</code>.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>If the inserted object provides an <code>__html__</code> method, that method is called with the result inserted as structure. This feature is not implemented by ZPT.</p>
+</div>
+</div>
+<p>If the expression evaluates to <code>None</code>, the element is simply removed. If the value is <code>default</code>, then the element is left unchanged.</p>
+</section>
+<section id="examples-7" class="level2">
+<h2 class="anchored" data-anchor-id="examples-7">Examples</h2>
+<p>Inserting a title:</p>
+<div class="sourceCode" id="cb34"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> tal:replace</span><span class="op">=</span><span class="st">"context.title"</span><span class="dt">&gt;</span>Title<span class="dt">&lt;/</span><span class="kw">span</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>Inserting HTML/XML:</p>
+<div class="sourceCode" id="cb35"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:replace</span><span class="op">=</span><span class="st">"structure table"</span><span class="ot"> </span><span class="dt">/&gt;</span></span></code></pre></div>
+</section>
+</section>
+<section id="talon-error" class="level1">
+<h1><code>tal:on-error</code></h1>
+<p>Substitutes the content of an element if processing it raises an exception. The argument is an expression, like that of <code>tal:content</code>:</p>
+<div class="sourceCode" id="cb36"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:on-error</span><span class="op">=</span><span class="st">"string:Not available"</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"context.price()"</span><span class="dt">&gt;</span>$1.50<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>If evaluating anything inside the element fails, the element is rendered with the <code>tal:on-error</code> result as its content.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/mkennedy\.codes\/docs\/chameleon-rs\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../language/index.html" class="pagination-link" aria-label="Language Reference">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Language Reference</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../language/expressions.html" class="pagination-link" aria-label="Expressions (TALES)">
+        <span class="nav-page-text">Expressions (TALES)</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+<div class="nav-footer-center">
+<p>Developed by <a href="https://talkpython.fm"><strong>Michael&nbsp;Kennedy</strong></a>.<br>Site created with <strong>Great&nbsp;Docs</strong>.</p>
+</div>
+</div>
+</footer>
+<script src="../github-widget.js"></script>
+<script src="../copy-page.js"></script>
+<script src="../sidebar-wrap.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'sidebar-float.js';document.body.appendChild(s);})();</script>
+<script src="../sidebar-filter.js"></script>
+<script src="../dark-mode-toggle.js"></script>
+<script src="../back-to-top.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'on-this-page.js';document.body.appendChild(s);})();</script>
+<script src="../keyboard-nav.js"></script>
+<script src="../copy-code.js"></script>
+<script src="../details.js"></script>
+<script src="../mermaid-renderer.js"></script>
+<script src="../tooltips.js"></script>
+<script>(function(){var s=document.createElement('script');s.src=(document.querySelector('link[rel="canonical"]')||{href:location.href}).href.replace(/\/[^\/]*$/,'').replace(/\/[^\/]*$/,'')+'/color-swatch.js';var h=document.currentScript;h.parentNode.insertBefore(s,h.nextSibling);})()</script>
+<script src="../responsive-tables.js"></script>
+<script src="video-embed.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'termshow.js';document.body.appendChild(s);})();</script>
+<script src="../navbar-widgets.js"></script>
+
+
+
+
+</body></html>

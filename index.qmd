@@ -1,0 +1,68 @@
+---
+title: "chameleon-rs"
+---
+
+**chameleon-rs** is a Rust implementation of the
+[Chameleon](https://github.com/malthe/chameleon) page template engine for Python. It aims to
+be a drop-in replacement: the same template language, the same Python API, byte-identical
+output, and much faster rendering.
+
+```python
+from chameleon_rs import PageTemplate
+
+page = PageTemplate('<p tal:repeat="name names">Hello, ${name}!</p>')
+print(page(names=['World', 'Rust']))
+```
+
+```html
+<p>Hello, World!</p>
+<p>Hello, Rust!</p>
+```
+
+## Why chameleon-rs
+
+- **Drop-in.** Chameleon's own test suite passes unmodified, and two production Flask/Quart
+  sites render byte-identical HTML on every page. An existing app switches with one line at
+  startup, and nothing else changes.
+- **Fast.** Rendering is about 4x to 7x faster than Chameleon on synthetic pages, and about 2.2x
+  faster across real application pages, where the app's own Python code takes most of the
+  time. Templates compile about 70x faster, so the first request after a deploy or reload is
+  quick too.
+- **Partials built in.** Every template can call
+  `${render_partial('shared/card.pt', item=item)}`. The partial renders natively inside
+  the page, about 10x faster than Chameleon with chameleon_partials.
+- **Flask and Quart built in.** `chameleon_rs.flask` has chameleon-flask's API.
+- **No runtime dependencies.** The package uses only the standard library. Stock Chameleon
+  doesn't need to be installed.
+
+## Install
+
+```bash
+uv pip install chameleon-rs
+```
+
+chameleon-rs needs Python 3.12 or later. The wheels include the compiled engine, so you don't
+need a Rust toolchain.
+
+## Switch an existing app
+
+Put this at the very top of your app's entry point, before anything imports Chameleon:
+
+```python
+import chameleon_rs.compat
+
+chameleon_rs.compat.install()
+```
+
+From then on, `import chameleon`, `import chameleon_partials` and `import chameleon_flask`
+all give you chameleon-rs. See [Switching from Chameleon](user-guide/switching-from-chameleon.qmd).
+
+## Where to next
+
+- [Getting started](user-guide/getting-started.qmd): render a first template and set up a
+  template folder.
+- [Language reference](language/index.qmd): TAL, METAL, i18n and `${...}`, the language
+  you already know from Chameleon.
+- [Compatibility](user-guide/compatibility.qmd): what's identical, the few known
+  differences, and how compatibility is measured.
+- [Performance](user-guide/performance.qmd): the benchmarks and how to reproduce them.
