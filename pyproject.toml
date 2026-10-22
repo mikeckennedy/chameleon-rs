@@ -5,27 +5,53 @@ build-backend = "maturin"
 [project]
 name = "chameleon-rs"
 description = "A Rust implementation of the Chameleon page template engine, compatible with Chameleon's syntax and API."
-readme = "README.md"
+readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.12"
+# Chameleon's license (BSD-like, the Repoze license, with ZPL, BSD and PSF portions): no SPDX id
+# covers it, hence a LicenseRef. No `License ::` classifier: PEP 639 forbids them next to a
+# license expression.
 license = "LicenseRef-Chameleon"
 license-files = ["LICENSE.txt", "COPYRIGHT.txt"]
 authors = [{ name = "Michael Kennedy", email = "michael@talkpython.fm" }]
+keywords = [
+    "chameleon", "template", "templates", "page templates", "zpt", "tal", "metal", "html",
+    "rust", "flask", "quart", "fastapi", "starlette", "robyn", "litestar",
+]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Framework :: Flask",
+    "Framework :: Litestar",
+    "Framework :: Litestar :: 2",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3.15",
+    # Tested on 3.14t and 3.15t (the suite, a thread stress suite), not yet run in production.
+    "Programming Language :: Python :: Free Threading :: 2 - Beta",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Rust",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
     "Topic :: Text Processing :: Markup :: HTML",
+    "Topic :: Text Processing :: Markup :: XML",
     "Typing :: Typed",
 ]
 dynamic = ["version"]
 
 [project.urls]
+Homepage = "https://mkennedy.codes/docs/chameleon-rs/"
 Documentation = "https://mkennedy.codes/docs/chameleon-rs/"
-Repository = "https://github.com/mikeckennedy/chameleon-rust"
+Changelog = "https://github.com/mikeckennedy/chameleon-rust/blob/main/CHANGELOG.md"
+Source = "https://github.com/mikeckennedy/chameleon-rust"
+Issues = "https://github.com/mikeckennedy/chameleon-rust/issues"
+Funding = "https://github.com/sponsors/mikeckennedy"
 
 [dependency-groups]
 # What the compatibility, differential and benchmark code needs. The reference Chameleon and
@@ -39,6 +65,9 @@ manifest-path = "crates/chameleon-py/Cargo.toml"
 python-source = "python"
 module-name = "chameleon_rs._native"
 # The Markdown spec examples are test data (the CommonMark spec is CC BY-SA 4.0): not shipped.
+# The pinned toolchain goes into the sdist, so a build from it uses the compiler the wheels and
+# the tests use (rustup reads it; a plain cargo ignores it and needs Rust 1.90 or later).
+include = [{ path = "rust-toolchain.toml", format = "sdist" }]
 exclude = [
     { path = "crates/chameleon-core/tests/markdown_spec/**/*", format = "sdist" },
     { path = "crates/chameleon-core/tests/markdown_spec.rs", format = "sdist" },
@@ -91,7 +120,7 @@ exclude = [
 
 [tool.ty.analysis]
 # Optional at runtime and never installed in venv: zope.i18n (i18n.py adapts it when present)
-# and freezegun (realsite.py, run from the Talk Python venv).
+# and freezegun (realsite.py, run from the real application's venv).
 allowed-unresolved-imports = ["zope.**", "freezegun"]
 
 [tool.ruff]

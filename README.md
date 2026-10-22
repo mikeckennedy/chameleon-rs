@@ -8,8 +8,48 @@ A Rust implementation of the [Chameleon](https://github.com/malthe/chameleon) pa
 engine for Python, aiming to be a drop-in replacement: same template syntax, same output,
 same API, much faster rendering.
 
-Status: early development. See [docs/plan.md](docs/plan.md) for the build plan and
-[docs/architecture.md](docs/architecture.md) for the design decisions.
+**Documentation: <https://mkennedy.codes/docs/chameleon-rs/>** ·
+[Changelog](https://github.com/mikeckennedy/chameleon-rust/blob/main/CHANGELOG.md) ·
+[Compatibility](https://mkennedy.codes/docs/chameleon-rs/user-guide/compatibility.html) ·
+[Performance](https://mkennedy.codes/docs/chameleon-rs/user-guide/performance.html)
+
+## Install
+
+```sh
+pip install chameleon-rs        # or: uv pip install chameleon-rs
+```
+
+CPython 3.12 to 3.15, including the free-threaded builds (3.14t, 3.15t). Wheels for Linux
+(glibc and musl), macOS and Windows contain the compiled engine, so no Rust toolchain is
+needed. No runtime dependencies: stock Chameleon need not be installed.
+
+## Quick start
+
+```python
+from chameleon_rs import PageTemplate, PageTemplateLoader
+
+page = PageTemplate('<p tal:repeat="name names">Hello, ${name}!</p>')
+print(page(names=['World', 'Rust']))
+
+templates = PageTemplateLoader(['templates'], auto_reload=False)
+html = templates['home/index.pt'](title='Home')   # templates/home/index.pt
+```
+
+## Why
+
+- **Compatible.** Chameleon's own test suite, vendored unmodified, passes: 227 of the 227
+  tests that pass on Chameleon. All 122 of its fixture renders are byte-identical, and every
+  page of two production Flask/Quart sites renders byte-identical HTML.
+- **Fast.** In synthetic benchmarks (release build, same process, interleaved with
+  Chameleon): listings 6.6x faster per item, macro calls 6.9x, an app-shaped page 4.3x,
+  native partials 10.9x, and templates compile about 70x faster. On a production Quart site,
+  template rendering was 2.2x faster in total and whole requests 1.3x faster; under load,
+  throughput rose 34%. The released wheels are profile-guided, about 10% faster again.
+  [How it's measured](https://mkennedy.codes/docs/chameleon-rs/user-guide/performance.html).
+- **Batteries included.** Partials, Markdown, async rendering and the Flask/Quart, FastAPI,
+  Starlette, Robyn and Litestar integrations are built in (below).
+
+## Switch an existing app
 
 Switching an application over is one line at startup, before anything imports Chameleon:
 
@@ -19,7 +59,9 @@ import chameleon_rs.compat
 chameleon_rs.compat.install()  # `import chameleon`, `chameleon_partials`, `chameleon_flask`, `fastapi_chameleon`, `chameleon_robyn` give chameleon-rs
 ```
 
-Built in, with no extra package:
+## Built in
+
+With no extra package:
 
 - **Partials:** every template can call `${render_partial('shared/card.pt', item=item)}`; the
   partial renders straight into the page. `chameleon_rs.configure(template_folder='templates')`
@@ -214,7 +256,8 @@ Opt-in concurrency (it changes the order in which helpers run):
 
 Experimental: `render_async(..., offload=True)` (or `@template(..., offload=True)`) renders in a
 worker thread. On free-threaded Python (3.14t) renders then run in parallel with the event loop;
-on a GIL build it helps only pages dominated by long text. Measurements: `docs/plan.md`, Phase 11.
+on a GIL build it helps only pages dominated by long text. Measurements:
+[docs/plan.md](https://github.com/mikeckennedy/chameleon-rust/blob/main/docs/plan.md), Phase 11.
 
 ## Development
 

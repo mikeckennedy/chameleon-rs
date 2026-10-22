@@ -32,8 +32,10 @@ print(page(names=['World', 'Rust']))
 - **Partials built in.** Every template can call
   `${render_partial('shared/card.pt', item=item)}`. The partial renders natively inside
   the page, about 10x faster than Chameleon with chameleon_partials.
-- **Flask, Quart and FastAPI built in.** `chameleon_rs.flask` has chameleon-flask's API,
-  `chameleon_rs.fastapi` fastapi-chameleon's.
+- **Web frameworks built in.** Flask and Quart (`chameleon_rs.flask`, chameleon-flask's API),
+  FastAPI (`chameleon_rs.fastapi`, fastapi-chameleon's), Starlette (a drop-in for
+  `Jinja2Templates`), Robyn (`chameleon_rs.robyn`, chameleon-robyn's) and Litestar (a template
+  engine for `TemplateConfig`). Async views render without blocking the event loop.
 - **No runtime dependencies.** The package uses only the standard library. Stock Chameleon
   doesn't need to be installed.
 

@@ -1,0 +1,5 @@
+# The build tool of the release workflow (.github/workflows/release.yml), installed with
+# --require-hashes into a tools venv. Keep it in step with pyproject.toml's build-system.
+# Regenerate:
+#   uv pip compile --universal --python-version 3.12 --generate-hashes scripts/release-requirements.in -o scripts/release-requirements.txt
+maturin==1.15.0

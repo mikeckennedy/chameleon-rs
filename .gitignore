@@ -42,3 +42,6 @@ venv/
 /great-docs/
 uv.lock
 .DS_Store
+
+# Release builds (`make wheels`, `make sdist`).
+/dist/

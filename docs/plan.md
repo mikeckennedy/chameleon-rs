@@ -1684,6 +1684,150 @@ Details: architecture.md, "Phase 12 amendments".
   - ~~The `tal:on-error` + `tal:attributes` compile error found by the async render fuzzer~~:
     fixed in the integrations phase below (692e749).
 
+**12b done (2026-10-22): release preparation, on a worktree branch from 6c64b5a.** Nothing
+published, no tag, version unchanged (0.1.0 in Cargo.toml). GitHub Actions is blocked by
+billing, so everything below was verified locally; the workflow is correct by inspection and
+`actionlint` 1.7.7 (with shellcheck) only.
+
+Built:
+- **Metadata** (`pyproject.toml`): classifiers (Development Status 4 - Beta; Python 3.12-3.15,
+  3 :: Only, CPython; `Free Threading :: 2 - Beta`, tested on 3.14t/3.15t but not yet in
+  production; Framework :: Flask, FastAPI, Litestar, Litestar :: 2; OS MacOS, Windows, Linux;
+  Rust; Web Environment; HTML/XML markup and dynamic content topics; Typing :: Typed),
+  keywords, readme content type, URLs (Homepage and Documentation: the docs site; Changelog,
+  Source, Issues on GitHub; Funding: GitHub Sponsors, as in chameleon_partials). No
+  `License ::` classifier: PEP 639 forbids them next to the `LicenseRef-Chameleon` expression
+  (Chameleon's would be "Repoze Public License"). No Starlette or Robyn trove classifier
+  exists. `twine check --strict` passes on every artifact.
+- **`scripts/pgo_wheel.py`** (`make wheels`): `make build-pgo`'s steps for a wheel, per
+  interpreter (a training venv per interpreter: PyO3's code differs per Python version and for
+  free-threaded builds, so one profile does not fit all), failing on a stale profile; paths
+  under the builder's home are remapped out of the binary (`--remap-path-prefix`, not part of
+  the crate hash). `--profile-only` is what the Linux release jobs run inside the
+  manylinux/musllinux container. **`scripts/check_wheel.py`** (`make check-wheels`): each
+  wheel (or an sdist, built from scratch) in a fresh venv with only pytest: a smoke render
+  (sync, `render_async` awaiting a value, `markdown:`, the compat alias, every non-framework
+  module importable with the standard library only), the upstream suite on chameleon_rs, then
+  `test_typing.py` with Flask, FastAPI and Litestar installed. `make sdist`.
+- **`.github/workflows/release.yml`**, manual trigger only (`workflow_dispatch`, a `publish`
+  checkbox, off by default): 48 wheels (CPython 3.12, 3.13, 3.14, 3.14t, 3.15, 3.15t ×
+  manylinux_2_28 and musllinux_1_2 x86_64/aarch64 via `PyO3/maturin-action` in the PyPA images
+  on native runners, PGO trained in the container by `before-script-linux`; macOS arm64 and
+  x86_64 and Windows x64 by `pgo_wheel.py`; Windows arm64 without PGO, untried there) and the
+  sdist (maturin-action); a test job per platform and interpreter running `check_wheel.py`
+  (musllinux inside its image by `docker run`, as JavaScript actions cannot run in Alpine;
+  on Windows the smoke test blocks and the upstream suite is `continue-on-error`, never run on
+  Windows before); the sdist built from scratch and checked; and `publish`, which runs only
+  with the checkbox, after every build and test job, counts 48 wheels + 1 sdist, and uploads
+  with PyPI trusted publishing (environment `pypi`, `id-token: write`, no secrets).
+- **CHANGELOG.md** (an "Unreleased" section) and docs: README (install, quick start, docs
+  links, the measured numbers of Phases 9-10, absolute links so it renders on PyPI), the
+  Compatibility page (every known difference in one place: slot-body corner cases from the
+  Phase 8/12 amendments, the helper libraries' behaviour changes, `render_async` with a
+  replaced `render`), the migration page (litestar-chameleon in the table, "Timing renders":
+  a monkeypatched `PageTemplate.render` counts as an override, so `render_async` renders
+  synchronously; wrapping `render_async` too does not help, checked: time the view or use
+  py-spy), the home page's integrations bullet, the Performance page (PGO wheels). Great Docs
+  0.13.0 builds its Changelog page from GitHub Releases, not from CHANGELOG.md: the page
+  appears once a release exists (and the repository is public; the build reports it as not
+  found today). `make docs` builds; `site/` was reverted, as in the integration phases.
+
+Verified locally (macOS arm64, load about 2):
+- `make wheels`: profile-guided wheels for 3.12.15, 3.13.16, 3.14.8, 3.14.7t, 3.15.0,
+  3.15.0t, 1.62-1.64 MiB each (about 4 MiB unpacked, 43 files: the package, `_native` with
+  `.pyi`, `py.typed`, licenses, maturin's CycloneDX SBOM), no stale-profile warning; sdist
+  360 KiB, 199 files (no Markdown spec data). `make check-wheels`: each wheel smoke ok
+  (GIL builds report GIL, 3.14t/3.15t free-threaded), upstream 227 passed, 5 xfailed, 1
+  xpassed (the non-strict environmental entries), test_typing 34 passed, 2 skipped (Robyn).
+  The sdist, built into a wheel from scratch on 3.13 in a clean venv: the same results.
+- Artifact scan: no corpus or app material, no `temp/` content; the only "talkpython" strings
+  are the author e-mail (METADATA, PKG-INFO, `pyproject.toml`) and the `__author__` lines
+  of `flask.py`, `fastapi.py` and `robyn.py` (as in the packages they mirror). Local wheels'
+  SBOM names the checkout path (a CI build names the runner's); the extension has no local
+  path after the remap.
+- A manylinux_2_28 x86_64 wheel cross-built with `maturin build --zig` (zig from Homebrew,
+  non-PGO, cp313): maturin's manylinux check passes, 1.61 MiB; not run (Docker not running).
+
+**12b review fixes (2026-10-22, after the Rust Architect's review).** They replace the Linux
+build path described above (maturin-action building after a `--profile-only` training).
+- **Blocker: Linux wheels would have shipped without PGO, silently.** maturin-action's
+  `target:` adds `--target` to the final build, while the training build had none; cargo
+  hashes an explicit target into every symbol name, so the profile matched nothing and LLVM
+  ignored it without a warning the old check looked for. Measured here (cp315, macOS arm64): a
+  profile trained without `--target` used by a build with `--target aarch64-apple-darwin`
+  leaves 694 functions of chameleon_core/chameleon_py without profile data; a matching build
+  leaves 10 (training-build inlining leftovers, all "up to 0 count"). Now `pgo_wheel.py`
+  passes `--target` to both builds, adds `-Cllvm-args=-pgo-warn-missing-function` to the
+  final one, and fails above 100 missing functions of our crates (checked: quiet on all six
+  local wheels at 10; fires at 694 on the mismatched build; a PGO build with `--target` on both
+  sides passes at 10). Every platform now goes through `pgo_wheel.py`, so the guard runs
+  everywhere: Linux wheels are built by `scripts/linux_wheel.sh` inside the PyPA image (`docker
+  run` on a native runner: rustup with the pinned toolchain, maturin, `pgo_wheel.py` with the
+  image's `/opt/python/cp3XX-cp3XX[t]/bin/python`), and maturin-action builds only the sdist
+  (maturin-action runs its container only for its own `maturin build`, whose log the guard
+  cannot read).
+- **PGO per platform, with a fallback**: a `pgo` flag per matrix entry; `--fallback-plain`
+  builds a plain wheel with a `::warning::` when no profile can be made (llvm-tools or the
+  profiler runtime missing, a training dependency without a wheel); the guards still fail. Each
+  wheel's kind goes to the job summary. Verified: macOS arm64; unverified: musllinux and
+  Windows arm64 (both `pgo: true` with the fallback), the rest expected to work.
+- **No instrumented extension in the source tree**: training installs an instrumented wheel
+  into the training venv (checked: `chameleon_rs` imports from site-packages) instead of
+  `maturin develop`, which had left 6.6-6.8 MiB instrumented `_native` builds for 3.12, 3.13,
+  3.14t and 3.15t in this worktree's `python/chameleon_rs` (deleted; the main checkout's are
+  plain, untouched). A run that writes no `.profraw` fails before merging.
+- **Supply chain**: training dependencies from `bench/pgo-requirements.txt` and maturin from
+  `scripts/release-requirements.txt`, both `uv pip compile --generate-hashes`, installed with
+  `--require-hashes` (training ones `--only-binary :all:`); no tokens enter the build
+  container (only `GITHUB_ACTIONS`, `GITHUB_STEP_SUMMARY`, `CARGO_TERM_COLOR`); checkouts with
+  `persist-credentials: false`; every action pinned by SHA with its version in a comment
+  (checkout v5.1.0, setup-uv v6.8.0, upload-artifact v4.6.2, download-artifact v4.3.0,
+  maturin-action v1.51.0 with maturin 1.15.0, gh-action-pypi-publish v1.14.3; newer majors
+  exist, not adopted); `timeout-minutes` on every job and a `release` concurrency group.
+- **`check_wheel.py`**: scans every artifact (metadata, SBOM, extension, sdist files) for the
+  corpus folder names and `$CHAMELEON_RS_CORPUS`, and outside GitHub Actions for the home folder
+  and checkout path, failing on a hit; a local wheel's SBOM naming the checkout is reported as
+  a note (local wheels are never uploaded; CI's name the runner's path). Framework installs for
+  test_typing take pydantic-core and msgspec as wheels only and skip the test with a log line
+  if one is missing (`--only-binary :all:` was too strict: PyYAML has no 3.15 wheel). `--all`
+  no longer picks musllinux wheels on a glibc host or the reverse. Windows runs the smoke
+  test (blocking) and the suites (`--suites-only`, not yet blocking) once each.
+- **sdist**: ships `rust-toolchain.toml`, so a build from it uses the pinned compiler (checked
+  locally with the sdist build).
+- **Compatibility page**: two more known differences from the amendments: code blocks run in a
+  namespace per template and render (recursive partials share it; `default`/`attrs` are not
+  aliased inside a block), and the built-in `render_partial` is not in `econtext`.
+- **Verification**: `actionlint` (with shellcheck, also on `scripts/linux_wheel.sh`) clean;
+  `make wheels`: six profile-guided wheels (cp312-cp315t), 1.63-1.64 MiB, 10 missing functions
+  each; `make check-wheels`: each no private material, smoke ok, upstream 227 passed (5 xfailed,
+  1 xpassed), test_typing 34 passed, 2 skipped; the sdist (360 KiB) built from scratch on 3.13:
+  the same; `twine check --strict` passed on all 7; `make lint` clean; `make test` with the
+  corpus: Rust 102 + 3 + 9, pytest 3,141 passed, 5 skipped, 7 xfailed (the first 12b run had
+  80 more skips: the chameleon-flask/fastapi-chameleon comparison tests, run before
+  `make integration` had cloned them), upstream 227 passed and 6 xpassed on each engine,
+  Robyn 116; `make test-integration` green (40, 16, 39, 6, 2 original; 40, 16, 39, 6 built-in).
+
+Before the first run of the release workflow (the repository is private today; also in the
+workflow's header):
+- The arm64 runners (`ubuntu-24.04-arm`, `windows-11-arm`) are free for public repositories
+  only; a private repository needs arm64 larger runners on a paid plan.
+- macOS minutes count 10x on a private repository (24 macOS jobs per run).
+- PyPI's project links (Source, Issues, Changelog) and the README's images and links point at
+  GitHub and 404 while the repository is private: make it public before publishing.
+
+What remains for the owner:
+- Choose the version (Cargo.toml `[workspace.package] version`), move the CHANGELOG section
+  under it with the date, and decide the Development Status and free-threading classifiers.
+- Make the repository public (or provide arm64 runners) before the first run; see above.
+- On PyPI, add a trusted publisher for `chameleon-rs` (pending publisher: this repository,
+  workflow `release.yml`, environment `pypi`); in GitHub, create the `pypi` environment
+  (required reviewers recommended).
+- Once Actions runs: trigger Release with `publish` off first; read each job summary for
+  wheels that fell back to plain (musllinux, Windows arm64), check the Windows upstream results
+  (then make that step blocking). Then run it again with `publish` on, tag the commit, and
+  create a GitHub Release from the CHANGELOG section (Great Docs then builds the Changelog
+  page); commit the rebuilt `site/`.
+
 ## Integrations: shared core and FastAPI
 
 Scope (Michael's decisions, 2026-10-22): a private core shared by the framework modules;
