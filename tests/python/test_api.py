@@ -752,7 +752,7 @@ def test_no_runtime_dependencies() -> None:
     result = run_python("""
         import importlib, importlib.abc, importlib.util, pkgutil, sys, sysconfig
         stdlib = sysconfig.get_paths()['stdlib']
-        FRAMEWORKS = {'chameleon_rs.flask', 'chameleon_rs.fastapi', 'chameleon_rs.starlette', 'chameleon_rs.robyn'}
+        FRAMEWORKS = {'chameleon_rs.flask', 'chameleon_rs.fastapi', 'chameleon_rs.starlette', 'chameleon_rs.robyn', 'chameleon_rs.litestar'}
 
         class Block(importlib.abc.MetaPathFinder):
             on = True
@@ -772,7 +772,7 @@ def test_no_runtime_dependencies() -> None:
         for info in pkgutil.walk_packages(chameleon_rs.__path__, 'chameleon_rs.'):
             if info.name not in FRAMEWORKS:
                 importlib.import_module(info.name)
-        imported = {'flask', 'werkzeug', 'quart', 'fastapi', 'starlette', 'pydantic', 'robyn'} & set(sys.modules)
+        imported = {'flask', 'werkzeug', 'quart', 'fastapi', 'starlette', 'pydantic', 'robyn', 'litestar', 'msgspec'} & set(sys.modules)
         assert not imported and not FRAMEWORKS & set(sys.modules), 'framework imported'
         for old in ('chameleon_flask', 'fastapi_chameleon', 'chameleon_robyn'):
             try:
@@ -799,6 +799,7 @@ def test_no_runtime_dependencies() -> None:
             from chameleon_robyn.exceptions import ChameleonRobynException
             assert chameleon_robyn.engine is chameleon_robyn is chameleon_rs.robyn
         assert 'chameleon.starlette' not in sys.modules and 'chameleon.fastapi' not in sys.modules
+        assert 'chameleon.litestar' not in sys.modules and 'litestar' in sys.modules
         print('ok')
     """)
     blocked = ''.join(f'blocked: not the standard library: {name}\n' for name in ('flask', 'fastapi', 'robyn'))

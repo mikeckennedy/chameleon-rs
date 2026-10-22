@@ -274,18 +274,8 @@ def _url_for(request: Request) -> Callable[..., Any]:
 
 def _check_name(name: str) -> None:
     """Refuses a name that could load a template outside the folder, as Jinja's
-    ``FileSystemLoader`` does (its ``split_template_path``), and more: an absolute path, a
-    ``..`` segment, a backslash, a drive letter or a package spec (``:``)."""
-    spec = name.strip() if isinstance(name, str) else ''
-    if (
-        not spec
-        or spec.startswith('/')
-        or os.path.isabs(spec)
-        or '\\' in spec
-        or ':' in spec
-        or '\0' in spec
-        or any(piece == '..' for piece in spec.split('/'))
-    ):
+    ``FileSystemLoader`` does (``_views.outside_folder``)."""
+    if _views.outside_folder(name):
         msg = f'Template not found: {name}.'
         raise TemplateNotFound(msg)
 
@@ -405,8 +395,7 @@ class Templates:
         here: ``PageTemplateLoader`` and the decorator API raise Chameleon's ``ValueError``.)"""
         _check_name(name)
         loader = self.loader
-        spec = name.strip()
-        if not any(os.path.isfile(os.path.join(folder, spec)) for folder in loader.search_path):
+        if not any(os.path.isfile(os.path.join(folder, name)) for folder in loader.search_path):
             msg = f'Template not found: {name}.'
             raise TemplateNotFound(msg)
         return loader[name]

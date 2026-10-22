@@ -12,7 +12,7 @@ pass-through and model conversion (``chameleon_rs.web.model_of``), and the check
 was registered with its router before ``@template`` wrapped it.
 
 A framework module (``chameleon_rs.flask``, ``chameleon_rs.starlette``, ``chameleon_rs.fastapi``,
-which builds on Starlette's, ``chameleon_rs.robyn``) supplies an ``Integration``: how to recognise its response objects,
+which builds on Starlette's, ``chameleon_rs.robyn``, ``chameleon_rs.litestar``) supplies an ``Integration``: how to recognise its response objects,
 how to build an HTML response, where its settings live, what it adds to a view's model, how to
 list an app's routes and how to run a check when the app starts.
 Imports only the standard library (the framework modules import their framework).
@@ -258,6 +258,33 @@ class Integration:
             passed = True
 
         self.watch(app, check)
+
+
+def outside_folder(name: object) -> bool:
+    """Whether a template name could load a file outside the template folder, as Jinja's
+    ``FileSystemLoader`` refuses (its ``split_template_path``), and more: empty, an absolute
+    path, a ``..`` segment, a backslash, a drive letter or a package spec (``:``), a NUL. The
+    guard of the Jinja-shaped APIs (``chameleon_rs.starlette.Templates``,
+    ``chameleon_rs.litestar.ChameleonEngine``); the decorator APIs keep the original
+    libraries' lookup (template names come from code). Not stripped: a name with surrounding
+    whitespace is refused (Jinja looks for that exact file; Chameleon's loader would strip it)."""
+    spec = name if isinstance(name, str) else ''
+    return (
+        not spec
+        or spec != spec.strip()
+        or spec.startswith('/')
+        or os.path.isabs(spec)
+        or '\\' in spec
+        or ':' in spec
+        or '\0' in spec
+        or any(piece == '..' for piece in spec.split('/'))
+    )
+
+
+def is_not_found(exc: ValueError) -> bool:
+    """Whether ``exc`` is the loader's "no such template" (``chameleon_rs.loader``'s
+    ``Template not found: {spec}.``), not an error from compiling the template."""
+    return type(exc) is ValueError and str(exc).startswith('Template not found: ')
 
 
 def _error_model(page: ErrorPage, extra: Mapping[str, Any] | None) -> Mapping[str, Any]:

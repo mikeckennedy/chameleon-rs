@@ -673,6 +673,17 @@ def test_names_inside_the_folder_still_load(folder: Path) -> None:
         assert templates.TemplateResponse(blank_request(), name, {'a': 1}).body == b'<h1>Hello 1 -!</h1>'
 
 
+@pytest.mark.parametrize('name', [' bare.html', 'bare.html ', '\tbare.html'])
+def test_names_with_surrounding_whitespace_are_not_found_as_in_jinja(
+    folder: Path, jinja_folder: Path, name: str
+) -> None:
+    # Chameleon's loader strips names; Jinja looks for that exact file, as `Templates` does.
+    with pytest.raises(jinja2.TemplateNotFound):
+        Jinja2Templates(directory=jinja_folder).get_template(name)
+    with pytest.raises(chameleon_rs.web.TemplateNotFound):
+        ours.Templates(directory=folder).get_template(name)
+
+
 def test_decorator_render_keeps_the_original_libraries_lookup(folder: Path) -> None:
     # Owner's rule: render()/@template/render_partial resolve names as chameleon-flask,
     # fastapi-chameleon and chameleon_partials do (no guard): names must not come from requests.

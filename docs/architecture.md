@@ -1518,6 +1518,79 @@ Release blockers. Each behaviour checked against Chameleon's generated code firs
   that release by `scripts/fetch_robyn_typing.py`, standard library only, so no 3.14
   interpreter is needed; `make lint` depends on it).
 
+## Integrations amendments: Litestar (2026-10-22)
+
+- **`chameleon_rs.litestar`**, two layers (owner approved both). `ChameleonEngine` implements
+  Litestar's `TemplateEngineProtocol[ChameleonTemplate, Mapping[str, Any]]`, modelled on its
+  Mako engine: `__init__(directory, engine_instance, *, auto_reload, restricted_namespace)`
+  (Litestar's `TemplateConfig.to_engine` calls `engine(directory=..., engine_instance=None)`),
+  `get_template`, `render_string` (compiled strings cached, 128, with the loader's
+  `restricted_namespace`), `register_template_callable`, `from_loader`. With neither a directory
+  nor a loader it reads the new `litestar` settings slot at each render (as Starlette's
+  `Templates()`). Template callables (`url_for`, `csrf_token`, `url_for_static_asset` by
+  default) are bound to the render's context with `functools.partial`, as Mako's engine does;
+  a context key of the same name wins, as over Jinja's globals (litestar-chameleon lets the
+  callable win; documented). The callables mapping is replaced whole on registration
+  (free-threading). `get_template` raises Litestar's `TemplateNotFoundException` for a missing
+  file and for any name `_views.outside_folder` refuses (the Starlette guard, moved to the core
+  so both Jinja-shaped APIs share it); the decorator API keeps the original libraries' lookup.
+- **Media type.** Litestar's `Template.to_asgi_response` guesses from the name's suffixes with
+  `mimetypes` and falls back to `text/plain`; `.pt` is unknown. The engine cannot fix that (the
+  response chooses), so `chameleon_rs.litestar.Template` subclasses the response and passes
+  `media_type=text/html` to `super().to_asgi_response` only when neither the response nor the
+  route gave one and no suffix guesses. Rejected: `mimetypes.add_type` at import (a global side
+  effect on every library; documented as an opt-in alternative) and setting `media_type` in
+  `__init__` (it would override a route-level `media_type`).
+- **Sync only, natively.** Litestar's template protocol and `Template` response are synchronous
+  (`to_asgi_response` renders while building the response, on the loop). An async `Template`
+  (rendering in a custom `ASGIResponse`) was not built: it leans on internals 3.0 is moving.
+  Async rendering is the decorator layer's.
+- **Decorator layer** on `_views` (`_Litestar(Integration)`), overriding `decorate` because
+  Litestar reads the handler's signature: the wrapper gets `__signature__` and `__annotations__`
+  with the handler's parameters, return annotation `litestar.Response` (else a `-> dict` handler
+  is a JSON route: `media_type` JSON and a possible return DTO) and, when the handler has none,
+  a keyword-only `request: Request` (Litestar injects reserved names by name; not in OpenAPI),
+  which the wrapper pops before calling the handler. Annotations are read without evaluating
+  (`annotationlib` FORWARDREF on 3.14+, raw `__annotations__` before), so forward references
+  resolve when the route registers (Litestar evaluates them in the handler's module, found
+  through `__module__`). The template gets Litestar's template context: `request`,
+  `csrf_input` and the app's `ChameleonEngine` callables (Litestar's three otherwise), bound to
+  that context (not the model); the model's keys win, error pages included. Pages have no
+  status code unless `status_code=` is given (`Response(status_code=None)`: the route's, 201 for
+  `@post`), unlike the other modules' 200: a Litestar response without a status takes the
+  route's.
+- **Decorator order.** Litestar's route decorators return a `BaseRouteHandler` object, so
+  `@template` above `@get` is detected at decoration and raises `DecoratorOrderError` at import
+  (unambiguous, unlike the other frameworks). For routes given the bare function another way,
+  `configure(app=...)` inserts an `on_startup` hook first in `app.on_startup` (the lifespan
+  fails; the test client raises it inside an `ExceptionGroup`) and wraps `app.asgi_handler` in a
+  one-shot first-request guard for apps served without lifespan. `routes(app)` walks
+  `app.routes` (`HTTPRoute.route_handlers`, websocket/ASGI routes' `route_handler`), unwrapping
+  Litestar's `AsyncCallable` (`sync_to_thread`) and bound `Controller` methods. A `Litestar` app
+  cannot be weakly referenced (`__slots__`), so "already watched" is the presence of the hook,
+  not `_views._watched`.
+- **Settings:** `VIEW_SLOTS` gains `litestar`; process-wide, as the others.
+- **litestar-chameleon** (third party) is not mapped by `compat.install()` (there is no
+  built-in with its API); its suite runs on the compat alias in `make test-integration`
+  (original mode only, `src/` on the path), and `test_litestar.py` compares `ChameleonEngine`'s
+  HTML with it on stock Chameleon. It is installed in `venv` with `--no-deps` by `make dev`,
+  not in the dev group: `maturin develop` installs the dev group, and the integration venv must
+  not get stock Chameleon.
+- **Litestar in the dev group** (`litestar>=2.25,<3`, pure Python; msgspec has 3.15 wheels), so
+  ty types the module on every Python; no pin file needed.
+- **Review fixes** (Rust Architect review, no blockers): `render_string` compiles with the
+  loader's template options (`loader.kwargs`: `translate`, `restricted_namespace`, ...), its
+  cache is keyed by (loader, string), so a later `configure()` (a new loader) never serves a
+  string compiled under the old options, and reads and writes it under a lock. `get_template`
+  lets the loader's own lookup decide (its `default_extension`, search path): after the
+  `outside_folder` guard it catches only the lookup's `ValueError` (`_views.is_not_found`: exactly
+  `ValueError`, message `Template not found: `), no separate `isfile`. `outside_folder` no longer
+  strips: a name with surrounding whitespace is refused (Jinja looks for that exact file,
+  Chameleon's loader strips), for Starlette's `Templates` too (`isfile` on the unstripped name).
+  litestar-chameleon is installed into venv from the same pinned clone as its suite (`--no-deps`),
+  and `make test-python` sets `CHAMELEON_RS_REQUIRE_LITESTAR_CHAMELEON=1` so its comparisons fail
+  instead of skipping when it is missing.
+
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
 ```

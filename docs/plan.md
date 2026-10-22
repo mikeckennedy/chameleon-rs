@@ -26,7 +26,7 @@ D1..D13 are in [architecture.md](architecture.md).
 | 1. Upstream suite | Chameleon's 233 tests, vendored unmodified, run with `CHAMELEON_ENGINE=rust`; misses listed with reasons in `expected_failures_rust.txt` (strict xfail ratchet) | at least 216 of the 227 that pass on the reference (95%) |
 | 2. Fixtures, byte-exact | Every `inputs/*.pt` / `*.txt` rendered by both engines, compared byte for byte (stricter than upstream's doctest-style comparison) | 100% |
 | 3. Differential fuzzing | Hypothesis-generated templates and markup through both engines: tokens, trees, output, error type and position | no unexplained differences |
-| 4. Integration suites | fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials suites with the compat alias | all pass |
+| 4. Integration suites | fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials, litestar-chameleon suites with the compat alias | all pass |
 | 5. Real site | Every Talk Python page rendered by both engines, HTML compared word for word; shadow mode on real traffic | identical |
 
 Upstream inventory (227 passing): 122 fixture renders, about 70 API and configuration tests
@@ -2045,6 +2045,139 @@ the first reproduced with the review's probe first):
   skipped the build); upstream 227 + 6 xpassed per engine; Rust 102 + 3 + 9; `make lint` clean
   (ty 0); integration 40/16/39/6 on the originals and on the built-ins. A/B against cecd4e8
   (release, listing, 8 rounds, load 1.7): +2.5 ns (range -2..+8), 6.43x Chameleon.
+
+## Integrations: Litestar
+
+Scope (Michael's order, vision.md section 2: FastAPI, then Starlette, then Robyn, then
+Litestar, the last of the planned integrations): `chameleon_rs.litestar` with two ways in, both
+approved: a native engine (`ChameleonEngine`, Litestar's `TemplateEngineProtocol`) with a fix
+for the `.pt` media type, and the decorator API of the other modules on the shared views core;
+the third-party litestar-chameleon kept working through `compat.install()`. No extras, no
+runtime dependencies, ty at zero diagnostics. Design: architecture.md, "Integrations
+amendments: Litestar".
+
+**Results (2026-10-22), on a worktree branch from 2d1646e.**
+
+Built:
+- `ChameleonEngine(directory=None, engine_instance=None, *, auto_reload=None,
+  restricted_namespace=None)`: `TemplateConfig(engine=ChameleonEngine, directory=...)`, an
+  instance (`TemplateConfig(engine=ChameleonEngine('templates', auto_reload=True))`), a loader
+  of one's own (`engine_instance=` / `from_loader`), or neither (the new `litestar` settings
+  slot, read at each render). `get_template` returns a `ChameleonTemplate` (`render(**context)`,
+  plus `render_async`); `render_string` (cached compiled strings); `register_template_callable`
+  (Litestar's `url_for`, `csrf_token`, `url_for_static_asset` registered by default, bound to
+  the context; a context key wins). Templates get Litestar's context (`request`,
+  `csrf_input`). Missing names and names outside the folder raise Litestar's
+  `TemplateNotFoundException` (the Starlette guard moved to `_views.outside_folder`, shared).
+- **The media type:** `chameleon_rs.litestar.Template`, a subclass of Litestar's `Template`
+  response, serves a name Litestar cannot guess (`.pt`; Litestar falls back to `text/plain`) as
+  `text/html`; an explicit `media_type` on the response or the route wins, guessable names keep
+  their type. Documented, with `mimetypes.add_type('text/html', '.pt')` as the global
+  alternative.
+- Native rendering is synchronous (Litestar's protocol and `Template` response are): said in
+  the module docs, the guide and the README; async rendering is the decorator layer's.
+- The module API: `configure`, `global_init`, `clear`, `@template` (sync and async handlers,
+  functions and `Controller` methods; async renders with `render_async`; `concurrent=` /
+  `offload=`), `render`, `render_async`, `response`, `response_async` (`litestar.Response`),
+  `not_found`, `error`, `generic_error`, `check_views`, the `web` exceptions re-exported. The
+  wrapper's `__signature__` / `__annotations__` keep the handler's parameters (DI, validation,
+  OpenAPI parameters identical to the undecorated handler's), set the return annotation to
+  `litestar.Response` (no JSON media type or return DTO), and add a keyword-only
+  `request: Request` when the handler has none (popped before the call), so decorated
+  templates get `request`, `csrf_input`, `url_for`, `csrf_token`, `url_for_static_asset` (the
+  app engine's callables when it is a `ChameleonEngine`). Annotations are not evaluated at
+  decoration (forward references work). Without `status_code=` the page takes the route's
+  status (201 for `@post`), as a Litestar response does.
+- Decorator order: `@template` above `@get` is handed Litestar's route handler object and
+  raises `DecoratorOrderError` at import. `configure(app=...)` / `global_init(..., app=...)`
+  add the startup check for routes given the bare function another way: an `on_startup` hook
+  (first) and a one-shot `asgi_handler` guard for apps served without lifespan; routers,
+  controllers and `sync_to_thread` handlers are walked; `check_order=False` and
+  `check_views(app, ignore=[...])` as elsewhere.
+- litestar-chameleon 0.3: its suite (pinned commit da0652d) is a new `make test-integration`
+  suite on the compat alias (original mode; no built-in replaces it, so `compat.install()` does
+  not map `litestar_chameleon`). `test_litestar.py` compares `ChameleonEngine`'s HTML with it on
+  stock Chameleon, and runs it on chameleon-rs through `compat.install()` in a subprocess.
+  `make dev` installs it into `venv` with `--no-deps`: in the dev group, `maturin develop` would
+  install it, and stock Chameleon with it, into the integration venv.
+- Litestar joins the dev group (`litestar>=2.25,<3`): pure Python, its msgspec has 3.15 wheels,
+  so no pin or typing snapshot is needed.
+- Docs: README (Litestar item and example, names, decorator order, async notes),
+  `user_guide/litestar.qmd` (its cells run), `great-docs.yml` (the page, a Litestar reference
+  section, decision table, a best practice), the configuration, compatibility and migrating
+  pages. `site/` not rebuilt.
+
+Tests: new `test_litestar.py` (44): `ChameleonEngine` against Litestar's Jinja engine through the
+test client, nine requests (status, every header, body: context, `request`, `url_for`,
+`csrf_token`, `csrf_input`, a registered callable, `template_str`, status/headers/media type,
+cookies, background tasks, a missing template, POST), CSRF with a `CSRFConfig`; HTML identical
+to litestar-chameleon's on stock Chameleon (`tal:repeat`, conditions, attributes, `structure`,
+`url_for`); litestar-chameleon on chameleon-rs through `compat.install()` (subprocess, with
+`render_partial`); eleven refused or missing names (Litestar's `TemplateNotFoundException`
+and message), Jinja refusing `..` too, names inside the folder; construction (folders, loader,
+options, configuration, `TemplateConfig` class and instance); callables (registration, context
+wins, positional `render` refused), `render_async`, `render_string` cache and loader options,
+partials; the media type (ours, Litestar's `text/plain`, `.txt`, `.xml`, explicit, route-level,
+`template_str`); decorated handlers through the test client (sync/async, path/query
+validation, `Provide`, `request`/`url_for`/CSRF in templates, injected `request`, model wins,
+error pages with `url_for`, `generic_error`, `Redirect` and `Template` pass-through, content
+types, status codes, bare `@template`, `Controller` method, POST body, `FromPath`/`FromQuery`),
+invalid returns, where renders run (loop, worker thread with `sync_to_thread`), five async
+renders waiting 2 x 200 ms finishing together, the wrapper's signature and annotations, forward
+references, OpenAPI parameters equal to the undecorated handler's, `render`/`response` and
+their coroutines, route status codes, settings slots; decorator order (at decoration, at
+startup, at the first request without lifespan, correct order unhooks, escape hatches, routers
+and controllers, app types); `assert_type` checks. `test_typing.PUBLIC` lists the module (its
+class-annotation test evaluates only chameleon-rs classes' own annotations for a class deriving
+from a framework's: Litestar annotates with names imported for type checkers only);
+`test_no_runtime_dependencies` covers `chameleon_rs.litestar` (Litestar and msgspec not
+imported by `import chameleon_rs` or `compat.install()`). Versions: Litestar 2.25.0 on 3.15
+(venv) and on 3.12.15, and 2.12.1 on 3.12.15 (`test_litestar.py` and the module's typing tests:
+all pass, the `FromPath` test skipped before 2.25). Totals: pytest 3,131 passed, 5 skipped, 7
+strict xfails (corpus set); `make test-robyn` 116 passed (3.14); upstream 227 passed and 6
+xpassed on each engine; Rust 102 core + 3 Markdown spec + 9 `chameleon-py`; `make lint` clean
+(rustfmt, clippy, cargo-deny, ruff check and format, ty 0 diagnostics). Integration (`make
+test-integration`): originals on the compat alias fastapi-chameleon 40, chameleon-flask 16,
+chameleon-robyn 39, chameleon_partials 6, **litestar-chameleon 2**; built-ins 40/16/39/6.
+
+Speed: no Rust change. `bench/bench_ab.py 2d1646e`, release, listing, 8 rounds, load 2.7:
+-4.0 ns per item (range -7..+0), within the +5 ns tolerance; 6.42x Chameleon.
+
+Open for Michael:
+- `chameleon_rs.litestar.Template` is needed for `.pt` names (a deliberate, documented import
+  change from `litestar.response.Template`); a global `mimetypes` registration was not made the
+  default.
+- The decorator's default status is the route's (201 for `@post`), unlike the other modules'
+  fixed 200, because a Litestar response without a status takes the route's.
+- The added `request` parameter (only when the handler has none) is a hidden signature change
+  Litestar sees; it is what gives decorated templates `url_for` and CSRF.
+- litestar-chameleon is not mapped by `compat.install()` (third party, different API); its
+  users can switch to `ChameleonEngine` with two import changes (migrating guide).
+
+Review fixes (2026-10-22, after the Rust Architect's review: no blockers; the reviewer's probes
+reproduced first):
+- `render_string` compiles with all of the loader's template options (a loader's `translate`
+  was ignored), caches by (loader, string) so a later `configure()` recompiles, and guards the
+  cache with a lock (eight threads x 300 renders in a test).
+- `get_template` lets the loader's lookup decide (a loader with `default_extension='.pt'`
+  found `home/index` but the engine said not found): the guard, then only the loader's
+  "Template not found" `ValueError` becomes `TemplateNotFoundException` (compile errors pass
+  through), with no separate stat.
+- Names with surrounding whitespace are refused by `ChameleonEngine` and Starlette's
+  `Templates`, as Jinja reports them not found (the shared guard stripped them).
+- litestar-chameleon installs into venv from the pinned clone (`--no-deps`; one pin with the
+  integration suite), and `make test-python` sets `CHAMELEON_RS_REQUIRE_LITESTAR_CHAMELEON=1`:
+  its two comparisons fail rather than skip when it is missing (checked in a venv without it).
+- Guide: `@delete` needs `status_code=200` with `@template` (204 has no body); a `@post` form
+  re-render answers 201 unless `status_code=` says otherwise; the decorator path's context
+  precedence vs Litestar's `Template`; a `-> Any` handler returning a `Template` is served as
+  `application/json`; only `litestar.Response` passes through; routes registered inside an
+  `on_startup` hook after the check are not checked.
+- Tests: `test_litestar.py` 51 (+7), `test_starlette.py` +3. Verification: pytest 3,141 passed,
+  5 skipped, 7 xfailed (corpus set); `make test-robyn` 116; upstream 227 + 6 xpassed per engine;
+  Rust 102 + 3 + 9; `make lint` clean (ty 0); integration 40/16/39/6/2 on the originals,
+  40/16/39/6 on the built-ins. A/B against 2d1646e (release, listing, 8 rounds, load 2.1):
+  -1.4 ns (range -47..+2), 6.49x Chameleon.
 
 ## Risks
 

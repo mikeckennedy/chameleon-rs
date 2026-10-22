@@ -30,7 +30,7 @@ Repository = "https://github.com/mikeckennedy/chameleon-rust"
 [dependency-groups]
 # What the compatibility, differential and benchmark code needs. The reference Chameleon and
 # chameleon_partials are installed editable from pinned clones in temp/ by `make dev`.
-dev = ["maturin>=1.15,<2", "pytest>=9", "hypothesis>=6", "pydantic>=2", "setuptools", "ruff", "flask[async]>=3", "quart>=0.20", "fastapi>=0.115", "httpx", "mistune>=3", "ty==0.0.90"]
+dev = ["maturin>=1.15,<2", "pytest>=9", "hypothesis>=6", "pydantic>=2", "setuptools", "ruff", "flask[async]>=3", "quart>=0.20", "fastapi>=0.115", "httpx", "mistune>=3", "litestar>=2.25,<3", "ty==0.0.90"]
 # The docs site (`make docs`). Quarto is installed separately and must be on PATH.
 docs = ["great-docs==0.13.0", "ipykernel"]
 

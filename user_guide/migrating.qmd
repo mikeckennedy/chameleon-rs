@@ -136,6 +136,29 @@ built-in. Differences:
 
 See [Robyn](robyn.qmd).
 
+## litestar-chameleon
+
+[litestar-chameleon](https://github.com/uyar/litestar-chameleon) is a third-party package, not
+built in: it keeps working as it is with `chameleon_rs.compat.install()`. To move to the
+built-in engine instead:
+
+```python
+from litestar_chameleon import ChameleonTemplateEngine
+from litestar.response import Template
+```
+
+becomes
+
+```python
+from chameleon_rs.litestar import ChameleonEngine as ChameleonTemplateEngine
+from chameleon_rs.litestar import Template   # .pt served as text/html
+```
+
+Differences: `url_for_static_asset` is registered too, a name outside the template folder is
+refused, a context key wins over a template callable of the same name (as for Jinja), the
+loader options are `ChameleonEngine` arguments (`CHAMELEON_RELOAD` rather than
+`CHAMELEON_AUTO_RELOAD`), and stock Chameleon need not be installed. See [Litestar](litestar.qmd).
+
 ## Pitfalls
 
 - **Install the alias first.** `chameleon_rs.compat.install()` must run before the first
