@@ -1424,6 +1424,37 @@ Release blockers. Each behaviour checked against Chameleon's generated code firs
   `async def` view); `tests/python/test_fastapi.py` asserts the types with `assert_type`, which
   ty checks.
 
+## Integrations amendments: Starlette (2026-10-22)
+
+- **`chameleon_rs.starlette`**, two layers. `Templates` is Starlette's `Jinja2Templates` for
+  chameleon-rs: `TemplateResponse(request, name, context, status_code, headers, media_type,
+  background)` with Starlette 1.x's behaviour (request set on the caller's dict, context
+  processors, `url_for`, the `http.response.debug` event), its loader from `directory` (one
+  folder or several) or, without one, the process-wide `starlette` settings slot read at each
+  render. `TemplateResponse_async` (same arguments, `concurrent` / `offload` keywords) renders
+  with `render_async`; the sync method stays sync for parity (default behaviour matches
+  Starlette; async is opt-in by name). `url_for` is passed as a template variable but kept out
+  of `response.context`, as Jinja's global is. `response.template` is the page template (no
+  Jinja `.name`; open for the owner). The decorator layer is the Flask/FastAPI module API on
+  `_views`, with Flask's `template()` signature.
+- **Starlette pieces shared with FastAPI.** `StarletteIntegration` (in `chameleon_rs.starlette`)
+  is the Starlette part of `_views.Integration`: `is_response` (any Starlette response),
+  `make_response` (`HTMLResponse`), `routes` (the walk over `Route`, `WebSocketRoute`, `Mount`,
+  `Host`, `Router`, sub-apps, FastAPI's lazily included routers, and `HTTPEndpoint` classes
+  expanded into their handler methods), `check_app`, and `watch` (the lifespan wrapper plus the
+  `_FirstRequestCheck` middleware-stack guard). `chameleon_rs.fastapi._FastAPI` subclasses it
+  with fastapi-chameleon's names, `fastapi.Response` and the FastAPI wording of the `TypeError`.
+  The FastAPI module therefore imports `chameleon_rs.starlette` (FastAPI depends on Starlette);
+  the Starlette module never imports FastAPI.
+- **`view_context(args)`** on `_views.Integration`: template variables the framework adds to a
+  view's model from the view's arguments, the model's own keys winning (`{**extra, **model}`).
+  Starlette returns `request` and `url_for` when an argument is a `Request` (function endpoints
+  get it first, `HTTPEndpoint` methods second); Flask and FastAPI return `None`, so their
+  models are unchanged.
+- **Settings:** `VIEW_SLOTS = ('flask', 'starlette', 'fastapi')`;
+  `chameleon_rs.starlette.configure()` sets the partials and its slot, `global_init` / `clear`
+  only its slot. Settings are process-wide, as FastAPI's.
+
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
 ```
