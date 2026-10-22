@@ -36,6 +36,14 @@ static TARGET: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static PREPARE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static RENDER_ERROR: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
+/// `chameleon_rs.partials.PartialRenderer`, for an exact type check by address.
+fn renderer_type(py: Python<'_>) -> PyResult<*mut pyo3::ffi::PyTypeObject> {
+    let class = RENDERER_TYPE.get_or_try_init(py, || {
+        Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs.partials"))?.getattr("PartialRenderer")?.unbind())
+    })?;
+    Ok(class.as_ptr().cast())
+}
+
 fn partials_attr<'py>(
     py: Python<'py>,
     cell: &'static PyOnceLock<Py<PyAny>>,
@@ -72,11 +80,21 @@ pub(crate) struct Unit<'py> {
     scope: Bound<'py, Scope>,
     /// How many keys the scope started with (its model): an error message lists them first.
     initial: usize,
-    /// The value `chameleon_partials` adds to the model as `render_partial` when the scope does
-    /// not hold it (a partial that never reads its scope as a whole is not given it: its
-    /// builtin of the same name is the same object).
-    added: Option<Bound<'py, PyAny>>,
+    /// What `chameleon_partials` adds to the model as `render_partial` when the scope does not
+    /// hold it (a partial that never reads its scope as a whole is not given it: its builtin of
+    /// the same name is the same object).
+    added: Added<'py>,
     pub(crate) rcontext: OnceCell<Bound<'py, PyDict>>,
+}
+
+/// The `render_partial` a partial's model gets (see [`Unit::added`]).
+enum Added<'py> {
+    /// The model has its own.
+    Nothing,
+    /// The partial template's builtin.
+    Own,
+    /// The function called (`chameleon_partials`' own).
+    Func(Bound<'py, PyAny>),
 }
 
 /// A call site's resolution in this render: the function called, the path, and the target
@@ -230,7 +248,7 @@ pub(crate) fn partial_step(
             None => return Ok(Step::Ready(eval(call, cx)?.unbind())),
         },
     };
-    let builtin = func.get_type().is(partials_attr(py, &RENDERER_TYPE, "PartialRenderer")?);
+    let builtin = func.get_type_ptr() == renderer_type(py)?;
     if !builtin && !func.is_instance_of::<pyo3::types::PyFunction>() {
         return Ok(Step::Ready(eval(call, cx)?.unbind()));
     }
@@ -250,13 +268,15 @@ pub(crate) fn partial_step(
     let initial = kwargs.len();
     let p = target.program.get();
     let added = if kwargs.iter().any(|(key, _)| key.bind(py).is(name)) {
-        None
-    } else {
-        let value = if builtin { target.own.clone().unwrap_or(func) } else { func };
-        if p.full_scope || !builtin || target.own.is_none() {
-            locals.set_item(name, &value)?;
+        Added::Nothing
+    } else if builtin && let Some(own) = &target.own {
+        if p.full_scope {
+            locals.set_item(name, own)?;
         }
-        Some(value)
+        Added::Own
+    } else {
+        locals.set_item(name, &func)?;
+        Added::Func(func)
     };
     if p.full_scope {
         // `page.render(encoding='utf-8', **template_data)`: the defaults it lacks, then a
@@ -271,15 +291,14 @@ pub(crate) fn partial_step(
             locals.set_item(repeat, new_repeat_dict(py)?)?;
         }
     }
-    let core = p.core.clone();
-    let unit =
-        Unit { serial: 0, target: Rc::clone(&target), scope: scope.clone(), initial, added, rcontext: OnceCell::new() };
-    *cx.render.partials.pending.borrow_mut() = Some(unit);
-    Ok(Step::Call(Call {
-        program: core,
+    let call = Call {
+        program: p.core.clone(),
         code: target.program.clone().into_any().unbind(),
-        scope: scope.into_any().unbind(),
-    }))
+        scope: scope.clone().into_any().unbind(),
+    };
+    *cx.render.partials.pending.borrow_mut() =
+        Some(Unit { serial: 0, target, scope, initial, added, rcontext: OnceCell::new() });
+    Ok(Step::Call(call))
 }
 
 /// The error a failed partial raises to its caller: `BaseTemplate.render`'s handler, with the
@@ -322,7 +341,12 @@ fn error_econtext<'py>(unit: &Unit<'py>) -> PyResult<Bound<'py, PyDict>> {
         }
     }
     let name = intern!(py, "render_partial");
-    if let Some(added) = &unit.added
+    let added = match &unit.added {
+        Added::Nothing => None,
+        Added::Own => unit.target.own.as_ref(),
+        Added::Func(func) => Some(func),
+    };
+    if let Some(added) = added
         && !out.contains(name)?
     {
         out.set_item(name, added)?;
