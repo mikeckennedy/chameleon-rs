@@ -2,7 +2,7 @@
 # fastapi_chameleon/engine.py and exceptions.py), modified: built into chameleon-rs on the shared
 # views core (`chameleon_rs._views`), sharing `chameleon_rs.configure()`, the `chameleon_rs.web`
 # exceptions and model conversion, rendering async views with `render_async`, with `error()`,
-# `status_code=` and the decorator-order check.
+# `status_code=` and the decorator-order check; built on chameleon_rs.starlette's pieces.
 """FastAPI integration: render chameleon-rs templates from views.
 
 Importing this module imports FastAPI (it is not imported by ``import chameleon_rs``). The API
@@ -57,15 +57,14 @@ Errors: ``chameleon_rs.web.TemplateError`` and ``NotFound``; fastapi-chameleon's
 
 from __future__ import annotations
 
-import contextlib
 import sys
-from collections.abc import AsyncGenerator, Callable, Coroutine, Iterable, Iterator, Mapping
+from collections.abc import Callable, Coroutine, Iterable, Mapping
 from typing import Any, NoReturn, Protocol, overload
 
 import fastapi
-import starlette.responses
 
-from chameleon_rs import _settings, _views
+from chameleon_rs import _settings
+from chameleon_rs.starlette import StarletteIntegration, _FirstRequestCheck, _walk  # noqa: F401 - _FirstRequestCheck, _walk: names kept
 from chameleon_rs.web import ErrorPage, NotFound, TemplateError
 
 __all__ = [
@@ -113,102 +112,23 @@ class FastAPIChameleonGenericException(ErrorPage, FastAPIChameleonException):
     ``template_file`` (with ``template_data``) and ``status_code``."""
 
 
-class _FirstRequestCheck:
-    """The app's middleware stack until the decorator-order check passed: runs it before the
-    first request (an app served without lifespan events, or a test client used without
-    ``with``), then puts the real stack back. ``app`` is the stack, as middleware name it."""
-
-    def __init__(self, owner: Any, app: Any, run: Callable[[], None]) -> None:
-        self.owner = owner
-        self.app = app
-        self.run = run
-
-    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
-        if scope['type'] in ('http', 'websocket'):
-            self.run()
-            if self.owner.middleware_stack is self:
-                self.owner.middleware_stack = self.app
-        await self.app(scope, receive, send)
-
-
-class _FastAPI(_views.Integration):
+class _FastAPI(StarletteIntegration):
+    # Starlette's part (responses, routes, the startup hooks), with fastapi-chameleon's names
+    # and response class.
     name = 'fastapi'
     module = __name__
     error = FastAPIChameleonException
     response_name = 'fastapi.Response'
     route_decorators = '@app.get, @router.get, @app.api_route, ...'
-
-    def is_response(self, value: Any) -> bool:
-        return isinstance(value, starlette.responses.Response)
+    app_kind = 'FastAPI or Starlette'
+    router_hint = 'an APIRouter is checked through the app that includes it'
 
     def make_response(self, html: str, content_type: str, status_code: int) -> fastapi.Response:
         return fastapi.Response(content=html, media_type=content_type, status_code=status_code)
 
-    def routes(self, app: Any) -> Iterator[tuple[Any, str]]:
-        yield from _walk(getattr(app, 'routes', ()), '', set())
-
-    def check_app(self, app: Any) -> None:
-        if not (hasattr(app, 'router') and hasattr(app, 'build_middleware_stack') and hasattr(app, 'routes')):
-            msg = (
-                f'app= takes a FastAPI or Starlette application, not {type(app).__name__} '
-                '(an APIRouter is checked through the app that includes it)'
-            )
-            raise TypeError(msg)
-
-    def watch(self, app: Any, check: Callable[[], None]) -> None:
-        # At startup, inside the lifespan (so a server reports a failed startup and exits),
-        # and before the first request when no lifespan ran.
-        passed = False
-
-        def run() -> None:
-            nonlocal passed
-            if not passed:
-                check()
-                passed = True
-
-        router = app.router
-        original_lifespan = router.lifespan_context
-
-        @contextlib.asynccontextmanager
-        async def lifespan(asgi_app: Any) -> AsyncGenerator[Any]:
-            run()
-            async with original_lifespan(asgi_app) as state:
-                yield state
-
-        router.lifespan_context = lifespan
-        original_build = app.build_middleware_stack
-
-        def build_middleware_stack() -> Any:
-            stack = original_build()
-            return stack if passed else _FirstRequestCheck(app, stack, run)
-
-        app.build_middleware_stack = build_middleware_stack
-        if getattr(app, 'middleware_stack', None) is not None:
-            app.middleware_stack = _FirstRequestCheck(app, app.middleware_stack, run)
-
-
-def _walk(routes: Iterable[Any], prefix: str, seen: set[int]) -> Iterator[tuple[Any, str]]:
-    """Every endpoint of these routes and the routes they mount (sub-applications, routers
-    mounted with ``Mount``, ``Host``), with ``METHODS /path``."""
-    for route in routes:
-        if id(route) in seen:
-            continue
-        seen.add(id(route))
-        path = prefix + str(getattr(route, 'path', '') or '')
-        endpoint = getattr(route, 'endpoint', None)
-        if endpoint is not None:
-            methods = getattr(route, 'methods', None)
-            kind = ','.join(sorted(set(methods) - {'HEAD'})) if methods else 'WEBSOCKET'
-            yield endpoint, f'{kind} {path}'
-        sub = getattr(route, 'routes', None)
-        if sub:
-            yield from _walk(sub, path, seen)
-        # A router included into another (FastAPI 0.13x and later include lazily: the app's
-        # routes hold the included router, not copies of its routes).
-        included = getattr(route, 'original_router', None)
-        if included is not None:
-            include_prefix = getattr(getattr(route, 'include_context', None), 'prefix', '') or ''
-            yield from _walk(getattr(included, 'routes', ()), prefix + str(include_prefix), seen)
+    def view_context(self, args: tuple[Any, ...]) -> None:
+        # fastapi-chameleon's model is the view's return value only.
+        return None
 
 
 _fastapi = _FastAPI()

@@ -30,6 +30,7 @@ PUBLIC: dict[str, tuple[str, ...] | None] = {
     'chameleon_rs.loader': None,
     'chameleon_rs.partials': None,
     'chameleon_rs.shadow': None,
+    'chameleon_rs.starlette': None,
     'chameleon_rs.template': None,
     'chameleon_rs.web': None,
     'chameleon_rs.zpt.loader': None,

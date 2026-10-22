@@ -752,7 +752,7 @@ def test_no_runtime_dependencies() -> None:
     result = run_python("""
         import importlib, importlib.abc, pkgutil, sys, sysconfig
         stdlib = sysconfig.get_paths()['stdlib']
-        FRAMEWORKS = {'chameleon_rs.flask', 'chameleon_rs.fastapi'}
+        FRAMEWORKS = {'chameleon_rs.flask', 'chameleon_rs.fastapi', 'chameleon_rs.starlette'}
 
         class Block(importlib.abc.MetaPathFinder):
             on = True
@@ -791,6 +791,7 @@ def test_no_runtime_dependencies() -> None:
         import fastapi_chameleon, fastapi_chameleon.engine
         from fastapi_chameleon.exceptions import FastAPIChameleonException
         assert fastapi_chameleon.engine is fastapi_chameleon is chameleon_rs.fastapi
+        assert 'chameleon.starlette' not in sys.modules and 'chameleon.fastapi' not in sys.modules
         print('ok')
     """)
     blocked = 'blocked: not the standard library: flask\nblocked: not the standard library: fastapi\n'
