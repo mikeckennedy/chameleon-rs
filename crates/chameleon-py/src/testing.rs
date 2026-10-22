@@ -51,6 +51,7 @@ fn build_tree(
                 chameleon_core::CompileError::Template { kind, message, token }
             }
             chameleon_core::CompileError::TooLarge => chameleon_core::CompileError::TooLarge,
+            chameleon_core::CompileError::TooDeep(e) => chameleon_core::CompileError::TooDeep(e),
             chameleon_core::CompileError::Expr(never) => match never {},
         };
         compile_error(py, e, body, "<string>")

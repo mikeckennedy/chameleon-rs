@@ -116,6 +116,7 @@ pub(crate) fn widen<E>(e: CompileError<Infallible>) -> CompileError<E> {
     match e {
         CompileError::Template { kind, message, token } => CompileError::Template { kind, message, token },
         CompileError::TooLarge => CompileError::TooLarge,
+        CompileError::TooDeep(e) => CompileError::TooDeep(e),
         CompileError::Expr(never) => match never {},
     }
 }

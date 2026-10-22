@@ -2,7 +2,9 @@
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use pyo3::exceptions::{PyAssertionError, PyAttributeError, PyKeyError, PyRuntimeError, PyTypeError, PyValueError};
+use pyo3::exceptions::{
+    PyAssertionError, PyAttributeError, PyKeyError, PyRecursionError, PyRuntimeError, PyTypeError, PyValueError,
+};
 use pyo3::intern;
 use pyo3::prelude::*;
 
@@ -22,6 +24,13 @@ pub(crate) fn unsupported_error(py: Python<'_>, what: &str) -> PyErr {
 }
 
 /// Converts a compile error, computing the code-point offset and `(line, column)` only now.
+/// A template nested too deeply to compile ([`chameleon_core::stack`]): `RecursionError`, as
+/// Chameleon raises (CPython's recursion limit) where a native stack overflow would kill the
+/// process.
+pub(crate) fn too_deep(e: chameleon_core::stack::TooDeep) -> PyErr {
+    PyRecursionError::new_err(e.to_string())
+}
+
 pub(crate) fn compile_error(py: Python<'_>, err: CompileError<PyErr>, src: &str, filename: &str) -> PyErr {
     compile_error_mapped(py, err, src, filename, None)
 }
@@ -38,6 +47,7 @@ pub(crate) fn compile_error_mapped(
     match err {
         CompileError::Expr(e) => e,
         CompileError::TooLarge => PyRuntimeError::new_err("template source is larger than 4 GiB"),
+        CompileError::TooDeep(e) => too_deep(e),
         CompileError::Template { kind, message, token } => {
             let class = match kind {
                 ErrorKind::Parse => "ParseError",

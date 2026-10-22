@@ -73,6 +73,10 @@ replacement. Documentation: <https://mkennedy.codes/docs/chameleon-rs/>.
   macro that a template's new source no longer defines (a reload) still renders its last
   version, which pyramid_chameleon's macro renderer relies on.
 - Every page of two production Flask/Quart sites renders byte-identical HTML.
+- A template nested too deeply to compile (elements, expression prefixes, `string:`, long
+  Python expressions) raises `RecursionError`, as in Chameleon, instead of overflowing the
+  native stack. The limit is a 1 MiB stack budget: at least as deep as Chameleon goes at the
+  default recursion limit, and safe on a 2 MiB thread.
 
 ### Performance
 

@@ -173,6 +173,20 @@ pub struct Element {
     pub children: Vec<Item>,
 }
 
+/// Iterative: the parser builds trees of any depth without recursing, and the default drop
+/// would recurse once per level (100,000 nested elements overflowed the native stack, which
+/// kills the process). Each element's children move to a heap stack before it drops.
+impl Drop for Element {
+    fn drop(&mut self) {
+        let mut pending = std::mem::take(&mut self.children);
+        while let Some(item) = pending.pop() {
+            if let Item::Element(mut element) = item {
+                pending.append(&mut element.children);
+            }
+        }
+    }
+}
+
 /// Prefix (`None` for `xmlns="..."`) to namespace URI, in insertion order like the dict
 /// Chameleon copies for every start tag.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -705,7 +719,7 @@ mod tests {
 
     fn first_tag(src: &str) -> Tag {
         match tree(src).into_iter().next() {
-            Some(Item::Element(e)) => e.start,
+            Some(Item::Element(e)) => e.start.clone(),
             Some(Item::StartTag(t)) => *t,
             other => panic!("{other:?}"),
         }

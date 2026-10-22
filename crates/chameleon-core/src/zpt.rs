@@ -140,6 +140,8 @@ impl Builder<'_> {
     }
 
     fn visit(&mut self, item: &Item) -> Result<Option<Node>> {
+        // Recursive over nested elements: a stack budget, not an overflow (`crate::stack`).
+        let _deep = crate::stack::enter()?;
         Ok(Some(match item {
             Item::Text(span) => self.visit_text(self.tok(*span)),
             Item::Comment(span) => return Ok(self.visit_comment(*span)),
@@ -325,6 +327,7 @@ impl Builder<'_> {
 
     #[allow(clippy::too_many_lines)] // `visit_element` is one long sequence of steps
     fn visit_element(&mut self, start: &Tag, end: Option<&Tag>, children: &[Item]) -> Result<Node> {
+        let _deep = crate::stack::enter()?;
         let (ns, attrs) = self.attributes(start)?;
         let get = |namespace: &str, name: &str| -> Option<Tok> {
             ns.iter().find(|e| &*e.ns == namespace && e.name.text == name).map(|e| e.value.clone())

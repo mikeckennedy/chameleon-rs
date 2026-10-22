@@ -99,6 +99,8 @@ impl<'py> PyExprCompiler<'_, 'py> {
     /// Lowers an `ast` node to the fast-path tree; `None` if any part is not on the whitelist.
     #[allow(clippy::too_many_lines)] // one arm per node type
     pub(crate) fn lower(&mut self, node: &Bound<'py, PyAny>, cx: ExprContext<'_>) -> PyResult<Option<Expr>> {
+        // Recursive over the Python AST (`1+1+...`): a stack budget (`chameleon_core::stack`).
+        let _deep = chameleon_core::stack::enter().map_err(crate::errors::too_deep)?;
         let py = self.py;
         macro_rules! sub {
             ($node:expr) => {

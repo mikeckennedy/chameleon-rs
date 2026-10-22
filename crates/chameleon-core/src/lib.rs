@@ -27,6 +27,7 @@ mod pychars_table;
 mod pyre;
 mod resolve;
 mod source;
+pub mod stack;
 pub mod surrogates;
 mod tal;
 mod tok;

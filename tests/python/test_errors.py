@@ -396,3 +396,53 @@ FALLBACK_FILTER_ERRORS = [
 @pytest.mark.parametrize(('source', 'kind'), FALLBACK_FILTER_ERRORS)
 def test_an_expression_error_wins_over_the_fallback_filter_error(source: str, kind: str) -> None:
     assert same(source)[:2] == ('raise', kind)
+
+
+DEEP_SHAPES = {
+    'elements': lambda n: '<div>' * n + 'x' + '</div>' * n,
+    'tal': lambda n: '<div tal:condition="1">' * n + 'x' + '</div>' * n,
+    'not': lambda n: '${' + 'not:' * n + '1}',
+    'string': lambda n: '${string:' * n + 'x' + '}' * n,
+    'string-attr': lambda n: '<p tal:attributes="a ' + 'string:${' * n + 'x' + '}' * n + '"/>',
+    'sum': lambda n: '${' + '+'.join(['1'] * n) + '}',
+    'attribute': lambda n: '${x' + '.real' * n + '}',
+}
+
+
+@pytest.mark.parametrize('shape', DEEP_SHAPES)
+def test_deep_nesting_is_a_recursion_error_not_a_crash(shape: str) -> None:
+    # Security: a native stack overflow kills the process (SIGSEGV); Chameleon raises
+    # RecursionError. In a subprocess, on a 2 MiB thread (Rust's default, servers' worker
+    # threads): every depth either compiles or raises.
+    import subprocess
+    import sys
+    import textwrap
+
+    code = textwrap.dedent(f"""
+        import threading, chameleon_rs
+        from tests.python.test_errors import DEEP_SHAPES
+        results = []
+        def run():
+            for n in (300, 3000, 100_000):
+                try:
+                    chameleon_rs.PageTemplate(DEEP_SHAPES[{shape!r}](n))(x=1)
+                    results.append('ok')
+                except RecursionError:
+                    results.append('RecursionError')
+        threading.stack_size(2 * 1024 * 1024)
+        thread = threading.Thread(target=run)
+        thread.start()
+        thread.join()
+        print(results)
+    """)
+    root = Path(__file__).parents[2]
+    done = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, cwd=root, check=False)
+    assert done.returncode == 0, done.stderr[-2000:]
+    assert done.stdout.strip().endswith("'RecursionError']"), done.stdout
+
+
+@pytest.mark.parametrize('shape', DEEP_SHAPES)
+def test_nesting_chameleon_compiles_compiles_here_too(shape: str) -> None:
+    # Chameleon's own limit at the default recursion limit is 121-321 levels by shape.
+    source = DEEP_SHAPES[shape](330 if shape in {'not'} else 250 if shape in {'string', 'string-attr', 'sum'} else 165)
+    chameleon_rs.PageTemplate(source)(x=1)

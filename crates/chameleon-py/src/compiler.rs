@@ -257,6 +257,8 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
     /// Chameleon's slicing gives. `top`: the whole emitted expression (where a native
     /// `render_partial` frame is possible).
     pub(crate) fn typed(&mut self, source: &Tok, cx: ExprContext<'_>, top: bool) -> CompileResult<Expr> {
+        // Recursive over nested prefixes and `string:` interpolations (`chameleon_core::stack`).
+        let _deep = chameleon_core::stack::enter().map_err(|e| ExprCompileError::Other(crate::errors::too_deep(e)))?;
         let (prefix, expression) = match match_prefix(&source.text) {
             Some((prefix, rest)) => (prefix.to_owned(), source.slice_from(source.text.len() - rest.len())),
             None => (self.config.default_type.clone(), source.clone()),

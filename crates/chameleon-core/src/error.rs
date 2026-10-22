@@ -85,6 +85,10 @@ pub enum CompileError<E> {
     Expr(#[source] E),
     #[error("template source is larger than 4 GiB")]
     TooLarge,
+    /// Nested too deeply to compile without exhausting the native stack ([`crate::stack`]):
+    /// Python's `RecursionError`, as Chameleon raises.
+    #[error(transparent)]
+    TooDeep(#[from] crate::stack::TooDeep),
 }
 
 impl<E> CompileError<E> {
