@@ -1393,16 +1393,23 @@ enum Unwind<V> {
         /// Boxed: the unwind stack's entries stay small (they are moved on every push).
         translation: Box<OpenTranslation>,
     },
-    /// An `i18n:name` stream: where it starts, its id, and which name of which program.
+    /// An `i18n:name` stream: where it starts, its id, which name of which program, and the
+    /// slot body output that belongs before it ([`OpenTranslation::before`]).
     Name {
         mark: Mark,
         id: u64,
         program: Arc<Program>,
         info: u32,
+        /// Boxed, allocated only when used: the unwind stack's entries stay small.
+        before: Option<Box<Before>>,
     },
     /// Output captured as a value (a translated attribute's interpolation).
     Capture(Mark),
 }
+
+/// Slot body output kept aside before an `i18n:name` stream ([`OpenTranslation::before`]).
+#[derive(Debug, Default)]
+struct Before(Vec<u8>);
 
 /// An open `i18n:translate`: which translation of which program, and its names' values.
 #[derive(Debug)]
@@ -1410,6 +1417,11 @@ struct OpenTranslation {
     program: Arc<Program>,
     info: u32,
     names: Vec<NameValue>,
+    /// Slot body output that belongs before the stream (in the stream it was opened in, at
+    /// `mark`), written there when the stream closes: kept aside rather than inserted at
+    /// `mark` each time, which would move the stream's text on every flush (quadratic in a
+    /// loop of macro calls; see [`VmState::move_to_stream`]).
+    before: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -1666,14 +1678,11 @@ impl<V> VmState<V> {
         }
     }
 
-    /// The active slot body is about to change its own i18n settings: its conversion helpers
-    /// keep the ones it has (see [`Extra::helpers`]).
+    /// The active frame, a slot body (the caller checks), is about to change its own i18n
+    /// settings: its conversion helpers keep the ones it has (see [`Extra::helpers`]).
     #[cold]
     fn keep_helpers<R: Runtime<Value = V>>(&mut self, rt: &mut R) {
         let Some(frame) = self.frames.last_mut() else { return };
-        if frame.kind != Kind::Fill {
-            return;
-        }
         if let Some(extra) = &mut frame.extra
             && extra.helpers.is_none()
         {
@@ -1713,8 +1722,9 @@ impl<V> VmState<V> {
     }
 
     /// Where a slot body's output bound for `stream` goes: before the first translation stream
-    /// opened since; `None` if there is none (it is already in place).
-    fn move_target(&self, stream: Option<u64>) -> Option<Mark> {
+    /// opened since (its index in the unwind stack and its mark); `None` if there is none (it
+    /// is already in place).
+    fn move_target(&self, stream: Option<u64>) -> Option<(usize, Mark)> {
         let base = match stream {
             None => 0,
             Some(id) => {
@@ -1724,10 +1734,54 @@ impl<V> VmState<V> {
                 at + 1
             }
         };
-        self.unwind.get(base..)?.iter().find_map(|e| match e {
-            Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } => Some(*mark),
+        self.unwind.get(base..)?.iter().enumerate().find_map(|(i, e)| match e {
+            Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } => Some((base + i, *mark)),
             _ => None,
         })
+    }
+
+    /// Calls `f` on every mark into the output the render holds.
+    fn for_each_mark(&mut self, mut f: impl FnMut(&mut Mark)) {
+        for entry in &mut self.unwind {
+            match entry {
+                Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } | Unwind::Capture(mark) => f(mark),
+                Unwind::Attr { start, value } => {
+                    f(start);
+                    f(value);
+                }
+                _ => {}
+            }
+        }
+        for frame in &mut self.frames {
+            f(&mut frame.fallback);
+            if let Some(extra) = &mut frame.extra {
+                f(&mut extra.start);
+            }
+        }
+    }
+
+    /// The unwind entries from `at` up are about to be dropped without closing (an error):
+    /// the slot body output kept aside before their streams goes into the output at their
+    /// marks, where the handler's truncation then sees it as Chameleon's stream holds it.
+    #[cold]
+    fn place_before_from(&mut self, at: usize) {
+        for i in (at..self.unwind.len()).rev() {
+            let (mark, bytes) = match self.unwind.get_mut(i) {
+                Some(Unwind::Translate { mark, translation, .. }) => (*mark, std::mem::take(&mut translation.before)),
+                Some(Unwind::Name { mark, before, .. }) => (*mark, before.take().map(|b| b.0).unwrap_or_default()),
+                _ => continue,
+            };
+            if bytes.is_empty() {
+                continue;
+            }
+            self.out.insert_at(mark, &bytes);
+            let n = bytes.len();
+            self.for_each_mark(|m| {
+                if *m >= mark {
+                    *m = m.shifted(n);
+                }
+            });
+        }
     }
 
     /// A handler in a slot body caught an error (its own entries above it already dropped).
@@ -1816,43 +1870,34 @@ impl<V> VmState<V> {
     /// the `metal:define-slot`), it belongs before the first of them. Marks in the moved output
     /// end up at `end`: they belong to the define-slot site's stream (`tal:on-error` in the
     /// body truncates `__stream`, not what the body appended).
+    ///
+    /// The output is taken out and kept aside in that stream's entry (`before`), written at
+    /// its mark when the stream closes ([`VmState::place_before_from`] on an error): moving it
+    /// into place now would move everything written since, on every flush.
     fn move_to_stream(&mut self, stream: Option<u64>, start: Mark, end: Mark) {
-        let Some(first) = self.move_target(stream) else { return };
+        let Some((target, first)) = self.move_target(stream) else { return };
         // `first` after `start`: the first such stream is the body's own, so its output is in
         // place (only reachable with `end` at that stream, from `flush_fill`).
         if end <= start || first > start {
             return;
         }
-        self.out.move_back(first, start, end);
+        let bytes = self.out.cut(start, end);
+        match self.unwind.get_mut(target) {
+            Some(Unwind::Translate { translation, .. }) => translation.before.extend_from_slice(&bytes),
+            Some(Unwind::Name { before, .. }) => before.get_or_insert_default().0.extend_from_slice(&bytes),
+            _ => {}
+        }
         let n = end.position() - start.position();
         // A partial move leaves what follows `end` in place (a stale mark past the output's
-        // end still goes to `end` in a full move).
-        let partial = end < self.out.mark();
-        let shift = |m: &mut Mark| {
+        // end goes to the new end in a full move).
+        let partial = end < self.out.mark().shifted(n);
+        self.for_each_mark(|m| {
             if partial && *m >= end {
-                // After the moved output: in place.
+                *m = m.unshifted(n);
             } else if *m >= start {
-                *m = end;
-            } else if *m >= first {
-                *m = m.shifted(n);
+                *m = start;
             }
-        };
-        for entry in &mut self.unwind {
-            match entry {
-                Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } | Unwind::Capture(mark) => shift(mark),
-                Unwind::Attr { start, value } => {
-                    shift(start);
-                    shift(value);
-                }
-                _ => {}
-            }
-        }
-        for frame in &mut self.frames {
-            shift(&mut frame.fallback);
-            if let Some(extra) = &mut frame.extra {
-                shift(&mut extra.start);
-            }
-        }
+        });
     }
 }
 
@@ -2242,13 +2287,16 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
             // Settings changed inside keep their values (no `finally`): the runtime must see
             // the frame's settings as they are now.
             let changed = st.unwind[at..].iter().any(|e| matches!(e, Unwind::I18n(_)));
+            st.place_before_from(at);
             unfinished_names(&mut st.unwind, at, &st.out);
             let abandoned = st.unwind[at..].iter().find_map(|e| match e {
                 Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } => Some(*mark),
                 _ => None,
             });
             st.unwind.truncate(at);
-            frame.pc = handler;
+            if let Some(frame) = st.frames.last_mut() {
+                frame.pc = handler;
+            }
             if changed {
                 i18n_changed(st, rt).map_err(VmError::Runtime)?;
             }
@@ -2286,6 +2334,10 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
         let kind = frame.kind;
         if kind != Kind::Fill {
             rt.record_error(&error, ErrorSite::unpack(st.recent));
+        }
+        // The frame's streams are abandoned (a frame that returns has closed its own).
+        if let Some(frame) = st.frames.last() {
+            st.place_before_from(frame.unwind_base);
         }
         st.pop_frame();
         if kind == Kind::Partial {
@@ -2842,8 +2894,13 @@ fn execute_rare<R: Runtime>(
                 },
                 slots: frame.slots().iter().map(|s| s.as_ref().map(|v| rt.clone_value(v))).collect(),
                 stream,
-                // A fill defined in a slot body belongs to the same render function as the body.
-                helpers: if frame.kind == Kind::Fill { fill_helpers(frame, rt) } else { None },
+                // A fill defined in a slot body belongs to the same render function as the body
+                // (also one a foreign macro called: `VmState::with_helpers`).
+                helpers: if frame.kind == Kind::Fill || helpers_of(frame).is_some() {
+                    fill_helpers(frame, rt)
+                } else {
+                    None
+                },
             };
             rt.fill_slot(&f.name, fill, f.extend).map_err(rt_err)?;
         }
@@ -2923,15 +2980,18 @@ fn execute_rare<R: Runtime>(
                     program: Arc::clone(shared),
                     info,
                     names: vec![NameValue::Text(Wtf8Buf::default()); t.names.len()],
+                    before: Vec::new(),
                 }),
             });
         }
         Op::TranslateEnd { info } => {
             let t = program.tables.translates.get(info as usize).ok_or(VmError::Internal("bad translation"))?;
-            let Some(Unwind::Translate { mark, translation, .. }) = st.unwind.pop() else {
+            let Some(Unwind::Translate { mark, mut translation, .. }) = st.unwind.pop() else {
                 return Err(VmError::Internal("translate_end without its translation"));
             };
             let content = st.take_text(mark)?;
+            // Slot body output that belongs before the translation's result.
+            st.out.push(&std::mem::take(&mut translation.before));
             let default = content.normalize_space();
             let msgid = match t.msgid {
                 Some(m) => Msgid::Source(program.text_str(m)),
@@ -2946,14 +3006,17 @@ fn execute_rare<R: Runtime>(
         }
         Op::NameBegin { info } => {
             let id = st.next_serial();
-            st.unwind.push(Unwind::Name { mark: st.out.mark(), id, program: Arc::clone(shared), info });
+            st.unwind.push(Unwind::Name { mark: st.out.mark(), id, program: Arc::clone(shared), info, before: None });
         }
         Op::NameEnd { info } => {
             let n = program.tables.names.get(info as usize).ok_or(VmError::Internal("bad name"))?;
-            let Some(Unwind::Name { mark, .. }) = st.unwind.pop() else {
+            let Some(Unwind::Name { mark, before, .. }) = st.unwind.pop() else {
                 return Err(VmError::Internal("name_end without its name"));
             };
             let content = st.take_text(mark)?;
+            if let Some(before) = before {
+                st.out.push(&before.0);
+            }
             set_name(&mut st.unwind, shared, n, NameValue::Text(content));
             st.out.push(b"${");
             st.out.push(text(program, n.name)?);
@@ -3207,4 +3270,14 @@ fn bind_or_exit<R: Runtime>(
         rt.restore(name, backup).map_err(VmError::Runtime)?;
     }
     Ok(exit)
+}
+
+#[cfg(test)]
+mod size_tests {
+    /// Unwind entries are moved on every push: kept at 48 bytes (a slot body's kept-aside
+    /// output is boxed for that).
+    #[test]
+    fn unwind_entries_stay_small() {
+        assert_eq!(std::mem::size_of::<super::Unwind<u64>>(), 48);
+    }
 }

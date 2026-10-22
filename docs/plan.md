@@ -1541,8 +1541,8 @@ Details: architecture.md, "Phase 12 amendments".
   body had no stream of its own open; with one open, the body's earlier output (`<b>`) stayed
   where it was until the body returned, and the other fill of the same extend-macro, taken by
   the recursive call and writing to the same stream, landed before it. Now the output before
-  the body's first open stream moves before the call (an in-place rotation,
-  `Output::move_back`); the rest stays the body's. Twelve neighbouring cases compared with
+  the body's first open stream moves before the call (first an in-place rotation; after the
+  review, kept aside until the stream closes); the rest stays the body's. Twelve neighbouring cases compared with
   Chameleon in `test_macros.py` (not recursive, the body's translation or name after text of
   its own, two names and two slots, nested extend-macro three ways, a slot outside any
   translation, handlers before and around the body's translation); eight of them differed
@@ -1583,6 +1583,44 @@ Details: architecture.md, "Phase 12 amendments".
   read -8 ns on the macro scenario, the noise floor of these runs. The stream fix alone was
   free (macro -13 ns); the helpers cost nothing until a render has a slot body with settings
   of its own (one test per frame activation).
+- **Review fixes (2026-10-22, after the Rust Architect's review; no blockers):**
+  - A fill defined in a slot body that a stock Chameleon macro called (`VmState::with_helpers`,
+    a frame that is not a `Kind::Fill`) took the body's own i18n settings for its helpers, not
+    the render function's (`d1` against Chameleon's `d0`); it now takes the frame's helpers
+    whenever it has some. Test: `test_conversion_in_a_fill_defined_in_a_slot_body_a_foreign_macro_called`.
+  - Quadratic slot moves (present since Phase 6b): a slot inside `i18n:translate`/`i18n:name`
+    whose body loops over macro calls moved, on every flush, everything written into the
+    translation since (16,000 rows: Chameleon 29 ms, chameleon-rs 375 ms). The moved output is
+    now kept aside in the stream's unwind entry and written when the stream closes, or placed
+    at its mark when an error abandons the stream, so handlers see what they saw before:
+    5.3 ms (4.1 ms without the translation), linear. Scaling test:
+    `test_slot_body_output_moved_before_a_translation_scales_linearly`. The name entry's
+    buffer is boxed so unwind entries stay 48 bytes (a test pins it; the unboxed field cost
+    the listing about 6 ns).
+  - The left-over-fill strict xfail now covers what it is: any later macro call (direct, or
+    through another macro) while the function's domain, context or target differ, with or
+    without settings in the body (4 strict xfails, each differing today).
+  - New strict xfail, pre-existing difference of the text-node family:
+    `test_i18n.test_handler_on_a_name_maps_it_to_its_appends` (a handler on an `i18n:name`:
+    Chameleon maps the name to its list of appends and drops a failing text node of a macro
+    called inside it).
+  - Nits: `Output::cut`/`insert_at` debug-assert their marks (`move_back` is gone), the
+    `Kind::Fill` test before `keep_helpers` is done once, at the call sites.
+  - The render fuzzer found a left-over fill of that kind (a fill under `i18n:domain="u"` on
+    a macro call that did not take it, converting a list in a later call outside the domain;
+    8c147d9 differs too): the macro/i18n generator no longer puts `i18n:domain` on the call
+    element itself.
+  - Verification: Rust 97 core + 9 `chameleon-py`; pytest 2,857 passed, 2 skipped, 7 strict
+    xfails (corpus set); upstream 227 passed and 6 xpassed on each engine;
+    `make test-integration` green; render fuzzers 4,000 examples each plus 6,000 more on
+    macros/i18n, clean; `make lint` clean. Not from this phase, to fix separately: an earlier
+    run of `test_async.test_generated_partials_render_async_like_chameleon_partials` found
+    `<p a="1" tal:on-error="string:E" tal:attributes="x; v | 1/z"></p>`, whose compilation
+    raises `AttributeError: 'NoneType' object has no attribute '_fields'` where Chameleon
+    raises `ExpressionError` (it needs the static attribute, the handler and the invalid
+    `tal:attributes` together; 239fd36 does the same).
+  - A/B (release, 12 rounds, load 4.5-6.7): against 8c147d9 (12a before the review) listing
+    -0.6 ns; against 239fd36 listing +3.9 ns (range +0..+12) and macro -18.9 ns.
 
 ## Risks
 

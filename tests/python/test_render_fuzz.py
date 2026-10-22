@@ -386,7 +386,11 @@ def use_macro(draw: Any, depth: int) -> str:
     # text node and its expressions at once, so a failing expression drops the text before it
     # (a known difference: test_macros.test_handler_in_a_slot_body_drops_the_failing_text_node).
     translated = 'mt' in expr
-    extra = draw(st.sampled_from(['', ' tal:define="x 5"', ' tal:on-error="string:E"', ' i18n:domain="u"']))
+    # No `i18n:domain` on the call itself: a fill the macro does not take is left over, and a
+    # later call outside that domain takes it, where Chameleon's conversion helpers see the
+    # settings at that call (a known difference: test_i18n.
+    # test_conversion_in_a_left_over_slot_body_uses_its_functions_settings_at_the_call).
+    extra = draw(st.sampled_from(['', ' tal:define="x 5"', ' tal:on-error="string:E"']))
     if attr == 'metal:extend-macro':
         extra += f' metal:define-macro="{draw(st.sampled_from(["m1", "m2"]))}"'
     fills = []

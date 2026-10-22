@@ -683,3 +683,29 @@ def test_slot_body_output_before_its_own_translation_precedes_the_call(source: s
         x=1,
         translate=lambda msgid, **kw: repr([msgid, sorted((kw.get('mapping') or {}).items())]),
     )
+
+
+def test_slot_body_output_moved_before_a_translation_scales_linearly() -> None:
+    """A slot inside `i18n:translate`/`i18n:name` whose body calls a macro per item: each call
+    moves the body's output before the translation. Moving it into place each time moved all
+    the output written since, quadratic in the items (16,000 rows: 375 ms against Chameleon's
+    29 ms); it is kept aside and written when the translation closes. Compared with the same
+    page without the translation, in the same process, so the machine's load cancels out."""
+    import time
+
+    src = (
+        '<tal:d condition="False"><p metal:define-macro="row">' + 'x' * 200 + '</p>'
+        '<div metal:define-macro="lay" i18n:translate="">T<s i18n:name="n" metal:define-slot="s"/></div></tal:d>'
+        """<div metal:use-macro="macros['lay']"><b metal:fill-slot="s"><tal:r repeat="i range(N)">${i}"""
+        """<z metal:use-macro="macros['row']"/></tal:r></b></div>"""
+    )
+    plain = src.replace(' i18n:translate=""', '').replace(' i18n:name="n"', '')
+    translated_t, plain_t = chameleon_rs.PageTemplate(src), chameleon_rs.PageTemplate(plain)
+    assert translated_t(N=3) == chameleon.PageTemplate(src)(N=3)
+    best = {'translated': float('inf'), 'plain': float('inf')}
+    for _ in range(3):
+        for name, t in (('translated', translated_t), ('plain', plain_t)):
+            start = time.perf_counter()
+            t(N=16000)
+            best[name] = min(best[name], time.perf_counter() - start)
+    assert best['translated'] < 4 * best['plain'], best
