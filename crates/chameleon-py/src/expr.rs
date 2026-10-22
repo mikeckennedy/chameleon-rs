@@ -462,6 +462,8 @@ pub(crate) struct RenderCtx<'py> {
     /// Tasks started for placeholders, in document order, and the placeholders' nonce.
     pub(crate) deferred: RefCell<Vec<crate::deferred::Deferred>>,
     pub(crate) nonce: u64,
+    /// An asynchronous render's answers to "is this type awaitable".
+    pub(crate) await_types: crate::awaitable::AwaitTypes<'py>,
 }
 
 /// What expressions see of the active frame: its template's builtins (a macro's are those
@@ -517,6 +519,7 @@ impl<'py> RenderCtx<'py> {
             defer_next: Cell::new(false),
             deferred: RefCell::new(Vec::new()),
             nonce: 0,
+            await_types: RefCell::new(Vec::new()),
         }
     }
 
@@ -563,6 +566,7 @@ impl<'py> RenderCtx<'py> {
             defer_next: Cell::new(false),
             deferred: RefCell::new(saved.deferred),
             nonce: saved.nonce,
+            await_types: RefCell::new(Vec::new()),
         }
     }
 }

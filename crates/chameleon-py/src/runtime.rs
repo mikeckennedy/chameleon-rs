@@ -54,7 +54,9 @@ impl<'a, 'py, const ASYNC: bool> PyRuntime<'a, 'py, ASYNC> {
     fn eval_async(&self, e: &crate::expr::Expr, emitted: bool) -> PyResult<Step<Py<PyAny>>> {
         let step = if emitted { eval_emitted(e, &self.cx())? } else { Step::Ready(eval(e, &self.cx())?.unbind()) };
         match step {
-            Step::Ready(v) if crate::awaitable::is_awaitable(v.bind(self.py))? => Ok(Step::Suspend(v)),
+            Step::Ready(v) if crate::awaitable::is_awaitable_with(v.bind(self.py), Some(&self.render.await_types))? => {
+                Ok(Step::Suspend(v))
+            }
             step => Ok(step),
         }
     }

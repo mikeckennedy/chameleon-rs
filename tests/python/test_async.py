@@ -877,6 +877,23 @@ def test_concurrent_values_in_a_sync_render_are_values() -> None:
         call.awaitable.close()
 
 
+def test_offload_renders_in_a_worker_thread(tmp_path: Path) -> None:
+    import threading
+
+    seen: list[str] = []
+
+    def where() -> str:
+        seen.append(threading.current_thread().name)
+        return 'x'
+
+    page = PageTemplate('<p>${where()} ${n}</p>')
+    assert run(page.render_async(offload=True, where=where, n=1)) == '<p>x 1</p>'
+    assert seen and seen[0] != threading.main_thread().name
+    (tmp_path / 't.txt').write_text('a${n}')
+    text = chameleon_rs.PageTextTemplateFile(str(tmp_path / 't.txt'))
+    assert run(text.render_async(offload=True, n='é')) == 'aé'.encode()
+
+
 def test_partial_fan_out(tmp_path: Path, configured: Path) -> None:
     (tmp_path / 'card.pt').write_text('<li tal:define="d data">${title}:${d}${render_partial("inner.pt", v=d)}</li>')
     (tmp_path / 'inner.pt').write_text('<i>${v}</i>')

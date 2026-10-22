@@ -65,6 +65,10 @@ Opt-in concurrency (it changes the order in which helpers run):
 - `PageTemplate(..., concurrent=True)` (or `@template(..., concurrent=True)` in Flask):
   `render_partial(...)` calls of the page whose arguments are awaitable render concurrently.
 
+Experimental: `render_async(..., offload=True)` (or `@template(..., offload=True)`) renders in a
+worker thread. On free-threaded Python (3.14t) renders then run in parallel with the event loop;
+on a GIL build it helps only pages dominated by long text. Measurements: `docs/plan.md`, Phase 11.
+
 ## Development
 
 ```sh

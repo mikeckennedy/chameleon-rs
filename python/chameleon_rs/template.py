@@ -20,6 +20,7 @@ class attributes on a subclass, as in Chameleon: ``auto_reload``, ``encoding``,
 
 from __future__ import annotations
 
+import asyncio
 import builtins as _builtins_module
 import datetime
 import hashlib
@@ -698,7 +699,7 @@ class PageTemplate(BaseTemplate):
         # the keywords, the defaults they lack and a fresh `repeat`.
         return render_page(self, encoding, kw)  # type: ignore[no-any-return]
 
-    async def render_async(self, encoding: str | None = None, **kw: Any) -> str:
+    async def render_async(self, encoding: str | None = None, *, offload: bool = False, **kw: Any) -> str:
         """Render template to string, awaiting awaitable values (D9).
 
         The same as ``render``, except that when an expression's final value is awaitable (a
@@ -712,8 +713,15 @@ class PageTemplate(BaseTemplate):
         ``${...}`` are awaited concurrently, and with the template setting ``concurrent=True``
         native partials called with an awaitable argument render concurrently (see
         ``chameleon_rs._async``).
+
+        Experimental, opt-in: ``offload=True`` runs ``render`` (synchronous: awaitable values
+        are not awaited) in the event loop's default executor, a worker thread, and awaits it.
+        On a free-threaded build renders then run in parallel with the event loop and each
+        other; on a GIL build it helps only renders dominated by long text, whose escaping
+        releases the GIL (docs/plan.md, Phase 11 results). ``offload`` is therefore not a
+        template variable here.
         """
-        return await _render_async(self, encoding, kw, self.concurrent)
+        return await _render_async(self, encoding, kw, self.concurrent, offload)
 
     def _encoded_defaults(self, encoding: str | None, translate: Callable[..., Any] | None) -> dict[str, Any]:
         """The defaults for an `encoding` or `translate` argument, kept while the arguments and
@@ -747,9 +755,14 @@ class PageTemplate(BaseTemplate):
         return digest.hexdigest()[:32]
 
 
-async def _render_async(template: PageTemplate, encoding: str | None, kw: dict[str, Any], concurrent: bool) -> str:
-    """``PageTemplate.render_async`` with ``concurrent`` given (the integrations' per-view
-    setting)."""
+async def _render_async(
+    template: PageTemplate, encoding: str | None, kw: dict[str, Any], concurrent: bool, offload: bool = False
+) -> str:
+    """``PageTemplate.render_async`` with ``concurrent`` and ``offload`` given (the
+    integrations' per-view settings)."""
+    if offload:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, partial(PageTemplate.render, template, encoding, **kw))  # type: ignore[no-any-return]
     result = render_page_async(template, encoding, kw, bool(concurrent))
     if isinstance(result, RenderAwaitable):
         return await result  # type: ignore[no-any-return]
@@ -907,8 +920,8 @@ class PageTextTemplateFile(PageTemplateFile):
         result = super().render(encoding, **kw)
         return result.encode(self.encoding or 'utf-8')
 
-    async def render_async(self, encoding: str | None = None, **kw: Any) -> bytes:  # type: ignore[override]
-        result = await super().render_async(encoding, **kw)
+    async def render_async(self, encoding: str | None = None, *, offload: bool = False, **kw: Any) -> bytes:  # type: ignore[override]
+        result = await super().render_async(encoding, offload=offload, **kw)
         return result.encode(self.encoding or 'utf-8')
 
 

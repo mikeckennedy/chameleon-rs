@@ -1053,6 +1053,119 @@ chameleon_partials at `f54ca1a` on Chameleon (its `render_partial` calls
   synchronous render (and for releasing the GIL around one), but a render that suspends needs
   the units in the `VmState` as `Py<...>`.
 
+## Phase 11 amendments (2026-10-21)
+
+`render_async`, opt-in concurrency, and the render-offload experiment. The reference is
+still Chameleon: with no awaitable value an async render must give exactly what `render`
+gives, which `tests/python/test_async.py` checks against Chameleon for every upstream fixture
+and the three render fuzzers; a generated-template fuzzer puts `aw(v)` (a coroutine) at every
+value position and compares with Chameleon's render where `aw(v)` is `v`.
+
+- **D9 as built: `RenderAwaitable`.** `PageTemplate.render_async` is an `async def` awaiting
+  `_native.render_page_async(...)` (the same setup as `render_page`: defaults, `cook_check`,
+  scope; a template with its own `_render` renders synchronously). The awaitable is a
+  non-frozen pyclass: PyO3's borrow flag (atomic on free-threaded builds) makes a second call
+  while one runs `ValueError('coroutine already executing')`, so no `Mutex` is needed. It
+  implements `__await__` (itself), `__next__`, `send`, `throw` (one-argument and legacy
+  three-argument forms), `close`, `__traverse__` and `__clear__`. Each step binds the saved
+  state, runs the VM (`run`, or `throw` to raise at the suspended instruction), and saves it.
+- **What is awaited.** `PyRuntime::eval` of an async render (`RenderCtx::awaits`, one branch on
+  the sync path) checks the expression's final value: not for exact `str`, `int`, `bool`,
+  `float`, `list`, `tuple`, `dict`, `bytes` or `None`; yes when `type(value)` has `__await__`
+  (the type, not an instance attribute, as `await` uses the type slot) or the value is a
+  generator flagged `CO_ITERABLE_COROUTINE` (`@types.coroutine`). Every VM site that evaluates
+  an expression already handled `Step::Suspend` (Phase 2 design): content, attributes,
+  conditions, defines, repeat sources, switch/case, omit-tag, macro names, i18n names and
+  attributes, on-error handlers. Values computed inside an expression are not awaited
+  (`coro().title` is the coroutine's attribute), nor is a native partial's keyword argument
+  until the partial writes it. A value is awaited once: an awaitable result is a value.
+- **Delegation (PEP 380).** `await_iter`: `type(v).__await__(v)` (a non-iterator result is
+  `TypeError("__await__() returned non-iterator of type ...")`), or the iterable coroutine
+  itself. `send(None)` calls the delegate's `__next__`, other values its `send`; `throw`
+  delegates to the delegate's `throw` (absent: raised in the render), and `GeneratorExit`
+  closes the delegate and is raised in the render; `StopIteration.value` resumes the VM
+  (`VmState::resume_with`), any other exception is raised at the suspended instruction
+  (`chameleon_core::throw`), so `tal:on-error` catches an awaited value's `Exception` and
+  cancellation (`CancelledError`, a `BaseException`) passes through. `send` of a non-`None`
+  value to a fresh render is a `TypeError`; a finished render raises `RuntimeError('cannot
+  reuse already awaited coroutine')`; `close()` closes the delegate and drops the state; a
+  render dropped while suspended drops its references (the delegate's own finalizer closes
+  it).
+- **State across suspension (the Phase 2 and Phase 9 carried items).** The VM state was
+  already `Py`-only. The render-wide state (`RenderCtx`: `rcontext`, the partial unit stack and
+  pending unit, the render's partial resolutions and prepared targets, code-block namespaces,
+  the nested error token, the scope-exposed flag) holds `Bound` references on the sync path;
+  `RenderCtx::save` / `restore` convert it to and from `SavedRender` (`Py`, shared targets
+  converted once each) at each suspension, instead of moving the unit stack into `VmState`:
+  the sync path keeps its `Bound` fast path and pays nothing, and a suspension pays a few
+  reference moves. `__traverse__` visits the VM state (`VmState::for_each_value`), the saved
+  render state, the program, scope and delegate; `__clear__` drops them. PyO3 skips the
+  traversal of an object borrowed mutably (a running render), which only delays collection.
+- **Recursion budget.** An async render's frames are not on the interpreter's stack, and the
+  stack at a resume is the event loop's: `frame_budget` is the recursion limit less a fixed
+  reserve of 64 instead of walking `sys._getframe` (infinite macro recursion is still a
+  `RecursionError`).
+- **Errors.** As in a sync render, an error that ends the render is formatted with the
+  render's `rcontext['__error__']`; in an async render a non-`Exception` (cancellation) passes
+  through unformatted, both at the top and out of a native partial (`partial_failed`): the
+  formatted class would subclass `RenderError`, an `Exception`, which `tal:on-error` catches.
+- **Async iterables in `tal:repeat`: not supported (decided).** An async iterable is not an
+  iterable, so the loop raises the `TypeError` a sync render raises; a helper that collects it
+  (`[x async for x in source]`) returns an awaitable, which the loop awaits. Supporting
+  `async for` would need a suspending `Loops::next` (the VM requires `next` not to suspend, so
+  a loop's side effects stay atomic) and would make `repeat.x.length` unknown.
+- **Opt-in concurrency (D9's placeholders).** Two triggers, both opt-in because helper code then
+  runs while the render goes on:
+  - `@chameleon_rs.concurrent` marks an async helper (its calls return
+    `chameleon_rs._async.ConcurrentCall`, exact type checked). In `Op::Emit` (a `${...}` in text,
+    or a part of an attribute value), a value the render would suspend on is offered to
+    `Eval::defer_value`, which starts it as a task (`loop.create_task`) and returns a
+    placeholder; the runtime keeps the frame context (scope, builtins, marker, i18n domain,
+    context and target language) and the error token.
+  - `PageTemplate(..., concurrent=True)` (per view: `@template(..., concurrent=True)`): a
+    native partial of the render's own unit called with an awaitable keyword argument is
+    offered to `Eval::defer_partial` (after a cheap `wants_defer`), which starts a separate
+    `RenderAwaitable` of the partial (its own unit: builtins, `encoding='utf-8'` defaults, fresh
+    `rcontext`) as a task.
+  The VM offers only where `VmState::can_defer()`: no `Try`, `Translate`, `Name`, `Capture` or
+  boolean `Attr` entry anywhere on the unwind stack, so nothing written after can truncate or
+  capture the placeholder (slot bodies move text, placeholders with it). Not deferred:
+  `tal:content`/`tal:replace` (the value may select the default content), whole attribute
+  values, values inside a partial (fan-out is one level). A placeholder is U+10FFFD, 24 hex
+  digits (the render's nonce and the entry id) and U+10FFFD again. When the VM finishes, the
+  tasks are awaited in document order (they ran meanwhile), each value converted
+  (`convert::emit` in its saved frame context) or partial output taken as is, and the output
+  filled in one pass (`Output::fill_placeholders`). An error ends the render (a value's error
+  recorded at its expression and formatted; a partial's is its own render's formatted error)
+  and the other tasks are cancelled; so does a failed, cancelled, closed or dropped render.
+  Error messages do not list the enclosing macros' frames (the error surfaces after they
+  returned). "Start as soon as the free variables exist" (hoisting a call ahead of its
+  position) is deferred: the call starts where the render reaches it.
+- **chameleon_rs.flask.** Async views render with `render_async` (decided as the default:
+  with no awaitable value the output is `render`'s, shown by running every chameleon-flask
+  case as an async view against chameleon-flask's own async handling); `render_async()` and
+  `response_async()`; `@template(..., concurrent=True)`.
+- **The sync path pays nothing.** `PyRuntime<const ASYNC: bool>`: an async render is a separate
+  instantiation of the VM, so the synchronous one has no awaitable check (a runtime flag cost
+  the listing about 9 ns per item in the A/B); the VM's deferral paths (`defer_emitted`,
+  `defer_partial`) are out of line, behind a `wants_defer` that is `false` at compile time in
+  the sync instantiation. An async render without awaitable values costs about 4 ns per
+  expression (the check; answers per type are cached for the render) and about 270 ns per
+  render (the awaitable, saving the state, `StopIteration`).
+- **Offload experiment (Michael: wait and see): kept, opt-in, experimental.**
+  `render_async(..., offload=True)` (keyword-only, so not a template variable there;
+  `@template(..., offload=True)` in Flask) runs the synchronous `render` in the loop's default
+  executor. And `convert::write_str` escapes or copies a `str` of 64 KiB or more detached from
+  the interpreter (`Python::detach`, out of line): the only pure-Rust stretch long enough to be
+  worth a GIL release (the engine's other native work is sub-microsecond and interleaved with
+  CPython calls; building the final `str` needs the interpreter). Measured (plan.md, Phase 11
+  results): on 3.14t, +50% throughput and event-loop lag p99 from ~10 ms to ~0.15 ms with
+  report-heavy traffic; on the GIL build no gain for CPython-heavy pages (-2 to -4%, worse
+  short-request p99) but +43% and lag p99 1.8 ms to 0.2 ms for pages dominated by long text.
+  So it stays opt-in: worth it on free-threaded builds, and on GIL builds only for text-heavy
+  pages (transcripts). Not done: gzip in Rust (the frameworks compress; nothing measured
+  justifies it).
+
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
 ```
@@ -1331,7 +1444,7 @@ then `render()` setup moves into Rust while the classes stay subclassable.
   the inner `__await__()` iterator like `yield from` (cancellation arrives through `throw`),
   and resumes with the result. Only final values are awaited: `coro().title` is an
   `AttributeError` on the coroutine; `tal:condition="coro()"` is awaited before the truth test.
-  Async iterables in `repeat` are decided in Phase 11. Nested renders that go through Python
+  Async iterables in `repeat`: not supported (Phase 11; see its amendments). Nested renders that go through Python
   (a fallback expression calling another template) stay synchronous. PyO3's
   `experimental-async` is not used: it drives Rust futures, not Python awaitables.
 - Expressions marked concurrent (a decorator on the helper, or template syntax decided in that

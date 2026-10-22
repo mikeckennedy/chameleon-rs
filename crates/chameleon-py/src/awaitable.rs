@@ -51,6 +51,18 @@ pub(crate) fn async_frame_budget(py: Python<'_>) -> usize {
 /// an instance attribute), or it is a generator flagged as an iterable coroutine
 /// (`@types.coroutine`). The common value types answer without a lookup.
 pub(crate) fn is_awaitable(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    is_awaitable_with(value, None)
+}
+
+/// Types checked in a render, with whether they define `__await__` (a render asks for every
+/// value; a type lookup costs ~50 ns). Not kept across a suspension.
+pub(crate) type AwaitTypes<'py> = std::cell::RefCell<Vec<(Bound<'py, PyType>, bool)>>;
+
+/// How many types [`AwaitTypes`] remembers.
+const AWAIT_TYPES: usize = 16;
+
+/// [`is_awaitable`], remembering the answer per type in `cache`.
+pub(crate) fn is_awaitable_with<'py>(value: &Bound<'py, PyAny>, cache: Option<&AwaitTypes<'py>>) -> PyResult<bool> {
     if value.is_none()
         || value.is_exact_instance_of::<PyString>()
         || value.is_exact_instance_of::<PyInt>()
@@ -65,7 +77,20 @@ pub(crate) fn is_awaitable(value: &Bound<'_, PyAny>) -> PyResult<bool> {
     }
     let py = value.py();
     let ty = value.get_type();
-    if ty.hasattr(intern!(py, "__await__"))? {
+    let known = cache.and_then(|c| c.borrow().iter().find(|(t, _)| t.is(&ty)).map(|(_, a)| *a));
+    let awaits = if let Some(a) = known {
+        a
+    } else {
+        let a = ty.hasattr(intern!(py, "__await__"))?;
+        if let Some(cache) = cache {
+            let mut cache = cache.borrow_mut();
+            if cache.len() < AWAIT_TYPES {
+                cache.push((ty.clone(), a));
+            }
+        }
+        a
+    };
+    if awaits {
         return Ok(true);
     }
     let generator = GENERATOR_TYPE.get_or_try_init(py, || {

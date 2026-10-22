@@ -33,7 +33,8 @@ makes ``import chameleon_flask`` give this module)::
   async views and Quart): an async view's page renders with ``render_async``, so values the
   view returns that are awaitable (coroutines, tasks) are awaited where the template uses
   them, without blocking the event loop. For every other value the output is the same as
-  ``render``'s.
+  ``render``'s. ``@template(..., concurrent=True)`` fans native partials with awaitable
+  arguments out; ``@template(..., offload=True)`` (experimental) renders in a worker thread.
 - ``render(template_file, **data)`` and ``response(template_file, content_type=...,
   status_code=..., **data)``; ``render_async`` and ``response_async`` are their coroutines.
 - ``not_found(template_file='errors/404.pt', **data)`` and ``error(template_file,
@@ -240,13 +241,16 @@ def template(
     *,
     mimetype: str | None = None,
     concurrent: bool = False,
+    offload: bool = False,
 ) -> Callable[..., Any]:
     """Decorates a Flask or Quart view (sync or async) to render a template with what it
     returns: bare (``@template``), ``@template()`` or ``@template('home/index.pt',
     content_type=..., status_code=...)``. See the module docs.
 
     ``concurrent=True`` (async views): native partials called with an awaitable argument
-    render concurrently (``PageTemplate``'s ``concurrent`` setting, for this view)."""
+    render concurrently (``PageTemplate``'s ``concurrent`` setting, for this view).
+    ``offload=True`` (async views, experimental): the page renders in a worker thread
+    (``render_async(offload=True)``)."""
     wrapped_function = None
     if callable(template_file):
         wrapped_function = template_file
@@ -286,7 +290,7 @@ def template(
         async def async_view_method(*args: Any, **kwargs: Any) -> flask.Response:
             try:
                 return await _render_response_async(
-                    view_template, await f(*args, **kwargs), content_type, status_code, concurrent
+                    view_template, await f(*args, **kwargs), content_type, status_code, concurrent, offload
                 )
             except ErrorPage as page:
                 return await _error_response_async(page)
@@ -322,14 +326,19 @@ def _render_response(
 
 
 async def _render_response_async(
-    template_file: str, response_val: Any, content_type: str, status_code: int = 200, concurrent: bool = False
+    template_file: str,
+    response_val: Any,
+    content_type: str,
+    status_code: int = 200,
+    concurrent: bool = False,
+    offload: bool = False,
 ) -> flask.Response:
     if _is_response(response_val):
         return response_val  # type: ignore[no-any-return]
     model = dict(_model(response_val))
     page = _page(template_file)
     concurrent = concurrent or page.concurrent
-    html = await _render_async(page, 'utf-8', model, concurrent)
+    html = await _render_async(page, 'utf-8', model, concurrent, offload)
     return flask.Response(response=html, content_type=content_type, status=status_code)
 
 
