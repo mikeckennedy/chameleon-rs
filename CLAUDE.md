@@ -27,11 +27,14 @@ package `chameleon-rs` (import `chameleon_rs`). Goal: drop-in compatible with Ch
   commits, install them and the dev tools into `venv`, then build the extension.
 - `make build`: `maturin develop` with the quick `dev-opt` profile (use `build-release` for
   benchmarks, `build-profiling` for py-spy / Instruments).
-- `make lint`: rustfmt, clippy pedantic with `-D warnings`, cargo-deny, ruff.
-- `make test`: cargo tests, our pytest suite, and the upstream suite on both engines.
+- `make lint`: rustfmt, clippy pedantic with `-D warnings`, cargo-deny, ruff, ty (zero
+  diagnostics; ty is pinned).
+- `make test`: cargo tests, our pytest suite, the upstream suite on both engines, and the Robyn
+  tests (`test-robyn`, a 3.14 venv where the main venv has no Robyn wheel).
 - `make test-upstream-rust`: the upstream suite against chameleon_rs (the compatibility score).
-- `make test-integration`: fastapi-chameleon, chameleon-flask, chameleon-robyn and
-  chameleon_partials, unmodified, on chameleon_rs via `compat.install()` (scratch 3.14 venv).
+- `make test-integration`: fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials
+  and litestar-chameleon, unmodified, on chameleon_rs via `compat.install()`, plus the first four
+  again against the built-in modules (`chameleon_rs.fastapi`, `.flask`, `.robyn`, `.partials`).
 - `make bench`: baseline benchmarks.
 
 ## Conventions
