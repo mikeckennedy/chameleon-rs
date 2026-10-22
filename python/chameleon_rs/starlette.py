@@ -24,8 +24,12 @@ ways to use it, which can be mixed:
 background=None)`` is Starlette's: ``request`` is added to the context (unless it has one), the
 context processors run, the template can call ``url_for(name, **path_params)``, and the response
 sends the ``http.response.debug`` event, so Starlette's ``TestClient`` gives
-``response.template`` (the page template) and ``response.context``. ``TemplateResponse_async``
-takes the same arguments and renders with ``render_async``.
+``response.template`` (the page template, with Jinja's ``name``) and ``response.context``.
+``TemplateResponse_async`` takes the same arguments and renders with ``render_async``.
+``templates.globals`` is Jinja's ``env.globals``. A missing template raises
+``chameleon_rs.web.TemplateNotFound``; so does a name that could reach outside the folder
+(absolute, ``..``, ...), as Jinja refuses it. (The decorator API below looks names up as the
+original libraries do: template names must come from code, never from a request.)
 
 The decorator API, the same as ``chameleon_rs.flask`` and ``chameleon_rs.fastapi``::
 
@@ -56,14 +60,15 @@ The decorator API, the same as ``chameleon_rs.flask`` and ``chameleon_rs.fastapi
 - ``clear()`` forgets the process-wide configuration; ``check_views(app)`` runs the
   decorator-order check.
 
-Errors: ``chameleon_rs.web.TemplateError``, ``NotFound``, ``ErrorPage`` and
-``DecoratorOrderError`` (also importable from here).
+Errors: ``chameleon_rs.web.TemplateError``, ``TemplateNotFound``, ``NotFound``, ``ErrorPage``
+and ``DecoratorOrderError`` (also importable from here).
 """
 
 from __future__ import annotations
 
 import contextlib
 import inspect
+import os
 from collections.abc import AsyncGenerator, Callable, Coroutine, Iterable, Iterator, Mapping, Sequence
 from os import PathLike
 from typing import Any, NoReturn, Protocol, overload
@@ -76,14 +81,16 @@ from starlette.responses import HTMLResponse
 from starlette.types import Receive, Scope, Send
 
 from chameleon_rs import _settings, _views
-from chameleon_rs.template import _render_async
-from chameleon_rs.web import DecoratorOrderError, ErrorPage, NotFound, TemplateError
+from chameleon_rs.template import PageTemplateFile, _render_async
+from chameleon_rs.web import DecoratorOrderError, ErrorPage, NotFound, TemplateError, TemplateNotFound
+from chameleon_rs.zpt.loader import TemplateLoader
 
 __all__ = [
     'DecoratorOrderError',
     'ErrorPage',
     'NotFound',
     'TemplateError',
+    'TemplateNotFound',
     'Templates',
     'check_views',
     'clear',
@@ -156,7 +163,7 @@ def _walk(routes: Iterable[Any], prefix: str, seen: set[int]) -> Iterator[tuple[
         endpoint = getattr(route, 'endpoint', None)
         if endpoint is not None:
             yield from _endpoint_views(route, endpoint, path)
-        sub = getattr(route, 'routes', None)
+        sub = _sub_routes(route)
         if sub:
             yield from _walk(sub, path, seen)
         # A router included into another (FastAPI 0.13x and later include lazily: the app's
@@ -167,6 +174,24 @@ def _walk(routes: Iterable[Any], prefix: str, seen: set[int]) -> Iterator[tuple[
             yield from _walk(getattr(included, 'routes', ()), prefix + str(include_prefix), seen)
 
 
+def _sub_routes(route: Any) -> Any:
+    """The routes a route mounts: its own (``Mount``, ``Host``), or those of the app it mounts
+    found through a chain of middleware (``Mount('/g', app=GZipMiddleware(Starlette(...)))``),
+    each middleware's ``app`` followed a bounded number of times."""
+    sub = getattr(route, 'routes', None)
+    if sub or not isinstance(route, (starlette.routing.Mount, starlette.routing.Host)):
+        return sub
+    app = getattr(route, 'app', None)
+    for _ in range(32):
+        if app is None:
+            return None
+        sub = getattr(app, 'routes', None)
+        if sub:
+            return sub
+        app = getattr(app, 'app', None)
+    return None
+
+
 class StarletteIntegration(_views.Integration):
     """Starlette's part of the views core (``chameleon_rs.fastapi`` subclasses it)."""
 
@@ -174,7 +199,7 @@ class StarletteIntegration(_views.Integration):
     module = __name__
     error = TemplateError
     response_name = 'starlette.responses.Response'
-    route_decorators = 'Route(...), app.add_route, @app.get, ...'
+    route_decorators = 'app.add_route, Route(...), @app.route (0.x), a route decorator of your own'
     app_kind = 'Starlette'
     router_hint = 'a Router is checked through the app that mounts it'
 
@@ -247,6 +272,53 @@ def _url_for(request: Request) -> Callable[..., Any]:
 # --- Templates: Starlette's Jinja2Templates for chameleon-rs ----------------------------------
 
 
+def _check_name(name: str) -> None:
+    """Refuses a name that could load a template outside the folder, as Jinja's
+    ``FileSystemLoader`` does (its ``split_template_path``), and more: an absolute path, a
+    ``..`` segment, a backslash, a drive letter or a package spec (``:``)."""
+    spec = name.strip() if isinstance(name, str) else ''
+    if (
+        not spec
+        or spec.startswith('/')
+        or os.path.isabs(spec)
+        or '\\' in spec
+        or ':' in spec
+        or '\0' in spec
+        or any(piece == '..' for piece in spec.split('/'))
+    ):
+        msg = f'Template not found: {name}.'
+        raise TemplateNotFound(msg)
+
+
+class _DebugTemplate:
+    """The template in the ``http.response.debug`` event (``response.template`` in tests): the
+    page template, plus Jinja's ``name`` (the name it was loaded by). Every other attribute is
+    the page template's."""
+
+    __slots__ = ('_page', 'name')
+
+    def __init__(self, page: PageTemplateFile, name: str) -> None:
+        self._page = page
+        self.name = name
+
+    def __getattr__(self, attr: str) -> Any:
+        return getattr(self._page, attr)
+
+    def __repr__(self) -> str:
+        return f'<{type(self._page).__name__} {self.name!r}>'
+
+
+class _UrlFor:
+    """``Templates.globals['url_for']`` by default: ``request.url_for`` for the request being
+    rendered (Jinja's global is a ``pass_context`` function)."""
+
+    def __repr__(self) -> str:
+        return '<url_for of the request>'
+
+
+_URL_FOR = _UrlFor()
+
+
 class _TemplateResponse(HTMLResponse):
     """A rendered page that sends the ``http.response.debug`` event (Starlette's
     ``TestClient`` sets ``response.template`` and ``response.context`` from it)."""
@@ -292,14 +364,15 @@ class Templates:
         restricted_namespace: bool | None = None,
     ) -> None:
         self.context_processors = context_processors or []
-        self._loader: Any = None
+        # Jinja's `env.globals`: variables of every template, below the context.
+        self.globals: dict[str, Any] = {}
+        self.globals.setdefault('url_for', _URL_FOR)
+        self._loader: TemplateLoader | None = None
         if directory is None:
             if auto_reload is not None or restricted_namespace is not None:
                 msg = 'auto_reload and restricted_namespace are loader options: pass a directory, or configure() them'
                 raise TypeError(msg)
             return
-        from chameleon_rs.zpt.loader import TemplateLoader
-
         if isinstance(directory, (str, PathLike)):
             search_path: Any = str(directory)
         else:
@@ -312,7 +385,7 @@ class Templates:
         self._loader = TemplateLoader(search_path, **options)
 
     @property
-    def loader(self) -> Any:
+    def loader(self) -> TemplateLoader:
         """The ``TemplateLoader`` templates come from (the configured one when no directory was
         given)."""
         if self._loader is not None:
@@ -323,13 +396,19 @@ class Templates:
             raise TemplateError(msg)
         return settings.loader
 
-    def get_template(self, name: str) -> Any:
-        """The page template ``name`` (relative to the template folder)."""
+    def get_template(self, name: str) -> PageTemplateFile:
+        """The page template ``name`` (relative to the template folder).
+
+        Raises ``chameleon_rs.web.TemplateNotFound`` (a ``ValueError``) if there is none, or if
+        the name could reach outside the folder (absolute, ``..``, a backslash, a drive letter
+        or a package spec), as Jinja's ``FileSystemLoader`` refuses such names."""
+        _check_name(name)
         return self.loader[name]
 
     def _context(self, request: Request, context: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
         """The response's context (Starlette's: ``request`` set unless given, then the context
-        processors) and the template's variables (that plus ``url_for``)."""
+        processors) and the template's variables (``globals`` with the context over them, the
+        default ``url_for`` bound to the request)."""
         if isinstance(request, str):
             msg = 'TemplateResponse() takes the request first: TemplateResponse(request, name, context)'
             raise TypeError(msg)
@@ -337,7 +416,9 @@ class Templates:
         context.setdefault('request', request)
         for context_processor in self.context_processors:
             context.update(context_processor(request))
-        variables = context if 'url_for' in context else {'url_for': _url_for(context['request']), **context}
+        variables = {**self.globals, **context}
+        if variables.get('url_for') is _URL_FOR:
+            variables['url_for'] = _url_for(context['request'])
         return context, variables
 
     def TemplateResponse(
@@ -356,7 +437,9 @@ class Templates:
         context, variables = self._context(request, context)
         page = self.get_template(name)
         html = page.render(encoding='utf-8', **variables)
-        return _TemplateResponse(page, context, html, status_code, headers, media_type, background)
+        return _TemplateResponse(
+            _DebugTemplate(page, name), context, html, status_code, headers, media_type, background
+        )
 
     async def TemplateResponse_async(
         self,
@@ -379,8 +462,10 @@ class Templates:
         page = self.get_template(name)
         if concurrent is None:
             concurrent = page.concurrent
-        html = await _render_async(page, 'utf-8', dict(variables), bool(concurrent), offload)
-        return _TemplateResponse(page, context, html, status_code, headers, media_type, background)
+        html = await _render_async(page, 'utf-8', variables, bool(concurrent), offload)
+        return _TemplateResponse(
+            _DebugTemplate(page, name), context, html, status_code, headers, media_type, background
+        )
 
 
 # --- The module API (chameleon_rs.flask's and chameleon_rs.fastapi's) -------------------------

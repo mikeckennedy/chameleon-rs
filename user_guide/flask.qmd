@@ -133,6 +133,16 @@ print(response.status_code, response.text)
 They raise `chameleon_rs.web.NotFound` and `chameleon_rs.web.ErrorPage`, which the decorator
 turns into the response.
 
+::: {.callout-warning}
+## Template names come from your code
+
+The names given to `@template`, `render()`, `response()`, `not_found()` / `error()` and
+`render_partial()` are looked up as the original libraries look them up, which allows `..` and
+absolute paths. Write them in your code; never build one from a request (a path or query
+parameter, a header). `chameleon_rs.starlette.Templates`, the Jinja drop-in, refuses names that
+reach outside its folder, as Jinja does.
+:::
+
 ## Rendering without the decorator
 
 ```python

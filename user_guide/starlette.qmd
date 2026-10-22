@@ -60,7 +60,7 @@ app = Starlette(routes=[Route('/', index), Route('/videos/{name}', video, name='
 with TestClient(app) as client:
     response = client.get('/')
     print(response.text)
-    print(response.template.filename.endswith('index.pt'), sorted(response.context))
+    print(response.template.name, sorted(response.context))
 ```
 
 `TemplateResponse(request, name, context=None, status_code=200, headers=None,
@@ -69,11 +69,21 @@ media_type=None, background=None)` behaves as Starlette's:
 - `request` is added to the context (unless the context has one), then each context processor
   runs and its dict updates the context.
 - The template can call `url_for(name, **path_params)`, which is `request.url_for`.
+- `templates.globals` is Jinja's `env.globals`: variables every template gets, below the
+  context (`templates.globals['site_name'] = ...`). `url_for` is one of them, so it can be
+  replaced there.
 - The response is an `HTMLResponse`; `status_code`, `headers`, `media_type` and `background`
   are passed to it.
 - It sends Starlette's `http.response.debug` event, so with the test client
-  `response.context` is the context and `response.template` the page template (Jinja's
-  `response.template.name` is `response.template.filename` here, the template's full path).
+  `response.context` is the context and `response.template` the page template, with Jinja's
+  `name`: Starlette's documented `assert response.template.name == 'index.html'` works. (Other
+  attributes are the page template's: `filename` is its full path.)
+- A missing template raises `chameleon_rs.web.TemplateNotFound` (also importable from
+  `chameleon_rs.starlette`): catch it where you caught `jinja2.TemplateNotFound`. It is a
+  `ValueError`, as Chameleon's loaders raise, and a `LookupError`.
+- A name that could reach outside the template folder (absolute, a `..` segment, a backslash,
+  a drive letter or a `package:` spec) is refused with `TemplateNotFound`, as Jinja's
+  `FileSystemLoader` refuses it.
 
 A test compares it with `Jinja2Templates` request by request (status, headers, body, context,
 background tasks), and its HTML with stock Chameleon's.
@@ -88,6 +98,17 @@ templates = Templates()
 ```
 
 `templates.get_template(name)` returns the page template, and `templates.loader` the loader.
+There is no `env=` (a Jinja `Environment`): Jinja's environment settings have no chameleon-rs
+equivalent. `templates.env.globals[...]` becomes `templates.globals[...]`; for the rest, use
+`chameleon_rs.configure()` (Markdown, partial lookup) or the loader options.
+
+### Differences from older Starlette
+
+Starlette 1.x's signature is the one implemented, request first. On Starlette 0.46 and later
+0.x, `Jinja2Templates` also accepts the old `TemplateResponse(name, {'request': request})` form
+with a `DeprecationWarning`; `Templates` raises a `TypeError` saying the request comes first.
+And 0.x adds `request` to a `context={}` you pass in (1.x, and `Templates`, give an empty
+context a new dict, leaving yours untouched).
 
 ## Rendering without blocking the event loop
 
@@ -118,6 +139,9 @@ A model value that is awaitable (a coroutine, task or future) is awaited where t
 uses it. `TemplateResponse_async(..., concurrent=True)` renders `render_partial(...)` calls
 with awaitable arguments concurrently; `offload=True` (experimental) renders in a worker
 thread. With no awaitable values the HTML is exactly `TemplateResponse`'s.
+
+`TemplateResponse_async` is a coroutine: call it with `await` from an `async def` endpoint. A
+sync endpoint uses `TemplateResponse` (Starlette runs sync endpoints in its thread pool).
 
 The name keeps Starlette's `TemplateResponse` and adds the `_async` of `render_async`, so
 moving an endpoint over is `await templates.TemplateResponse_async(...)` in place of
@@ -161,21 +185,33 @@ It is the API of `chameleon_rs.flask` and `chameleon_rs.fastapi`:
   `render()` in Starlette's thread pool. `concurrent=` and `offload=` as above.
 - `not_found(template_file='errors/404.pt', **data)`, `error(template_file, status_code=500,
   **data)` and `generic_error(template_file, status_code, template_data)` end a decorated
-  endpoint with an error page.
+  endpoint with an error page. The error page also gets `request` and `url_for` (the data you
+  pass wins), so a layout that links with `url_for` works there too.
 - `render()`, `render_async()`, `response()`, `response_async()`, `clear()`,
   `check_views(app)`.
 
-Errors are `chameleon_rs.web.TemplateError`, `NotFound`, `ErrorPage` and
+Errors are `chameleon_rs.web.TemplateError`, `TemplateNotFound`, `NotFound`, `ErrorPage` and
 `DecoratorOrderError`, also importable from `chameleon_rs.starlette`.
+
+::: {.callout-warning}
+## Template names come from your code
+
+The names given to `@template`, `render()`, `response()`, `not_found()` / `error()` and
+`render_partial()` are looked up as the original libraries look them up, which allows `..` and
+absolute paths. Write them in your code; never build one from a request (a path or query
+parameter, a header). `chameleon_rs.starlette.Templates`, the Jinja drop-in, refuses names that
+reach outside its folder, as Jinja does.
+:::
 
 ## Decorator order
 
 Starlette routes are usually lists (`Route('/', endpoint)`), where the order can't go wrong.
-It can with `app.add_route()` or a route decorator of your own: a route registered before
+It can with `app.add_route()`, Starlette 0.x's `@app.route`, or a route decorator of your own: a route registered before
 `@template` wrapped its endpoint calls the bare endpoint. An app given to `configure(app=app)`
 checks this inside its lifespan startup (Uvicorn and Granian report a failed startup), or
 before its first request when no lifespan runs, and raises `DecoratorOrderError` naming the
 endpoint, its file and line, its route and the fix. Mounted apps and routers (`Mount`, `Host`,
-`Router`) and `HTTPEndpoint` classes are checked too, and `check_views(app)` (or a `Router`)
+`Router`, also behind middleware such as `Mount('/g', app=GZipMiddleware(sub_app))`) and
+`HTTPEndpoint` classes are checked too, and `check_views(app)` (or a `Router`)
 runs the check on demand. `check_order=False` and `check_views(app, ignore=[...])` are the
 escape hatch, as for [FastAPI](fastapi.qmd#decorator-order).

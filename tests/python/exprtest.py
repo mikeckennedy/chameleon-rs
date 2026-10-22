@@ -33,6 +33,14 @@ def describe_value(value: Any) -> tuple[str, str]:
     return type(value).__name__, canon(repr(value))
 
 
+def exception_name(e: BaseException) -> str:
+    """The exception's class name, ``chameleon_rs.web.TemplateNotFound`` named as the
+    ``ValueError`` Chameleon's loader raises (it is one, with the same message)."""
+    if type(e).__name__ == 'TemplateNotFound' and isinstance(e, ValueError):
+        return 'ValueError'
+    return type(e).__name__
+
+
 def describe_error(error: BaseException) -> tuple[str, str, str]:
     # Chameleon wraps render errors in a `RenderError` subclass named like the original.
     args = error.args if not isinstance(error, (chameleon.exc.TemplateError, chameleon_rs.exc.TemplateError)) else ()
@@ -40,7 +48,7 @@ def describe_error(error: BaseException) -> tuple[str, str, str]:
         # Chameleon's location points into its generated module, ours into the expression
         # (a documented difference); on some Python versions it is set, on others not.
         args = (error.msg,)
-    return 'raise', type(error).__name__, canon(repr(args))
+    return 'raise', exception_name(error), canon(repr(args))
 
 
 def evaluate(engine: Any, expression: str, scope: dict[str, Any], template_class: Any = None) -> tuple[str, ...]:

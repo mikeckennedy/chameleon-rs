@@ -1869,11 +1869,48 @@ Speed: no Rust change. `bench/bench_ab.py 0b0bce3`, release, listing, 8 rounds, 
 Flask/FastAPI views pay one extra method call per request (`view_context`), outside the
 render.
 
+Review fixes (2026-10-22, after the Rust Architect's review; each reproduced with the
+review's probes first):
+- Blocker, path traversal: `Templates` loaded names outside its folder (`../secret/s.pt`, an
+  absolute path) and executed them, where Jinja's `FileSystemLoader` refuses. `get_template`
+  (so both `TemplateResponse`s) now refuses an absolute name, a `..` segment, a backslash, a
+  drive letter or a `package:` spec with `TemplateNotFound`. Owner's rule: the decorator
+  modules' `render()` / `@template`, error pages and `render_partial` keep the original
+  libraries' lookup (they allow such names); the README and the Flask, FastAPI and Starlette
+  guides say names must come from code, never from requests, and that `Templates` guards as
+  Jinja does.
+- `chameleon_rs.web.TemplateNotFound(TemplateError, ValueError, LookupError)`, raised by the
+  loader for a missing template with Chameleon's message; exported from
+  `chameleon_rs.starlette`. Inside a render the formatted error reads exactly as Chameleon's
+  `ValueError` (`exc.py` strips the qualified class name as it strips `ValueError:`). Our
+  differential tests compare it as `ValueError`.
+- Error pages of decorated Starlette endpoints get `request` and `url_for` (the page's data
+  wins), so a 404 layout using `url_for` renders instead of failing with a `NameError`.
+- `response.template` is a `_DebugTemplate(page, name)`: Jinja's `.name` (Starlette's
+  documented `assert response.template.name == 'index.html'` passes), every other attribute
+  the page template's; the cached template is not changed.
+- `Templates.globals` (Jinja's `env.globals`): `url_for` set there by default; the template's
+  variables are `{**globals, **context}`. `env=` stays unsupported (documented).
+- Nits: the decorator-order message names `app.add_route, Route(...), @app.route (0.x), a
+  route decorator of your own`; the route walk follows `.app` through middleware under
+  `Mount` / `Host` (bounded), so `Mount('/g', app=GZipMiddleware(Starlette(...)))` is checked
+  (FastAPI too, shared walk); the guide documents the 0.x differences (request-first only,
+  0.x's deprecated old form, 0.x mutating an empty context dict) and that
+  `TemplateResponse_async` is awaited from an async endpoint; `Templates.loader` /
+  `get_template` are typed (`TemplateLoader`, `PageTemplateFile`); the FastAPI guide says why
+  its views' templates do not get `request` / `url_for`.
+- Tests: `test_starlette.py` 40 (19 new: ten refused name forms, sync and async; Jinja refusing
+  `..`; names inside the folder; the decorator path keeping the original lookup;
+  `TemplateNotFound`'s types and message against stock Chameleon, also inside a render; globals;
+  error pages with `url_for`; the debug template; the walk through middleware), and the
+  Jinja differential now also compares `response.template.name`. The differential helpers
+  (`exprtest.exception_name`) name `TemplateNotFound` as the `ValueError` it is.
+- Verification after the fixes: pytest 3,085 passed, 2 skipped, 7 strict xfails (corpus set);
+  upstream 227 passed + 6 xpassed on each engine; Rust 102 + 3 + 9; lint clean (ty 0);
+  integration 40/16/39/6 on the originals, 40/16/6 on the built-ins. A/B against 0b0bce3
+  (release, listing, 8 rounds, load 2.0): -1.6 ns (range -5..+3), 6.34x Chameleon.
+
 Open for Michael:
-- `response.template` in tests is the page template; Jinja's has `.name` (Starlette's docs
-  assert `response.template.name == 'index.html'`), ours has `.filename` (the full path).
-  Options: leave it (documented), add a `name` to templates loaded by name, or send a small
-  wrapper in the debug event.
 - Per-app settings for Starlette are easy (endpoints get the request; `request.app.state`),
   but not built, to keep the modules' `configure(app=...)` alike (FastAPI's is open).
 - `request` / `url_for` in decorated Starlette endpoints' templates is new (not in the

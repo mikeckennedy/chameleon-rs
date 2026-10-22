@@ -151,14 +151,14 @@ class Integration:
         html = await _render_async(page, 'utf-8', model, bool(concurrent), offload)
         return self.make_response(html, content_type, status_code)
 
-    def error_response(self, page: ErrorPage) -> Any:
+    def error_response(self, page: ErrorPage, extra: Mapping[str, Any] | None = None) -> Any:
         # As the original libraries' error paths: text/html, the page's status, its data as the
-        # model.
-        html = self.render(page.template_file, page.template_data or {})
+        # model (with the framework's `view_context`, whose keys the data's override).
+        html = self.render(page.template_file, _error_model(page, extra))
         return self.make_response(html, 'text/html', page.status_code)
 
-    async def error_response_async(self, page: ErrorPage) -> Any:
-        html = await self.render_async(page.template_file, page.template_data or {})
+    async def error_response_async(self, page: ErrorPage, extra: Mapping[str, Any] | None = None) -> Any:
+        html = await self.render_async(page.template_file, _error_model(page, extra))
         return self.make_response(html, 'text/html', page.status_code)
 
     # --- The decorator ----------------------------------------------------------------------
@@ -201,7 +201,7 @@ class Integration:
                 value = f(*args, **kwargs)
                 return self.render_response(view_template, value, content_type, status_code, self.view_context(args))
             except ErrorPage as page:
-                return self.error_response(page)
+                return self.error_response(page, self.view_context(args))
 
         @wraps(f)
         async def async_view_method(*args: Any, **kwargs: Any) -> Any:
@@ -211,7 +211,7 @@ class Integration:
                     view_template, value, content_type, status_code, concurrent, offload, self.view_context(args)
                 )
             except ErrorPage as page:
-                return await self.error_response_async(page)
+                return await self.error_response_async(page, self.view_context(args))
 
         wrapper = async_view_method if inspect.iscoroutinefunction(f) else sync_view_method
         _remember(f, wrapper)
@@ -258,6 +258,11 @@ class Integration:
             passed = True
 
         self.watch(app, check)
+
+
+def _error_model(page: ErrorPage, extra: Mapping[str, Any] | None) -> Mapping[str, Any]:
+    data = page.template_data or {}
+    return {**extra, **data} if extra else data
 
 
 # --- Views wrapped by @template, for the decorator-order check ------------------------------

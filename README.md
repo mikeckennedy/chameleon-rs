@@ -65,7 +65,9 @@ event loop); a sync view renders in FastAPI's thread pool, as before.
   takes the same arguments and renders with `render_async`, so the event loop is never
   blocked. The same module has the decorator API of the Flask and FastAPI modules
   (`configure`, `@template`, `render`, `response`, `not_found`, `error`, `check_views`, ...);
-  decorated endpoints' templates also get `request` and `url_for`.
+  decorated endpoints' templates also get `request` and `url_for`. A missing template raises
+  `chameleon_rs.web.TemplateNotFound` (a `ValueError`, as Chameleon's), the counterpart of
+  `jinja2.TemplateNotFound`; `templates.globals` is Jinja's `env.globals`.
 
 ```python
 from chameleon_rs.starlette import Templates
@@ -78,6 +80,12 @@ async def episode(request):
 
 app = Starlette(routes=[Route('/episodes/{number}', episode, name='episode')])
 ```
+
+**Template names come from your code.** Names given to `@template`, `render()`,
+`response()`, the error pages and `render_partial()` are looked up as chameleon-flask,
+fastapi-chameleon and chameleon_partials look them up (`..` and absolute paths work): never
+build one from request data. `chameleon_rs.starlette.Templates`, the Jinja drop-in, refuses
+names that reach outside its folder, as Jinja does.
 
 **Decorator order.** `@template` goes *below* the route decorator (`@app.get`, `@router.get`,
 `@app.route`, `@blueprint.get`). Written above it, the router registers the bare view, the

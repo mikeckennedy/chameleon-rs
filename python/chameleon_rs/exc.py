@@ -14,6 +14,7 @@ from typing import Any, Self
 from chameleon_rs.config import SOURCE_EXPRESSION_MARKER_LENGTH
 from chameleon_rs.tokenize import Token
 from chameleon_rs.utils import create_formatted_exception, safe_native, value_repr
+from chameleon_rs.web import TemplateNotFound
 
 
 class TemplateError(Exception):
@@ -319,6 +320,10 @@ class ExceptionFormatter:
             exc = create_formatted_exception(exc, type(exc), exc._original__str__)  # ty: ignore[unresolved-attribute]
         formatted = traceback.format_exception_only(type(exc), exc)[-1]
         formatted_class = f'{type(exc).__name__}:'
+        if isinstance(exc, TemplateNotFound):
+            # Chameleon's loader raises a plain `ValueError`, shown without its class name; this
+            # one (a `ValueError` too) reads the same, without `chameleon_rs.web.TemplateNotFound:`.
+            formatted_class = f'{type(exc).__module__}.{type(exc).__qualname__}:'
 
         if formatted.startswith(formatted_class):
             formatted = formatted[len(formatted_class) :].lstrip()

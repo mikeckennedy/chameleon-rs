@@ -26,6 +26,7 @@ jinja2 = pytest.importorskip('jinja2')
 import chameleon_rs
 import chameleon_rs.starlette as ours
 import chameleon_rs.web
+from chameleon_rs.template import PageTemplateFile
 from starlette.applications import Starlette
 from starlette.background import BackgroundTask
 from starlette.endpoints import HTTPEndpoint
@@ -177,6 +178,7 @@ def responses(app: Starlette) -> list[tuple[Any, ...]]:
                     type(request).__name__,
                     request.url.path,
                     Path(r.template.filename).name,
+                    r.template.name,  # Starlette's documented test assertion
                 )
             )
     return out
@@ -518,7 +520,7 @@ def test_misordered_endpoint_fails_at_startup_and_on_the_first_request(folder: P
     with pytest.raises(chameleon_rs.web.DecoratorOrderError) as info, TestClient(make()):
         pass
     message = str(info.value)
-    assert message.startswith('@template must be placed below the route decorator (Route(...), app.add_route')
+    assert message.startswith('@template must be placed below the route decorator (app.add_route, Route(...)')
     assert '.detail() at ' in message
     assert '(route GET /detail)' in message
     assert 'fine' not in message
@@ -623,6 +625,155 @@ def test_a_user_lifespan_and_its_state_pass_through(folder: Path) -> None:
         assert client.get('/').text == '<h1>Hello hi -!</h1>'
 
 
+# --- Review fixes: names outside the folder, TemplateNotFound, globals, error pages ----------
+
+
+def blank_request() -> Request:
+    return Request({'type': 'http', 'method': 'GET', 'path': '/', 'headers': [], 'query_string': b''})
+
+
+@pytest.mark.parametrize(
+    'name',
+    [
+        '../secret/s.pt',
+        'home/../../secret/s.pt',
+        ' ../secret/s.pt',
+        'SECRET_ABSOLUTE',
+        '/etc/hosts',
+        '..\\secret\\s.pt',
+        'home\\index.pt',
+        'C:/secret/s.pt',
+        'chameleon_rs:zpt/loader.py',
+        '',
+    ],
+)
+def test_templates_refuse_names_outside_the_folder(folder: Path, name: str) -> None:
+    secret = folder.parent / 'secret'
+    secret.mkdir(exist_ok=True)
+    (secret / 's.pt').write_text('<p>secret ${1 + 1}</p>')
+    if name == 'SECRET_ABSOLUTE':
+        name = str(secret / 's.pt')
+    templates = ours.Templates(directory=folder)
+    with pytest.raises(chameleon_rs.web.TemplateNotFound, match='Template not found'):
+        templates.TemplateResponse(blank_request(), name)
+    with pytest.raises(chameleon_rs.web.TemplateNotFound):
+        asyncio.run(templates.TemplateResponse_async(blank_request(), name))
+    with pytest.raises(chameleon_rs.web.TemplateNotFound):
+        templates.get_template(name)
+
+
+def test_jinja_refuses_parent_names_too(jinja_folder: Path) -> None:
+    with pytest.raises(jinja2.TemplateNotFound):
+        Jinja2Templates(directory=jinja_folder).get_template('../x.html')
+
+
+def test_names_inside_the_folder_still_load(folder: Path) -> None:
+    templates = ours.Templates(directory=folder)
+    for name in ('home/index.pt', './home/index.pt', 'home/./index.pt'):
+        assert templates.TemplateResponse(blank_request(), name, {'a': 1}).body == b'<h1>Hello 1 -!</h1>'
+
+
+def test_decorator_render_keeps_the_original_libraries_lookup(folder: Path) -> None:
+    # Owner's rule: render()/@template/render_partial resolve names as chameleon-flask,
+    # fastapi-chameleon and chameleon_partials do (no guard): names must not come from requests.
+    (folder.parent / 'outside.pt').write_text('<p>outside</p>')
+    assert ours.render('../outside.pt') == '<p>outside</p>'
+
+
+def test_missing_template_is_template_not_found(folder: Path) -> None:
+    import chameleon
+
+    with pytest.raises(chameleon_rs.web.TemplateNotFound) as info:
+        ours.Templates(directory=folder).TemplateResponse(blank_request(), 'nope.pt')
+    assert isinstance(info.value, ValueError)
+    assert isinstance(info.value, LookupError)
+    assert isinstance(info.value, chameleon_rs.web.TemplateError)
+    assert str(info.value) == 'Template not found: nope.pt.'
+    assert ours.TemplateNotFound is chameleon_rs.web.TemplateNotFound
+    # The loaders: Chameleon's message and a ValueError, as stock Chameleon's.
+    with pytest.raises(ValueError, match='nope') as stock:
+        chameleon.PageTemplateLoader(str(folder))['nope.pt']
+    with pytest.raises(chameleon_rs.web.TemplateNotFound) as native:
+        chameleon_rs.PageTemplateLoader(str(folder))['nope.pt']
+    assert str(native.value) == str(stock.value)
+
+
+def test_missing_template_inside_a_render_reads_as_chameleons(folder: Path) -> None:
+    import chameleon
+
+    (folder / 'loads.pt').write_text('<p tal:define="t load: nope.pt">${t}</p>')
+    messages = []
+    for engine in (chameleon, chameleon_rs):
+        try:
+            engine.PageTemplateLoader(str(folder))['loads.pt']()
+        except ValueError as e:
+            messages.append(str(e).splitlines()[0])
+    assert messages[0] == messages[1] == 'Template not found: nope.pt.'
+
+
+def test_templates_globals(folder: Path) -> None:
+    templates = ours.Templates(directory=folder)
+    assert set(templates.globals) == {'url_for'}
+    templates.globals['b'] = 'G'
+    assert templates.TemplateResponse(blank_request(), 'home/index.pt', {'a': 1}).body == b'<h1>Hello 1 G!</h1>'
+    # The context wins over globals, as in Jinja; globals are not in the response's context.
+    resp = templates.TemplateResponse(blank_request(), 'home/index.pt', {'a': 1, 'b': 'c'})
+    assert resp.body == b'<h1>Hello 1 c!</h1>'
+    assert 'url_for' not in resp.context
+    templates.globals['url_for'] = lambda name, **kw: f'/custom/{name}'
+    resp = templates.TemplateResponse(blank_request(), 'page.html', {'a': 1, 'site': 's'})
+    assert b'href="/custom/item"' in resp.body
+
+
+def test_error_pages_of_decorated_endpoints_get_request_and_url_for(folder: Path) -> None:
+    (folder / 'errors' / 'layout404.pt').write_text(
+        '<h1>${request.url.path} not here, see ${url_for("home")} ${what}</h1>'
+    )
+
+    @ours.template('home/index.pt')
+    async def home(request: Request) -> Any:
+        return {'a': 1}
+
+    @ours.template('home/index.pt')
+    async def missing(request: Request) -> Any:
+        ours.not_found('errors/layout404.pt', what='x')
+
+    @ours.template('home/index.pt')
+    def broken(request: Request) -> Any:
+        ours.error('errors/layout404.pt', 410, what='y', request='data wins')
+
+    app = Starlette(routes=[Route('/', home, name='home'), Route('/m', missing), Route('/b', broken)])
+    with TestClient(app) as client:
+        r = client.get('/m')
+        assert (r.status_code, r.text) == (404, '<h1>/m not here, see http://testserver/ x</h1>')
+        with pytest.raises(TypeError, match='string indices'):  # the page's data wins: `request` is a str
+            client.get('/b')
+
+
+def test_debug_template_is_a_view_of_the_page(folder: Path) -> None:
+    templates = ours.Templates(directory=folder)
+    resp = templates.TemplateResponse(blank_request(), 'home/index.pt', {'a': 1})
+    page = templates.get_template('home/index.pt')
+    assert resp.template.name == 'home/index.pt'
+    assert resp.template.filename == page.filename
+    assert resp.template.render(a=2) == '<h1>Hello 2 -!</h1>'
+    assert not hasattr(page, 'name')  # the cached template is not changed
+    assert repr(resp.template) == "<PageTemplateFile 'home/index.pt'>"
+
+
+def test_check_walks_through_middleware(folder: Path) -> None:
+    from starlette.middleware.gzip import GZipMiddleware
+
+    async def raw(request: Request) -> Any:
+        return {'a': 1}
+
+    app = Starlette(routes=[Mount('/g', app=GZipMiddleware(GZipMiddleware(Starlette(routes=[Route('/z', raw)]))))])
+    ours.check_views(app)
+    ours.template('home/index.pt')(raw)
+    with pytest.raises(chameleon_rs.web.DecoratorOrderError, match=r'\(route GET /g/z\)'):
+        ours.check_views(app)
+
+
 # --- Typing (checked by ty, not run) --------------------------------------------------------
 
 
@@ -646,4 +797,5 @@ def _typing_checks() -> None:
     assert_type(ours.response('x.pt', 'text/plain', 200, a=1), Response)
     templates = ours.Templates(directory='templates')
     assert_type(templates.TemplateResponse(request, 'x.pt'), ours._TemplateResponse)
+    assert_type(templates.get_template('x.pt'), PageTemplateFile)
     assert_type(templates.TemplateResponse_async(request, 'x.pt'), CoroutineType[Any, Any, ours._TemplateResponse])

@@ -227,6 +227,7 @@ reference:
         - web.TemplateError
         - web.ErrorPage
         - web.NotFound
+        - web.TemplateNotFound
         - web.DecoratorOrderError
         - web.model_of
     - title: Compatibility

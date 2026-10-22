@@ -51,6 +51,14 @@ class NotFound(ErrorPage):
         super().__init__(template_file, 404, message, template_data)
 
 
+class TemplateNotFound(TemplateError, ValueError, LookupError):
+    """No template of that name: raised by the template loaders (``PageTemplateLoader``, the
+    integrations, ``chameleon_rs.starlette.Templates``) with Chameleon's message, ``Template not
+    found: {name}.``. A ``ValueError``, as Chameleon's loader raises, so existing ``except
+    ValueError`` clauses keep working; also a ``LookupError``. Code moving from Jinja catches
+    it where it caught ``jinja2.TemplateNotFound``."""
+
+
 class DecoratorOrderError(TemplateError):
     """A view was registered with its framework before ``@template`` wrapped it (``@template``
     written above ``@app.get`` / ``@app.route`` / ``@router.get``), so the route calls the bare
@@ -78,4 +86,4 @@ def model_of(value: Any) -> dict[str, Any] | None:
     return None
 
 
-__all__ = ['DecoratorOrderError', 'ErrorPage', 'NotFound', 'TemplateError', 'model_of']
+__all__ = ['DecoratorOrderError', 'ErrorPage', 'NotFound', 'TemplateError', 'TemplateNotFound', 'model_of']

@@ -1434,8 +1434,8 @@ Release blockers. Each behaviour checked against Chameleon's generated code firs
   render. `TemplateResponse_async` (same arguments, `concurrent` / `offload` keywords) renders
   with `render_async`; the sync method stays sync for parity (default behaviour matches
   Starlette; async is opt-in by name). `url_for` is passed as a template variable but kept out
-  of `response.context`, as Jinja's global is. `response.template` is the page template (no
-  Jinja `.name`; open for the owner). The decorator layer is the Flask/FastAPI module API on
+  of `response.context`, as Jinja's global is. `response.template` is the page template, with Jinja's
+  `.name` (see the review fixes). The decorator layer is the Flask/FastAPI module API on
   `_views`, with Flask's `template()` signature.
 - **Starlette pieces shared with FastAPI.** `StarletteIntegration` (in `chameleon_rs.starlette`)
   is the Starlette part of `_views.Integration`: `is_response` (any Starlette response),
@@ -1451,6 +1451,17 @@ Release blockers. Each behaviour checked against Chameleon's generated code firs
   Starlette returns `request` and `url_for` when an argument is a `Request` (function endpoints
   get it first, `HTTPEndpoint` methods second); Flask and FastAPI return `None`, so their
   models are unchanged.
+- **Review fixes.** `Templates.get_template` refuses names that reach outside the folder
+  (absolute, `..`, backslash, drive letter, `package:` spec) with
+  `chameleon_rs.web.TemplateNotFound`, as Jinja's `split_template_path` does; the decorator
+  paths, error pages and partials deliberately keep the original libraries' lookup (owner's
+  rule: default behaviour matches them; documented as "names come from your code").
+  `TemplateNotFound(TemplateError, ValueError, LookupError)` is what the loader raises for a
+  missing template (Chameleon's message; formatted inside a render exactly as Chameleon's
+  `ValueError`). Error pages get `view_context` too (`{**extra, **data}`). The debug event's
+  template is a `_DebugTemplate` proxy adding Jinja's `name`. `Templates.globals` mirrors
+  `env.globals` (`{**globals, **context}`, `url_for` there by default). The route walk follows
+  `.app` through middleware below `Mount` / `Host`.
 - **Settings:** `VIEW_SLOTS = ('flask', 'starlette', 'fastapi')`;
   `chameleon_rs.starlette.configure()` sets the partials and its slot, `global_init` / `clear`
   only its slot. Settings are process-wide, as FastAPI's.

@@ -23,6 +23,7 @@ flask = pytest.importorskip('flask')
 import chameleon_rs
 import chameleon_rs.flask as ours
 import chameleon_rs.web
+from exprtest import exception_name
 
 ORIGINAL = Path(__file__).resolve().parents[2] / 'temp' / 'chameleon-flask'
 
@@ -80,7 +81,7 @@ def result(module: ModuleType, make_view: Callable[[ModuleType], Callable[..., A
         if asyncio.iscoroutine(resp):
             resp = asyncio.run(resp)
     except Exception as e:  # noqa: BLE001 - comparing exceptions across implementations
-        return ('raise', type(e).__name__, re.sub(r'0x[0-9a-f]+', '0x?', str(e)))
+        return ('raise', exception_name(e), re.sub(r'0x[0-9a-f]+', '0x?', str(e)))
     return ('ok', type(resp).__name__, resp.status_code, resp.headers.get('Content-Type'), resp.get_data(as_text=True))
 
 

@@ -16,6 +16,7 @@ import chameleon_partials
 import chameleon_rs
 import chameleon_rs.partials
 import pytest
+from exprtest import exception_name
 
 ADDRESS = re.compile(r'0x[0-9a-fA-F]+')
 # What `econtext['render_partial']` prints: chameleon_partials' function, or our renderer.
@@ -40,7 +41,7 @@ def outcome(fn: Any) -> tuple[Any, ...]:
     try:
         return ('ok', canon(fn()))
     except Exception as e:  # noqa: BLE001 - comparing exceptions across engines
-        return ('raise', type(e).__name__, canon(str(e)))
+        return ('raise', exception_name(e), canon(str(e)))
 
 
 @pytest.fixture

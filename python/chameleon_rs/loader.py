@@ -1,6 +1,7 @@
 # Ported from Chameleon's src/chameleon/loader.py (`cache`, `import_package_resource`,
 # `TemplateLoader`, `MemoryLoader`, `ModuleLoader`), modified: type annotations; `cache`
-# stores with `setdefault`, so concurrent loads share one template. chameleon-rs
+# stores with `setdefault`, so concurrent loads share one template; a missing template raises
+# `chameleon_rs.web.TemplateNotFound` (a `ValueError`, with the same message). chameleon-rs
 # does not compile templates into Python modules, so `MemoryLoader` and `ModuleLoader` are
 # kept only for code that uses them directly (and as a template's `loader` attribute).
 """Template loading by path spec: what the ``load:`` expression type calls (as the
@@ -24,6 +25,8 @@ from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 from threading import RLock
 from typing import TYPE_CHECKING, Any, cast
+
+from chameleon_rs.web import TemplateNotFound
 
 if TYPE_CHECKING:
     from importlib.resources.abc import Traversable
@@ -125,7 +128,8 @@ class TemplateLoader:
                             spec = path
                             break
                 else:
-                    raise ValueError(f'Template not found: {spec}.')
+                    # A ValueError, as Chameleon's (`chameleon_rs.web.TemplateNotFound`).
+                    raise TemplateNotFound(f'Template not found: {spec}.')
 
         return cls(spec, search_path=self.search_path, package_name=package_name, **self.kwargs)
 
