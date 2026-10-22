@@ -182,22 +182,29 @@ def test_render_async() -> None:
     assert asyncio.run(main()) == '<h1>T</h1><div><p><em>plain</em></p>\n</div>'
 
 
-def test_render_async_awaits_only_final_values() -> None:
-    # As for `structure:` (D9): a value computed inside the expression isn't awaited, so the
-    # Markdown text has to be loaded before the render (in the view).
+def test_render_async_awaits_the_text() -> None:
+    # An awaitable `markdown:` value is awaited, then converted (as `structure:`'s, D9): its
+    # repr was once converted instead, and the coroutine never ran.
     chameleon_rs.configure(markdown=True)
 
     async def body() -> str:
         return '*x*'
 
     async def main() -> str:
-        coroutine = body()
-        try:
-            return await PageTemplate('${markdown: body}').render_async(body=coroutine)
-        finally:
-            coroutine.close()
+        return await PageTemplate('${markdown: body()}<i title="${markdown: body()}"/>').render_async(body=body)
 
-    assert asyncio.run(main()).startswith('<p>&lt;coroutine object')
+    assert asyncio.run(main()) == '<p><em>x</em></p>\n<i title="&lt;p&gt;&lt;em&gt;x&lt;/em&gt;&lt;/p&gt;\n"/>'
+
+
+def test_a_synchronous_render_converts_what_it_gets() -> None:
+    async def body() -> str:
+        return '*x*'
+
+    coroutine = body()
+    try:
+        assert md('${markdown: c}', c=coroutine).startswith('<p>&lt;coroutine object')
+    finally:
+        coroutine.close()
 
 
 def test_file_templates(tmp_path: Any) -> None:

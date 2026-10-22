@@ -56,6 +56,12 @@ def concurrent[**P](fn: Callable[P, Awaitable[Any]]) -> Callable[P, ConcurrentCa
     return wrapper
 
 
+async def _then[T](awaitable: Awaitable[T], convert: Callable[[T], Any]) -> Any:
+    # `structure:` / `markdown:` of an awaitable in an asynchronous render: the expression's
+    # final value, which the render awaits like any other (the value awaited, then converted).
+    return convert(await awaitable)
+
+
 async def _await[T](awaitable: Awaitable[T]) -> T:
     # A coroutine around a native awaitable (`asyncio.ensure_future` takes it as is).
     return await awaitable

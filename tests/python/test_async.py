@@ -22,6 +22,7 @@ import os
 import sys
 import time
 import types
+import warnings
 import weakref
 from pathlib import Path
 from typing import Any
@@ -1152,3 +1153,36 @@ def test_a_metaclass_await_does_not_make_instances_awaitable() -> None:
             return 'value'
 
     assert run(PageTemplate('${v}').render_async(v=Value())) == 'value'
+
+
+async def _later(value: Any) -> Any:
+    await asyncio.sleep(0)
+    return value
+
+
+@concurrent
+async def _later_concurrent(value: Any) -> Any:
+    await asyncio.sleep(0)
+    return value
+
+
+@pytest.mark.parametrize(
+    ('source', 'expected'),
+    [
+        ('<p>${structure: later(x)}</p>', '<p><b>x</b></p>'),
+        ('<p>${structure: soon(x)}</p>', '<p><b>x</b></p>'),
+        ('<p title="${structure: later(x)}"/>', '<p title="<b>x</b>"/>'),
+        ('<p tal:replace="structure: later(x)"/>', '<b>x</b>'),
+        ('<p tal:content="structure later(x)"/>', '<p><b>x</b></p>'),
+    ],
+)
+def test_structure_of_an_awaitable_is_awaited(source: str, expected: str) -> None:
+    # The awaitable once became `Markup(repr)`: `<coroutine object ...>` written raw, never run.
+    async def main() -> str:
+        return await PageTemplate(source).render_async(x='<b>x</b>', later=_later, soon=_later_concurrent)
+
+    with warnings.catch_warnings():
+        # A coroutine that never ran warns when collected.
+        warnings.simplefilter('error', RuntimeWarning)
+        assert asyncio.run(main()) == expected
+        gc.collect()

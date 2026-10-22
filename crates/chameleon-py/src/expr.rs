@@ -789,6 +789,24 @@ static MARKUP: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static RESOLVE_DOTTED: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static EXPRESSION_ERROR: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
+static THEN: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+
+/// In an asynchronous render, a `structure:` or `markdown:` value that is awaitable: a
+/// coroutine that awaits it and then converts the result. As the expression's final value the
+/// render awaits it (D9), where wrapping the awaitable itself would write its `repr` and never
+/// run it. `None` otherwise (a synchronous render converts what it gets, as Chameleon does).
+fn convert_later<'py>(
+    cx: &Cx<'_, 'py>,
+    value: &Bound<'py, PyAny>,
+    convert: impl FnOnce() -> PyResult<Bound<'py, PyAny>>,
+) -> PyResult<Option<Bound<'py, PyAny>>> {
+    if !cx.render.awaits || !crate::awaitable::is_awaitable_with(value, Some(&cx.render.await_types))? {
+        return Ok(None);
+    }
+    let then = utils_attr(value.py(), &THEN, "chameleon_rs._async", "_then")?;
+    Ok(Some(then.call1((value, convert()?))?))
+}
+
 fn utils_attr<'py>(
     py: Python<'py>,
     cell: &'static PyOnceLock<Py<PyAny>>,
@@ -1027,10 +1045,18 @@ fn eval_rare<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
         }
         Expr::Structure(inner) => {
             let value = eval(inner, cx)?;
-            utils_attr(py, &MARKUP, "chameleon_rs.utils", "Markup")?.call1((value,))
+            let markup = utils_attr(py, &MARKUP, "chameleon_rs.utils", "Markup")?;
+            if let Some(later) = convert_later(cx, &value, || Ok(markup.clone()))? {
+                return Ok(later);
+            }
+            markup.call1((value,))
         }
         Expr::Markdown(profile, inner) => {
-            crate::markdown::to_markup(profile.get(), &eval(inner, cx)?, Some(cx.marker()))
+            let value = eval(inner, cx)?;
+            if let Some(later) = convert_later(cx, &value, || profile.bind(py).getattr(intern!(py, "convert")))? {
+                return Ok(later);
+            }
+            crate::markdown::to_markup(profile.get(), &value, Some(cx.marker()))
         }
         Expr::Import(name) => utils_attr(py, &RESOLVE_DOTTED, "chameleon_rs.utils", "resolve_dotted")?.call1((name,)),
         Expr::Interp(s) => eval_interp(s, cx),

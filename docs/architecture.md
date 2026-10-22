@@ -1214,8 +1214,9 @@ changes while it isn't configured.
 - **Evaluation.** `None` and `''` give empty `Markup`; the `default` marker passes through
   (the element keeps its content); other non-strings go through `str()`; lone surrogates
   become U+FFFD (one each, through UTF-16); the result is `Markup`, emitted unescaped like
-  `structure:`. In an async render only the final value is awaited (D9), as for
-  `structure:`: a coroutine passed to `markdown:` is not. A panic in comrak is caught
+  `structure:`. In an async render an awaitable value is awaited and then converted, as for
+  `structure:` (D9: the expression's final value becomes a coroutine doing both, which the
+  render awaits; wrapping the awaitable itself once wrote its `repr` and never ran it). A panic in comrak is caught
   (`catch_unwind`) and raised as `RuntimeError` naming the profile: an `Exception`
   frameworks handle, and not one a TALES `|` falls back on.
 - **Options through comrak's formatter hook, not by rewriting HTML.** `images: false`
@@ -1875,6 +1876,8 @@ then `render()` setup moves into Rust while the classes stay subclassable.
   the inner `__await__()` iterator like `yield from` (cancellation arrives through `throw`),
   and resumes with the result. Only final values are awaited: `coro().title` is an
   `AttributeError` on the coroutine; `tal:condition="coro()"` is awaited before the truth test.
+  `structure:` and `markdown:` of an awaitable make their final value a coroutine that awaits
+  it and then converts (`_async._then`), so `${structure: coro()}` renders the result.
   Async iterables in `repeat`: not supported (Phase 11; see its amendments). Nested renders that go through Python
   (a fallback expression calling another template) stay synchronous. PyO3's
   `experimental-async` is not used: it drives Rust futures, not Python awaitables.
