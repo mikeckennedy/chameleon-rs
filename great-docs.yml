@@ -154,10 +154,12 @@ skill:
     - need: "Render Chameleon templates from async Litestar handlers without blocking the loop"
       use: "chameleon_rs.litestar: configure(folder, app=app), then @template('page.pt') below @get"
 
-# Umami analytics. Needs this site's own website id (the partials site has its own):
-# include_in_header:
-#   - text: |
-#       <script async src="https://uma.mkennedy.codes/script.js" data-website-id="TODO"></script>
+# Umami analytics, merged into Quarto's format.html.include-in-header so it lands in the
+# <head> of every page. Same website id as the partials docs: both live under
+# mkennedy.codes/docs/.
+include_in_header:
+  - text: |
+      <script async src="https://uma.mkennedy.codes/script.js" data-website-id="fc9b6770-3b44-4073-944e-4a4f0e79f66a"></script>
 
 jupyter: python3
 

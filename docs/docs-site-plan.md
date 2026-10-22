@@ -17,7 +17,7 @@ Every new piece below has a working counterpart in `../chameleon_partials`.
 | Build script | `scripts/build_docs.py`: build, mirror `_site/`, then two post-process fixes for great-docs 0.13.0 bugs (dead `search.json` entries, missing canonical links) | Copy it unchanged except `DEST` |
 | Preview | `scripts/serve_docs.py`, serving at the production subpath on :8099 | Copy it, with prefix `/docs/chameleon-rs` and port 8098 so both can run at once |
 | URL | `https://mkennedy.codes/docs/chameleon-partials/` | `https://mkennedy.codes/docs/chameleon-rs/` |
-| Analytics | Umami snippet in `include_in_header` | Same snippet; needs a new Umami website id |
+| Analytics | Umami snippet in `include_in_header` | Same snippet and website id (same domain) |
 
 Add `make docs` (build the extension, then run `build_docs.py`) and `make docs-serve`.
 
@@ -182,7 +182,6 @@ Left:
 
 - Step 2 (docstring pass) and pages 7–8 (async, free-threading): after Phase 11 merges. The
   Flask page's "renders are synchronous for now" note changes then too.
-- The Umami website id (commented out in `great-docs.yml`).
 - Logo and favicon (Michael has graphics).
 - A `CHANGELOG.md` and GitHub releases, for the changelog page (Phase 12).
 - The nginx alias for `site/` (Michael's step) and the first publish.

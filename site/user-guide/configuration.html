@@ -109,6 +109,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     "search-label": "Search"
   }
 }</script>
+<script async="" src="https://uma.mkennedy.codes/script.js" data-website-id="fc9b6770-3b44-4073-944e-4a4f0e79f66a"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <script>document.head.appendChild(Object.assign(document.createElement('link'),{rel:'stylesheet',href:(document.querySelector('meta[name="quarto:offset"]')||{content:''}).content+'termshow.css'}));</script>
 <meta name="gd-logo-dark" content="chameleon-rs-logo-dark.png">
@@ -438,7 +439,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><strong><code>partial_search</code> and the Markdown settings don’t need a folder.</strong> Every other option needs one, on the first call.</li>
 <li>It returns the new settings, and raises <a href="../reference/web.TemplateError.html#chameleon_rs.web.TemplateError" class="gdls-link gdls-code">chameleon_rs.web.TemplateError</a> for a missing folder, or <code>ValueError</code> for an unknown <code>partial_search</code> or an invalid Markdown setting (<code>TypeError</code> for one of the wrong type). A call that raises changes nothing.</li>
 </ul>
-<div id="e5e7b87a" class="cell" data-execution_count="2">
+<div id="93faf3c5" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>settings <span class="op">=</span> chameleon_rs.configure(template_folder<span class="op">=</span>template_folder, auto_reload<span class="op">=</span><span class="va">True</span>)</span>
