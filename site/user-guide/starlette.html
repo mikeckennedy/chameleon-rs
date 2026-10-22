@@ -390,7 +390,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p><code>import chameleon_rs</code> doesn’t import Starlette. Only <code>import chameleon_rs.starlette</code> does, and it uses the Starlette your app already has (1.x, and 0.46 or later).</p>
 <section id="templates-jinja2templates-for-chameleon-rs" class="level1">
 <h1>Templates: Jinja2Templates for chameleon-rs</h1>
-<div id="1e6e8073" class="cell" data-execution_count="2">
+<div id="33b498f3" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> starlette.applications <span class="im">import</span> Starlette</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> starlette.routing <span class="im">import</span> Route</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> starlette.testclient <span class="im">import</span> TestClient</span>
@@ -450,7 +450,7 @@ home/index.pt ['request', 'site', 'title', 'videos']</code></pre>
 <section id="rendering-without-blocking-the-event-loop" class="level1">
 <h1>Rendering without blocking the event loop</h1>
 <p>Jinja’s <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates.TemplateResponse" class="gdls-link gdls-code">TemplateResponse</a> renders on the event loop: while a big page renders, nothing else runs. <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates.TemplateResponse_async" class="gdls-link gdls-code">TemplateResponse_async</a> takes the same arguments and renders with <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a>:</p>
-<div id="6ee03b9b" class="cell" data-execution_count="3">
+<div id="4db381fa" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> asyncio</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -481,7 +481,7 @@ home/index.pt ['request', 'site', 'title', 'videos']</code></pre>
 </section>
 <section id="the-decorator-api" class="level1">
 <h1>The decorator API</h1>
-<div id="e2b886d5" class="cell" data-execution_count="4">
+<div id="03c9e66a" class="cell" data-execution_count="4">
 <div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.starlette <span class="im">as</span> chameleon_starlette</span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>chameleon_starlette.configure(template_folder<span class="op">=</span>template_folder)</span>

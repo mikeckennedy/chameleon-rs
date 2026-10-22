@@ -108,6 +108,8 @@ the pages of a production site, where the app's own Python code takes much of th
 Templates compile about 70x faster, so the first request after a deploy or reload is quick
 too. See [Performance](user-guide/performance.qmd).
 
+![](https://mkennedy-shared.nyc3.digitaloceanspaces.com/github/chamelon-rs-perf-graph-light.png){fig-alt="chameleon-rs speedup over Chameleon: native partials 10.9x, macro calls 6.9x, listings 6.6x, app-shaped page 4.3x, template compilation about 70x; on a production Quart site, template rendering 2.2x, throughput 1.34x, whole requests 1.3x"}
+
 ## Where to next
 
 - [Getting started](user-guide/getting-started.qmd): render a first template and set up a
