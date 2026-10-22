@@ -29,7 +29,8 @@ replacement. Documentation: <https://mkennedy.codes/docs/chameleon-rs/>.
   search path, or a package's `templates` folder). A name that would leave the folder (an
   absolute path, a `..` out of it, a `package:path` spec) is not found, as in
   chameleon_partials 0.2.1. `chameleon_rs.robyn.ChameleonTemplate` refuses such names as
-  Robyn's `JinjaTemplate` does.
+  Robyn's `JinjaTemplate` does. Every spelling of a name (`./a//b.pt`) is one cached template,
+  in partials and in the Jinja-style `get_template` APIs.
 - **`chameleon_rs.configure()`**: one process-wide call for the template folder,
   `auto_reload`, partial lookup (`partial_search`) and Markdown settings, applied on every
   call and thread-safe.

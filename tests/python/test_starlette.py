@@ -817,3 +817,13 @@ def _typing_checks() -> None:
     assert_type(templates.TemplateResponse(request, 'x.pt'), ours._TemplateResponse)
     assert_type(templates.get_template('x.pt'), PageTemplateFile)
     assert_type(templates.TemplateResponse_async(request, 'x.pt'), CoroutineType[Any, Any, ours._TemplateResponse])
+
+
+SPELLINGS = ['home/index.pt', './home/index.pt', 'home//index.pt', './/home/./index.pt', 'home/./././index.pt']
+
+
+def test_every_spelling_of_a_name_is_one_template(folder: Path) -> None:
+    # Security: each spelling once compiled and cached its own copy (memory without bound).
+    templates = ours.Templates(directory=folder)
+    assert len({id(templates.get_template(name)) for name in SPELLINGS}) == 1
+    assert len(templates.loader.registry) == 1

@@ -265,7 +265,7 @@ class ChameleonEngine(TemplateEngineProtocol[ChameleonTemplate, TemplateContext]
         if _views.outside_folder(template_name):
             raise TemplateNotFoundException(template_name=template_name)
         try:
-            page = self.loader[template_name]
+            page = self.loader[_views.canonical(template_name)]
         except ValueError as exc:
             # Only the loader's own lookup failure (its `default_extension` and search path
             # applied); other errors pass through.

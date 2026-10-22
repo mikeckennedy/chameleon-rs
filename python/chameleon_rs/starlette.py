@@ -272,12 +272,13 @@ def _url_for(request: Request) -> Callable[..., Any]:
 # --- Templates: Starlette's Jinja2Templates for chameleon-rs ----------------------------------
 
 
-def _check_name(name: str) -> None:
+def _check_name(name: str) -> str:
     """Refuses a name that could load a template outside the folder, as Jinja's
-    ``FileSystemLoader`` does (``_views.outside_folder``)."""
+    ``FileSystemLoader`` does (``_views.outside_folder``); returns its canonical spelling."""
     if _views.outside_folder(name):
         msg = f'Template not found: {name}.'
         raise TemplateNotFound(msg)
+    return _views.canonical(name)
 
 
 class _DebugTemplate:
@@ -393,12 +394,12 @@ class Templates:
         or if the name could reach outside the folder (absolute, ``..``, a backslash, a drive
         letter or a package spec), as Jinja's ``FileSystemLoader`` refuses such names. (Only
         here: ``PageTemplateLoader`` and the decorator API raise Chameleon's ``ValueError``.)"""
-        _check_name(name)
+        spec = _check_name(name)
         loader = self.loader
-        if not any(os.path.isfile(os.path.join(folder, name)) for folder in loader.search_path):
+        if not any(os.path.isfile(os.path.join(folder, spec)) for folder in loader.search_path):
             msg = f'Template not found: {name}.'
             raise TemplateNotFound(msg)
-        return loader[name]
+        return loader[spec]
 
     def _context(self, request: Request, context: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
         """The response's context (Starlette's: ``request`` set unless given, then the context

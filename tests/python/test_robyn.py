@@ -991,3 +991,11 @@ def test_decorated_handler_types(folder: Path) -> None:
     assert_type(ours.ChameleonTemplate(str(folder)).render_template('home/index.pt', a=1), Response)
     assert isinstance(view(1), Response)
     assert isinstance(asyncio.run(aview(1)), Response)
+
+
+def test_every_spelling_of_a_name_is_one_template(folder: Path) -> None:
+    # Security: each spelling once compiled and cached its own copy (memory without bound).
+    engine = ours.ChameleonTemplate(str(folder))
+    for name in ['home/index.pt', './home/index.pt', 'home//index.pt', './/home/./index.pt']:
+        assert engine.render_template(name, a=1).description == '<h1>Hello 1 -!</h1>'
+    assert len(engine.loader.registry) == 1

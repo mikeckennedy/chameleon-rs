@@ -629,7 +629,7 @@ class ChameleonTemplate(_EngineBase):
         if _views.outside_folder(template_name):
             msg = f'Template not found: {template_name}.'
             raise TemplateNotFound(msg)
-        return self.loader[template_name]
+        return self.loader[_views.canonical(template_name)]
 
     async def render_template_async(self, template_name: str, **kwargs: Any) -> Response:
         """``render_template`` as a coroutine, rendering with ``render_async`` (awaitable

@@ -281,6 +281,13 @@ def outside_folder(name: object) -> bool:
     )
 
 
+def canonical(name: str) -> str:
+    """``name`` without ``.`` and empty segments (``./a//b.pt`` is ``a/b.pt``), as Jinja's
+    ``split_template_path`` drops them: one cached template per file, however a request spells
+    its name (each spelling would otherwise compile and keep its own copy)."""
+    return '/'.join(piece for piece in name.split('/') if piece not in {'', '.'})
+
+
 def is_not_found(exc: ValueError) -> bool:
     """Whether ``exc`` is the loader's "no such template" (``chameleon_rs.loader``'s
     ``Template not found: {spec}.``), not an error from compiling the template."""

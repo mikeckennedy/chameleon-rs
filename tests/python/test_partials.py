@@ -632,3 +632,23 @@ def test_chameleon_partials_own_function_renders_natively() -> None:
     result = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, check=False)
     # One `render` call: the page's own; both partial levels were native frames.
     assert result.stdout == '<i><b>0</b>d</i>\n<i><b>1</b>d</i> 1\n', result.stderr
+
+
+def test_every_spelling_of_a_partial_is_one_template(folder: Path) -> None:
+    # Security: each spelling once compiled and cached its own copy (memory without bound).
+    write(folder, {'page.pt': '${render_partial(name)}', 'shared/card.pt': 'card'})
+    chameleon_rs.configure(template_folder=str(folder))
+    page = chameleon_rs.PageTemplateFile(str(folder / 'page.pt'))
+    spellings = [
+        'shared/card.pt',
+        './shared/card.pt',
+        'shared//card.pt',
+        'shared/./card.pt',
+        'shared/../shared/card.pt',
+    ]
+    for name in spellings:
+        assert page(name=name) == 'card'
+    settings = chameleon_rs._settings.partials
+    assert settings is not None
+    assert len(settings.loader.registry) == 1
+    assert len(page.__dict__['_partial_cache']) == 1

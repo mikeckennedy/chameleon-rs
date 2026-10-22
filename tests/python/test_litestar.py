@@ -1027,3 +1027,14 @@ def _typing_checks() -> None:
         TemplateConfig(engine=ours.ChameleonEngine, directory='t', engine_callback=callback),
         TemplateConfig[ours.ChameleonEngine],
     )
+
+
+SPELLINGS = ['home/index.pt', './home/index.pt', 'home//index.pt', './/home/./index.pt', 'home/./././index.pt']
+
+
+def test_every_spelling_of_a_name_is_one_template(folder: Path) -> None:
+    # Security: each spelling once compiled and cached its own copy (memory without bound).
+    engine = ours.ChameleonEngine(folder)
+    pages = {id(engine.get_template(name).template) for name in SPELLINGS}
+    assert len(pages) == 1
+    assert len(engine.loader.registry) == 1

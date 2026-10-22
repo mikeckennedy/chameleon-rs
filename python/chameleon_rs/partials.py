@@ -35,6 +35,7 @@ renders natively.
 from __future__ import annotations
 
 import os
+import posixpath
 import types
 import weakref
 from typing import Any
@@ -169,7 +170,7 @@ def resolve(caller: Any, template_file: str) -> Any:
     cache = None if caller is None else caller.__dict__.get('_partial_cache')
     if cache is None:
         cache = _GLOBAL_CACHE if caller is None else caller.__dict__.setdefault('_partial_cache', {})
-    key = template_file
+    key = _spelling(template_file)
     hit = cache.get(key)
     if hit is not None and hit[0] == generation:
         return hit[1]
@@ -185,20 +186,29 @@ _GLOBAL_CACHE: dict[str, tuple[tuple[int, bool, bool], Any]] = {}
 _SIBLINGS: dict[Any, Any] = {}
 
 
+def _spelling(template_file: str) -> str:
+    """The one spelling of a path its lookups and caches use: ``./a//b/../c.pt`` is ``a/c.pt``.
+    Each spelling would otherwise compile and keep its own copy of the same file (a name built
+    from request data could grow the caches without bound)."""
+    spec = template_file.strip()
+    return posixpath.normpath(spec) if spec else spec
+
+
 def _find(caller: Any, template_file: str) -> Any:
     spec = template_file.strip()
+    name = _spelling(spec)
     settings = _settings.partials if has_registered_extensions else None
     search = caller is not None and _settings.search_mode == 'caller'
     if settings is not None:
         try:
-            if not _in_folder(spec, settings.template_folder):
+            if not _in_folder(name, settings.template_folder):
                 raise _not_found(spec)
-            return settings.loader.load(spec)
+            return settings.loader.load(name)
         except ValueError:
             if not search:
                 raise
     for folder, root in _folders(caller, settings):
-        path = os.path.normpath(os.path.join(folder, spec))
+        path = os.path.normpath(os.path.join(folder, name))
         # Never outside the root the folder belongs to: no `..` or absolute path out of it.
         if _inside(path, root) and os.path.isfile(path):
             return _sibling(caller, path)
