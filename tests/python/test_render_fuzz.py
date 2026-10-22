@@ -356,15 +356,11 @@ METAL_I18N: dict[str, Any] = {
 
 
 @st.composite
-def i18n_element(draw: Any, depth: int, safe: bool, fill: bool = False) -> str:
+def i18n_element(draw: Any, depth: int, safe: bool) -> str:
     tag = draw(st.sampled_from(['p', 'tal:b', 'input']))
     pool = sorted(TAL) + sorted(METAL_I18N)
     if safe:
         pool.remove('tal:on-error')
-    if fill:
-        # In a slot body Chameleon's conversion helpers see the defining function's i18n
-        # settings (a known difference: test_i18n.test_conversion_in_a_slot_body_ignores_its_i18n_context).
-        pool = [n for n in pool if n not in ('i18n:domain', 'i18n:context')]
     names = draw(st.lists(st.sampled_from(pool), max_size=4, unique=True))
     if 'tal:content' in names and 'tal:replace' in names:
         names.remove('tal:replace')
@@ -377,7 +373,7 @@ def i18n_element(draw: Any, depth: int, safe: bool, fill: bool = False) -> str:
     if depth <= 0 or draw(st.booleans()):
         return f'<{tag}{attrs}/>' if draw(st.booleans()) else f'<{tag}{attrs}>t ${{x}}</{tag}>'
     safe = safe or 'i18n:translate' in names
-    children = draw(st.lists(i18n_node(depth - 1, safe, fill), max_size=3))
+    children = draw(st.lists(i18n_node(depth - 1, safe), max_size=3))
     return f'<{tag}{attrs}>{"".join(children)}</{tag}>'
 
 
@@ -390,14 +386,18 @@ def use_macro(draw: Any, depth: int) -> str:
     # text node and its expressions at once, so a failing expression drops the text before it
     # (a known difference: test_macros.test_handler_in_a_slot_body_drops_the_failing_text_node).
     translated = 'mt' in expr
-    extra = draw(st.sampled_from(['', ' tal:define="x 5"', ' tal:on-error="string:E"', ' i18n:domain="u"']))
+    # No `i18n:domain` on the call itself: a fill the macro does not take is left over, and a
+    # later call outside that domain takes it, where Chameleon's conversion helpers see the
+    # settings at that call (a known difference: test_i18n.
+    # test_conversion_in_a_left_over_slot_body_uses_its_functions_settings_at_the_call).
+    extra = draw(st.sampled_from(['', ' tal:define="x 5"', ' tal:on-error="string:E"']))
     if attr == 'metal:extend-macro':
         extra += f' metal:define-macro="{draw(st.sampled_from(["m1", "m2"]))}"'
     fills = []
     for _ in range(draw(st.integers(0, 2))):
         slot = draw(st.sampled_from(['s1', 's2']))
         again = draw(st.sampled_from(['', ' metal:define-slot="s2"', ' i18n:translate=""', ' tal:define="x 7"']))
-        inner = draw(i18n_node(depth - 1, 'translate' in again or translated, fill=True)) if depth > 0 else '${x}'
+        inner = draw(i18n_node(depth - 1, 'translate' in again or translated)) if depth > 0 else '${x}'
         # A slot defined inside the fill body, or a macro called from it (Phase 8).
         inner += draw(
             st.sampled_from(['', '<e metal:define-slot="s1">d</e>', f'<z metal:use-macro="{draw(MACRO_EXPR)}"/>'])
@@ -407,18 +407,18 @@ def use_macro(draw: Any, depth: int) -> str:
 
 
 @st.composite
-def translation(draw: Any, depth: int, fill: bool = False) -> str:
+def translation(draw: Any, depth: int) -> str:
     """`i18n:translate` with names inside."""
     msgid = draw(st.sampled_from(['', '', 'msg']))
     parts = []
     for i in range(draw(st.integers(0, 2))):
-        inner = draw(i18n_node(depth - 1, True, fill)) if depth > 0 else '${s}'
+        inner = draw(i18n_node(depth - 1, True)) if depth > 0 else '${s}'
         cond = draw(st.sampled_from(['', ' tal:condition="z"', ' tal:define="x 3"']))
         parts.append(f' w <i i18n:name="n{i}"{cond}>{inner}</i>')
     return f'<p i18n:translate="{msgid}">a  {"".join(parts)} b</p>'
 
 
-def i18n_node(depth: int, safe: bool = False, fill: bool = False) -> Any:
+def i18n_node(depth: int, safe: bool = False) -> Any:
     """A node of the macro and i18n templates. `safe`: inside a translation, where nothing
     has a `tal:on-error` (Chameleon's one fallback register per function, set inside a
     translation stream and used by a handler outside it, deletes from the outer stream by the
@@ -442,7 +442,7 @@ def i18n_node(depth: int, safe: bool = False, fill: bool = False) -> Any:
         ]
     )
     if safe:
-        return st.one_of(text, i18n_element(depth, True, fill), translation(depth, fill))
+        return st.one_of(text, i18n_element(depth, True), translation(depth))
     # A macro whose slot is defined inside a translation (Phase 8: slot bodies and macro streams).
     translated_slot = st.sampled_from(
         [
@@ -452,9 +452,9 @@ def i18n_node(depth: int, safe: bool = False, fill: bool = False) -> Any:
     )
     return st.one_of(
         text,
-        i18n_element(depth, False, fill),
+        i18n_element(depth, False),
         use_macro(depth),
-        translation(depth, fill),
+        translation(depth),
         guarded(depth),
         translated_slot,
     )

@@ -494,12 +494,13 @@ impl Macros for World {
             },
             slots: f.slots.clone(),
             stream: f.stream,
+            helpers: None,
         }))
     }
 }
 
 impl Translate for World {
-    fn i18n_changed(&mut self, i18n: &I18n<V>) -> Result<(), String> {
+    fn i18n_changed(&mut self, i18n: &I18n<V>, _helpers: Option<&I18n<V>>) -> Result<(), String> {
         self.i18n = i18n_label(i18n);
         Ok(())
     }

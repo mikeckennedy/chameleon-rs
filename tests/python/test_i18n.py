@@ -219,12 +219,141 @@ def test_fallback_register_set_inside_a_closed_translation(result: str | None) -
     assert chameleon_rs.PageTemplate(source)(**kw) == '<div>abc<p><div>E</div>'
 
 
-@pytest.mark.xfail(strict=True, reason="known difference: conversion in a slot body uses the slot body's i18n settings")
+M_SLOT = '<p metal:define-macro="m"><s metal:define-slot="s"/></p>'
+M_TRANSLATED = '<p metal:define-macro="t" i18n:domain="dm"><b i18n:translate="">F<s metal:define-slot="s"/>G</b></p>'
+M_OTHER = '<p metal:define-macro="k" i18n:context="ck">K<em metal:define-slot="u">u</em>${o}</p>'
+M_NOSLOT = '<p metal:define-macro="n">N</p>'
+
+SLOT_HELPER_CASES = [
+    # The body's own context: `tal:content` converts with the helpers (the function's, None).
+    """<div metal:use-macro="macros['m']"><b metal:fill-slot="s"><p i18n:context="c1" tal:content="xs"></p></b></div>""",
+    # Domain, context and target set on the body; interpolations, attributes, content.
+    (
+        """<div metal:use-macro="macros['m']"><b metal:fill-slot="s" i18n:domain="d1">${o} <i title="${o}" """
+        """tal:attributes="alt o">a${o}b</i><i tal:replace="o"/></b></div>"""
+    ),
+    (
+        """<div metal:use-macro="macros['m']"><b metal:fill-slot="s" i18n:target="string:t1">${o}<i title="${o}">"""
+        """${o}</i></b></div>"""
+    ),
+    (
+        """<div metal:use-macro="macros['m']"><b metal:fill-slot="s" i18n:context="c1" i18n:target="string:t1">"""
+        """<i i18n:domain="d2">${o}</i>${o}</b></div>"""
+    ),
+    # The function's own settings around the macro call, and the body's.
+    (
+        """<div i18n:domain="d0" i18n:context="c0" metal:use-macro="macros['m']"><b metal:fill-slot="s" """
+        """i18n:domain="d1">${o}<i i18n:translate="">x ${o}</i></b></div>"""
+    ),
+    (
+        """<div i18n:domain="d0"><div i18n:target="string:t0" metal:use-macro="macros['m']"><b metal:fill-slot="s" """
+        """i18n:domain="d1" i18n:target="string:t1">${o}</b></div></div>"""
+    ),
+    # The slot inside the macro's translation; the body translates too.
+    (
+        """<div metal:use-macro="macros['t']"><b metal:fill-slot="s" i18n:context="c1">${o}<i i18n:translate="">"""
+        """y ${o}</i></b></div>"""
+    ),
+    # A macro called from the body gets the body's settings as its own.
+    (
+        """<div metal:use-macro="macros['m']"><b metal:fill-slot="s" i18n:domain="d1">${o}"""
+        """<i metal:use-macro="macros['k']"/></b></div>"""
+    ),
+    # A fill defined in the body: still the function's helpers, its own settings from the body.
+    (
+        """<div metal:use-macro="macros['m']"><b metal:fill-slot="s" i18n:domain="d1">${o}"""
+        """<i metal:use-macro="macros['k']"><em metal:fill-slot="u" i18n:context="c2">${o}</em></i></b></div>"""
+    ),
+    (
+        """<div i18n:domain="d0" metal:use-macro="macros['m']"><b metal:fill-slot="s" i18n:domain="d1">"""
+        """<i i18n:context="c1" metal:use-macro="macros['k']"><em metal:fill-slot="u">${o}</em></i></b></div>"""
+    ),
+    # Defined in a macro (the function is the macro's), and through extend-macro.
+    (
+        """<div metal:define-macro="w" i18n:domain="dw"><i metal:use-macro="macros['m']"><b metal:fill-slot="s" """
+        """i18n:domain="d1">${o}</b></i></div>"""
+    ),
+    (
+        """<div metal:extend-macro="macros['m']" metal:define-macro="e" i18n:domain="de"><b metal:fill-slot="s" """
+        """i18n:context="c1">${o}</b></div><div i18n:domain="d0" metal:use-macro="macros['e']"/>"""
+    ),
+]
+
+
+@pytest.mark.parametrize('source', SLOT_HELPER_CASES)
+def test_conversion_in_a_slot_body_uses_its_functions_i18n_settings(source: str) -> None:
+    """Chameleon's conversion helpers (`__convert`, `__quote`: a value that is not a string, a
+    number or `__html__` is translated) are closures of the render function, so in a slot body
+    they see the defining render function's `__i18n_domain`, `__i18n_context` and
+    `target_language`, not those set inside the body; the body's inline conversions and
+    `translate` calls use the body's (architecture.md, Phase 12 amendments)."""
+    body = f'<tal:d condition="False">{M_SLOT}{M_TRANSLATED}{M_OTHER}{M_NOSLOT}</tal:d>{source}'
+    assert calls(chameleon_rs, body, {}, xs=[1]) == calls(chameleon, body, {}, xs=[1])
+    assert outcome(chameleon_rs, body, {}, xs=[1]) == outcome(chameleon, body, {}, xs=[1])
+
+
+M_CALLS_M = '<p metal:define-macro="w"><i metal:use-macro="macros[\'m\']"/></p>'
+
+
+@pytest.mark.xfail(strict=True, reason='known difference: a left-over fill uses the settings where it was defined')
+@pytest.mark.parametrize(
+    'source',
+    [
+        # The body sets nothing of its own; a later call with another domain takes the fill.
+        (
+            """<div metal:use-macro="macros['n']"><b metal:fill-slot="s">${o}</b></div>"""
+            """<div i18n:domain="d9" metal:use-macro="macros['m']"/>"""
+        ),
+        # The body sets its own context.
+        (
+            """<div metal:use-macro="macros['n']"><b metal:fill-slot="s" i18n:context="c1">${o}</b></div>"""
+            """<div i18n:domain="d9" metal:use-macro="macros['m']"/>"""
+        ),
+        # Taken through another macro that calls the one with the slot.
+        (
+            """<div metal:use-macro="macros['n']"><b metal:fill-slot="s">${o}</b></div>"""
+            """<div i18n:domain="d9" metal:use-macro="macros['w']"/>"""
+        ),
+        # `i18n:target` at the later call.
+        (
+            """<div metal:use-macro="macros['n']"><b metal:fill-slot="s">${o}</b></div>"""
+            """<div i18n:target="string:t9" metal:use-macro="macros['m']"/>"""
+        ),
+    ],
+)
+def test_conversion_in_a_left_over_slot_body_uses_its_functions_settings_at_the_call(source: str) -> None:
+    """A fill no macro took stays in the scope's slot stack, and a later macro call made while
+    the function's settings differ can take it, directly or through another macro. Chameleon's
+    helpers read the function's settings through closure cells, so they see the settings at
+    that later call; chameleon-rs records them where the fill is defined, which is the same
+    everywhere else: the function is suspended in the call that runs the body (architecture.md,
+    Phase 12 amendments)."""
+    body = f'<tal:d condition="False">{M_SLOT}{M_NOSLOT}{M_CALLS_M}</tal:d>{source}'
+    assert calls(chameleon_rs, body, {}) == calls(chameleon, body, {})
+
+
+def test_conversion_in_a_fill_defined_in_a_slot_body_a_foreign_macro_called() -> None:
+    """A fill defined in a slot body that a stock Chameleon macro called belongs to the
+    render function around that body: its helpers use `d0`, not the body's `d1`."""
+
+    def tr(msgid: Any, **kw: Any) -> str:
+        return f'[{msgid}|{kw.get("domain")}|{kw.get("context")}]'
+
+    m = chameleon.PageTemplate('<p metal:define-macro="m"><s metal:define-slot="s"/></p>')
+    page = (
+        """<div i18n:domain="d0" metal:use-macro="m.macros['m']"><b metal:fill-slot="s">"""
+        """<i i18n:domain="d1" metal:use-macro="k.macros['k']"><em metal:fill-slot="u">${o}</em></i></b></div>"""
+    )
+    results = []
+    for engine in (chameleon, chameleon_rs):
+        k = engine.PageTemplate(M_OTHER)
+        results.append(engine.PageTemplate(page)(m=m, k=k, o=Obj(), translate=tr))
+    assert results[1] == results[0]
+    assert '[O!|d0|None]' in results[0]
+
+
 def test_conversion_in_a_slot_body_ignores_its_i18n_context() -> None:
-    """Chameleon's conversion helpers (`__convert`, which calls `translate` for a value that is
-    not a string, a number or `__html__`) are closures of the render function, so in a slot
-    body they see the defining function's `__i18n_context`, not one set inside the body;
-    chameleon-rs uses the body's (architecture.md, Phase 8 amendments)."""
+    """The case the extended fuzzer found (a strict xfail from Phase 8 to Phase 12)."""
     body = (
         '<div metal:use-macro="macros[\'m\']"><b metal:fill-slot="s"><p i18n:context="c1" tal:content="xs"></p></b></div>'
         '<p metal:define-macro="m"><s metal:define-slot="s"/></p>'
@@ -301,3 +430,31 @@ def test_message_attributes_are_read_once() -> None:
         message = Message()
         results.append((engine.PageTemplate('<p>${m}|${string:${m}}</p>')(m=message), message.reads))
     assert results[0] == results[1]
+
+
+@pytest.mark.xfail(strict=True, reason='known difference: write boundaries in a name a handler left unfinished')
+@pytest.mark.parametrize(
+    'source',
+    [
+        # A macro failing partway: its failing text node (`x`) was never appended.
+        (
+            """<tal:d condition="False"><p metal:define-macro="bad2">x${1/0}</p></tal:d>"""
+            """<p i18n:translate="">fa<q i18n:name="k" tal:on-error="string:E">r<z metal:use-macro="macros['bad2']"/>"""
+            """</q></p>"""
+        ),
+        # Chameleon's name stream is a list of its appends.
+        """<p i18n:translate="">fa<q i18n:name="k" tal:on-error="string:E">r<z>${'s'}</z>${1/0}</q></p>""",
+    ],
+)
+def test_handler_on_a_name_maps_it_to_its_appends(source: str) -> None:
+    """A `tal:on-error` on an `i18n:name` element: Chameleon maps the name to its stream,
+    the list of what was appended to it (`['<q>r', '<z>', 's', '</z>']`), where chameleon-rs
+    has one piece; and in a macro that failed partway, Chameleon never appended the failing
+    text node (`['<q>r', '<p>']`) where chameleon-rs keeps its text (`<q>r<p>x`). Pre-existing, the
+    same write-boundary family as `test_handler_in_a_slot_body_drops_the_failing_text_node`
+    (architecture.md, Phase 12 amendments)."""
+
+    def tr(msgid: Any, **kw: Any) -> str:
+        return repr(kw.get('mapping'))
+
+    assert chameleon_rs.PageTemplate(source)(translate=tr) == chameleon.PageTemplate(source)(translate=tr)

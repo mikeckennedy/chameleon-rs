@@ -875,6 +875,10 @@ pub struct Fill<V> {
     pub slots: Vec<Option<V>>,
     /// The output stream the defining function was writing to (see [`Frame::stream`]).
     pub stream: Option<u64>,
+    /// For a fill defined in a slot body: the i18n settings that body's conversion helpers use
+    /// (see [`Extra::helpers`]). `None` for a fill defined in a render function (main or
+    /// macro): its helpers use `i18n`.
+    pub helpers: Option<Box<I18n<V>>>,
 }
 
 /// A render function's i18n settings: Chameleon's `__i18n_domain`, `__i18n_context` and
@@ -1169,8 +1173,14 @@ pub trait Macros: Values {
 /// Translation (`i18n:*`).
 pub trait Translate: Values {
     /// The active frame's i18n settings changed (`i18n:domain`, `i18n:context`,
-    /// `i18n:target`, or their restoration).
-    fn i18n_changed(&mut self, i18n: &I18n<Self::Value>) -> Result<(), Self::Error>;
+    /// `i18n:target`, or their restoration), or a slot body whose conversion helpers use other
+    /// settings than its own became active, or the frame after one. `helpers`: those settings
+    /// (see [`Extra::helpers`]); `None`, the helpers use `i18n`.
+    fn i18n_changed(
+        &mut self,
+        i18n: &I18n<Self::Value>,
+        helpers: Option<&I18n<Self::Value>>,
+    ) -> Result<(), Self::Error>;
     /// Calls the translation function as Chameleon does at that site.
     fn translate(&mut self, call: Translation<'_, Self::Value>) -> Result<Self::Value, Self::Error>;
     /// `__quote(value, quote, entity, default, marker)`: converted and escaped for `esc`, as a
@@ -1299,11 +1309,21 @@ struct Extra<V> {
     /// For a slot body: its output was moved for the call in progress, so its own output
     /// starts again when that call returns.
     flushed: bool,
+    /// For a slot body: the i18n settings its conversion helpers use, when they may differ
+    /// from its own. Chameleon's `__convert` and `__quote` are closures of the render function
+    /// (main or macro) the body belongs to, so a value they translate gets that function's
+    /// `__i18n_domain`, `__i18n_context` and `target_language`, while the body's inline
+    /// conversion and its `translate` calls use the body's own (which its `i18n:domain`,
+    /// `i18n:context` and `i18n:target` change). The body starts with that function's settings
+    /// as they were where the fill was defined (the function is suspended in the call that
+    /// runs the body), so this is `None` until the body changes its own
+    /// ([`VmState::keep_helpers`]), or set from the fill for a fill defined in a slot body.
+    helpers: Option<Box<I18n<V>>>,
 }
 
 impl<V> Extra<V> {
     fn new(i18n: I18n<V>) -> Self {
-        Self { i18n, slots: Vec::new(), stream: None, start: Mark::default(), flushed: false }
+        Self { i18n, slots: Vec::new(), stream: None, start: Mark::default(), flushed: false, helpers: None }
     }
 
     /// Drops the values it holds (it goes back to the spare boxes). `stream` and `start` are
@@ -1311,6 +1331,7 @@ impl<V> Extra<V> {
     fn clear(&mut self) {
         self.i18n = I18n { domain: None, context: None, target_language: None };
         self.slots.clear();
+        self.helpers = None;
     }
 }
 
@@ -1372,16 +1393,23 @@ enum Unwind<V> {
         /// Boxed: the unwind stack's entries stay small (they are moved on every push).
         translation: Box<OpenTranslation>,
     },
-    /// An `i18n:name` stream: where it starts, its id, and which name of which program.
+    /// An `i18n:name` stream: where it starts, its id, which name of which program, and the
+    /// slot body output that belongs before it ([`OpenTranslation::before`]).
     Name {
         mark: Mark,
         id: u64,
         program: Arc<Program>,
         info: u32,
+        /// Boxed, allocated only when used: the unwind stack's entries stay small.
+        before: Option<Box<Before>>,
     },
     /// Output captured as a value (a translated attribute's interpolation).
     Capture(Mark),
 }
+
+/// Slot body output kept aside before an `i18n:name` stream ([`OpenTranslation::before`]).
+#[derive(Debug, Default)]
+struct Before(Vec<u8>);
 
 /// An open `i18n:translate`: which translation of which program, and its names' values.
 #[derive(Debug)]
@@ -1389,6 +1417,11 @@ struct OpenTranslation {
     program: Arc<Program>,
     info: u32,
     names: Vec<NameValue>,
+    /// Slot body output that belongs before the stream (in the stream it was opened in, at
+    /// `mark`), written there when the stream closes: kept aside rather than inserted at
+    /// `mark` each time, which would move the stream's text on every flush (quadratic in a
+    /// loop of macro calls; see [`VmState::move_to_stream`]).
+    before: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -1412,6 +1445,11 @@ pub struct VmState<V> {
     serials: u64,
     /// The runtime's nesting budget, once asked for.
     budget: Option<usize>,
+    /// The runtime was last given a slot body's helpers' settings (see [`activate`]).
+    helpers_on: bool,
+    /// A frame of the render has had helpers' settings of its own (see [`Extra::helpers`]):
+    /// until then, activating a frame does not look for them.
+    helpers_any: bool,
     /// No i18n settings (what a frame without `extra` has).
     none: I18n<V>,
     /// Boxes of popped frames' `extra`, for reuse (an allocation and a free per macro call
@@ -1461,10 +1499,26 @@ impl<V> VmState<V> {
             suspended: false,
             serials: 1,
             budget: None,
+            helpers_on: false,
+            helpers_any: false,
             none: I18n { domain: None, context: None, target_language: None },
             spare: Vec::new(),
             out,
         }
+    }
+
+    /// For a slot body called from outside ([`VmState::at`]): the i18n settings its conversion
+    /// helpers use (see [`Extra::helpers`]).
+    #[must_use]
+    pub fn with_helpers(mut self, helpers: I18n<V>) -> Self {
+        if let Some(frame) = self.frames.first_mut() {
+            let extra = frame.extra.get_or_insert_with(|| {
+                Box::new(Extra::new(I18n { domain: None, context: None, target_language: None }))
+            });
+            extra.helpers = Some(Box::new(helpers));
+            self.helpers_any = true;
+        }
+        self
     }
 
     /// Supplies the awaited value of the expression the render suspended on. An error if
@@ -1594,7 +1648,17 @@ impl<V> VmState<V> {
     }
 
     /// A box for a frame's `extra`, reused when one is spare.
-    fn extra(&mut self, i18n: I18n<V>, slots: Vec<Option<V>>, stream: Option<u64>, start: Mark) -> Box<Extra<V>> {
+    fn extra(
+        &mut self,
+        i18n: I18n<V>,
+        slots: Vec<Option<V>>,
+        stream: Option<u64>,
+        start: Mark,
+        helpers: Option<Box<I18n<V>>>,
+    ) -> Box<Extra<V>> {
+        if helpers.is_some() {
+            self.helpers_any = true;
+        }
         match self.spare.pop() {
             Some(mut extra) => {
                 // Field by field: an empty `slots` keeps the spare box's allocation.
@@ -1607,9 +1671,28 @@ impl<V> VmState<V> {
                 extra.stream = stream;
                 extra.start = start;
                 extra.flushed = false;
+                extra.helpers = helpers;
                 extra
             }
-            None => Box::new(Extra { i18n, slots, stream, start, flushed: false }),
+            None => Box::new(Extra { i18n, slots, stream, start, flushed: false, helpers }),
+        }
+    }
+
+    /// The active frame, a slot body (the caller checks), is about to change its own i18n
+    /// settings: its conversion helpers keep the ones it has (see [`Extra::helpers`]).
+    #[cold]
+    fn keep_helpers<R: Runtime<Value = V>>(&mut self, rt: &mut R) {
+        let Some(frame) = self.frames.last_mut() else { return };
+        if let Some(extra) = &mut frame.extra
+            && extra.helpers.is_none()
+        {
+            let own = &extra.i18n;
+            extra.helpers = Some(Box::new(I18n {
+                domain: own.domain.clone(),
+                context: own.context.clone(),
+                target_language: own.target_language.as_ref().map(|t| rt.clone_value(t)),
+            }));
+            self.helpers_any = true;
         }
     }
 
@@ -1639,8 +1722,9 @@ impl<V> VmState<V> {
     }
 
     /// Where a slot body's output bound for `stream` goes: before the first translation stream
-    /// opened since; `None` if there is none (it is already in place).
-    fn move_target(&self, stream: Option<u64>) -> Option<Mark> {
+    /// opened since (its index in the unwind stack and its mark); `None` if there is none (it
+    /// is already in place).
+    fn move_target(&self, stream: Option<u64>) -> Option<(usize, Mark)> {
         let base = match stream {
             None => 0,
             Some(id) => {
@@ -1650,10 +1734,54 @@ impl<V> VmState<V> {
                 at + 1
             }
         };
-        self.unwind.get(base..)?.iter().find_map(|e| match e {
-            Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } => Some(*mark),
+        self.unwind.get(base..)?.iter().enumerate().find_map(|(i, e)| match e {
+            Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } => Some((base + i, *mark)),
             _ => None,
         })
+    }
+
+    /// Calls `f` on every mark into the output the render holds.
+    fn for_each_mark(&mut self, mut f: impl FnMut(&mut Mark)) {
+        for entry in &mut self.unwind {
+            match entry {
+                Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } | Unwind::Capture(mark) => f(mark),
+                Unwind::Attr { start, value } => {
+                    f(start);
+                    f(value);
+                }
+                _ => {}
+            }
+        }
+        for frame in &mut self.frames {
+            f(&mut frame.fallback);
+            if let Some(extra) = &mut frame.extra {
+                f(&mut extra.start);
+            }
+        }
+    }
+
+    /// The unwind entries from `at` up are about to be dropped without closing (an error):
+    /// the slot body output kept aside before their streams goes into the output at their
+    /// marks, where the handler's truncation then sees it as Chameleon's stream holds it.
+    #[cold]
+    fn place_before_from(&mut self, at: usize) {
+        for i in (at..self.unwind.len()).rev() {
+            let (mark, bytes) = match self.unwind.get_mut(i) {
+                Some(Unwind::Translate { mark, translation, .. }) => (*mark, std::mem::take(&mut translation.before)),
+                Some(Unwind::Name { mark, before, .. }) => (*mark, before.take().map(|b| b.0).unwrap_or_default()),
+                _ => continue,
+            };
+            if bytes.is_empty() {
+                continue;
+            }
+            self.out.insert_at(mark, &bytes);
+            let n = bytes.len();
+            self.for_each_mark(|m| {
+                if *m >= mark {
+                    *m = m.shifted(n);
+                }
+            });
+        }
     }
 
     /// A handler in a slot body caught an error (its own entries above it already dropped).
@@ -1692,19 +1820,29 @@ impl<V> VmState<V> {
     /// A slot body is about to call a macro. Chameleon passes the macro the define-slot site's
     /// `__stream` (the innermost stream open there), while the body itself writes with its
     /// defining function's `__append`: the body's output so far moves to its stream now, and
-    /// the macro's output stays where it is written. Not when the body has a stream of its own
-    /// open (a translation or capture inside it), which the macro then writes to.
+    /// the macro's output stays where it is written. When the body has a stream of its own
+    /// open (a translation or capture inside it), the macro writes to that one, which stays
+    /// the body's: only what the body wrote before it opened that stream moves (Chameleon
+    /// appended it to the defining function's stream at once, so whatever else writes there
+    /// during the call, such as another fill of the same function, comes after it).
     fn flush_fill(&mut self) {
         let Some(frame) = self.frames.last() else { return };
         if frame.kind != Kind::Fill {
             return;
         }
         let own = self.unwind.get(frame.unwind_base..).unwrap_or_default();
-        if own.iter().any(|e| matches!(e, Unwind::Translate { .. } | Unwind::Name { .. } | Unwind::Capture(_))) {
+        let open = own.iter().find_map(|e| match e {
+            Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } | Unwind::Capture(mark) => Some(*mark),
+            _ => None,
+        });
+        let Some((stream, start)) = frame.extra.as_ref().map(|e| (e.stream, e.start)) else { return };
+        if let Some(open) = open {
+            // The body's own output now starts at that stream (`move_to_stream` moves `start`).
+            self.move_to_stream(stream, start, open);
             return;
         }
-        let Some((stream, start)) = frame.extra.as_ref().map(|e| (e.stream, e.start)) else { return };
-        self.move_to_stream(stream, start);
+        let end = self.out.mark();
+        self.move_to_stream(stream, start, end);
         let at = self.out.mark();
         if let Some(extra) = self.frames.last_mut().and_then(|f| f.extra.as_mut()) {
             extra.start = at;
@@ -1726,43 +1864,40 @@ impl<V> VmState<V> {
         }
     }
 
-    /// A slot body's output (since `start`) moves to its stream: Chameleon's fill function
-    /// writes with its defining function's `__append`, so if translation streams were opened
-    /// since (around the `metal:define-slot`), it belongs before the first of them. Marks in
-    /// the moved output end up at the end: they belong to the define-slot site's stream
-    /// (`tal:on-error` in the body truncates `__stream`, not what the body appended).
-    fn move_to_stream(&mut self, stream: Option<u64>, start: Mark) {
-        let Some(first) = self.move_target(stream) else { return };
-        let bytes = self.out.take_since(start);
-        if bytes.is_empty() {
+    /// A slot body's output (from `start` to `end`: the end of the output, or the start of a
+    /// stream the body has open) moves to its stream: Chameleon's fill function writes with
+    /// its defining function's `__append`, so if translation streams were opened since (around
+    /// the `metal:define-slot`), it belongs before the first of them. Marks in the moved output
+    /// end up at `end`: they belong to the define-slot site's stream (`tal:on-error` in the
+    /// body truncates `__stream`, not what the body appended).
+    ///
+    /// The output is taken out and kept aside in that stream's entry (`before`), written at
+    /// its mark when the stream closes ([`VmState::place_before_from`] on an error): moving it
+    /// into place now would move everything written since, on every flush.
+    fn move_to_stream(&mut self, stream: Option<u64>, start: Mark, end: Mark) {
+        let Some((target, first)) = self.move_target(stream) else { return };
+        // `first` after `start`: the first such stream is the body's own, so its output is in
+        // place (only reachable with `end` at that stream, from `flush_fill`).
+        if end <= start || first > start {
             return;
         }
-        self.out.insert_at(first, &bytes);
-        let n = bytes.len();
-        let end = self.out.mark();
-        let shift = |m: &mut Mark| {
-            if *m >= start {
-                *m = end;
-            } else if *m >= first {
-                *m = m.shifted(n);
-            }
-        };
-        for entry in &mut self.unwind {
-            match entry {
-                Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } | Unwind::Capture(mark) => shift(mark),
-                Unwind::Attr { start, value } => {
-                    shift(start);
-                    shift(value);
-                }
-                _ => {}
-            }
+        let bytes = self.out.cut(start, end);
+        match self.unwind.get_mut(target) {
+            Some(Unwind::Translate { translation, .. }) => translation.before.extend_from_slice(&bytes),
+            Some(Unwind::Name { before, .. }) => before.get_or_insert_default().0.extend_from_slice(&bytes),
+            _ => {}
         }
-        for frame in &mut self.frames {
-            shift(&mut frame.fallback);
-            if let Some(extra) = &mut frame.extra {
-                shift(&mut extra.start);
+        let n = end.position() - start.position();
+        // A partial move leaves what follows `end` in place (a stale mark past the output's
+        // end goes to the new end in a full move).
+        let partial = end < self.out.mark().shifted(n);
+        self.for_each_mark(|m| {
+            if partial && *m >= end {
+                *m = m.unshifted(n);
+            } else if *m >= start {
+                *m = start;
             }
-        }
+        });
     }
 }
 
@@ -1776,6 +1911,10 @@ enum Action<V> {
     Suspend(V, u32),
 }
 
+/// What a slot body's frame gets from its fill: its own i18n settings, its stream and its
+/// helpers' settings ([`Fill::helpers`]).
+type FillFrame<V> = (I18n<V>, Option<u64>, Option<Box<I18n<V>>>);
+
 /// A frame to push: the call, where the caller continues, and the frame's details.
 struct Pushed<V> {
     call: Call<V>,
@@ -1787,8 +1926,8 @@ struct Pushed<V> {
     on_return: OnReturn,
     kind: Kind,
     slots: Vec<Option<V>>,
-    /// For a slot body: its own i18n settings and stream.
-    fill: Option<(I18n<V>, Option<u64>)>,
+    /// For a slot body: its own i18n settings, stream, and helpers' settings.
+    fill: Option<FillFrame<V>>,
     /// The caller's `__token` is reset before the call (an internal macro call).
     reset_token: bool,
 }
@@ -1810,9 +1949,43 @@ impl<V> Pushed<V> {
     }
 }
 
-fn activate<R: Runtime>(rt: &mut R, frame: &Frame<Val<R>>, none: &I18n<Val<R>>) -> Result<(), VmError<Err<R>>> {
-    let i18n = frame.i18n(none);
-    rt.activate(Active { code: &frame.code, scope: &frame.scope, serial: frame.serial, i18n }).map_err(VmError::Runtime)
+/// A slot body's helpers' settings, when they may differ from its own (see [`Extra::helpers`]).
+fn helpers_of<V>(frame: &Frame<V>) -> Option<&I18n<V>> {
+    frame.extra.as_ref().and_then(|e| e.helpers.as_deref())
+}
+
+/// Makes the active (last) frame the runtime's.
+fn activate<R: Runtime>(rt: &mut R, st: &mut VmState<Val<R>>) -> Result<(), VmError<Err<R>>> {
+    let Some(frame) = st.frames.last() else { return Ok(()) };
+    let i18n = frame.i18n(&st.none);
+    rt.activate(Active { code: &frame.code, scope: &frame.scope, serial: frame.serial, i18n })
+        .map_err(VmError::Runtime)?;
+    if st.helpers_any {
+        activate_helpers(rt, st).map_err(VmError::Runtime)?;
+    }
+    Ok(())
+}
+
+/// After [`activate`], in a render where a slot body's helpers have settings of their own:
+/// tells the runtime when the active frame is such a body, or the frame after one.
+#[cold]
+#[inline(never)]
+fn activate_helpers<R: Runtime>(rt: &mut R, st: &mut VmState<Val<R>>) -> Result<(), Err<R>> {
+    let Some(frame) = st.frames.last() else { return Ok(()) };
+    let helpers = helpers_of(frame);
+    if helpers.is_some() || st.helpers_on {
+        st.helpers_on = helpers.is_some();
+        rt.i18n_changed(frame.i18n(&st.none), helpers)?;
+    }
+    Ok(())
+}
+
+/// The active frame's i18n settings changed.
+fn i18n_changed<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R) -> Result<(), Err<R>> {
+    let Some(frame) = st.frames.last() else { return Ok(()) };
+    let helpers = helpers_of(frame);
+    st.helpers_on = helpers.is_some();
+    rt.i18n_changed(frame.i18n(&st.none), helpers)
 }
 
 /// Runs (or resumes) a render until it finishes or suspends. A suspended render continues
@@ -1830,7 +2003,7 @@ pub fn run<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R) -> Result<Done<Val<
         let mut pc = frame.pc as usize;
         let update = std::mem::take(&mut frame.pending_update);
         st.recent = frame.recent;
-        activate(rt, frame, &st.none)?;
+        activate(rt, st)?;
         if update && let Err(error) = rt.after_macro() {
             unwind_error(st, rt, error)?;
             continue;
@@ -1876,7 +2049,8 @@ pub fn run<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R) -> Result<Done<Val<
                     }
                 }
                 if let Some((stream, start)) = fill {
-                    st.move_to_stream(stream, start);
+                    let end = st.out.mark();
+                    st.move_to_stream(stream, start, end);
                 }
             }
             Action::Suspend(value, at) => {
@@ -2003,6 +2177,19 @@ fn push_partial<R: Runtime>(
     Ok(())
 }
 
+/// The helpers' settings of a fill defined in slot body `frame`: the body's (see
+/// [`Extra::helpers`]).
+#[cold]
+fn fill_helpers<R: Runtime>(frame: &Frame<Val<R>>, rt: &mut R) -> Option<Box<I18n<Val<R>>>> {
+    let extra = frame.extra.as_ref()?;
+    let helpers = extra.helpers.as_deref().unwrap_or(&extra.i18n);
+    Some(Box::new(I18n {
+        domain: helpers.domain.clone(),
+        context: helpers.context.clone(),
+        target_language: helpers.target_language.as_ref().map(|t| rt.clone_value(t)),
+    }))
+}
+
 /// Pushes a frame for a macro or a slot body.
 fn push_frame<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, pushed: Pushed<Val<R>>) -> Result<(), VmError<Err<R>>> {
     let Pushed { call, entry, cost, return_pc, on_return, kind, slots, fill, reset_token } = pushed;
@@ -2018,8 +2205,8 @@ fn push_frame<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, pushed: Pushed<V
         return Ok(());
     }
     let Some(caller) = st.frames.last() else { return Err(VmError::Internal("call without a caller")) };
-    let (i18n, stream) = if let Some((i18n, stream)) = fill {
-        (i18n, stream)
+    let (i18n, stream, helpers) = if let Some((i18n, stream, helpers)) = fill {
+        (i18n, stream, helpers)
     } else {
         let i18n = caller.i18n(&st.none);
         let i18n = I18n {
@@ -2027,11 +2214,11 @@ fn push_frame<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, pushed: Pushed<V
             context: i18n.context.clone(),
             target_language: i18n.target_language.as_ref().map(|t| rt.clone_value(t)),
         };
-        (i18n, None)
+        (i18n, None, None)
     };
     let extra = if kind == Kind::Fill || !is_plain(&i18n) || !slots.is_empty() {
         let start = st.out.mark();
-        Some(st.extra(i18n, slots, stream, start))
+        Some(st.extra(i18n, slots, stream, start, helpers))
     } else {
         None
     };
@@ -2066,7 +2253,7 @@ pub fn throw<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, error: Err<R>) ->
     st.resume = None;
     if let Some(frame) = st.frames.last() {
         st.recent = frame.recent;
-        activate(rt, frame, &st.none)?;
+        activate(rt, st)?;
     }
     unwind_error(st, rt, error)?;
     run(st, rt)
@@ -2100,15 +2287,18 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
             // Settings changed inside keep their values (no `finally`): the runtime must see
             // the frame's settings as they are now.
             let changed = st.unwind[at..].iter().any(|e| matches!(e, Unwind::I18n(_)));
+            st.place_before_from(at);
             unfinished_names(&mut st.unwind, at, &st.out);
             let abandoned = st.unwind[at..].iter().find_map(|e| match e {
                 Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } => Some(*mark),
                 _ => None,
             });
             st.unwind.truncate(at);
-            frame.pc = handler;
+            if let Some(frame) = st.frames.last_mut() {
+                frame.pc = handler;
+            }
             if changed {
-                rt.i18n_changed(frame.i18n(&st.none)).map_err(VmError::Runtime)?;
+                i18n_changed(st, rt).map_err(VmError::Runtime)?;
             }
             match rt.catch(&error, name, ErrorSite::unpack(st.recent)) {
                 Ok(()) if st.fill_catch(abandoned) => {
@@ -2145,6 +2335,10 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
         if kind != Kind::Fill {
             rt.record_error(&error, ErrorSite::unpack(st.recent));
         }
+        // The frame's streams are abandoned (a frame that returns has closed its own).
+        if let Some(frame) = st.frames.last() {
+            st.place_before_from(frame.unwind_base);
+        }
         st.pop_frame();
         if kind == Kind::Partial {
             error = rt.partial_failed(error);
@@ -2154,7 +2348,7 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
         let Some(caller) = st.frames.last_mut() else { return Err(VmError::Runtime(error)) };
         caller.pending_update = false;
         st.recent = caller.recent;
-        activate(rt, caller, &st.none)?;
+        activate(rt, st)?;
     }
 }
 
@@ -2679,7 +2873,7 @@ fn execute_rare<R: Runtime>(
                     on_return: OnReturn::Nothing,
                     kind: Kind::Fill,
                     slots: fill.slots,
-                    fill: Some((fill.i18n, fill.stream)),
+                    fill: Some((fill.i18n, fill.stream, fill.helpers)),
                     reset_token: false,
                 })));
             }
@@ -2700,6 +2894,13 @@ fn execute_rare<R: Runtime>(
                 },
                 slots: frame.slots().iter().map(|s| s.as_ref().map(|v| rt.clone_value(v))).collect(),
                 stream,
+                // A fill defined in a slot body belongs to the same render function as the body
+                // (also one a foreign macro called: `VmState::with_helpers`).
+                helpers: if frame.kind == Kind::Fill || helpers_of(frame).is_some() {
+                    fill_helpers(frame, rt)
+                } else {
+                    None
+                },
             };
             rt.fill_slot(&f.name, fill, f.extend).map_err(rt_err)?;
         }
@@ -2733,21 +2934,27 @@ fn execute_rare<R: Runtime>(
         }
         Op::I18nSet { key, value } => {
             let name = program.tables.strings.get(value as usize).ok_or(VmError::Internal("bad i18n name"))?;
+            if st.frames.last().is_some_and(|f| f.kind == Kind::Fill) {
+                st.keep_helpers(rt);
+            }
             let Some(extra) = st.active_extra() else { return Err(VmError::Internal("no frame")) };
             let i18n = &mut extra.i18n;
             let backup = match key {
                 I18nKey::Domain => Backup::Domain(i18n.domain.replace(Arc::clone(name))),
                 I18nKey::Context => Backup::Context(i18n.context.replace(Arc::clone(name))),
             };
-            rt.i18n_changed(i18n).map_err(rt_err)?;
+            i18n_changed(st, rt).map_err(rt_err)?;
             st.unwind.push(Unwind::I18n(backup));
         }
         Op::Target { expr } => {
             let value = eval_or_leave_rare!(st, rt, pc, expr, false, no_call);
+            if st.frames.last().is_some_and(|f| f.kind == Kind::Fill) {
+                st.keep_helpers(rt);
+            }
             let Some(extra) = st.active_extra() else { return Err(VmError::Internal("no frame")) };
             let i18n = &mut extra.i18n;
             let backup = i18n.target_language.replace(value);
-            rt.i18n_changed(i18n).map_err(rt_err)?;
+            i18n_changed(st, rt).map_err(rt_err)?;
             st.unwind.push(Unwind::I18n(Backup::Target(backup)));
         }
         Op::I18nRestore => {
@@ -2761,7 +2968,7 @@ fn execute_rare<R: Runtime>(
                 Backup::Context(c) => i18n.context = c,
                 Backup::Target(t) => i18n.target_language = t,
             }
-            rt.i18n_changed(i18n).map_err(rt_err)?;
+            i18n_changed(st, rt).map_err(rt_err)?;
         }
         Op::TranslateBegin { info } => {
             let t = program.tables.translates.get(info as usize).ok_or(VmError::Internal("bad translation"))?;
@@ -2773,15 +2980,18 @@ fn execute_rare<R: Runtime>(
                     program: Arc::clone(shared),
                     info,
                     names: vec![NameValue::Text(Wtf8Buf::default()); t.names.len()],
+                    before: Vec::new(),
                 }),
             });
         }
         Op::TranslateEnd { info } => {
             let t = program.tables.translates.get(info as usize).ok_or(VmError::Internal("bad translation"))?;
-            let Some(Unwind::Translate { mark, translation, .. }) = st.unwind.pop() else {
+            let Some(Unwind::Translate { mark, mut translation, .. }) = st.unwind.pop() else {
                 return Err(VmError::Internal("translate_end without its translation"));
             };
             let content = st.take_text(mark)?;
+            // Slot body output that belongs before the translation's result.
+            st.out.push(&std::mem::take(&mut translation.before));
             let default = content.normalize_space();
             let msgid = match t.msgid {
                 Some(m) => Msgid::Source(program.text_str(m)),
@@ -2796,14 +3006,17 @@ fn execute_rare<R: Runtime>(
         }
         Op::NameBegin { info } => {
             let id = st.next_serial();
-            st.unwind.push(Unwind::Name { mark: st.out.mark(), id, program: Arc::clone(shared), info });
+            st.unwind.push(Unwind::Name { mark: st.out.mark(), id, program: Arc::clone(shared), info, before: None });
         }
         Op::NameEnd { info } => {
             let n = program.tables.names.get(info as usize).ok_or(VmError::Internal("bad name"))?;
-            let Some(Unwind::Name { mark, .. }) = st.unwind.pop() else {
+            let Some(Unwind::Name { mark, before, .. }) = st.unwind.pop() else {
                 return Err(VmError::Internal("name_end without its name"));
             };
             let content = st.take_text(mark)?;
+            if let Some(before) = before {
+                st.out.push(&before.0);
+            }
             set_name(&mut st.unwind, shared, n, NameValue::Text(content));
             st.out.push(b"${");
             st.out.push(text(program, n.name)?);
@@ -3057,4 +3270,14 @@ fn bind_or_exit<R: Runtime>(
         rt.restore(name, backup).map_err(VmError::Runtime)?;
     }
     Ok(exit)
+}
+
+#[cfg(test)]
+mod size_tests {
+    /// Unwind entries are moved on every push: kept at 48 bytes (a slot body's kept-aside
+    /// output is boxed for that).
+    #[test]
+    fn unwind_entries_stay_small() {
+        assert_eq!(std::mem::size_of::<super::Unwind<u64>>(), 48);
+    }
 }

@@ -403,6 +403,7 @@ impl Running {
             domain: site.domain.as_ref().map(|d| d.bind(py).clone()),
             context: site.context.as_ref().map(|c| c.bind(py).clone()),
             target_language: site.target_language.bind(py).clone(),
+            helpers: site.helpers.as_ref().map(|h| Box::new(h.bind(py))),
         };
         let scope = site.scope.bind(py).clone();
         let mut out = Output::default();

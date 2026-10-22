@@ -494,6 +494,56 @@ pub(crate) struct FrameCx<'py> {
     pub(crate) domain: Option<Bound<'py, PyString>>,
     pub(crate) context: Option<Bound<'py, PyString>>,
     pub(crate) target_language: Bound<'py, PyAny>,
+    /// A slot body's: the i18n settings its conversion helpers use, when they are not the
+    /// frame's own (`Translate::i18n_changed`).
+    pub(crate) helpers: Option<Box<Helpers<'py>>>,
+}
+
+/// The i18n settings Chameleon's conversion helpers (`__convert`, `__quote`) see in a slot
+/// body: those of the render function they are closures of.
+#[derive(Clone)]
+pub(crate) struct Helpers<'py> {
+    pub(crate) domain: Option<Bound<'py, PyString>>,
+    pub(crate) context: Option<Bound<'py, PyString>>,
+    pub(crate) target_language: Bound<'py, PyAny>,
+}
+
+/// [`Helpers`] kept beyond the render step (a deferred value's site, a custom expression's
+/// sub-expressions).
+pub(crate) struct HelpersPy {
+    domain: Option<Py<PyString>>,
+    context: Option<Py<PyString>>,
+    target_language: Py<PyAny>,
+}
+
+impl Helpers<'_> {
+    pub(crate) fn unbind(&self) -> HelpersPy {
+        HelpersPy {
+            domain: self.domain.clone().map(Bound::unbind),
+            context: self.context.clone().map(Bound::unbind),
+            target_language: self.target_language.clone().unbind(),
+        }
+    }
+}
+
+impl HelpersPy {
+    pub(crate) fn bind<'py>(&self, py: Python<'py>) -> Helpers<'py> {
+        Helpers {
+            domain: self.domain.as_ref().map(|d| d.bind(py).clone()),
+            context: self.context.as_ref().map(|c| c.bind(py).clone()),
+            target_language: self.target_language.bind(py).clone(),
+        }
+    }
+
+    pub(crate) fn traverse(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
+        if let Some(d) = &self.domain {
+            visit.call(d)?;
+        }
+        if let Some(c) = &self.context {
+            visit.call(c)?;
+        }
+        visit.call(&self.target_language)
+    }
 }
 
 impl<'py> FrameCx<'py> {
@@ -504,7 +554,17 @@ impl<'py> FrameCx<'py> {
         target_language: Bound<'py, PyAny>,
         marker: Bound<'py, PyAny>,
     ) -> Self {
-        Self { builtins, unit: 0, target: None, marker, serial, domain: None, context: None, target_language }
+        Self {
+            builtins,
+            unit: 0,
+            target: None,
+            marker,
+            serial,
+            domain: None,
+            context: None,
+            target_language,
+            helpers: None,
+        }
     }
 }
 

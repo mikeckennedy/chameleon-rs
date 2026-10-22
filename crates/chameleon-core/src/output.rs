@@ -28,6 +28,12 @@ impl Mark {
     pub(crate) fn shifted(self, n: usize) -> Self {
         Self(self.0 + n)
     }
+
+    /// The mark moved back by `n` bytes (after `n` bytes before it were removed).
+    #[must_use]
+    pub(crate) fn unshifted(self, n: usize) -> Self {
+        Self(self.0.saturating_sub(n))
+    }
 }
 
 impl Output {
@@ -78,9 +84,17 @@ impl Output {
         if mark.0 >= self.buf.len() { Vec::new() } else { self.buf.split_off(mark.0) }
     }
 
-    /// Inserts `bytes` at `mark`, moving what follows (a slot's output written to the stream
-    /// its caller had open, before streams opened since).
+    /// Removes and returns the bytes between `from` and `to` (a slot body's output, kept
+    /// aside until the stream it belongs before closes). Nothing unless `from <= to <= len`.
+    pub fn cut(&mut self, from: Mark, to: Mark) -> Vec<u8> {
+        debug_assert!(from.0 <= to.0 && to.0 <= self.buf.len(), "cut out of range");
+        if from.0 <= to.0 && to.0 <= self.buf.len() { self.buf.drain(from.0..to.0).collect() } else { Vec::new() }
+    }
+
+    /// Inserts `bytes` at `mark`, moving what follows (slot body output kept aside, placed
+    /// before a stream an error abandons).
     pub fn insert_at(&mut self, mark: Mark, bytes: &[u8]) {
+        debug_assert!(mark.0 <= self.buf.len(), "insert out of range");
         let at = mark.0.min(self.buf.len());
         self.buf.splice(at..at, bytes.iter().copied());
     }
@@ -145,5 +159,21 @@ impl std::fmt::Write for Output {
     fn write_str(&mut self, s: &str) -> std::fmt::Result {
         self.push_str(s);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cut_and_insert_move_a_range() {
+        let mut out = Output::default();
+        out.push_str("ab[cd]ef");
+        assert_eq!(out.cut(Mark(2), Mark(6)), b"[cd]");
+        assert_eq!(out.as_bytes(), b"abef");
+        out.insert_at(Mark(0), b"[cd]");
+        assert_eq!(out.as_bytes(), b"[cd]abef");
+        assert_eq!(Mark(3).unshifted(5), Mark(0));
     }
 }

@@ -1591,6 +1591,97 @@ annotated, and that `typing.get_type_hints` works on every public class. ty is p
 Found on the way, a bench-only fix: `bench/bench_render.py` called `sys._is_gil_enabled()`,
 which does not exist before Python 3.13; it now falls back to "GIL enabled".
 
+**12a done (2026-10-21): the release blocker and one of the two other slot-body xfails.**
+Details: architecture.md, "Phase 12 amendments".
+
+- **The blocker** (now a passing test). Root cause, from Chameleon's generated code: a slot
+  body writes with its defining function's `__append`, so what it writes before opening a
+  translation (or name, or capture) of its own is in that function's stream at once. Our
+  `flush_fill` moved a body's output to its stream before a macro or slot call only when the
+  body had no stream of its own open; with one open, the body's earlier output (`<b>`) stayed
+  where it was until the body returned, and the other fill of the same extend-macro, taken by
+  the recursive call and writing to the same stream, landed before it. Now the output before
+  the body's first open stream moves before the call (first an in-place rotation; after the
+  review, kept aside until the stream closes); the rest stays the body's. Twelve neighbouring cases compared with
+  Chameleon in `test_macros.py` (not recursive, the body's translation or name after text of
+  its own, two names and two slots, nested extend-macro three ways, a slot outside any
+  translation, handlers before and around the body's translation); eight of them differed
+  before the fix.
+- **`test_conversion_in_a_slot_body_ignores_its_i18n_context`: fixed.** Chameleon's
+  conversion helpers are closures of the render function, so in a slot body they use that
+  function's i18n domain, context and target language; the body's inline conversions and
+  `translate` calls use the body's own. Slot-body frames keep the helpers' settings when they
+  can differ (the body sets its own, or a fill defined in a slot body); 12 cases in
+  `test_i18n.py` compare the translate protocol and output (`i18n:domain`/`context`/`target`
+  on and inside the body, around the call, a translated slot, macros and fills inside the
+  body, extend-macro), and the macro/i18n fuzzer no longer keeps `i18n:domain`/`context` out
+  of slot bodies. One narrower case is a new strict xfail: a fill no macro took, taken by a
+  later call of the same function, sees the function's settings at that call in Chameleon
+  (closure cells) and where it was defined here. Reading them live meant tracking the
+  function's frame, which cost 15-40 ns per slot call in the macro A/B, so it was dropped.
+- **`test_handler_in_a_slot_body_drops_the_failing_text_node`: left as a known difference.**
+  Chameleon appends a text node with its expressions, an interpolated attribute, a comment as
+  one string each, so a failing expression drops the piece's text before it; we join static
+  text at compile time across those boundaries and write it before evaluating. Matching it
+  needs a second lowering mode for code under a handler inside a slot body (text split at
+  Chameleon's append boundaries, an instruction marking each piece's start), for a handler in
+  a slot body whose slot sits inside a translation or name: not contained, so not done.
+- **Fuzzing** (final build): the three render fuzzers at 10,000 examples each (generated
+  templates, partials, macros/slots/i18n with `i18n:domain`/`context` now allowed in slot
+  bodies), zero differences. The expression fuzzer's normalization learned the dict of
+  overlapping pairs a comprehension over a repr builds (`{q: q for q in str(repeat)}`), a
+  harness gap that turned up during the run (addresses and the package name in it).
+- **Tests:** Rust 96 core + 9 `chameleon-py`; 2,855 pytest passed, 2 skipped, 2 strict xfails
+  (corpus set, integration checkouts present); upstream 227 passed and 6 xpassed on each
+  engine; `make test-integration` green (fastapi-chameleon 40, chameleon-flask 16,
+  chameleon-robyn 39, chameleon_partials 6, built-in flask 16 and partials 6); `make lint`
+  clean.
+- **Speed** (`bench/bench_ab.py 239fd36`, release, same-process interleaved, load 2-3):
+  listing -6.3 ns per item (8 rounds, range -8..+4) and +0.1 ns (12 rounds, -12..+8); macro
+  call with a fill +5.3 ns per item (12 rounds, +3..+9) and -3.5 ns (12 rounds, -29..+1);
+  page -619 ns per render of 69 µs (-0.9%, range -777..-389). The same tree against itself
+  read -8 ns on the macro scenario, the noise floor of these runs. The stream fix alone was
+  free (macro -13 ns); the helpers cost nothing until a render has a slot body with settings
+  of its own (one test per frame activation).
+- **Review fixes (2026-10-22, after the Rust Architect's review; no blockers):**
+  - A fill defined in a slot body that a stock Chameleon macro called (`VmState::with_helpers`,
+    a frame that is not a `Kind::Fill`) took the body's own i18n settings for its helpers, not
+    the render function's (`d1` against Chameleon's `d0`); it now takes the frame's helpers
+    whenever it has some. Test: `test_conversion_in_a_fill_defined_in_a_slot_body_a_foreign_macro_called`.
+  - Quadratic slot moves (present since Phase 6b): a slot inside `i18n:translate`/`i18n:name`
+    whose body loops over macro calls moved, on every flush, everything written into the
+    translation since (16,000 rows: Chameleon 29 ms, chameleon-rs 375 ms). The moved output is
+    now kept aside in the stream's unwind entry and written when the stream closes, or placed
+    at its mark when an error abandons the stream, so handlers see what they saw before:
+    5.3 ms (4.1 ms without the translation), linear. Scaling test:
+    `test_slot_body_output_moved_before_a_translation_scales_linearly`. The name entry's
+    buffer is boxed so unwind entries stay 48 bytes (a test pins it; the unboxed field cost
+    the listing about 6 ns).
+  - The left-over-fill strict xfail now covers what it is: any later macro call (direct, or
+    through another macro) while the function's domain, context or target differ, with or
+    without settings in the body (4 strict xfails, each differing today).
+  - New strict xfail, pre-existing difference of the text-node family:
+    `test_i18n.test_handler_on_a_name_maps_it_to_its_appends` (a handler on an `i18n:name`:
+    Chameleon maps the name to its list of appends and drops a failing text node of a macro
+    called inside it).
+  - Nits: `Output::cut`/`insert_at` debug-assert their marks (`move_back` is gone), the
+    `Kind::Fill` test before `keep_helpers` is done once, at the call sites.
+  - The render fuzzer found a left-over fill of that kind (a fill under `i18n:domain="u"` on
+    a macro call that did not take it, converting a list in a later call outside the domain;
+    8c147d9 differs too): the macro/i18n generator no longer puts `i18n:domain` on the call
+    element itself.
+  - Verification: Rust 97 core + 9 `chameleon-py`; pytest 2,857 passed, 2 skipped, 7 strict
+    xfails (corpus set); upstream 227 passed and 6 xpassed on each engine;
+    `make test-integration` green; render fuzzers 4,000 examples each plus 6,000 more on
+    macros/i18n, clean; `make lint` clean. Not from this phase, to fix separately: an earlier
+    run of `test_async.test_generated_partials_render_async_like_chameleon_partials` found
+    `<p a="1" tal:on-error="string:E" tal:attributes="x; v | 1/z"></p>`, whose compilation
+    raises `AttributeError: 'NoneType' object has no attribute '_fields'` where Chameleon
+    raises `ExpressionError` (it needs the static attribute, the handler and the invalid
+    `tal:attributes` together; 239fd36 does the same).
+  - A/B (release, 12 rounds, load 4.5-6.7): against 8c147d9 (12a before the review) listing
+    -0.6 ns; against 239fd36 listing +3.9 ns (range +0..+12) and macro -18.9 ns.
+
 ## Risks
 
 | Risk | Impact | Mitigation |

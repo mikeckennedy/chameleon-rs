@@ -119,8 +119,11 @@ def outcome(engine: Any, expression: str, shadow: bool) -> tuple[str, ...]:
 def normal(part: str) -> str:
     if "', '" not in part:
         return part
-    joined = part.replace("', '", '')
-    return re.sub(r'0x[0-9a-fA-F]+', '0x?', joined).replace('chameleon_rs.', 'chameleon.')
+    # A dictionary of overlapping pairs (`{q: q + n for q in f"{repeat}"}`) doubles each
+    # character once its separators are gone: `0xx1199`, `chameleon__rrss..`.
+    joined = part.replace("', '", '').replace("': '", '')
+    joined = re.sub(r'0x[0-9a-fA-Fx]+', '0x?', joined)
+    return joined.replace('chameleon_rs.', 'chameleon.').replace('__rrss', '')
 
 
 @pytest.mark.filterwarnings('ignore::SyntaxWarning')  # `x is 1.5` and the like, from both engines

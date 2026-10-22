@@ -589,13 +589,14 @@ def test_handler_in_a_slot_body_drops_the_failing_text_node() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason='known difference, found by the Phase 10 fuzz run, present since Phase 8')
 def test_extended_slot_inside_a_name_with_a_recursive_translated_fill() -> None:
     """An `extend-macro` whose first fill of a slot (defined inside an `i18n:name`) is a
-    translated body calling the macro itself, and whose second fill is plain: Chameleon writes
-    the plain fill's output inside the outer `<b>` before the translation's, chameleon-rs after
-    it (`<b><b>fa</b>[...]` against `<b>fa</b><b>[...]`). Not caused by Phase 10: a7bd81a
-    renders it the same way."""
+    translated body calling the macro itself, and whose second fill is plain: the inner call
+    takes the plain fill, which writes to the same stream as the translated one (the extending
+    macro's), after the `<b>` the translated body wrote before opening its translation
+    (`<b><b>fa</b>[...]`). A strict xfail from Phase 10 (found by the fuzzer, present since
+    Phase 8) to Phase 12: the body's output before its own translation moved to its stream
+    only when the body returned (`<b>fa</b><b>[...]`)."""
     same(
         """<p metal:define-macro="mt1"><i i18n:translate="">F<b i18n:name="n"><s metal:define-slot="s2"/></b></i>"""
         """</p><div metal:extend-macro="macros['mt1']" metal:define-macro="m2"><b metal:fill-slot="s2" """
@@ -604,3 +605,107 @@ def test_extended_slot_inside_a_name_with_a_recursive_translated_fill() -> None:
         x=1,
         translate=lambda msgid, **kw: repr([msgid, kw.get('mapping')]),
     )
+
+
+EXTEND_MT1 = (
+    '<p metal:define-macro="mt1"><i i18n:translate="">F<b i18n:name="n"><s metal:define-slot="s2"/></b></i></p>'
+)
+EXTEND_MT3 = '<p metal:define-macro="mt3"><s metal:define-slot="s2">d3</s></p>'
+EXTEND_TWO = (
+    '<p metal:define-macro="mt1"><i i18n:translate="">F<b i18n:name="n"><s metal:define-slot="s2"/></b>G'
+    '<u i18n:name="o"><s metal:define-slot="s3"/></u></i></p>'
+    '<p metal:define-macro="mt3"><s metal:define-slot="s2">d3</s>|<s metal:define-slot="s3">e3</s></p>'
+)
+
+
+@pytest.mark.parametrize(
+    'source',
+    [
+        # Not recursive: the translated fill calls another macro, which takes the plain fill.
+        EXTEND_MT1
+        + EXTEND_MT3
+        + """<div metal:extend-macro="macros['mt1']" metal:define-macro="m2"><b metal:fill-slot="s2" """
+        """i18n:translate="">fa<z metal:use-macro="macros['mt3']"/></b><b metal:fill-slot="s2">fb</b></div>""",
+        # The body's translation, or its name, opened after some text of its own.
+        EXTEND_MT1
+        + EXTEND_MT3
+        + """<div metal:extend-macro="macros['mt1']" metal:define-macro="m2"><b metal:fill-slot="s2">pre """
+        """<em i18n:translate="">fa<z metal:use-macro="macros['mt3']"/></em> post</b><b metal:fill-slot="s2">fb</b>"""
+        """</div>""",
+        EXTEND_MT1
+        + EXTEND_MT3
+        + """<div metal:extend-macro="macros['mt1']" metal:define-macro="m2"><b metal:fill-slot="s2">x"""
+        """<i i18n:name="q">fa<z metal:use-macro="macros['mt3']"/></i>y</b><b metal:fill-slot="s2">fb</b></div>""",
+        EXTEND_MT1 + """<div metal:extend-macro="macros['mt1']" metal:define-macro="m2"><b metal:fill-slot="s2">a"""
+        """<em i18n:translate="">x<q i18n:name="k">fa<z metal:use-macro="macros['m2']"/></q>y</em>b</b>"""
+        """<b metal:fill-slot="s2">fb</b></div>""",
+        # Two names, two slots, translated fills on either.
+        EXTEND_TWO + """<div metal:extend-macro="macros['mt1']" metal:define-macro="m2"><b metal:fill-slot="s2" """
+        """i18n:translate="">fa<z metal:use-macro="macros['mt3']"/></b><b metal:fill-slot="s2">fb</b>"""
+        """<c metal:fill-slot="s3">fc</c><c metal:fill-slot="s3" i18n:translate="">fd"""
+        """<z metal:use-macro="macros['mt3']"/></c></div>""",
+        EXTEND_TWO + """<div metal:extend-macro="macros['mt1']" metal:define-macro="m2"><b metal:fill-slot="s2" """
+        """i18n:translate="">fa<z tal:condition="not:exists:r" tal:define="r 1" metal:use-macro="macros['m2']"/></b>"""
+        """<b metal:fill-slot="s2">fb</b><c metal:fill-slot="s3">fc</c></div>""",
+        # Nested extend-macro.
+        EXTEND_MT1 + """<div metal:extend-macro="macros['mt1']" metal:define-macro="m2"><b metal:fill-slot="s2" """
+        """i18n:translate="">fa<z metal:use-macro="macros['mt1']"/></b></div>"""
+        """<div metal:extend-macro="macros['m2']" metal:define-macro="m3"><b metal:fill-slot="s2">fb</b></div>""",
+        EXTEND_MT1
+        + """<div metal:extend-macro="macros['mt1']" metal:define-macro="m2"><b metal:fill-slot="s2">fb</b></div>"""
+        """<div metal:extend-macro="macros['m2']" metal:define-macro="m3"><b metal:fill-slot="s2" """
+        """i18n:translate="">fa<z metal:use-macro="macros['m2']"/></b></div>""",
+        EXTEND_MT1 + """<div metal:extend-macro="macros['mt1']" metal:define-macro="m2"><b metal:fill-slot="s2" """
+        """i18n:translate="">fa<z metal:use-macro="macros['mt1']"/></b><b metal:fill-slot="s2">fx</b></div>"""
+        """<div metal:extend-macro="macros['m2']" metal:define-macro="m3"><b metal:fill-slot="s2" """
+        """i18n:translate="">fy<z metal:use-macro="macros['m2']"/></b></div>""",
+        # The macro's slot outside any translation.
+        (
+            '<p metal:define-macro="mt1">F<b><s metal:define-slot="s2"/></b>G</p>'
+            """<div metal:extend-macro="macros['mt1']" metal:define-macro="m2"><b metal:fill-slot="s2" """
+            """i18n:translate="">fa<z metal:use-macro="macros['m2']"/></b><b metal:fill-slot="s2">fa</b></div>"""
+        ),
+        # Handlers in the body, before and around its translation.
+        EXTEND_MT1 + """<div metal:extend-macro="macros['mt1']" metal:define-macro="m2"><b metal:fill-slot="s2">"""
+        """<q tal:on-error="string:E">Q</q>p<em i18n:translate="">fa<z metal:use-macro="macros['m2']"/></em></b>"""
+        """<b metal:fill-slot="s2">fb</b></div>""",
+        EXTEND_MT1 + """<div metal:extend-macro="macros['mt1']" metal:define-macro="m2"><b metal:fill-slot="s2">"""
+        """<q tal:on-error="string:E">p<em i18n:translate="">fa<z metal:use-macro="macros['m2']"/></em>${1/0}</q>"""
+        """</b><b metal:fill-slot="s2">fb</b></div>""",
+    ],
+)
+def test_slot_body_output_before_its_own_translation_precedes_the_call(source: str) -> None:
+    """A slot body that calls a macro inside a translation (or name) of its own: what the body
+    wrote before opening it is already in its defining function's stream (Chameleon appends it
+    at once), so another fill of that function, taken by the call, writes after it."""
+    same(
+        source + '${x}${macroname | 0}',
+        x=1,
+        translate=lambda msgid, **kw: repr([msgid, sorted((kw.get('mapping') or {}).items())]),
+    )
+
+
+def test_slot_body_output_moved_before_a_translation_scales_linearly() -> None:
+    """A slot inside `i18n:translate`/`i18n:name` whose body calls a macro per item: each call
+    moves the body's output before the translation. Moving it into place each time moved all
+    the output written since, quadratic in the items (16,000 rows: 375 ms against Chameleon's
+    29 ms); it is kept aside and written when the translation closes. Compared with the same
+    page without the translation, in the same process, so the machine's load cancels out."""
+    import time
+
+    src = (
+        '<tal:d condition="False"><p metal:define-macro="row">' + 'x' * 200 + '</p>'
+        '<div metal:define-macro="lay" i18n:translate="">T<s i18n:name="n" metal:define-slot="s"/></div></tal:d>'
+        """<div metal:use-macro="macros['lay']"><b metal:fill-slot="s"><tal:r repeat="i range(N)">${i}"""
+        """<z metal:use-macro="macros['row']"/></tal:r></b></div>"""
+    )
+    plain = src.replace(' i18n:translate=""', '').replace(' i18n:name="n"', '')
+    translated_t, plain_t = chameleon_rs.PageTemplate(src), chameleon_rs.PageTemplate(plain)
+    assert translated_t(N=3) == chameleon.PageTemplate(src)(N=3)
+    best = {'translated': float('inf'), 'plain': float('inf')}
+    for _ in range(3):
+        for name, t in (('translated', translated_t), ('plain', plain_t)):
+            start = time.perf_counter()
+            t(N=16000)
+            best[name] = min(best[name], time.perf_counter() - start)
+    assert best['translated'] < 4 * best['plain'], best

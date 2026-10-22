@@ -833,7 +833,7 @@ Real-site verification. Every behaviour below was checked against the reference.
   defining function's i18n domain and context, not ones set inside the body; chameleon-rs uses
   the body's (`test_conversion_in_a_slot_body_ignores_its_i18n_context`, present at Phase 7
   too, found by the extended fuzzer; the fuzzer keeps `i18n:domain`/`context` out of slot
-  bodies).
+  bodies). Phase 12 fixed the second (see the Phase 12 amendments).
 - **Shadow mode** (`chameleon_rs.shadow`, opt-in): `install(serve='chameleon' | 'rust',
   sample_rate=1.0, report=None)` wraps stock Chameleon's `PageTemplate.render` (and
   `PageTextTemplateFile.render`), so it needs stock Chameleon importable as `chameleon` (not the
@@ -1242,6 +1242,81 @@ changes while it isn't configured.
 - **Not done.** A per-profile length limit: hostile input can be slow (a table with
   thousands of columns takes seconds), so the docs say to limit length on input and to turn
   tables off for comment profiles.
+
+## Phase 12 amendments (2026-10-21)
+
+Release blockers. Each behaviour checked against Chameleon's generated code first.
+
+- **A slot body's output before its own stream moves before a call.** A slot body writes with
+  its defining function's `__append`, so in Chameleon what it wrote before opening a
+  translation, name or capture of its own is in the defining function's stream at once; a
+  macro called inside that stream writes into it. `flush_fill` used to do nothing when the
+  body had such a stream open, so the body's earlier output stayed in place until the body
+  returned, and anything else that wrote to the defining function's stream during the call
+  (another fill of the same function, taken by the call: the extend-macro case the Phase 10
+  fuzzer found) landed before it. Now `flush_fill` moves the output between the body's start
+  and its first open stream (`move_to_stream(stream, start, end)`), and the body's own output
+  starts at that stream; `flushed` stays unset (the call writes into the body's stream, so
+  nothing restarts when it returns).
+- **Moved slot body output is kept aside, not inserted** (after the architect's review). Output
+  a slot body moves to its stream belongs before the first translation or name opened since;
+  inserting it there moved everything written into that stream since, on every flush, so a
+  body looping over macro calls inside such a slot was quadratic (16,000 rows: 375 ms against
+  Chameleon's 29 ms; it was so since Phase 6b). Now `move_to_stream` cuts the body's output
+  out (`Output::cut`, marks in the cut range collapse to its start, later ones move back) and
+  appends it to that stream's entry (`OpenTranslation::before`, `Unwind::Name::before`);
+  `TranslateEnd`/`NameEnd` write it at the stream's mark, before the stream's result. When an
+  error abandons such a stream (`unwind_error`, before a handler runs or a frame is left), the kept text is
+  first inserted at its mark with every later mark shifted (`place_before_from`), which is
+  exactly where the old in-place move had put it, so the handler's truncation and
+  `unfinished_names` see what they saw before. The same page now renders in 5 ms, linear
+  (`test_slot_body_output_moved_before_a_translation_scales_linearly` compares it with the
+  page without the translation).
+- **Conversions in a slot body use the render function's i18n settings** (the Phase 8 known
+  difference `test_conversion_in_a_slot_body_ignores_its_i18n_context` is gone). Chameleon's
+  `__convert` and `__quote` are closures of the render function (main or macro), so a value
+  they translate gets that function's `__i18n_domain`, `__i18n_context` and
+  `target_language`, while the body's inline conversion and its `translate` calls use the
+  body's own locals (its `i18n:domain`, `i18n:context`, `i18n:target`). A body starts with its
+  render function's settings as they were where the fill was defined, and that function is
+  suspended in the call that runs the body, so the helpers' settings only need keeping when
+  they can differ: `Extra::helpers` is `None` (use the frame's own) until the body changes its
+  own (`VmState::keep_helpers`, before `I18nSet`/`Target` in a slot body), or comes from the
+  fill (`Fill::helpers`) for a fill defined in a slot body, which belongs to the same render
+  function as that body, or from `VmState::with_helpers` for a fill called from another
+  engine (whose frame is not a `Kind::Fill`, so a fill defined in it takes the frame's helpers
+  whenever it has some: found in review). The runtime gets them through `Translate::i18n_changed`'s new `helpers` argument,
+  also on activation, but only once a frame of the render has had some (`helpers_any`, so
+  other renders pay one test per activation); it keeps them (`FrameCx::helpers`) only when
+  they differ from the frame's own, and `convert::translate` uses them for the helper
+  conversions (`Target::Local`); deferred values and custom expressions carry them too.
+  **Not modelled:** Chameleon reads the function's settings through closure cells, so a fill
+  no macro took, left in the scope's slot stack and taken later by any macro call (directly,
+  or through another macro that calls the one with the slot) while the function's settings
+  differ (domain, context or `i18n:target`; the body need not set anything), sees the settings
+  at that later call; chameleon-rs uses those where it was defined
+  (`test_conversion_in_a_left_over_slot_body_uses_its_functions_settings_at_the_call`, strict
+  xfails for each of those variants). A first version tracked the function's frame (an id per render and frame)
+  to read its live settings; it cost 15 to 40 ns per slot call in the macro A/B, for a case
+  that needs a fill no macro consumed.
+- **Still a known difference:** `test_handler_in_a_slot_body_drops_the_failing_text_node`. In
+  a slot body whose output goes to another stream than the define-slot site's (the slot sits
+  in a translation or name), a handler in the body keeps what the body wrote before the
+  failing expression, as Chameleon does, but Chameleon writes in larger pieces: a text node and
+  its expressions, an interpolated attribute, a comment are each one `__append`, so the failing
+  piece's text before the expression was never written (`<q>` against our `<q>Q`; ` title="a`
+  and `<!-- c ` likewise). chameleon-rs joins static text at compile time across those
+  boundaries and writes a piece's text before evaluating its expressions. Matching it would
+  need a second lowering for code under a handler inside a fill body (text split at
+  Chameleon's append boundaries, an instruction marking each piece's start) for a case that
+  needs a handler inside a slot body inside a translation: not done; the fuzzer keeps handlers
+  out of such bodies.
+- **Known difference of the same family** (pre-existing, found in review, a strict xfail:
+  `test_i18n.test_handler_on_a_name_maps_it_to_its_appends`): a `tal:on-error` on an
+  `i18n:name` element maps the name, in Chameleon, to its stream, the list of its appends
+  (`['<q>r', '<z>', 's', '</z>']`), where chameleon-rs has one piece (`['<q>r<z>s</z>']`); in
+  a macro that fails partway inside it, Chameleon never appended the failing text node
+  (`['<q>r', '<p>']`) where chameleon-rs keeps its text (`<q>r<p>x`).
 
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
