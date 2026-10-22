@@ -247,7 +247,7 @@ def test_render_function_set_on_the_instance() -> None:
         calls.append(kw)
         stream.append(f'rendered {econtext["a"]}')
 
-    template._render = _render
+    template._render = _render  # ty: ignore[invalid-assignment] - Chameleon's render protocol
     assert template(a=1) == 'rendered 1'
     assert calls == [{'target_language': None}]
 
@@ -259,7 +259,7 @@ def test_render_function_set_by_cook(tmp_path: Path) -> None:
     path.write_text('<html><div metal:define-macro="body">Body ${x}</div><p>rest</p></html>')
     for engine in (chameleon, chameleon_rs):
 
-        class PyramidPageTemplateFile(engine.PageTemplateFile):
+        class PyramidPageTemplateFile(engine.PageTemplateFile):  # ty: ignore[unsupported-base]
             def cook(self, body: str) -> None:
                 super().cook(body)
                 if self.macro:
@@ -358,7 +358,7 @@ def test_search_path_options(tmp_path: Path) -> None:
         t = engine.PageTemplateFile(str(tmp_path / 'b' / 'include.pt'), search_path=[str(tmp_path / 'a')])
         assert t(x=1) == '<p>b 1</p>'
 
-        class NoRelative(engine.PageTemplateFile):
+        class NoRelative(engine.PageTemplateFile):  # ty: ignore[unsupported-base]
             prepend_relative_search_path = False
 
         t = NoRelative(str(tmp_path / 'b' / 'include.pt'), search_path=str(tmp_path / 'a'))
@@ -408,7 +408,7 @@ def test_cook_check_and_auto_reload_are_thread_safe(tmp_path: Path) -> None:
         time.sleep(0.001)  # widen the window in which another thread could see a half-cooked template
         original(body)
 
-    template.cook = counting_cook  # type: ignore[method-assign]
+    template.cook = counting_cook  # ty: ignore[invalid-assignment]
     stop = threading.Event()
     errors: list[BaseException] = []
     outputs: set[str] = set()
@@ -453,7 +453,7 @@ def test_many_threads_compile_a_file_template_once(tmp_path: Path) -> None:
         time.sleep(0.01)
         original(body)
 
-    template.cook = counting_cook  # type: ignore[method-assign]
+    template.cook = counting_cook  # ty: ignore[invalid-assignment]
     barrier = threading.Barrier(16)
     results: list[str] = []
 
@@ -578,7 +578,10 @@ FILES = sorted(p for p in INPUTS.iterdir() if p.suffix in {'.pt', '.html', '.xml
 @pytest.mark.parametrize('path', FILES, ids=lambda p: p.name)
 def test_iter_xml_and_element_parser(path: Path) -> None:
     body = chameleon.utils.read_encoded(path.read_bytes())
-    namespaces = {'xmlns': 'http://www.w3.org/2000/xmlns/', 'xml': 'http://www.w3.org/XML/1998/namespace'}
+    namespaces: dict[str | None, str] = {
+        'xmlns': 'http://www.w3.org/2000/xmlns/',
+        'xml': 'http://www.w3.org/XML/1998/namespace',
+    }
     results = []
     for engine in (chameleon, chameleon_rs):
         tokens = list(engine.tokenize.iter_xml(body, 'f.pt'))
@@ -600,7 +603,8 @@ def test_element_parser_errors_and_foreign_tokens() -> None:
     # Tokens from several sources, and plain strings: the items' strings are slices of them.
     first = chameleon.tokenize.Token('<a x="1">', 5, 'xxxxx<a x="1">', 'one.pt')
     second = chameleon.tokenize.Token('</a>', 2, '..</a>', 'two.pt')
-    for stream in (['<a x="1">', 't', '</a>'], [first, 't', second]):
+    streams: tuple[list[Any], ...] = (['<a x="1">', 't', '</a>'], [first, 't', second])
+    for stream in streams:
         results = []
         for engine in (chameleon, chameleon_rs):
             tokens = [engine.tokenize.Token(t, t.pos, t.source, t.filename) if hasattr(t, 'pos') else t for t in stream]

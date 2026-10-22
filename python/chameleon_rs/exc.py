@@ -258,7 +258,7 @@ class ExceptionFormatter:
         errors: list[tuple[str, int, int, str, BaseException]],
         econtext: Mapping[str, object],
         rcontext: dict[str, Any],
-        value_repr: Callable[[object], str],
+        value_repr: Callable[[object], object],
     ) -> None:
         kwargs = rcontext.copy()
         kwargs.update(econtext)
@@ -315,7 +315,8 @@ class ExceptionFormatter:
         if isinstance(exc.__str__, ExceptionFormatter):
             # This is a nested error that has already been wrapped. We must unwrap it before
             # trying to format it to prevent recursion
-            exc = create_formatted_exception(exc, type(exc), exc._original__str__)  # type: ignore[attr-defined]
+            # (`_original__str__` is set by `create_formatted_exception`.)
+            exc = create_formatted_exception(exc, type(exc), exc._original__str__)  # ty: ignore[unresolved-attribute]
         formatted = traceback.format_exception_only(type(exc), exc)[-1]
         formatted_class = f'{type(exc).__name__}:'
 

@@ -19,6 +19,7 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Rust",
     "Topic :: Text Processing :: Markup :: HTML",
+    "Typing :: Typed",
 ]
 dynamic = ["version"]
 
@@ -29,7 +30,7 @@ Repository = "https://github.com/mikeckennedy/chameleon-rust"
 [dependency-groups]
 # What the compatibility, differential and benchmark code needs. The reference Chameleon and
 # chameleon_partials are installed editable from pinned clones in temp/ by `make dev`.
-dev = ["maturin>=1.15,<2", "pytest>=9", "hypothesis>=6", "pydantic>=2", "setuptools", "ruff", "flask[async]>=3", "quart>=0.20", "mistune>=3"]
+dev = ["maturin>=1.15,<2", "pytest>=9", "hypothesis>=6", "pydantic>=2", "setuptools", "ruff", "flask[async]>=3", "quart>=0.20", "mistune>=3", "ty==0.0.90"]
 # The docs site (`make docs`). Quarto is installed separately and must be on PATH.
 docs = ["great-docs==0.13.0", "ipykernel"]
 
@@ -48,6 +49,48 @@ exclude = [
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]
 addopts = "-p no:cacheprovider"
+
+# ty is the type checker for this project; `make lint` runs it (zero diagnostics expected).
+[tool.ty.environment]
+# The oldest Python we support (requires-python), so newer stdlib APIs are flagged.
+python-version = "3.12"
+# python/ is the package; tests/python and tests/upstream hold the helper modules the tests import
+# (exprtest, chameleon_tests). Not ".", or temp/chameleon would shadow the installed chameleon.
+root = ["python", "tests/python", "tests/upstream", "tests/integration", "bench", "scripts"]
+# chameleon_partials is an editable install through an import hook, which ty can't follow.
+extra-paths = ["temp/chameleon_partials"]
+# Resolve third-party packages from venv/ rather than from an activated VIRTUAL_ENV. ty picks
+# site-packages from the environment, not from the location of its own binary, so without this
+# a non-activated shell (CI, a subprocess, an editor task) silently resolves Homebrew's
+# site-packages instead and reports phantom unresolved-import errors.
+python = "venv"
+
+[tool.ty.src]
+include = ["python", "tests/python", "tests/upstream/conftest.py", "tests/integration", "bench", "scripts"]
+exclude = [
+    "**/.*",
+    "**/__pycache__/**",
+    # Never ours to check: the reference clones, environments, build output, the docs site.
+    "temp/**",
+    "venv/**",
+    "target/**",
+    ".claude/**",
+    "site/**",
+    "great-docs/**",
+    # Chameleon's own test suite, vendored unmodified.
+    "tests/upstream/chameleon_tests/**",
+    # Vendored verbatim from Chameleon (D7): kept as upstream wrote them.
+    "python/chameleon_rs/astutil.py",
+    "python/chameleon_rs/codegen.py",
+    "python/chameleon_rs/metal.py",
+    "python/chameleon_rs/namespaces.py",
+    "python/chameleon_rs/types.py",
+]
+
+[tool.ty.analysis]
+# Optional at runtime and never installed in venv: zope.i18n (i18n.py adapts it when present)
+# and freezegun (realsite.py, run from the Talk Python venv).
+allowed-unresolved-imports = ["zope.**", "freezegun"]
 
 [tool.ruff]
 line-length = 120

@@ -38,7 +38,7 @@ def test_free_threaded_builds_keep_the_gil_disabled() -> None:
     # the GIL on a free-threaded interpreter (with a RuntimeWarning).
     if not sysconfig.get_config_var('Py_GIL_DISABLED'):
         pytest.skip('not a free-threaded interpreter')
-    assert not sys._is_gil_enabled()  # type: ignore[attr-defined]
+    assert not sys._is_gil_enabled()  # ty: ignore[unresolved-attribute] - Python 3.13+
 
 
 ERROR_PAGE = (

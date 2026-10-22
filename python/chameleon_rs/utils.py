@@ -22,7 +22,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from enum import Enum
 from html import entities as htmlentitydefs
 from types import TracebackType
-from typing import Any, Literal, NoReturn
+from typing import Any, Literal, NoReturn, Protocol
 
 from chameleon_rs import _native
 
@@ -126,10 +126,18 @@ class callableint(int):
         return self
 
 
+class _Getter[R](Protocol):
+    """A named function of the instance (what ``descriptorstr`` / ``descriptorint`` wrap)."""
+
+    __name__: str
+
+    def __call__(self, context: Any, /) -> R: ...
+
+
 class descriptorstr:
     __slots__ = '__name__', 'function'
 
-    def __init__(self, function: Callable[[Any], str]) -> None:
+    def __init__(self, function: _Getter[str]) -> None:
         self.function = function
         self.__name__ = function.__name__
 
@@ -140,7 +148,7 @@ class descriptorstr:
 class descriptorint:
     __slots__ = '__name__', 'function'
 
-    def __init__(self, function: Callable[[Any], int]) -> None:
+    def __init__(self, function: _Getter[int]) -> None:
         self.function = function
         self.__name__ = function.__name__
 
@@ -223,13 +231,13 @@ def limit_string(s: str, max_length: int = 53) -> str:
     return s
 
 
-def value_repr(value: object) -> str:
+def value_repr(value: object) -> str | int | float:
     """How a template's arguments are shown in a render error (``BaseTemplate.value_repr``)."""
     if isinstance(value, str):
         short = limit_string(value)
         return short.replace('\n', '\\n')
     if isinstance(value, (int, float)):
-        return value  # type: ignore[return-value]
+        return value  # a number as is, as in Chameleon
     if isinstance(value, dict):
         return '{...} (%d)' % len(value)  # noqa: UP031 - Chameleon's formatting
 
@@ -244,13 +252,14 @@ def value_repr(value: object) -> str:
 
 def create_formatted_exception(
     exc: BaseException,
-    cls: type[object],
+    cls: type[BaseException],
     formatter: Callable[..., str],
     base: type[BaseException] = Exception,
 ) -> BaseException:
     """A copy of ``exc`` whose class derives from ``cls`` and ``base`` (so ``except KeyError``
     still catches it) and whose ``__str__`` is ``formatter``."""
     try:
+        new: type[BaseException]
         try:
             new = type(
                 cls.__name__,
@@ -267,9 +276,9 @@ def create_formatted_exception(
 
         inst: BaseException
         try:
-            inst = BaseException.__new__(new)  # type: ignore[type-var]
+            inst = BaseException.__new__(new)
         except TypeError:
-            inst = cls.__new__(new)  # type: ignore[call-overload]
+            inst = cls.__new__(new)
 
         BaseException.__init__(inst, *exc.args)
         inst.__dict__ = exc.__dict__

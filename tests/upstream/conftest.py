@@ -47,8 +47,8 @@ def _alias_vendored_test_module() -> None:
     if tests_pkg is None:
         tests_pkg = types.ModuleType('chameleon.tests')
         sys.modules['chameleon.tests'] = tests_pkg
-    chameleon.tests = tests_pkg
-    tests_pkg.test_templates = test_templates
+    chameleon.tests = tests_pkg  # ty: ignore[unresolved-attribute]
+    tests_pkg.test_templates = test_templates  # ty: ignore[unresolved-attribute]
     sys.modules['chameleon.tests.test_templates'] = test_templates
 
 

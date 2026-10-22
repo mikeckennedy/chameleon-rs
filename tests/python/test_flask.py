@@ -452,7 +452,7 @@ def as_async(make_view: Callable[[ModuleType], Callable[..., Any]]) -> Callable[
 
         proxy = types.SimpleNamespace(**{n: getattr(fc, n) for n in dir(fc) if not n.startswith('__')})
         proxy.template = template
-        return make_view(proxy)  # type: ignore[arg-type]
+        return make_view(proxy)  # ty: ignore[invalid-argument-type] - a stand-in module
 
     return make
 

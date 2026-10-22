@@ -76,7 +76,7 @@ def render_fixture_async(filename: str, language: str | None) -> Any:
     path = os.path.join(fixtures_mod.INPUTS, filename)
     text = filename.endswith('.txt')
     implicit = 'implicit-i18n' in filename
-    options = {
+    options: dict[str, Any] = {
         'strict': False,
         'implicit_i18n_translate': implicit,
         'implicit_i18n_attributes': ('alt', 'title') if implicit else (),
@@ -134,8 +134,11 @@ def test_generated_templates_render_async_like_chameleon(body: str) -> None:
 def test_generated_macro_and_i18n_templates_render_async_like_chameleon(
     body: str, implicit: bool, language: str | None, mode: str
 ) -> None:
-    options = {'implicit_i18n_translate': implicit, 'implicit_i18n_attributes': {'title', 'a'} if implicit else ()}
-    kw = dict(fuzz.VARIABLES, translate=fuzz.TRANSLATIONS[mode], target_language=language)
+    options: dict[str, Any] = {
+        'implicit_i18n_translate': implicit,
+        'implicit_i18n_attributes': {'title', 'a'} if implicit else (),
+    }
+    kw: dict[str, Any] = dict(fuzz.VARIABLES, translate=fuzz.TRANSLATIONS[mode], target_language=language)
 
     def sync() -> Any:
         try:
@@ -355,7 +358,7 @@ class _no_unawaited_coroutines:
 
     def __exit__(self, *exc: object) -> None:
         gc.collect()
-        self._catch.__exit__(*exc)
+        self._catch.__exit__(*exc)  # ty: ignore[invalid-argument-type]
         never = [w for w in self._log if 'never awaited' in str(w.message)]
         assert not never, never
 
@@ -451,7 +454,9 @@ def test_text_template_and_text_file(tmp_path: Path) -> None:
 def test_render_protocol_instance_renders_synchronously() -> None:
     template = chameleon_rs.template.BaseTemplate()
     template._cooked = True
-    template._render = lambda stream, econtext, rcontext, **kw: stream.append(str(econtext['x']))
+    template._render = lambda stream, econtext, rcontext, **kw: stream.append(  # ty: ignore[invalid-assignment]
+        str(econtext['x'])
+    )
     assert run(template.render_async(x=5)) == '5'
 
 
@@ -739,7 +744,7 @@ def test_suspended_and_cancelled_renders_leave_no_cycles() -> None:
 
 def test_a_suspended_render_in_a_cycle_is_collected() -> None:
     class Holder:
-        pass
+        render: Any
 
     holder = Holder()
     coro = aw(1)
@@ -875,7 +880,7 @@ def test_concurrent_values_in_a_sync_render_are_values() -> None:
     try:
         assert PageTemplate('${v}').render(v=call).startswith('&lt;ConcurrentCall')
     finally:
-        call.awaitable.close()
+        call.awaitable.close()  # ty: ignore[unresolved-attribute] - a coroutine
 
 
 def test_offload_renders_in_a_worker_thread(tmp_path: Path) -> None:
@@ -981,6 +986,7 @@ def test_gc_visits_each_reference_once_while_suspended(tmp_path: Path, configure
     )
     layout = PageTemplateFile(str(tmp_path / 'layout.pt'))
     a = chameleon_rs._native.render_page_async(page, None, {'aw': lambda v: _Pending(), 'layout': layout})
+    assert isinstance(a, chameleon_rs._native.RenderAwaitable)
     steps = 0
     while True:
         try:
@@ -1001,6 +1007,7 @@ def test_gc_visits_each_reference_once_while_filling_and_close() -> None:
 
     async def main() -> None:
         a = chameleon_rs._native.render_page_async(PageTemplate('${slow(1)}${slow(2)}'), None, {'slow': slow})
+        assert isinstance(a, chameleon_rs._native.RenderAwaitable)
         a.send(None)  # the VM finishes; the first task is awaited
         await asyncio.sleep(0)  # the tasks start
         assert _gc_over_visits(a) == []
@@ -1023,11 +1030,12 @@ def test_a_render_in_the_fill_phase_is_collected() -> None:
         await asyncio.sleep(10)
 
     class Holder:
-        pass
+        render: Any
 
     async def main() -> weakref.ref[Any]:
         holder = Holder()
         a = chameleon_rs._native.render_page_async(PageTemplate('${h}${slow()}'), None, {'slow': slow, 'h': holder})
+        assert isinstance(a, chameleon_rs._native.RenderAwaitable)
         holder.render = a  # a cycle through the render's scope
         a.send(None)
         await asyncio.sleep(0)  # the task starts

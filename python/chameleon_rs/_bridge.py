@@ -21,7 +21,7 @@ from __future__ import annotations
 import ast
 import builtins
 from collections.abc import Callable, Iterable
-from typing import Any
+from typing import Any, cast
 
 from chameleon_rs._rewrite import PARAMS, Rewriter, aliases_for, function
 
@@ -81,9 +81,9 @@ class _Lower(ast.NodeTransformer):
         if kind == 'Symbol' and hasattr(node, 'value'):
             return self._bind(node.value)
         if kind == 'Builtin' and hasattr(node, 'id'):
-            return self._bind(getattr(builtins, node.id))
+            return self._bind(getattr(builtins, cast('str', node.id)))
         if kind == 'Static' and hasattr(node, 'value'):
-            value = self.visit(node.value)
+            value = self.visit(cast('ast.AST', node.value))
             expression = ast.Expression(body=value)
             ast.fix_missing_locations(expression)
             namespace = {'__builtins__': builtins, **self.env}

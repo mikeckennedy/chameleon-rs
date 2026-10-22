@@ -277,7 +277,7 @@ def test_invalid_settings(markdown: Any, error: type[Exception], message: str) -
 def test_an_invalid_call_changes_nothing(tmp_path: Any) -> None:
     chameleon_rs.configure(template_folder=str(tmp_path), markdown={'md': True})
     with pytest.raises(ValueError):
-        chameleon_rs.configure(partial_search='registered', markdown={'other': {'oops': 1}})
+        chameleon_rs.configure(partial_search='registered', markdown={'other': {'oops': 1}})  # ty: ignore[invalid-argument-type, invalid-key]
     assert list(chameleon_rs._settings.markdown_profiles) == ['md']
     assert chameleon_rs._settings.search_mode == 'caller'
     with pytest.raises(ValueError):

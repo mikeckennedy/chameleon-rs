@@ -204,7 +204,7 @@ def describe(e: BaseException) -> tuple[Any, ...]:
     names = [c.__name__ for c in type(e).__mro__]
     kind = next(n for n in names if n in KNOWN)
     if hasattr(e, 'offset') and hasattr(e, 'location') and not isinstance(e, SyntaxError):
-        return (kind, e.args[0], str(e.token), e.offset, e.location)
+        return (kind, e.args[0], str(e.token), e.offset, e.location)  # ty: ignore[unresolved-attribute]
     return (kind, str(e))
 
 

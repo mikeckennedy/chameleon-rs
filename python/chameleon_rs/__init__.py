@@ -14,7 +14,7 @@ from typing import Any
 
 from chameleon_rs._async import concurrent
 from chameleon_rs._native import core_version
-from chameleon_rs._settings import configure
+from chameleon_rs._settings import MarkdownExtensions, MarkdownOptions, MarkdownSetting, configure
 from chameleon_rs.exc import TemplateError
 from chameleon_rs.template import PageTemplate, PageTemplateFile, PageTextTemplate, PageTextTemplateFile
 from chameleon_rs.zpt.loader import TemplateLoader as PageTemplateLoader
@@ -38,6 +38,9 @@ def __getattr__(name: str) -> Any:
 
 
 __all__ = [
+    'MarkdownExtensions',
+    'MarkdownOptions',
+    'MarkdownSetting',
     'PageTemplate',
     'PageTemplateFile',
     'PageTemplateLoader',

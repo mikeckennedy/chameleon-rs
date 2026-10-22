@@ -14,8 +14,10 @@ import datetime
 import statistics
 import sys
 import timeit
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import chameleon
 import chameleon.zpt.template
@@ -192,7 +194,7 @@ def make_report_model(rows: int) -> dict:
     return model
 
 
-def engines(model: dict, report: dict | None = None) -> list[tuple[str, object, object]]:
+def engines(model: dict, report: dict | None = None) -> list[tuple[str, Callable[[], Any], Callable[[], Any]]]:
     """(label, Chameleon render, chameleon_rs render) per variant."""
     chameleon_partials.register_extensions(str(TEMPLATES), auto_reload=False, cache_init=False)
     chameleon_rs.configure(template_folder=str(TEMPLATES))

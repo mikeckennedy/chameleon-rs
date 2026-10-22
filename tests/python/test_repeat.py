@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 import chameleon
+import chameleon.tal
 import chameleon_rs
 import pytest
 

@@ -31,6 +31,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
 import chameleon_rs
 
@@ -92,15 +93,15 @@ def bench_dashboard(seconds: float) -> None:
             samples.append(time.perf_counter() - t0)
         return statistics.median(samples)
 
-    sync_model = {'videos': videos, 'build_cache_id': hash_file, 'fetch_stat': fetch_stat_blocking}
+    sync_model: dict[str, Any] = {'videos': videos, 'build_cache_id': hash_file, 'fetch_stat': fetch_stat_blocking}
     want = page.render(**sync_model)
     loop = asyncio.new_event_loop()
 
     def run_async(**model):
         return lambda: loop.run_until_complete(page.render_async(**model))
 
-    async_model = {'videos': videos, 'build_cache_id': build_cache_id, 'fetch_stat': fetch_stat}
-    concurrent_model = {
+    async_model: dict[str, Any] = {'videos': videos, 'build_cache_id': build_cache_id, 'fetch_stat': fetch_stat}
+    concurrent_model: dict[str, Any] = {
         'videos': videos,
         'build_cache_id': chameleon_rs.concurrent(build_cache_id),
         'fetch_stat': chameleon_rs.concurrent(fetch_stat),

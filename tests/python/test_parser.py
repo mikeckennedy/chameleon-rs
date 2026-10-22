@@ -35,7 +35,7 @@ from test_corpus import FILES as CORPUS
 
 FIXTURES = sorted((Path(__file__).parent.parent / 'upstream' / 'chameleon_tests' / 'inputs').iterdir())
 
-ZPT_NAMESPACES: dict[str | None, str] = dict(MacroProgram.DEFAULT_NAMESPACES)
+ZPT_NAMESPACES: dict[str | None, str] = {**MacroProgram.DEFAULT_NAMESPACES}
 ELEMENT_NAMESPACES: dict[str | None, str] = {'xmlns': XMLNS_NS, 'xml': XML_NS}
 PARSER_TEST_NAMESPACES: dict[str | None, str] = {'xmlns': XMLNS_NS, 'xml': XML_NS, 'py': PY_NS}
 

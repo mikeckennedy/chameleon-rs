@@ -45,12 +45,12 @@ class ConcurrentCall:
         return f'<ConcurrentCall {self.awaitable!r}>'
 
 
-def concurrent[T](fn: Callable[..., Awaitable[T]]) -> Callable[..., ConcurrentCall]:
+def concurrent[**P](fn: Callable[P, Awaitable[Any]]) -> Callable[P, ConcurrentCall]:
     """Marks an async helper so that an asynchronous render awaits its calls concurrently
     (see the module docs)."""
 
     @functools.wraps(fn)
-    def wrapper(*args: Any, **kwargs: Any) -> ConcurrentCall:
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> ConcurrentCall:
         return ConcurrentCall(fn(*args, **kwargs))
 
     return wrapper

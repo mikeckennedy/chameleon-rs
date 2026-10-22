@@ -13,7 +13,7 @@ expression types receive the bridge's engine instead (``chameleon_rs._bridge``, 
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, MutableMapping
 from typing import Any
 
 from chameleon_rs._native import Program, Scope
@@ -142,7 +142,7 @@ class ExpressionEvaluator:
         self._cache: dict[str, Program] = {}
 
     def __call__(
-        self, econtext: Mapping[str, Any], rcontext: Any, expression_type: str, string: str | None = None
+        self, econtext: MutableMapping[str, Any], rcontext: Any, expression_type: str, string: str | None = None
     ) -> Any:
         if string is None:
             return functools.partial(self.__call__, econtext, rcontext, expression_type)
@@ -171,7 +171,7 @@ class ExpressionEvaluator:
                 raise
             raise original from None
         result = out[0]
-        econtext['_result'] = result  # type: ignore[index]
+        econtext['_result'] = result
         return result
 
     def _compile(self, expression: str) -> Program:
