@@ -125,11 +125,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <meta property="og:description" content="chameleon-rs has three layers of configuration:">
   <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/user-guide/configuration.html">
   <meta property="og:site_name" content="chameleon-rs">
-  <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/chameleon-rs-slogan.png">
+  <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Configuration – chameleon-rs | chameleon-rs">
   <meta name="twitter:description" content="chameleon-rs has three layers of configuration:">
-  <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/chameleon-rs-slogan.png">
+  <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
 </head>
 
 <body class="nav-sidebar floating nav-fixed quarto-light">
@@ -377,7 +377,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><strong>It’s safe with threads.</strong> Each configuration is an immutable object that’s swapped in whole, so a render running at the same time never sees half of one. Still, call it at startup, not per request.</li>
 <li>It returns the new settings, and raises <a href="../reference/web.TemplateError.html#chameleon_rs.web.TemplateError" class="gdls-link gdls-code">chameleon_rs.web.TemplateError</a> for a missing folder, or <code>ValueError</code> for an unknown <code>partial_search</code>.</li>
 </ul>
-<div id="bf6ad310" class="cell" data-execution_count="2">
+<div id="2fe5d688" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>settings <span class="op">=</span> chameleon_rs.configure(template_folder<span class="op">=</span>template_folder, auto_reload<span class="op">=</span><span class="va">True</span>)</span>

@@ -125,11 +125,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <meta property="og:description" content="chameleon-rs implements Chameleon’s template language unchanged: the same TAL attributes, METAL macros, i18n attributes, ${...} interpolation and...">
   <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/user-guide/template-language.html">
   <meta property="og:site_name" content="chameleon-rs">
-  <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/chameleon-rs-slogan.png">
+  <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Template language – chameleon-rs | chameleon-rs">
   <meta name="twitter:description" content="chameleon-rs implements Chameleon’s template language unchanged: the same TAL attributes, METAL macros, i18n attributes, ${...} interpolation and...">
-  <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/chameleon-rs-slogan.png">
+  <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
 </head>
 
 <body class="nav-sidebar floating nav-fixed quarto-light">
@@ -328,7 +328,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>This page is a quick tour. The <a href="../language/index.html">language reference</a> covers every statement in detail.</p>
 <section id="a-tour-in-one-template" class="level1">
 <h1>A tour in one template</h1>
-<div id="64b6a031" class="cell" data-execution_count="1">
+<div id="af6c3fa5" class="cell" data-execution_count="1">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplate</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>page <span class="op">=</span> PageTemplate(<span class="st">"""</span></span>
@@ -429,7 +429,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="layouts-with-metal" class="level1">
 <h1>Layouts with METAL</h1>
 <p>A layout defines a macro with slots, and each page fills them:</p>
-<div id="434b1ceb" class="cell" data-execution_count="2">
+<div id="f44ced51" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>layout <span class="op">=</span> PageTemplate(<span class="st">"""</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="st">&lt;html metal:define-macro="layout"&gt;</span></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="st">  &lt;head&gt;&lt;title metal:define-slot="title"&gt;Site&lt;/title&gt;&lt;/head&gt;</span></span>

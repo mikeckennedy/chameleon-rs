@@ -22,7 +22,9 @@ hero:
   logo_height: 220px
 
 social_cards:
-  image: assets/chameleon-rs-slogan.png
+  # Absolute: with a relative path, great-docs 0.13.0 points og:image at the site root, where
+  # the image is never published (404).
+  image: https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png
 
 # The distribution is chameleon-rs; the import name can't be inferred from it.
 module: chameleon_rs

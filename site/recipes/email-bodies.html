@@ -125,11 +125,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <meta property="og:description" content="Render HTML and plain-text email from the same templates as your site.">
   <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/recipes/email-bodies.html">
   <meta property="og:site_name" content="chameleon-rs">
-  <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/chameleon-rs-slogan.png">
+  <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Email bodies – chameleon-rs | chameleon-rs">
   <meta name="twitter:description" content="Render HTML and plain-text email from the same templates as your site.">
-  <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/chameleon-rs-slogan.png">
+  <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
 </head>
 
 <body class="nav-sidebar floating nav-fixed quarto-light">
@@ -265,7 +265,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 <p>An email needs an HTML body and a plain-text one. Render both from templates, with <a href="../reference/PageTemplate.html#chameleon_rs.PageTemplate" class="gdls-link gdls-code">PageTemplate</a> for HTML and <a href="../reference/PageTextTemplate.html#chameleon_rs.PageTextTemplate" class="gdls-link gdls-code">PageTextTemplate</a> for text. A text template uses the same <code>${...}</code> expressions but doesn’t escape HTML or parse tags.</p>
-<div id="4d341455" class="cell" data-execution_count="1">
+<div id="ec3f7b91" class="cell" data-execution_count="1">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplate, PageTextTemplate</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>html_body <span class="op">=</span> PageTemplate(<span class="st">"""</span><span class="op">\</span></span>

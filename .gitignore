@@ -40,3 +40,4 @@ venv/
 
 # Great Docs' build directory; the deployable site is mirrored into site/ (committed).
 /great-docs/
+uv.lock
