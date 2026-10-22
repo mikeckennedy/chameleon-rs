@@ -1,5 +1,5 @@
 from collections.abc import Iterable, Iterator, Mapping
-from typing import Any, final
+from typing import Any, Literal, final
 
 # Differential-test helpers (tokens and element trees); see crates/chameleon-py/src/testing.rs.
 _testing: Any
@@ -99,3 +99,29 @@ class SubEval:
     """Evaluates a custom expression type's native sub-expressions (see _bridge.py)."""
 
     def __call__(self, index: int) -> Any: ...
+
+@final
+class MarkdownProfile:
+    """One ``markdown:``-style expression prefix: its name and how it converts."""
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        raw_html: Literal['escape', 'allow'],
+        images: bool,
+        inline: bool,
+        heading_ids: str | None,
+        classes: list[tuple[str, str]],
+        table: bool,
+        strikethrough: bool,
+        tasklist: bool,
+        autolink: bool,
+        footnotes: bool,
+    ) -> None: ...
+    @property
+    def name(self) -> str: ...
+
+def set_markdown_cache(size: int) -> None: ...
+def markdown_cache_info() -> tuple[int, int, int]: ...
+def markdown_cache_limits() -> tuple[int, int, int]: ...

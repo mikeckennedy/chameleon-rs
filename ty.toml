@@ -1,0 +1,33 @@
+# ty is the type checker for this project; `make lint` runs it.
+
+[environment]
+# The oldest Python we support (requires-python), so newer stdlib APIs are flagged.
+python-version = "3.12"
+# python/ is the package; tests/python and tests/upstream hold the helper modules the tests import
+# (exprtest, chameleon_tests). Not ".", or temp/chameleon would shadow the installed chameleon.
+root = ["python", "tests/python", "tests/upstream", "tests/integration", "bench", "scripts"]
+# chameleon_partials is an editable install through an import hook, which ty can't follow.
+extra-paths = ["temp/chameleon_partials"]
+# Resolve third-party packages from venv/ rather than from an activated VIRTUAL_ENV. ty picks
+# site-packages from the environment, not from the location of its own binary, so without this
+# a non-activated shell (CI, a subprocess, an editor task) silently resolves Homebrew's
+# site-packages instead and reports phantom unresolved-import errors.
+python = "venv"
+
+[src]
+include = ["python", "tests/python", "tests/upstream/conftest.py", "tests/integration", "bench", "scripts"]
+exclude = [
+    "**/.*",
+    "**/__pycache__/**",
+    # Vendored verbatim from Chameleon (D7): kept as upstream wrote them.
+    "python/chameleon_rs/astutil.py",
+    "python/chameleon_rs/codegen.py",
+    "python/chameleon_rs/metal.py",
+    "python/chameleon_rs/namespaces.py",
+    "python/chameleon_rs/types.py",
+]
+
+[analysis]
+# Optional at runtime and never installed in venv: zope.i18n (i18n.py adapts it when present)
+# and freezegun (realsite.py, run from the Talk Python venv).
+allowed-unresolved-imports = ["zope.**", "freezegun"]

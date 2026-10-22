@@ -135,6 +135,7 @@ lint:
 	cargo deny check -A license-not-encountered
 	ruff check python tests/python tests/upstream/conftest.py tests/integration bench scripts
 	ruff format --check python tests/python tests/upstream/conftest.py tests/integration scripts
+	ty check
 
 fmt:
 	cargo fmt --all
