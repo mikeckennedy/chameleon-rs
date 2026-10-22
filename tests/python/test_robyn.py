@@ -610,14 +610,14 @@ def test_async_handlers_render_with_render_async(folder: Path) -> None:
 
     async def five() -> tuple[list[Any], float]:
         start = time.perf_counter()
-        resps = await asyncio.gather(*(index(0.1) for _ in range(5)))
+        resps = await asyncio.gather(*(index(0.2) for _ in range(5)))
         return resps, time.perf_counter() - start
 
-    # Each render waits 100 ms on its value without blocking the loop: five together take
-    # about 100 ms, not 500.
+    # Each render waits 200 ms on its value without blocking the loop: five together take
+    # about 200 ms, not 1 s (headroom for a busy machine).
     resps, elapsed = asyncio.run(five())
     assert {r.description for r in resps} == {'<h1>Hello &lt;x&gt; 2!</h1>'}
-    assert elapsed < 0.4
+    assert elapsed < 0.5, elapsed
 
 
 def test_render_async_response_async_and_template_interface(folder: Path) -> None:
@@ -649,10 +649,7 @@ def test_robyn_render_with_chameleon_template(folder: Path) -> None:
     pytest.importorskip('jinja2')  # robyn.templating imports Jinja2
     from robyn.templating import render
 
-    # Typed as Robyn's ABC; ChameleonTemplate follows its protocol without subclassing it (as
-    # chameleon-robyn's, which would import Jinja2).
-    engine: Any = ours.ChameleonTemplate
-    resp = render('home/index.pt', templates_dir=str(folder), template_engine=engine, a='r')
+    resp = render('home/index.pt', templates_dir=str(folder), template_engine=ours.ChameleonTemplate, a='r')
     assert (resp.status_code, resp.description) == (200, '<h1>Hello r -!</h1>')
 
 
@@ -662,7 +659,7 @@ def test_concurrent_handler(folder: Path) -> None:
     )
 
     async def fetch(i: int) -> int:
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.1)
         return i * 10
 
     @ours.template('home/cards.pt', concurrent=True)
@@ -671,7 +668,8 @@ def test_concurrent_handler(folder: Path) -> None:
 
     start = time.perf_counter()
     body = call(cards).description
-    assert time.perf_counter() - start < 0.2
+    # Six partials each waiting 100 ms: about 100 ms together, 600 ms one after another.
+    assert time.perf_counter() - start < 0.35
     assert body == '<ul>' + ''.join(f'<i>{i * 10}</i>' for i in range(6)) + '</ul>'
 
 
@@ -737,13 +735,48 @@ def test_correct_order_starts_and_unhooks(folder: Path, no_server: list[Any]) ->
     assert 'start' in vars(app) and 'get_routes' in vars(app.router)
     with RobynClient(app) as client:
         assert client.get('/').text == '<h1>Hello none -!</h1>'
-    assert 'start' in vars(app) and 'get_routes' not in vars(app.router)
+    # Only start() is final: until then the route-table guard stays (routes may still come).
+    assert 'start' in vars(app) and 'get_routes' in vars(app.router)
     app.start(_check_port=False)
-    assert 'start' not in vars(app)
+    assert 'start' not in vars(app) and 'get_routes' not in vars(app.router)
     assert len(no_server) == 1 and any(r.route == '/sub/page' for r in no_server[0])
     # Configuring again does not hook again.
     ours.configure(app=app)
     assert 'start' not in vars(app)
+
+
+def early_app() -> Robyn:
+    # The reviewer's repro: the app reads its route table at import time (a route listing, a
+    # sitemap) before a misordered route is added.
+    app = Robyn(__file__)
+    ours.configure(app=app)
+
+    @app.get('/ok')
+    @ours.template('home/index.pt')
+    def ok() -> Any:
+        return {'a': 1}
+
+    assert len(app.router.get_routes()) == 1
+
+    @ours.template('home/index.pt')
+    @app.get('/wrong')
+    def wrong() -> Any:
+        return {'a': 2}
+
+    return app
+
+
+def test_an_early_route_listing_does_not_end_the_check(folder: Path, no_server: list[Any]) -> None:
+    app = early_app()
+    with pytest.raises(chameleon_rs.web.DecoratorOrderError, match='GET /wrong'):
+        RobynClient(app)
+    with pytest.raises(chameleon_rs.web.DecoratorOrderError, match='GET /wrong'):
+        app.start(_check_port=False)
+    assert no_server == []
+    assert 'start' in vars(app) and 'get_routes' in vars(app.router)
+    app = early_app()
+    with pytest.raises(chameleon_rs.web.DecoratorOrderError, match='GET /wrong'):
+        app.start(_check_port=False)
 
 
 def test_misordered_on_a_subrouter_and_add_route(folder: Path) -> None:
@@ -889,16 +922,17 @@ def test_real_server(tmp_path: Path) -> None:
                 time.sleep(0.1)
         assert fetch(port, '/?a=query') == (200, 'text/html; charset=utf-8', '<h1>Hello query -!</h1>')
         assert fetch(port, '/gone') == (404, 'text/html; charset=utf-8', '<h1>Not here gone</h1>')
-        # Async handlers render with render_async on Robyn's event loop: three requests whose
-        # values each take 300 ms finish together.
+        # Async handlers render with render_async on Robyn's event loop: four requests, each
+        # rendering two values that take 300 ms each (600 ms a request, 2.4 s one after
+        # another), finish together.
         import concurrent.futures
 
         start = time.perf_counter()
-        with concurrent.futures.ThreadPoolExecutor(3) as pool:
-            bodies = list(pool.map(lambda _: fetch(port, '/slow'), range(3)))
+        with concurrent.futures.ThreadPoolExecutor(4) as pool:
+            bodies = list(pool.map(lambda _: fetch(port, '/slow'), range(4)))
         elapsed = time.perf_counter() - start
-        assert bodies == [(200, 'text/html; charset=utf-8', '<h1>Hello slow async!</h1>')] * 3
-        assert elapsed < 0.85, elapsed
+        assert bodies == [(200, 'text/html; charset=utf-8', '<h1>Hello slow async!</h1>')] * 4
+        assert elapsed < 1.3, elapsed
     finally:
         stop(proc)
 

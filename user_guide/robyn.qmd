@@ -72,9 +72,11 @@ The check runs in `app.start()`, in the main process before the server starts, s
 misordered app fails to start. Robyn's own startup hook was not used: an app has one startup
 handler (a second `startup_handler` replaces the first) and Robyn runs it inside each server
 process. Robyn's in-process test client (`robyn.testing.TestClient(app)`) never calls
-`start()`, so the check also runs when the app's route table is first read, which the test
-client does when it is built: a misordered app fails there too. Once the check passed, both
-hooks remove themselves.
+`start()`, so the check also runs whenever the app's route table is read with routes added
+since the last check, which the test client does when it is built: a misordered app fails
+there too. Reading the table early (a route listing built at import time) does not end the
+check: routes added afterwards are checked at the next read and in `start()`. Once `start()`
+passed the check, both hooks remove themselves.
 
 Routes of a `SubRouter` included with `app.include_router(...)` are checked with the app.
 `chameleon_robyn.check_views(app)` (or a `SubRouter`) runs the same check on demand. A
@@ -194,8 +196,8 @@ async def about():
 
 `render_template(name, **data)` returns a 200 `robyn.Response`; `render_template_async` is
 its coroutine. `robyn.templating.render(name, template_engine=ChameleonTemplate, ...)` works
-too. (`ChameleonTemplate` follows Robyn's interface without subclassing its abstract class,
-which would import Jinja2, as chameleon-robyn does.)
+too, and type-checks there. (At runtime `ChameleonTemplate` follows Robyn's interface without
+subclassing its abstract class, which would import Jinja2, as chameleon-robyn does.)
 
 ## Coming from chameleon-robyn
 

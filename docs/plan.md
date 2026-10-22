@@ -1961,14 +1961,14 @@ Built:
   slot per app, a later `startup_handler` call replaces it, and it runs in each server
   process) and into `app.router.get_routes`, which `start()` and `robyn.testing.TestClient(app)`
   read (the test client never calls `start()`). Both are one-shot instance-attribute guards
-  that put the original back once the check passed; a misordered app keeps failing.
+  (review fix below: only `start()` passing removes them); a misordered app keeps failing.
   `check_views` takes an app or a SubRouter; `configure(app=...)` only an app (`TypeError`).
 - `_settings.VIEW_SLOTS` gains `robyn`; `compat.install()` maps `chameleon_robyn` (with
   `engine` and `exceptions`) lazily; `robyn` is one of chameleon-rs's own modules (never
   `chameleon.robyn`).
 - Robyn has wheels for CPython 3.10-3.14 only (0.88.0: no 3.15, no free-threaded, no sdist),
   so it is not in the dev group: `make dev` installs it with `--only-binary` where a wheel
-  exists and always unpacks the pinned 0.88.0 sources into `temp/robyn-typing`, which ty reads
+  exists, and the pinned 0.88.0 sources are unpacked into `temp/robyn-typing`, which ty reads
   through `extra-paths` (so `make lint` types the module and its `assert_type` checks on 3.15).
   New `make test-robyn` (part of `make test`): where `venv` has no Robyn, runs
   `test_robyn.py`, `test_typing.py` and the no-runtime-dependencies test in a 3.14 venv
@@ -1980,7 +1980,7 @@ Built:
   (the page, a Robyn reference section, the decision table, gotchas), the migrating,
   switching, configuration and index pages. `site/` not rebuilt.
 
-Tests: new `test_robyn.py` (78 on 3.14): 25 handler cases against chameleon-robyn on stock
+Tests: new `test_robyn.py` (78 on 3.14, 79 after the review fixes): 25 handler cases against chameleon-robyn on stock
 Chameleon, each sync and async (response type, status, every header, body, cookies, or the
 exception: content types, positional options, the 404 variants, pass-through, invalid returns,
 missing templates, bare names, dict subclasses, the response callback and its errors,
@@ -2013,13 +2013,38 @@ Speed: no Rust change. `bench/bench_ab.py cecd4e8`, release, listing, 8 rounds, 
 Open for Michael:
 - Per-app settings for Robyn: a handler gets no app (`configure(app=...)` adds the check and
   applies settings process-wide, as FastAPI's).
-- `ChameleonTemplate` follows Robyn's `TemplateInterface` without subclassing its ABC (which
-  imports Jinja2), as chameleon-robyn's; type checkers reject it as
-  `robyn.templating.render(template_engine=...)` (works at runtime).
 - A `robyn.StreamingResponse` / `FileResponse` returned by a handler is an "invalid return
   type", as in chameleon-robyn (only `robyn.Response` passes through).
 - Error pages get `message` (chameleon-robyn's 404 model) and the page's data; the other
   modules' error pages get only the data.
+
+Review fixes (2026-10-22, after the Rust Architect's review: no blockers, parity confirmed;
+the first reproduced with the review's probe first):
+- An early `app.router.get_routes()` (a route listing at import time) ran the check against
+  the routes so far, passed, and disabled it: a misordered route added later served JSON. Now
+  only `start()` passing is final; the `get_routes` guard stays until then and re-checks
+  whenever the route count changed since the last passing check. Test: the probe's app fails
+  in `TestClient(app)` and in `start()`.
+- One pin, `ROBYN_VERSION := 0.88.0`, for the dev install, the `test-robyn` and integration
+  venvs and the ty snapshot. The snapshot is a make target (`temp/robyn-typing`, which `lint`
+  depends on), unpacked by `scripts/fetch_robyn_typing.py` (standard library only: PyPI JSON,
+  sha256 checked, any wheel of the release; no 3.14 interpreter needed; a clear message when
+  offline).
+- `_guard` restores with `vars(obj).pop(attribute, None)` (no race with a concurrent restore).
+- `test-robyn` rebuilds the extension in its venv only when `crates/`, `Cargo.*` or
+  `pyproject.toml` changed since its last build there (a stamp file).
+- `ChameleonTemplate` derives from Robyn's `TemplateInterface` ABC under `TYPE_CHECKING` only,
+  so it type-checks as `robyn.templating.render(template_engine=...)` (the test's `Any`
+  workaround is gone) without importing Jinja2 at runtime.
+- Timing tests given at least 2x headroom over the ideal and well under the serial time
+  (renders waiting 200 ms, partials 100 ms, four server requests of 600 ms each).
+- Documented as deliberate (architecture.md): the wrappers catch any `web.ErrorPage`, so
+  another integration's `not_found()` inside a Robyn handler renders its page.
+- Verification after the fixes: pytest 3,085 passed, 5 skipped, 7 xfailed (corpus set);
+  `test_robyn.py` 79; `make test-robyn` 114 passed on 3.14.8 and on 3.12.15 (a second 3.14 run
+  skipped the build); upstream 227 + 6 xpassed per engine; Rust 102 + 3 + 9; `make lint` clean
+  (ty 0); integration 40/16/39/6 on the originals and on the built-ins. A/B against cecd4e8
+  (release, listing, 8 rounds, load 1.7): +2.5 ns (range -2..+8), 6.43x Chameleon.
 
 ## Risks
 

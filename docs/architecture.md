@@ -1489,19 +1489,34 @@ Release blockers. Each behaviour checked against Chameleon's generated code firs
   store it in `Route.function.handler`; `routes(app)` walks `type(app.router).get_routes(...)`
   (class method, bypassing the guard below) and the shared `__wrapped__` walk does the rest.
   `include_router` copies a SubRouter's routes into the app's table, so they are covered.
-  `watch(app, check)` installs two one-shot instance-attribute guards: `app.start` (the check
-  runs in the main process before `run_processes`, so the app fails to start) and
+  `_Robyn.watch_app` installs two instance-attribute guards: `app.start` (the check runs in
+  the main process before `run_processes`, so the app fails to start) and
   `app.router.get_routes` (read by `start()` and by `robyn.testing.TestClient.__init__`, which
-  never starts the app). Each puts the original back once the check passed. Rejected:
+  never starts the app). Only `start()` passing is final: it removes both guards. The
+  `get_routes` guard re-checks whenever the route count changed since the last passing check
+  (Robyn only appends routes), so an early read by the app's own code (a route listing at
+  import time) does not end the check for routes added later (review fix; a plain memo would
+  have). Rejected:
   `app.startup_handler`, a single slot per app (a later user call would replace ours, ours
   would replace theirs) run inside each server process, after the server is up.
 - **No wheel everywhere.** Robyn 0.88.0 has wheels for CPython 3.10-3.14 only. It stays out of
-  the dev dependency group; `make dev` installs it where a wheel exists and unpacks its
-  sources into `temp/robyn-typing` for ty (`extra-paths`), so typing is checked on every
+  the dev dependency group; `make dev` installs it where a wheel exists, and its sources are
+  unpacked into `temp/robyn-typing` for ty (`extra-paths`), so typing is checked on every
   Python; `make test-robyn` runs the Robyn tests in a 3.14 venv when `venv` cannot install
   Robyn. Tests skip cleanly without Robyn (`importorskip`; `test_typing.NEEDS`).
 - **Settings:** `VIEW_SLOTS = ('flask', 'starlette', 'fastapi', 'robyn')`; process-wide, as
   FastAPI's (a handler has no app to find per-app settings in).
+- **Deliberate small differences** (beyond the extras): the wrappers catch any
+  `chameleon_rs.web.ErrorPage`, as the other modules' do, so another integration's
+  `not_found()` (`chameleon_rs.fastapi.not_found`) raised inside a Robyn handler renders its
+  page where chameleon-robyn lets the exception propagate. `ChameleonTemplate` derives from
+  Robyn's `robyn.templating.TemplateInterface` for type checkers only (`TYPE_CHECKING`), so it
+  type-checks as `template_engine=`; at runtime it derives from the local protocol, as
+  chameleon-robyn's, since `robyn.templating` imports Jinja2.
+- **One Robyn pin** (`ROBYN_VERSION` in the Makefile) for the dev install, the `test-robyn`
+  and integration venvs, and the ty snapshot (`temp/robyn-typing`, unpacked from a wheel of
+  that release by `scripts/fetch_robyn_typing.py`, standard library only, so no 3.14
+  interpreter is needed; `make lint` depends on it).
 
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 

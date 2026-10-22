@@ -67,9 +67,10 @@ from __future__ import annotations
 import inspect
 import os
 import sys
+import weakref
 from collections.abc import Callable, Coroutine, Iterable, Iterator, Mapping
 from functools import wraps
-from typing import Any, NoReturn, Protocol, overload, runtime_checkable
+from typing import TYPE_CHECKING, Any, NoReturn, Protocol, overload, runtime_checkable
 
 from robyn import Headers, Response, status_codes
 
@@ -256,36 +257,70 @@ class _Robyn(_views.Integration):
             msg = f'app= takes a Robyn application, not {type(app).__name__} (a SubRouter is checked through the app that includes it)'
             raise TypeError(msg)
 
-    def watch(self, app: Any, check: Callable[[], None]) -> None:
-        # Robyn has one startup handler per app (a second `startup_handler` replaces the first)
-        # and runs it in each server process, so the check runs in `app.start()` instead,
-        # before the server starts, and when the route table is first read: by `start()`, and
-        # by `robyn.testing.TestClient(app)`, which never starts the app. Each guard removes
-        # itself once the check passed.
-        _guard(app, 'start', check)
-        _guard(app.router, 'get_routes', check)
+    def watch_app(self, app: Any) -> None:
+        """Checks ``app``'s handlers when it starts (``app.start()``) and whenever its route
+        table is read with routes added since the last check (``robyn.testing.TestClient(app)``
+        reads it; so may the app's own code, at import time, before every route exists).
+
+        Robyn has one startup handler per app (a second ``startup_handler`` replaces the first)
+        and runs it in each server process, so the check runs in ``start()`` instead, in the
+        main process before the server starts. Only ``start()`` passing is final: then both
+        guards remove themselves. Until then the ``get_routes`` guard stays, and costs a length
+        comparison per call once the routes it saw passed."""
+        self.check_app(app)
+        if app in _views._watched:
+            return
+        _views._watched[app] = True
+        app_ref = weakref.ref(app)
+        router = app.router
+        # The number of routes the last check passed with (Robyn only ever appends routes).
+        checked = -1
+
+        def check() -> None:
+            nonlocal checked
+            current = app_ref()
+            if current is None:
+                return
+            count = len(type(router).get_routes(router))
+            if count != checked:
+                self.check_views(current)
+                checked = count
+
+        unguard_routes = _guard(router, 'get_routes', check)
+
+        def check_and_unguard() -> None:
+            check()
+            unguard_routes()
+
+        _guard(app, 'start', check_and_unguard, once=True)
 
 
 def _has_routes(app: Any) -> bool:
     return callable(getattr(getattr(app, 'router', None), 'get_routes', None))
 
 
-def _guard(obj: Any, attribute: str, check: Callable[[], None]) -> None:
-    """Replaces the bound method ``obj.attribute`` with one that runs ``check`` first and, once
-    it passed, puts the original back."""
+def _guard(obj: Any, attribute: str, check: Callable[[], None], *, once: bool = False) -> Callable[[], None]:
+    """Replaces the bound method ``obj.attribute`` with one that runs ``check`` first (with
+    ``once``, it puts the original back once ``check`` passed). Returns the function that puts
+    the original back."""
     had_own = attribute in vars(obj)
     original = getattr(obj, attribute)
 
-    def guarded(*args: Any, **kwargs: Any) -> Any:
-        check()
+    def unguard() -> None:
         if vars(obj).get(attribute) is guarded:
             if had_own:
                 setattr(obj, attribute, original)
             else:
-                delattr(obj, attribute)
+                vars(obj).pop(attribute, None)
+
+    def guarded(*args: Any, **kwargs: Any) -> Any:
+        check()
+        if once:
+            unguard()
         return original(*args, **kwargs)
 
     setattr(obj, attribute, guarded)
+    return unguard
 
 
 def _error_model(page: ErrorPage) -> dict[str, Any]:
@@ -556,7 +591,15 @@ class TemplateInterface(Protocol):
     def render_template(self, *args: Any, **kwargs: Any) -> Response: ...
 
 
-class ChameleonTemplate(TemplateInterface):
+if TYPE_CHECKING:
+    # Typed as Robyn's abstract class, so it type-checks as `robyn.templating.render(...,
+    # template_engine=ChameleonTemplate)`; at runtime that module would import Jinja2.
+    from robyn.templating import TemplateInterface as _EngineBase
+else:
+    _EngineBase = TemplateInterface
+
+
+class ChameleonTemplate(_EngineBase):
     """Chameleon templates through Robyn's ``TemplateInterface``, as its ``JinjaTemplate``:
     owns its own loader and needs no ``global_init()``.
 
