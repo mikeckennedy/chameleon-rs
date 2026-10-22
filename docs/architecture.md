@@ -981,7 +981,13 @@ chameleon_partials at `f54ca1a` on Chameleon (its `render_partial` calls
   and path until the configuration changes): the registered partials folder (its loader, so
   `spec` handling and the `Template not found: x.` `ValueError` are Chameleon's), then the
   calling template's search path (the `search_path` it was created with, so a
-  `PageTemplateLoader`'s folders), then its own folder and each folder above it;
+  `PageTemplateLoader`'s folders), then its own folder and each folder above it, up to the
+  outermost root holding it: a configured folder (partials' or any integration's slot) or a
+  search path entry; in none, the nearest `templates` folder whose parent has an
+  `__init__.py` (Pyramid's renderers), else its own folder only. **Security review fix
+  (2026-10-22):** this walk once went up to `/`, so a sanitised name (`etc/hosts`) or a file
+  planted in any parent folder resolved and compiled; every candidate is now also lexically
+  confined to its root (no `..` or absolute path out of it);
   package-resource entries are not searched, and a file found there becomes a template of the
   caller's class with its settings (shared between callers when the settings are hashable).
   **A deliberate difference from chameleon_partials, approved by Michael (2026-10-21):** the

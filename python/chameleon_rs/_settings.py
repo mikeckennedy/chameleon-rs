@@ -89,8 +89,9 @@ _lock = threading.Lock()
 listeners: dict[str, Callable[[], None]] = {}
 
 # Where `render_partial` looks: `'caller'` (the default, approved by Michael: the registered
-# folder, then the calling template's search path, its folder and each folder above it; it only
-# ever turns chameleon_partials' "not found" error into a render) or `'registered'`
+# folder, then the calling template's search path, its folder and each folder above it up to
+# the root of its template tree, never outside it (`partials._folders`); it only ever turns
+# chameleon_partials' "not found" error into a render) or `'registered'`
 # (chameleon_partials' own lookup: the registered folder only).
 PARTIAL_SEARCH = ('caller', 'registered')
 DEFAULT_SEARCH = 'caller'
@@ -278,7 +279,7 @@ def configure(
     ``False`` allows attributes such as Alpine.js's ``@click`` (chameleon-flask's option).
     ``partial_search``: ``'caller'`` (the default: partials are looked for in the template
     folder, then on the calling template's search path, then in its folder and each folder above
-    it) or ``'registered'`` (chameleon_partials' lookup: the template folder only, a path not
+    it, never outside its template tree) or ``'registered'`` (chameleon_partials' lookup: the template folder only, a path not
     there being an error). ``markdown``: the ``markdown:`` expression types, ``True`` for
     ``markdown:`` with the defaults or a dict of profiles (prefix -> options, see the docs),
     ``False`` for none; it applies to templates compiled afterwards. ``markdown_cache``: how many

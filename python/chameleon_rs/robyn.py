@@ -76,7 +76,7 @@ from robyn import Headers, Response, status_codes
 
 from chameleon_rs import _settings, _views
 from chameleon_rs.template import _render_async
-from chameleon_rs.web import ErrorPage, NotFound, TemplateError
+from chameleon_rs.web import ErrorPage, NotFound, TemplateError, TemplateNotFound
 from chameleon_rs.zpt.loader import TemplateLoader
 
 __all__ = [
@@ -619,14 +619,22 @@ class ChameleonTemplate(_EngineBase):
 
     def render_template(self, template_name: str, **kwargs: Any) -> Response:
         """Renders ``template_name`` (relative to the directory) with ``kwargs`` as its model
-        into a 200 ``robyn.Response`` (``text/html; charset=utf-8``)."""
-        rendered = self.loader[template_name].render(encoding=self.encoding, **kwargs)
+        into a 200 ``robyn.Response`` (``text/html; charset=utf-8``). A name that could reach
+        outside the directory raises ``TemplateNotFound``, as Robyn's ``JinjaTemplate`` refuses
+        one (``_views.outside_folder``)."""
+        rendered = self._template(template_name).render(encoding=self.encoding, **kwargs)
         return Response(status_code=status_codes.HTTP_200_OK, description=rendered, headers=_headers('text/html'))
+
+    def _template(self, template_name: str) -> Any:
+        if _views.outside_folder(template_name):
+            msg = f'Template not found: {template_name}.'
+            raise TemplateNotFound(msg)
+        return self.loader[template_name]
 
     async def render_template_async(self, template_name: str, **kwargs: Any) -> Response:
         """``render_template`` as a coroutine, rendering with ``render_async`` (awaitable
         values are awaited where the template uses them, without blocking the event loop)."""
-        rendered = await self.loader[template_name].render_async(encoding=self.encoding, **kwargs)
+        rendered = await self._template(template_name).render_async(encoding=self.encoding, **kwargs)
         return Response(status_code=status_codes.HTTP_200_OK, description=rendered, headers=_headers('text/html'))
 
 

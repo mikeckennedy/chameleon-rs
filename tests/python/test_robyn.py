@@ -644,6 +644,19 @@ def test_render_async_response_async_and_template_interface(folder: Path) -> Non
     assert (page.status_code, page.description) == (200, '<h1>Hello t -!</h1>')
 
 
+def test_chameleon_template_refuses_names_outside_its_folder(folder: Path) -> None:
+    # Security: as Robyn's `JinjaTemplate`, a request-chosen name never reaches outside.
+    (folder.parent / 'secret.pt').write_text('SECRET')
+    engine = ours.ChameleonTemplate(str(folder))
+    names = ['../secret.pt', str(folder.parent / 'secret.pt'), 'home/../../secret.pt', 'pkg:x.pt', 'a\\b.pt']
+    for name in names:
+        with pytest.raises(chameleon_rs.web.TemplateNotFound, match='Template not found'):
+            engine.render_template(name)
+        with pytest.raises(chameleon_rs.web.TemplateNotFound, match='Template not found'):
+            asyncio.run(engine.render_template_async(name))
+    assert engine.render_template('home/index.pt', a=1).description == '<h1>Hello 1 -!</h1>'
+
+
 def test_robyn_render_with_chameleon_template(folder: Path) -> None:
     # Robyn's own `robyn.templating.render(..., template_engine=ChameleonTemplate)`.
     pytest.importorskip('jinja2')  # robyn.templating imports Jinja2

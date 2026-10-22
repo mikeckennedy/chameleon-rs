@@ -251,6 +251,32 @@ def test_registered_search_is_chameleon_partials_lookup(folder: Path) -> None:
     assert page() == 'configured'
 
 
+@pytest.mark.parametrize('mode', ['caller', 'registered'])
+def test_names_outside_the_registered_folder_are_not_found(folder: Path, mode: str) -> None:
+    # Security, as chameleon_partials from 0.2.1: no `..` or absolute path out of the folder,
+    # no package spec. A `..` that stays inside is fine.
+    root = folder / 'templates'
+    write(folder, {'secret.pt': 'SECRET'})
+    files = {'page.pt': '<p>${render_partial(name)}</p>', 'shared/card.pt': 'card'}
+    write(root, files)
+    hostile = ['../secret.pt', 'shared/../../secret.pt', str(folder / 'secret.pt'), 'chameleon_rs:py.typed']
+    for name in hostile:
+        got = compare(root, files, name=name)
+        assert got[:2] == ('raise', 'ValueError'), name
+        assert got[2].startswith(f'Template not found: {name}.'), got
+    assert compare(root, files, name='shared/../shared/card.pt') == ('ok', '<p>card</p>')
+    chameleon_rs.configure(partial_search=mode)
+    page = chameleon_rs.PageTemplateFile(str(root / 'page.pt'))
+    for name in hostile:
+        with pytest.raises(ValueError, match='Template not found'):
+            chameleon_rs.render_partial(name)
+        with pytest.raises(ValueError, match='Template not found'):
+            page(name=name)
+        # chameleon_partials' own function, rendering natively here: its check, not bypassed.
+        with pytest.raises(ValueError, match='Template not found'):
+            page(name=name, render_partial=chameleon_partials.render_partial)
+
+
 def test_caller_search_is_the_default(folder: Path) -> None:
     # Owner-approved: where chameleon_partials raises (not registered, or not in the folder), the
     # caller's folders are searched; nothing that rendered there renders differently.
@@ -263,12 +289,114 @@ def test_caller_search_is_the_default(folder: Path) -> None:
             'shared/_sib.pt': 'sib',
         },
     )
-    page = chameleon_rs.PageTemplateFile(str(folder / 'home' / 'index.pt'))
+    page = chameleon_rs.PageTemplateLoader(str(folder))['home/index.pt']
     assert page() == 'near|far1sib'
     chameleon_rs.configure(partial_search='caller')
     assert page() == 'near|far1sib'
     with pytest.raises(ValueError, match='partial_search'):
         chameleon_rs.configure(partial_search='everywhere')
+
+
+def test_caller_search_never_leaves_the_template_tree(folder: Path) -> None:
+    # Security: the upward walk stops at the root that holds the caller (the configured
+    # folder or a search path entry), so a file planted above it never compiles.
+    write(
+        folder,
+        {
+            'widgets/nav.pt': 'PLANTED',
+            'secret.txt': 'SECRET',
+            'app/templates/home/index.pt': '${render_partial(name)}',
+            'app/templates/home/_near.pt': 'near',
+            'app/templates/shared/far.pt': 'far',
+        },
+    )
+    root = folder / 'app' / 'templates'
+    pages = [
+        chameleon_rs.PageTemplateLoader(str(root))['home/index.pt'],
+        chameleon_rs.PageTemplateFile(str(root / 'home' / 'index.pt')),
+    ]
+    chameleon_rs.configure(template_folder=str(root))
+    for page in pages:
+        assert page(name='_near.pt') == 'near'
+        assert page(name='shared/far.pt') == 'far'
+    chameleon_rs._settings.clear()
+    hosts = [n for n in ('etc/hosts', 'private/etc/hosts') if Path('/', n).is_file()]
+    hostile = [
+        'widgets/nav.pt',
+        'secret.txt',
+        '../../../secret.txt',
+        '../shared/../../../secret.txt',
+        str(folder / 'secret.txt'),
+        *hosts,
+    ]
+    for page in pages:
+        for name in hostile:
+            with pytest.raises(ValueError, match='Template not found'):
+                page(name=name)
+    # In no root (a bare file, nothing configured): its own folder only.
+    bare = chameleon_rs.PageTemplateFile(str(root / 'home' / 'index.pt'))
+    assert bare(name='_near.pt') == 'near'
+    for name in ['shared/far.pt', '../shared/far.pt', *hostile]:
+        with pytest.raises(ValueError, match='Template not found'):
+            bare(name=name)
+    # `..` inside the tree is still fine.
+    assert pages[0](name='../shared/far.pt') == 'far'
+
+
+def test_with_nothing_configured_the_walk_stops_at_the_packages_templates_folder(folder: Path) -> None:
+    # A Pyramid renderer: a bare file, no configured folder, no search path. The walk climbs to
+    # `templates` only when its parent is a package, never past it.
+    write(
+        folder,
+        {
+            'outside.pt': 'PLANTED',
+            'app/__init__.py': '',
+            'app/widgets.pt': 'PLANTED',
+            'app/templates/home/index.pt': '${render_partial(name)}',
+            'app/templates/home/_near.pt': 'near',
+            'app/templates/shared/far.pt': 'far',
+            'loose/templates/home/index.pt': '${render_partial(name)}',
+            'loose/templates/shared/far.pt': 'far',
+            'deep/__init__.py': '',
+            'deep/web/templates/home/index.pt': '${render_partial(name)}',
+            'deep/web/templates/shared/far.pt': 'far',
+        },
+    )
+    page = chameleon_rs.PageTemplateFile(str(folder / 'app' / 'templates' / 'home' / 'index.pt'))
+    assert page(name='_near.pt') == 'near'
+    assert page(name='shared/far.pt') == 'far'
+    assert page(name='../shared/far.pt') == 'far'
+    for name in ['widgets.pt', '../widgets.pt', '../../widgets.pt', 'outside.pt', '../../../outside.pt']:
+        with pytest.raises(ValueError, match='Template not found'):
+            page(name=name)
+    # `templates` not in a package (here, or with a non-package folder between): own folder only.
+    for tree in ('loose', 'deep/web'):
+        bare = chameleon_rs.PageTemplateFile(str(folder / tree / 'templates' / 'home' / 'index.pt'))
+        with pytest.raises(ValueError, match='Template not found'):
+            bare(name='shared/far.pt')
+
+
+def test_an_integrations_folder_bounds_the_walk_whatever_its_name(folder: Path) -> None:
+    # A folder configured for one integration only (not for partials, not named `templates`,
+    # not in a package) is the root of a bare template inside it.
+    write(
+        folder,
+        {
+            'secret.pt': 'PLANTED',
+            'site/views/home/index.pt': '${render_partial(name)}',
+            'site/views/shared/far.pt': 'far',
+        },
+    )
+    page = chameleon_rs.PageTemplateFile(str(folder / 'site' / 'views' / 'home' / 'index.pt'))
+    with pytest.raises(ValueError, match='Template not found'):
+        page(name='shared/far.pt')
+    settings = chameleon_rs._settings.Settings(str(folder / 'site' / 'views'), False, True)
+    chameleon_rs._settings.install(views_settings={'starlette': settings})
+    assert chameleon_rs._settings.partials is None
+    assert page(name='shared/far.pt') == 'far'
+    for name in ['secret.pt', '../../secret.pt', '../../../secret.pt']:
+        with pytest.raises(ValueError, match='Template not found'):
+            page(name=name)
 
 
 def test_with_caller_search_the_configured_folder_comes_first(folder: Path) -> None:

@@ -24,6 +24,12 @@ replacement. Documentation: <https://mkennedy.codes/docs/chameleon-rs/>.
   renders a sample of production traffic with both engines and reports any difference.
 - **Built-in partials.** `${render_partial('shared/card.pt', item=item)}` works in every
   template and renders natively inside the page; chameleon_partials' API keeps working.
+  Paths not in the configured folder are also looked for next to the calling template and in
+  the folders above it, but never outside its template tree (the configured folder, a loader
+  search path, or a package's `templates` folder). A name that would leave the folder (an
+  absolute path, a `..` out of it, a `package:path` spec) is not found, as in
+  chameleon_partials 0.2.1. `chameleon_rs.robyn.ChameleonTemplate` refuses such names as
+  Robyn's `JinjaTemplate` does.
 - **`chameleon_rs.configure()`**: one process-wide call for the template folder,
   `auto_reload`, partial lookup (`partial_search`) and Markdown settings, applied on every
   call and thread-safe.

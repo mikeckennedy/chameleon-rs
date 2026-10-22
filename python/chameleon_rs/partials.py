@@ -10,7 +10,11 @@ template file with ``kwargs`` as its model, straight into the page.
 A path is looked for in the folder given to ``chameleon_rs.configure(template_folder=...)`` (or
 to the alias ``register_extensions``), as chameleon_partials does; then, by default, on the
 calling template's search path (the folders of the ``PageTemplateLoader`` that loaded it), then
-in its own folder and each folder above it. Found nowhere is
+in its own folder and each folder above it, up to the configured folder (partials' or a framework
+integration's, whatever it is named) or search path entry that holds it (a template in neither: up to the nearest ``templates`` folder of a Python
+package, as a Pyramid app has, else its own folder only). These searches never leave the
+folder searched: a ``..`` or absolute path out of it is not found. Nor, in the registered
+folder, is a package spec (``pkg:path``), as chameleon_partials refuses from 0.2.1. Found nowhere is
 ``ValueError('Template not found: <path>.')``. With ``chameleon_rs.configure(
 partial_search='registered')`` only the registered folder is searched, exactly as
 chameleon_partials (and with no folder registered a call raises ``PartialsException``): the
@@ -187,32 +191,87 @@ def _find(caller: Any, template_file: str) -> Any:
     search = caller is not None and _settings.search_mode == 'caller'
     if settings is not None:
         try:
+            if not _in_folder(spec, settings.template_folder):
+                raise _not_found(spec)
             return settings.loader.load(spec)
         except ValueError:
             if not search:
                 raise
-    for folder in _folders(caller):
-        path = os.path.join(folder, spec)
-        if os.path.isfile(path):
-            return _sibling(caller, os.path.normpath(path))
-    msg = f'Template not found: {spec}.'
-    raise ValueError(msg)
+    for folder, root in _folders(caller, settings):
+        path = os.path.normpath(os.path.join(folder, spec))
+        # Never outside the root the folder belongs to: no `..` or absolute path out of it.
+        if _inside(path, root) and os.path.isfile(path):
+            return _sibling(caller, path)
+    raise _not_found(spec)
 
 
-def _folders(caller: Any) -> list[str]:
-    """The caller's search path (without its own folder, which comes next), then its folder
-    and each one above it."""
-    folders = [p for p in getattr(caller, '_partial_paths', ()) if isinstance(p, str) and not _is_package(p)]
+def _not_found(spec: str) -> ValueError:
+    # The loader's own error for a missing file.
+    return ValueError(f'Template not found: {spec}.')
+
+
+def _in_folder(spec: str, folder: str) -> bool:
+    """Whether ``spec`` names a file inside ``folder``: not absolute, not a package spec
+    (``pkg:path``, which the loader would read from that package), and no ``..`` out of it
+    (one that stays inside is fine). Lexical, so a symlink inside the folder is followed."""
+    if not spec or os.path.isabs(spec) or ':' in spec or '\0' in spec:
+        return False
+    root = os.path.abspath(folder)
+    return _inside(os.path.normpath(os.path.join(root, spec)), root)
+
+
+def _folders(caller: Any, settings: _settings.Settings | None) -> list[tuple[str, str]]:
+    """``(folder, root)`` pairs: the caller's search path (without its own folder, which comes
+    next), each its own root; then its folder and each one above it, up to the outermost root
+    (a configured folder, partials' or an integration's, or a search path entry) that holds it. A caller in no root climbs
+    to its package's ``templates`` folder at most (``_package_templates``): the walk never
+    leaves the template tree."""
+    paths = [
+        os.path.abspath(p) for p in getattr(caller, '_partial_paths', ()) if isinstance(p, str) and not _is_package(p)
+    ]
+    folders = [(p, p) for p in paths]
     filename = getattr(caller, 'filename', None)
     if isinstance(filename, str) and os.path.isabs(filename) and getattr(caller, 'package_name', None) is None:
-        here = os.path.dirname(filename)
+        here = os.path.dirname(os.path.normpath(filename))
+        roots = [*paths, *_configured_folders(settings)]
+        holding = [r for r in roots if _inside(here, r)]
+        root = min(holding, key=len) if holding else _package_templates(here)
         while True:
-            folders.append(here)
-            parent = os.path.dirname(here)
-            if parent == here:
+            folders.append((here, root))
+            if here == root:
                 break
-            here = parent
+            here = os.path.dirname(here)
     return folders
+
+
+def _configured_folders(settings: _settings.Settings | None) -> list[str]:
+    # Every folder configured, whatever it is named: partials' own and each integration's
+    # (some setups fill only their own slot).
+    slots = [settings, _settings.partials, *_settings.views.values()]
+    return [os.path.abspath(s.template_folder) for s in slots if s is not None]
+
+
+def _package_templates(here: str) -> str:
+    """The root for a caller in no configured root (a Pyramid renderer, say): the nearest
+    folder named ``templates`` at or above ``here`` whose parent is a Python package (has an
+    ``__init__.py``), so the walk stays in the app; otherwise ``here`` (its own folder only)."""
+    folder = here
+    while True:
+        parent = os.path.dirname(folder)
+        if os.path.basename(folder) == 'templates':
+            return folder if os.path.isfile(os.path.join(parent, '__init__.py')) else here
+        if parent == folder or os.path.isfile(os.path.join(folder, '__init__.py')):
+            # The filesystem root, or the package itself, passed with no `templates` folder.
+            return here
+        folder = parent
+
+
+def _inside(path: str, root: str) -> bool:
+    try:
+        return os.path.commonpath([os.path.normcase(path), os.path.normcase(root)]) == os.path.normcase(root)
+    except ValueError:
+        # Different drives (Windows), or one path relative.
+        return False
 
 
 def _is_package(path: str) -> bool:
@@ -260,6 +319,13 @@ def _legacy_target(func: Any, template_file: Any) -> Any:
         return None
     loader = module.get('__templates')
     if loader is None:
+        return None
+    folder = module.get('template_path')
+    if not isinstance(template_file, str) or not isinstance(folder, str):
+        return None
+    if not _in_folder(template_file.strip(), folder):
+        # A name outside its folder: called as Python, so the function decides (it refuses
+        # one from 0.2.1 on), never loaded here around its check.
         return None
     return loader[template_file]
 

@@ -54,7 +54,8 @@ class NotFound(ErrorPage):
 
 class TemplateNotFound(TemplateError, ValueError, LookupError):
     """No template of that name, or a name reaching outside the template folder: raised by
-    ``chameleon_rs.starlette.Templates`` (the ``Jinja2Templates`` drop-in), with the message
+    ``chameleon_rs.starlette.Templates`` (the ``Jinja2Templates`` drop-in) and
+    ``chameleon_rs.robyn.ChameleonTemplate`` (the ``JinjaTemplate`` drop-in), with the message
     ``Template not found: {name}.``; code moving from Jinja catches it where it caught
     ``jinja2.TemplateNotFound``. A ``ValueError`` (as Chameleon's loader raises) and a
     ``LookupError``. ``PageTemplateLoader`` and the other integrations raise Chameleon's plain
