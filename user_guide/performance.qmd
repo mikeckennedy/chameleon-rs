@@ -23,7 +23,7 @@ on a release build of chameleon-rs without profile-guided optimization.
 | chameleon_partials through `compat.install()`, per item | 2,500 ns | 7,300 ns | 2.9x |
 
 Profile-guided builds (`make build-pgo`) are about 10% faster again. The published wheels are
-profile-guided (all but Windows arm64).
+profile-guided (on musllinux and Windows arm64, where the build can make a profile).
 
 The pages that gain least spend their time in the application's Python: the report page's
 rows call property getters and formatting helpers, which cost the same on both engines.

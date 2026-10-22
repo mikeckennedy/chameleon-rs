@@ -45,6 +45,24 @@ to Python source code.
 | `CHAMELEON_CACHE` | Writes the generated modules to disk and loads them on the next start. | Checks the directory but writes nothing. Compiling is about 70x faster than Chameleon, so there's little to cache. |
 | Code-generation modules | `chameleon.nodes`, `chameleon.program`, `chameleon.zpt.program`, `chameleon.benchmark`. | Not provided, since chameleon-rs doesn't generate code. Importing them raises `ModuleNotFoundError`. |
 
+### Code blocks
+
+Chameleon compiles `<?python ... ?>` blocks into the template's render function, so what a
+block defines is a local of that call. chameleon-rs runs a block in a namespace kept per
+template and render, which differs in two ways:
+
+- **Recursive partials share it.** Two frames of the same template in one render (a partial
+  that renders itself) see each other's block definitions, where each Chameleon call has its
+  own.
+- **`default` and `attrs` inside a block** are ordinary names. Chameleon aliases them there as
+  in expressions (the default marker and the element's attributes).
+
+### `render_partial` in `econtext`
+
+With chameleon_partials, `render_partial` is a model value, so it shows up in the template's
+`econtext` and in the argument list of a render error. The built-in `render_partial` is a
+builtin of every template, so it is not in either.
+
 ### Corner cases in slot bodies
 
 Three cases, all involving the slot fills of a macro call together with `tal:on-error` or

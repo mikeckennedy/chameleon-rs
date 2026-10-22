@@ -51,7 +51,8 @@ replacement. Documentation: <https://mkennedy.codes/docs/chameleon-rs/>.
 - **Python and platforms.** CPython 3.12 to 3.15, including the free-threaded builds (3.14t,
   3.15t; the extension does not re-enable the GIL). Wheels for Linux (manylinux and musllinux,
   x86_64 and aarch64), macOS (arm64 and x86_64) and Windows (x64 and arm64), built with
-  profile-guided optimization (all but Windows arm64). No runtime dependencies.
+  profile-guided optimization (musllinux and Windows arm64: where the build can make a
+  profile, else plain). No runtime dependencies.
 
 ### Compatibility
 

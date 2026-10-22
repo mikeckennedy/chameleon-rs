@@ -1748,16 +1748,85 @@ Verified locally (macOS arm64, load about 2):
 - A manylinux_2_28 x86_64 wheel cross-built with `maturin build --zig` (zig from Homebrew,
   non-PGO, cp313): maturin's manylinux check passes, 1.61 MiB; not run (Docker not running).
 
+**12b review fixes (2026-10-22, after the Rust Architect's review).** They replace the Linux
+build path described above (maturin-action building after a `--profile-only` training).
+- **Blocker: Linux wheels would have shipped without PGO, silently.** maturin-action's
+  `target:` adds `--target` to the final build, while the training build had none; cargo
+  hashes an explicit target into every symbol name, so the profile matched nothing and LLVM
+  ignored it without a warning the old check looked for. Measured here (cp315, macOS arm64): a
+  profile trained without `--target` used by a build with `--target aarch64-apple-darwin`
+  leaves 694 functions of chameleon_core/chameleon_py without profile data; a matching build
+  leaves 10 (training-build inlining leftovers, all "up to 0 count"). Now `pgo_wheel.py`
+  passes `--target` to both builds, adds `-Cllvm-args=-pgo-warn-missing-function` to the
+  final one, and fails above 100 missing functions of our crates (checked: quiet on all six
+  local wheels at 10; fires at 694 on the mismatched build; a PGO build with `--target` on both
+  sides passes at 10). Every platform now goes through `pgo_wheel.py`, so the guard runs
+  everywhere: Linux wheels are built by `scripts/linux_wheel.sh` inside the PyPA image (`docker
+  run` on a native runner: rustup with the pinned toolchain, maturin, `pgo_wheel.py` with the
+  image's `/opt/python/cp3XX-cp3XX[t]/bin/python`), and maturin-action builds only the sdist
+  (maturin-action runs its container only for its own `maturin build`, whose log the guard
+  cannot read).
+- **PGO per platform, with a fallback**: a `pgo` flag per matrix entry; `--fallback-plain`
+  builds a plain wheel with a `::warning::` when no profile can be made (llvm-tools or the
+  profiler runtime missing, a training dependency without a wheel); the guards still fail. Each
+  wheel's kind goes to the job summary. Verified: macOS arm64; unverified: musllinux and
+  Windows arm64 (both `pgo: true` with the fallback), the rest expected to work.
+- **No instrumented extension in the source tree**: training installs an instrumented wheel
+  into the training venv (checked: `chameleon_rs` imports from site-packages) instead of
+  `maturin develop`, which had left 6.6-6.8 MiB instrumented `_native` builds for 3.12, 3.13,
+  3.14t and 3.15t in this worktree's `python/chameleon_rs` (deleted; the main checkout's are
+  plain, untouched). A run that writes no `.profraw` fails before merging.
+- **Supply chain**: training dependencies from `bench/pgo-requirements.txt` and maturin from
+  `scripts/release-requirements.txt`, both `uv pip compile --generate-hashes`, installed with
+  `--require-hashes` (training ones `--only-binary :all:`); no tokens enter the build
+  container (only `GITHUB_ACTIONS`, `GITHUB_STEP_SUMMARY`, `CARGO_TERM_COLOR`); checkouts with
+  `persist-credentials: false`; every action pinned by SHA with its version in a comment
+  (checkout v5.1.0, setup-uv v6.8.0, upload-artifact v4.6.2, download-artifact v4.3.0,
+  maturin-action v1.51.0 with maturin 1.15.0, gh-action-pypi-publish v1.14.3; newer majors
+  exist, not adopted); `timeout-minutes` on every job and a `release` concurrency group.
+- **`check_wheel.py`**: scans every artifact (metadata, SBOM, extension, sdist files) for the
+  corpus folder names and `$CHAMELEON_RS_CORPUS`, and outside GitHub Actions for the home folder
+  and checkout path, failing on a hit; a local wheel's SBOM naming the checkout is reported as
+  a note (local wheels are never uploaded; CI's name the runner's path). Framework installs for
+  test_typing take pydantic-core and msgspec as wheels only and skip the test with a log line
+  if one is missing (`--only-binary :all:` was too strict: PyYAML has no 3.15 wheel). `--all`
+  no longer picks musllinux wheels on a glibc host or the reverse. Windows runs the smoke
+  test (blocking) and the suites (`--suites-only`, not yet blocking) once each.
+- **sdist**: ships `rust-toolchain.toml`, so a build from it uses the pinned compiler (checked
+  locally with the sdist build).
+- **Compatibility page**: two more known differences from the amendments: code blocks run in a
+  namespace per template and render (recursive partials share it; `default`/`attrs` are not
+  aliased inside a block), and the built-in `render_partial` is not in `econtext`.
+- **Verification**: `actionlint` (with shellcheck, also on `scripts/linux_wheel.sh`) clean;
+  `make wheels`: six profile-guided wheels (cp312-cp315t), 1.63-1.64 MiB, 10 missing functions
+  each; `make check-wheels`: each no private material, smoke ok, upstream 227 passed (5 xfailed,
+  1 xpassed), test_typing 34 passed, 2 skipped; the sdist (360 KiB) built from scratch on 3.13:
+  the same; `twine check --strict` passed on all 7; `make lint` clean; `make test` with the
+  corpus: Rust 102 + 3 + 9, pytest 3,141 passed, 5 skipped, 7 xfailed (the first 12b run had
+  80 more skips: the chameleon-flask/fastapi-chameleon comparison tests, run before
+  `make integration` had cloned them), upstream 227 passed and 6 xpassed on each engine,
+  Robyn 116; `make test-integration` green (40, 16, 39, 6, 2 original; 40, 16, 39, 6 built-in).
+
+Before the first run of the release workflow (the repository is private today; also in the
+workflow's header):
+- The arm64 runners (`ubuntu-24.04-arm`, `windows-11-arm`) are free for public repositories
+  only; a private repository needs arm64 larger runners on a paid plan.
+- macOS minutes count 10x on a private repository (24 macOS jobs per run).
+- PyPI's project links (Source, Issues, Changelog) and the README's images and links point at
+  GitHub and 404 while the repository is private: make it public before publishing.
+
 What remains for the owner:
 - Choose the version (Cargo.toml `[workspace.package] version`), move the CHANGELOG section
   under it with the date, and decide the Development Status and free-threading classifiers.
+- Make the repository public (or provide arm64 runners) before the first run; see above.
 - On PyPI, add a trusted publisher for `chameleon-rs` (pending publisher: this repository,
   workflow `release.yml`, environment `pypi`); in GitHub, create the `pypi` environment
   (required reviewers recommended).
-- Once Actions runs: trigger Release with `publish` off first; check the Windows upstream
-  results (then make that step blocking), and try `pgo: true` for Windows arm64. Then run it
-  again with `publish` on, tag the commit, and create a GitHub Release from the CHANGELOG
-  section (Great Docs then builds the Changelog page); commit the rebuilt `site/`.
+- Once Actions runs: trigger Release with `publish` off first; read each job summary for
+  wheels that fell back to plain (musllinux, Windows arm64), check the Windows upstream results
+  (then make that step blocking). Then run it again with `publish` on, tag the commit, and
+  create a GitHub Release from the CHANGELOG section (Great Docs then builds the Changelog
+  page); commit the rebuilt `site/`.
 
 ## Integrations: shared core and FastAPI
 
