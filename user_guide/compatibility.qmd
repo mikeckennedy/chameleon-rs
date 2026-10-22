@@ -45,10 +45,47 @@ to Python source code.
 | `CHAMELEON_CACHE` | Writes the generated modules to disk and loads them on the next start. | Checks the directory but writes nothing. Compiling is about 70x faster than Chameleon, so there's little to cache. |
 | Code-generation modules | `chameleon.nodes`, `chameleon.program`, `chameleon.zpt.program`, `chameleon.benchmark`. | Not provided, since chameleon-rs doesn't generate code. Importing them raises `ModuleNotFoundError`. |
 
-The built-in partials have one behaviour change, which you can turn off: a path that isn't in
-the configured template folder is also looked for next to the calling template, where
-chameleon_partials would raise. `configure(partial_search='registered')` restores the
-original lookup. See [Partials](partials.qmd#how-a-path-is-found).
+### Corner cases in slot bodies
+
+Three cases, all involving the slot fills of a macro call together with `tal:on-error` or
+i18n settings, render differently. No real template we've seen does this; each is pinned by a
+test that fails if the behaviour changes.
+
+- **A failing expression under a handler in a slot body** whose slot sits inside
+  `i18n:translate` or `i18n:name`. Chameleon writes a text node
+  and its expressions as one piece, so when an expression fails, the text before it in the
+  same node is dropped with it. chameleon-rs writes that text first, so it stays
+  (`<q>Q` where Chameleon gives `<q>`).
+- **A handler on an `i18n:name` element** whose content calls a macro that fails partway: the
+  same difference, for the text of the failing node inside the macro.
+- **A fill no macro took**, used by a later macro call while the calling template has
+  different `i18n:domain`, `i18n:context` or `i18n:target` settings: values converted by that
+  fill use the settings where it was defined. Chameleon uses the settings at the later call.
+
+### Behaviour of the helper libraries
+
+The built-ins differ from chameleon_partials, chameleon-flask, fastapi-chameleon and
+chameleon-robyn in a few ways that don't affect templates that worked before:
+
+- **Partial paths.** A path that isn't in the configured template folder is also looked for
+  next to the calling template, where chameleon_partials would raise.
+  `configure(partial_search='registered')` restores the original lookup. See
+  [Partials](partials.qmd#how-a-path-is-found).
+- **Async views await model values.** An async view renders with `render_async`, so a model
+  value that is awaitable (a coroutine, task or future, or a test double such as
+  `AsyncMock()`) is awaited where the template uses it. The original libraries rendered the
+  object itself.
+- **Setup.** Every `configure()` call applies (`register_extensions` ignored later calls), and
+  `configure(..., app=app)` checks the decorator order at startup.
+
+### `render_async` and a replaced `render`
+
+`render_async()` honours a `render()` that a subclass overrides, since the override may add
+defaults or post-process the output: it calls it, synchronously, so awaitable values are not
+awaited. Assigning a new function to `PageTemplate.render` (a monkeypatch, for example to time
+renders) counts as such an override. Every `render_async()`, including the async views of the
+framework integrations, then renders synchronously through your function. See
+[Migrating](migrating.qmd#timing-renders) for a way to time both.
 
 ## Found a difference?
 

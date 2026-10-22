@@ -2,10 +2,12 @@
 title: "Migrating from the helper libraries"
 ---
 
-chameleon-rs builds in what chameleon_partials and chameleon-flask provide. With
+chameleon-rs builds in what chameleon_partials, chameleon-flask, fastapi-chameleon and
+chameleon-robyn provide, and has its own Litestar engine. With
 `chameleon_rs.compat.install()` you don't have to change anything: the old imports give the
-built-ins. This page is for when you want to move to the new names, and drop the old setup
-code that's no longer needed.
+built-ins (see [Switching from Chameleon](switching-from-chameleon.qmd) for Chameleon itself).
+This page is for when you want to move to the new names, and drop the old setup code that's no
+longer needed.
 
 ## At a glance
 
@@ -18,6 +20,7 @@ code that's no longer needed.
 | `import chameleon_flask` | `import chameleon_rs.flask as chameleon_flask` |
 | `import fastapi_chameleon` | `import chameleon_rs.fastapi as fastapi_chameleon` |
 | `import chameleon_robyn` | `import chameleon_rs.robyn as chameleon_robyn` |
+| `from litestar_chameleon import ChameleonTemplateEngine` | `from chameleon_rs.litestar import ChameleonEngine`, and return `chameleon_rs.litestar.Template` |
 | `chameleon_partials.render_partial(path, **m).html_text` | `chameleon_rs.render_partial(path, **m).html_text` |
 | `except chameleon_partials.PartialsException`, `except chameleon_flask.exceptions.FlaskChameleonException` | Still work. `except chameleon_rs.web.TemplateError` catches both |
 | `has_registered_extensions = False` in test teardown | `chameleon_rs.partials.clear()` |
@@ -159,11 +162,49 @@ refused, a context key wins over a template callable of the same name (as for Ji
 loader options are `ChameleonEngine` arguments (`CHAMELEON_RELOAD` rather than
 `CHAMELEON_AUTO_RELOAD`), and stock Chameleon need not be installed. See [Litestar](litestar.qmd).
 
+## Timing renders
+
+Instrumentation that replaces `PageTemplate.render` to time every render (common in apps that
+log slow templates) changes how async renders run on chameleon-rs. `render_async()` honours a
+`render()` that differs from the built-in one, because a subclass's override may add defaults
+or post-process the output, and a monkeypatched `render` looks exactly like that override. So
+with the patch in place, every `render_async()`, including those of async `@template` views,
+calls your `render` synchronously, and awaitable model values are not awaited.
+
+```python
+# Makes every render_async() render synchronously:
+original = PageTemplate.render
+
+def timed_render(self, *args, **kwargs):
+    start = time.perf_counter()
+    try:
+        return original(self, *args, **kwargs)
+    finally:
+        log_render(self.filename, time.perf_counter() - start)
+
+PageTemplate.render = timed_render
+```
+
+Wrapping `render_async` as well doesn't help: the original `render_async` still sees the
+replaced `render`. Instead:
+
+- **Time the request or the view**, in middleware or around the call that renders. The
+  template's share is then the view's time minus its data loading.
+- **Use a sampling profiler** such as py-spy for a breakdown by template and helper, with no
+  code change.
+- **Keep the patch only in apps that render synchronously.** There it changes nothing but the
+  timing.
+
+The same applies to a subclass that overrides `render()`: its `render_async()` renders
+synchronously through the override. See [Compatibility](compatibility.qmd#render_async-and-a-replaced-render).
+
 ## Pitfalls
 
 - **Install the alias first.** `chameleon_rs.compat.install()` must run before the first
   `import chameleon`, including imports inside your framework integration. Put it in the entry
   point itself, above every other import.
+- **A patched `PageTemplate.render` makes async renders synchronous.** See
+  [Timing renders](#timing-renders).
 - **Don't mix shadow mode with the alias.** Shadow mode needs stock Chameleon as `chameleon`.
 - **`template.source` isn't Python.** Code that read the generated module (rare, mostly
   debugging tools) gets a program dump instead. See [Compatibility](compatibility.qmd#known-differences).
