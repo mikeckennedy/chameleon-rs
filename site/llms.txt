@@ -23,6 +23,7 @@
 - [PageTemplate.parse](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.parse.html)
 - [PageTemplate.include](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.include.html)
 - [PageTemplate.render](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.render.html)
+- [PageTemplate.render_async](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.render_async.html)
 - [PageTemplate.digest](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.digest.html)
 
 #### Configuration

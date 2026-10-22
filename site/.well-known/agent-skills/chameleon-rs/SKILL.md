@@ -48,6 +48,7 @@ Methods for the PageTemplate class
 - `PageTemplate.parse`
 - `PageTemplate.include`
 - `PageTemplate.render`
+- `PageTemplate.render_async`
 - `PageTemplate.digest`
 
 ### Configuration

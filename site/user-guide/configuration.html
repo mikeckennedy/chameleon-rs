@@ -365,7 +365,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><strong>It’s safe with threads.</strong> Each configuration is an immutable object that’s swapped in whole, so a render running at the same time never sees half of one. Still, call it at startup, not per request.</li>
 <li>It returns the new settings, and raises <a href="../reference/web.TemplateError.html#chameleon_rs.web.TemplateError" class="gdls-link gdls-code">chameleon_rs.web.TemplateError</a> for a missing folder, or <code>ValueError</code> for an unknown <code>partial_search</code>.</li>
 </ul>
-<div id="8c72d673" class="cell" data-execution_count="2">
+<div id="e6baceaa" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>settings <span class="op">=</span> chameleon_rs.configure(template_folder<span class="op">=</span>template_folder, auto_reload<span class="op">=</span><span class="va">True</span>)</span>

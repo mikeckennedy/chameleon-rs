@@ -44,6 +44,9 @@ The whole template as a macro (`metal:use-macro="template"`): Chameleon's
 [PageTemplate.render()](PageTemplate.render.md#chameleon_rs.PageTemplate.render)  
 Render template to string.
 
+[PageTemplate.render_async()](PageTemplate.render_async.md#chameleon_rs.PageTemplate.render_async)  
+Render template to string, awaiting awaitable values (D9).
+
 [PageTemplate.digest()](PageTemplate.digest.md#chameleon_rs.PageTemplate.digest)  
 
 
