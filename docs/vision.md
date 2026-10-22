@@ -51,7 +51,7 @@ Open questions:
 ## 2. Built-in framework integrations: Flask/Quart, FastAPI and Robyn
 
 > **Status (2026-10-21):** the Flask/Quart part is built (Phase 9, `chameleon_rs.flask`, per the table
-> below except `render_async`/`response_async`, which wait for Phase 11). FastAPI and Robyn remain
+> below; `render_async`/`response_async` and `render_async` for async views were added in Phase 11). FastAPI and Robyn remain
 > vision items with the same API; `chameleon_rs.web` already holds the shared exceptions and model
 > conversion.
 
@@ -121,6 +121,10 @@ one-line import change.
 | chameleon-robyn | Included: `chameleon_rs.robyn` with the same API | Its suite already passes on the compat layer; same shape |
 
 ## 3. Async rendering
+
+> **Status (2026-10-21):** built in Phase 11: `render_async`, `@chameleon_rs.concurrent` values and
+> partial fan-out (`concurrent=True`) with placeholders, async iterables in `tal:repeat` decided
+> unsupported, and an experimental `offload=True`. Streaming is still a vision item.
 
 Decided so far (D9, D3): `render_async()` is an `async def` on the template class. The VM can
 pause and resume, so an expression whose final value is awaitable suspends the render instead

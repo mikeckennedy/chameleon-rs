@@ -30,9 +30,13 @@ makes ``import chameleon_flask`` give this module)::
   ``flask.Response``; a response the view returns passes through. Bare, it renders
   ``{last module name}/{function name}.html``, or ``.pt`` when there is no ``.html`` file in
   the template folder (checked once, when the view is decorated). Sync and async views (Flask
-  async views and Quart); async views render synchronously for now.
+  async views and Quart): an async view's page renders with ``render_async``, so values the
+  view returns that are awaitable (coroutines, tasks) are awaited where the template uses
+  them, without blocking the event loop. For every other value the output is the same as
+  ``render``'s. ``@template(..., concurrent=True)`` fans native partials with awaitable
+  arguments out; ``@template(..., offload=True)`` (experimental) renders in a worker thread.
 - ``render(template_file, **data)`` and ``response(template_file, content_type=...,
-  status_code=..., **data)``.
+  status_code=..., **data)``; ``render_async`` and ``response_async`` are their coroutines.
 - ``not_found(template_file='errors/404.pt', **data)`` and ``error(template_file,
   status_code=500, **data)`` end a decorated view with that page; ``generic_error`` is
   fastapi-chameleon's name for ``error``.
@@ -55,6 +59,7 @@ import flask
 import werkzeug.sansio.response
 
 from chameleon_rs import _settings
+from chameleon_rs.template import _render_async
 from chameleon_rs.web import ErrorPage, NotFound, TemplateError, model_of
 
 __all__ = [
@@ -68,7 +73,9 @@ __all__ = [
     'global_init',
     'not_found',
     'render',
+    'render_async',
     'response',
+    'response_async',
     'template',
 ]
 
@@ -182,17 +189,26 @@ def _current_settings() -> _settings.Settings | None:
     return _settings.flask
 
 
+def _page(template_file: str) -> Any:
+    settings = _current_settings()
+    if settings is None:
+        msg = 'You must call global_init() before rendering templates.'
+        raise FlaskChameleonException(msg)
+    return settings.loader[template_file]
+
+
 def render(template_file: str, **template_data: Any) -> str:
     """Renders a template (path relative to the template folder) to a ``str``.
 
     Raises ``FlaskChameleonException`` if nothing is configured.
     """
-    settings = _current_settings()
-    if settings is None:
-        msg = 'You must call global_init() before rendering templates.'
-        raise FlaskChameleonException(msg)
-    page = settings.loader[template_file]
-    return page.render(encoding='utf-8', **template_data)  # type: ignore[no-any-return]
+    return _page(template_file).render(encoding='utf-8', **template_data)  # type: ignore[no-any-return]
+
+
+async def render_async(template_file: str, **template_data: Any) -> str:
+    """``render`` as a coroutine: the template's ``render_async``, which awaits awaitable
+    values where the template uses them (see ``PageTemplate.render_async``)."""
+    return await _page(template_file).render_async(encoding='utf-8', **template_data)  # type: ignore[no-any-return]
 
 
 def response(
@@ -207,16 +223,35 @@ def response(
     return flask.Response(response=html, content_type=content_type, status=status_code)
 
 
+async def response_async(
+    template_file: str,
+    content_type: str = 'text/html',
+    status_code: int = 200,
+    **template_data: Any,
+) -> flask.Response:
+    """``response`` as a coroutine, rendering with ``render_async``."""
+    html = await render_async(template_file, **template_data)
+    return flask.Response(response=html, content_type=content_type, status=status_code)
+
+
 def template(
     template_file: Callable[..., Any] | str | None = None,
     content_type: str = 'text/html',
     status_code: int = 200,
     *,
     mimetype: str | None = None,
+    concurrent: bool | None = None,
+    offload: bool = False,
 ) -> Callable[..., Any]:
     """Decorates a Flask or Quart view (sync or async) to render a template with what it
     returns: bare (``@template``), ``@template()`` or ``@template('home/index.pt',
-    content_type=..., status_code=...)``. See the module docs."""
+    content_type=..., status_code=...)``. See the module docs.
+
+    ``concurrent=True`` (async views): native partials called with an awaitable argument
+    render concurrently (``PageTemplate``'s ``concurrent`` setting, for this view; ``False``
+    turns a template's setting off, ``None``, the default, keeps it).
+    ``offload=True`` (async views, experimental): the page renders in a worker thread
+    (``render_async(offload=True)``)."""
     wrapped_function = None
     if callable(template_file):
         wrapped_function = template_file
@@ -255,9 +290,11 @@ def template(
         @wraps(f)
         async def async_view_method(*args: Any, **kwargs: Any) -> flask.Response:
             try:
-                return build_response(await f(*args, **kwargs))
+                return await _render_response_async(
+                    view_template, await f(*args, **kwargs), content_type, status_code, concurrent, offload
+                )
             except ErrorPage as page:
-                return _error_response(page)
+                return await _error_response_async(page)
 
         if inspect.iscoroutinefunction(f):
             return async_view_method
@@ -266,26 +303,55 @@ def template(
     return response_inner(wrapped_function) if wrapped_function else response_inner
 
 
-def _render_response(
-    template_file: str, response_val: Any, content_type: str, status_code: int = 200
-) -> flask.Response:
-    if isinstance(response_val, werkzeug.sansio.response.Response) or str(type(response_val)) in response_classes:
-        # May be a Quart or bare werkzeug response; those types can't be named here
-        # without importing Quart.
-        return response_val  # type: ignore[no-any-return]
+def _is_response(response_val: Any) -> bool:
+    # May be a Quart or bare werkzeug response; those types can't be named here without
+    # importing Quart.
+    return isinstance(response_val, werkzeug.sansio.response.Response) or str(type(response_val)) in response_classes
 
+
+def _model(response_val: Any) -> Mapping[str, Any]:
     model = model_of(response_val)
     if model is None:
         msg = f'Invalid return type {type(response_val)}, we expected a dict or flask.Response as the return value.'
         raise FlaskChameleonException(msg)
+    return model
 
-    html = render(template_file, **model)
+
+def _render_response(
+    template_file: str, response_val: Any, content_type: str, status_code: int = 200
+) -> flask.Response:
+    if _is_response(response_val):
+        return response_val  # type: ignore[no-any-return]
+    html = render(template_file, **_model(response_val))
+    return flask.Response(response=html, content_type=content_type, status=status_code)
+
+
+async def _render_response_async(
+    template_file: str,
+    response_val: Any,
+    content_type: str,
+    status_code: int = 200,
+    concurrent: bool | None = None,
+    offload: bool = False,
+) -> flask.Response:
+    if _is_response(response_val):
+        return response_val  # type: ignore[no-any-return]
+    model = dict(_model(response_val))
+    page = _page(template_file)
+    if concurrent is None:
+        concurrent = page.concurrent
+    html = await _render_async(page, 'utf-8', model, concurrent, offload)
     return flask.Response(response=html, content_type=content_type, status=status_code)
 
 
 def _error_response(page: ErrorPage) -> flask.Response:
     # As chameleon-flask's 404 path: text/html, the page's status, its data as the model.
     html = render(page.template_file, **(page.template_data or {}))
+    return flask.Response(response=html, content_type='text/html', status=page.status_code)
+
+
+async def _error_response_async(page: ErrorPage) -> flask.Response:
+    html = await render_async(page.template_file, **(page.template_data or {}))
     return flask.Response(response=html, content_type='text/html', status=page.status_code)
 
 

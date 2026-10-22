@@ -233,7 +233,7 @@ fn render_function<'py>(
     let _ = render.stream.set(stream.clone());
     let compiled = Arc::clone(&program.get().core);
     let mut st = VmState::at(compiled, entry, code.unbind(), scope.clone().into_any().unbind(), i18n, slots);
-    let mut rt = PyRuntime::new(&render, program.clone(), scope);
+    let mut rt = PyRuntime::<false>::new(&render, program.clone(), scope);
     match run(&mut st, &mut rt) {
         Ok(Done::Finished) => {}
         Ok(Done::Suspended(_)) => return Err(internal_error(py, "a synchronous render suspended")),

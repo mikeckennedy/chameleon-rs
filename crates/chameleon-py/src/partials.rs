@@ -18,12 +18,14 @@
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use pyo3::exceptions::PyRecursionError;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyDict, PyString};
+use pyo3::{PyTraverseError, PyVisit};
 
 use chameleon_core::{Call, Step};
 
@@ -61,7 +63,7 @@ fn partials_attr<'py>(
 /// 'utf-8', ...)` would use.
 pub(crate) struct Target<'py> {
     /// Keeps the template (and so its compilation) alive for the render.
-    _template: Bound<'py, PyAny>,
+    template: Bound<'py, PyAny>,
     pub(crate) program: Bound<'py, Program>,
     /// The template's builtins (`template`, `macros`, `render_partial`, ...).
     pub(crate) builtins: Bound<'py, PyDict>,
@@ -69,6 +71,14 @@ pub(crate) struct Target<'py> {
     pub(crate) defaults: Bound<'py, PyDict>,
     /// Its own `render_partial` builtin (resolving relative to it).
     own: Option<Bound<'py, PyAny>>,
+}
+
+/// A native partial rendered on its own (opt-in concurrency, `crate::deferred`).
+pub(crate) struct PendingRender<'py> {
+    pub(crate) program: Bound<'py, Program>,
+    pub(crate) scope: Bound<'py, Scope>,
+    pub(crate) defaults: Bound<'py, PyDict>,
+    pub(crate) builtins: Bound<'py, PyDict>,
 }
 
 /// A native partial's render (see the module docs).
@@ -149,6 +159,23 @@ impl<'py> Partials<'py> {
         self.units.borrow().last().and_then(|u| u.rcontext.get().cloned())
     }
 
+    /// The innermost unit's serial (`0`: the render's own).
+    pub(crate) fn top(&self) -> u64 {
+        self.top.get()
+    }
+
+    /// The unit of the call just returned as [`Step::Call`], to render it on its own: its
+    /// program, scope, defaults and builtins.
+    pub(crate) fn take_pending(&self) -> Option<PendingRender<'py>> {
+        let unit = self.pending.borrow_mut().take()?;
+        Some(PendingRender {
+            program: unit.target.program.clone(),
+            scope: unit.scope.clone(),
+            defaults: unit.target.defaults.clone(),
+            builtins: unit.target.builtins.clone(),
+        })
+    }
+
     /// The pending unit's frame was pushed.
     pub(crate) fn entered(&self) {
         if let Some(mut unit) = self.pending.borrow_mut().take() {
@@ -219,7 +246,7 @@ impl<'py> Partials<'py> {
         let (program, builtins, defaults): (Bound<'py, Program>, Bound<'py, PyDict>, Bound<'py, PyDict>) =
             prepared.extract()?;
         let own = builtins.get_item(intern!(py, "render_partial"))?;
-        let target = Rc::new(Target { _template: template.clone(), program, builtins, defaults, own });
+        let target = Rc::new(Target { template: template.clone(), program, builtins, defaults, own });
         self.targets.borrow_mut().push((key, Rc::clone(&target)));
         Ok(Some(target))
     }
@@ -254,8 +281,16 @@ pub(crate) fn partial_step(
     let path = eval(path, cx)?;
     let scope = Scope::empty(py)?;
     let locals = scope.as_super();
+    // Opt-in concurrency: a partial of the render's own unit called with an awaitable argument
+    // may render on its own (`crate::deferred`).
+    let fan_out = cx.render.concurrent && cx.render.partials.top() == 0;
+    let mut awaits = false;
     for (key, value) in kwargs {
-        locals.set_item(key.bind(py), eval(value, cx)?)?;
+        let value = eval(value, cx)?;
+        if fan_out && !awaits {
+            awaits = crate::awaitable::is_awaitable(&value)?;
+        }
+        locals.set_item(key.bind(py), value)?;
     }
     let site_key = std::ptr::from_ref(site) as usize;
     let Some(target) = cx.render.partials.target(site_key, &func, &path)? else {
@@ -296,6 +331,9 @@ pub(crate) fn partial_step(
     };
     *cx.render.partials.pending.borrow_mut() =
         Some(Unit { serial: 0, target, scope, initial, added, rcontext: OnceCell::new() });
+    if awaits {
+        cx.render.defer_next.set(true);
+    }
     Ok(Step::Call(call))
 }
 
@@ -364,4 +402,200 @@ fn error_econtext<'py>(unit: &Unit<'py>) -> PyResult<Bound<'py, PyDict>> {
         }
     }
     Ok(out)
+}
+
+/// [`Target`] without the GIL lifetime, kept by a suspended render (Phase 11).
+pub(crate) struct SavedTarget {
+    template: Py<PyAny>,
+    program: Py<Program>,
+    builtins: Py<PyDict>,
+    defaults: Py<PyDict>,
+    own: Option<Py<PyAny>>,
+}
+
+/// [`Added`] without the GIL lifetime.
+enum SavedAdded {
+    Nothing,
+    Own,
+    Func(Py<PyAny>),
+}
+
+/// [`Unit`] without the GIL lifetime.
+struct SavedUnit {
+    serial: u64,
+    target: Arc<SavedTarget>,
+    scope: Py<Scope>,
+    initial: usize,
+    added: SavedAdded,
+    rcontext: Option<Py<PyDict>>,
+}
+
+struct SavedSite {
+    site: usize,
+    func: Py<PyAny>,
+    path: Py<PyAny>,
+    target: Option<Arc<SavedTarget>>,
+}
+
+/// [`Partials`] without the GIL lifetime: what a suspended render keeps of its partial units
+/// (the unit stack, the pending unit, the render's resolutions), so a render can suspend
+/// inside a native partial and resume on a later call with a new `Python` token.
+#[derive(Default)]
+pub(crate) struct SavedPartials {
+    units: Vec<SavedUnit>,
+    top: u64,
+    serials: u64,
+    pending: Option<SavedUnit>,
+    sites: Vec<SavedSite>,
+    targets: Vec<(usize, Arc<SavedTarget>)>,
+}
+
+impl<'py> Partials<'py> {
+    /// The state without the GIL lifetime (see [`SavedPartials`]).
+    pub(crate) fn save(self) -> SavedPartials {
+        // Each target converted once, keeping their sharing (by address).
+        let mut memo: Vec<(usize, Arc<SavedTarget>)> = Vec::new();
+        let mut target = |t: &Rc<Target<'py>>| -> Arc<SavedTarget> {
+            let key = Rc::as_ptr(t) as usize;
+            if let Some((_, saved)) = memo.iter().find(|(k, _)| *k == key) {
+                return Arc::clone(saved);
+            }
+            let saved = Arc::new(SavedTarget {
+                template: t.template.clone().unbind(),
+                program: t.program.clone().unbind(),
+                builtins: t.builtins.clone().unbind(),
+                defaults: t.defaults.clone().unbind(),
+                own: t.own.clone().map(Bound::unbind),
+            });
+            memo.push((key, Arc::clone(&saved)));
+            saved
+        };
+        let mut unit = |u: Unit<'py>| SavedUnit {
+            serial: u.serial,
+            target: target(&u.target),
+            scope: u.scope.unbind(),
+            initial: u.initial,
+            added: match u.added {
+                Added::Nothing => SavedAdded::Nothing,
+                Added::Own => SavedAdded::Own,
+                Added::Func(f) => SavedAdded::Func(f.unbind()),
+            },
+            rcontext: u.rcontext.into_inner().map(Bound::unbind),
+        };
+        let units = self.units.into_inner().into_iter().map(&mut unit).collect();
+        let pending = self.pending.into_inner().map(&mut unit);
+        drop(unit);
+        let sites = self
+            .sites
+            .into_inner()
+            .into_iter()
+            .map(|s| SavedSite {
+                site: s.site,
+                func: s.func.unbind(),
+                path: s.path.unbind(),
+                target: s.target.as_ref().map(&mut target),
+            })
+            .collect();
+        let targets = self.targets.into_inner().iter().map(|(k, t)| (*k, target(t))).collect();
+        SavedPartials { units, top: self.top.get(), serials: self.serials.get(), pending, sites, targets }
+    }
+
+    /// The state back with the GIL lifetime.
+    pub(crate) fn restore(saved: SavedPartials, py: Python<'py>) -> Self {
+        let mut memo: Vec<(usize, Rc<Target<'py>>)> = Vec::new();
+        let mut target = |t: &Arc<SavedTarget>| -> Rc<Target<'py>> {
+            let key = Arc::as_ptr(t) as usize;
+            if let Some((_, restored)) = memo.iter().find(|(k, _)| *k == key) {
+                return Rc::clone(restored);
+            }
+            let restored = Rc::new(Target {
+                template: t.template.bind(py).clone(),
+                program: t.program.bind(py).clone(),
+                builtins: t.builtins.bind(py).clone(),
+                defaults: t.defaults.bind(py).clone(),
+                own: t.own.as_ref().map(|o| o.bind(py).clone()),
+            });
+            memo.push((key, Rc::clone(&restored)));
+            restored
+        };
+        let mut unit = |u: SavedUnit| Unit {
+            serial: u.serial,
+            target: target(&u.target),
+            scope: u.scope.into_bound(py),
+            initial: u.initial,
+            added: match u.added {
+                SavedAdded::Nothing => Added::Nothing,
+                SavedAdded::Own => Added::Own,
+                SavedAdded::Func(f) => Added::Func(f.into_bound(py)),
+            },
+            rcontext: u.rcontext.map(|r| r.into_bound(py)).map_or_else(OnceCell::new, OnceCell::from),
+        };
+        let units = saved.units.into_iter().map(&mut unit).collect();
+        let pending = saved.pending.map(&mut unit);
+        drop(unit);
+        let sites = saved
+            .sites
+            .into_iter()
+            .map(|s| SiteEntry {
+                site: s.site,
+                func: s.func.into_bound(py),
+                path: s.path.into_bound(py),
+                target: s.target.as_ref().map(&mut target),
+            })
+            .collect();
+        let targets = saved.targets.iter().map(|(k, t)| (*k, target(t))).collect();
+        Self {
+            units: RefCell::new(units),
+            top: Cell::new(saved.top),
+            serials: Cell::new(saved.serials),
+            pending: RefCell::new(pending),
+            sites: RefCell::new(sites),
+            targets: RefCell::new(targets),
+        }
+    }
+}
+
+impl SavedPartials {
+    /// Visits every Python object held (a suspended render's `__traverse__`). A target is
+    /// shared (`Arc`) by units, call sites and the prepared list but holds one reference to each
+    /// of its objects: it is visited once (a collector must not see more visits than references).
+    pub(crate) fn traverse(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
+        let mut seen: Vec<*const SavedTarget> = Vec::new();
+        let mut target = |t: &Arc<SavedTarget>| -> Result<(), PyTraverseError> {
+            let key = Arc::as_ptr(t);
+            if seen.contains(&key) {
+                return Ok(());
+            }
+            seen.push(key);
+            visit.call(&t.template)?;
+            visit.call(&t.program)?;
+            visit.call(&t.builtins)?;
+            visit.call(&t.defaults)?;
+            if let Some(own) = &t.own {
+                visit.call(own)?;
+            }
+            Ok(())
+        };
+        for u in self.units.iter().chain(self.pending.as_ref()) {
+            target(&u.target)?;
+            visit.call(&u.scope)?;
+            if let SavedAdded::Func(f) = &u.added {
+                visit.call(f)?;
+            }
+            if let Some(r) = &u.rcontext {
+                visit.call(r)?;
+            }
+        }
+        for s in &self.sites {
+            visit.call(&s.func)?;
+            visit.call(&s.path)?;
+            if let Some(t) = &s.target {
+                target(t)?;
+            }
+        }
+        for (_, t) in &self.targets {
+            target(t)?;
+        }
+        Ok(())
+    }
 }

@@ -12,6 +12,7 @@ loaded by name live, for partials and for the framework integrations (`chameleon
 
 from typing import Any
 
+from chameleon_rs._async import concurrent
 from chameleon_rs._native import core_version
 from chameleon_rs._settings import configure
 from chameleon_rs.exc import TemplateError
@@ -44,6 +45,7 @@ __all__ = [
     'PageTextTemplateFile',
     'TemplateError',
     '__version__',
+    'concurrent',
     'configure',
     'core_version',
     'render_partial',

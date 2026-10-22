@@ -20,6 +20,7 @@ class attributes on a subclass, as in Chameleon: ``auto_reload``, ``encoding``,
 
 from __future__ import annotations
 
+import asyncio
 import builtins as _builtins_module
 import datetime
 import hashlib
@@ -35,7 +36,15 @@ from collections.abc import Callable, Collection, Iterable, Mapping
 from functools import partial
 from typing import Any, ClassVar
 
-from chameleon_rs._native import DEFAULT_MARKER, Macro, Program, Scope, render_page
+from chameleon_rs._native import (
+    DEFAULT_MARKER,
+    Macro,
+    Program,
+    RenderAwaitable,
+    Scope,
+    render_page,
+    render_page_async,
+)
 from chameleon_rs.astutil import Symbol
 from chameleon_rs.codegen import reverse_builtin_map
 from chameleon_rs.config import AUTO_RELOAD, CACHE_DIRECTORY, DEBUG_MODE, EAGER_PARSING
@@ -286,6 +295,11 @@ class BaseTemplate:
             raise exc.with_traceback(caught.__traceback__)
 
         return join(stream)
+
+    async def render_async(self, **__kw: Any) -> Any:
+        """``render`` as a coroutine. A template with a render function of its own (Chameleon's
+        protocol) renders synchronously; ``PageTemplate`` suspends on awaitable values."""
+        return self.render(**__kw)
 
     def write(self, body: str | bytes) -> None:
         encoding: str | None
@@ -549,6 +563,10 @@ class PageTemplate(BaseTemplate):
 
     default_marker: Any = Symbol(DEFAULT_MARKER)
 
+    # chameleon-rs (opt-in, D9): in ``render_async``, native partials called with an awaitable
+    # argument render concurrently, each in a task of its own.
+    concurrent = False
+
     _defaults_key: tuple[Any, ...] | None = None
     _encoded: tuple[tuple[Any, ...], dict[str, Any]] | None = None
 
@@ -681,6 +699,30 @@ class PageTemplate(BaseTemplate):
         # the keywords, the defaults they lack and a fresh `repeat`.
         return render_page(self, encoding, kw)  # type: ignore[no-any-return]
 
+    async def render_async(self, encoding: str | None = None, *, offload: bool = False, **kw: Any) -> str:
+        """Render template to string, awaiting awaitable values (D9).
+
+        The same as ``render``, except that when an expression's final value is awaitable (a
+        coroutine, a task, a future, anything ``await`` accepts), the render suspends until the
+        value is awaited and continues with its result. Values inside an expression are not
+        awaited (``coro().title`` is the coroutine's attribute), and a condition is tested on
+        the awaited value. An error raised by an awaited value is raised where the expression
+        is, so ``tal:on-error`` handles it; cancellation passes through.
+
+        Opt-in concurrency: calls of ``@chameleon_rs.concurrent`` helpers written as a whole
+        ``${...}`` are awaited concurrently, and with the template setting ``concurrent=True``
+        native partials called with an awaitable argument render concurrently (see
+        ``chameleon_rs._async``).
+
+        Experimental, opt-in: ``offload=True`` runs ``render`` (synchronous: awaitable values
+        are not awaited) in the event loop's default executor, a worker thread, and awaits it.
+        On a free-threaded build renders then run in parallel with the event loop and each
+        other; on a GIL build it helps only renders dominated by long text, whose escaping
+        releases the GIL (docs/plan.md, Phase 11 results). ``offload`` is therefore not a
+        template variable here.
+        """
+        return await _render_async(self, encoding, kw, self.concurrent, offload)
+
     def _encoded_defaults(self, encoding: str | None, translate: Callable[..., Any] | None) -> dict[str, Any]:
         """The defaults for an `encoding` or `translate` argument, kept while the arguments and
         the settings they depend on are the same (chameleon_partials passes `encoding`)."""
@@ -711,6 +753,32 @@ class PageTemplate(BaseTemplate):
             digest.update((f';{attr}={v}').encode('ascii'))
 
         return digest.hexdigest()[:32]
+
+
+async def _render_async(
+    template: PageTemplate, encoding: str | None, kw: dict[str, Any], concurrent: bool, offload: bool = False
+) -> str:
+    """``PageTemplate.render_async`` with ``concurrent`` and ``offload`` given (the
+    integrations' per-view settings)."""
+    if type(template).render not in _BASE_RENDERS:
+        # A subclass's own `render` (adding defaults, post-processing): honoured, as
+        # synchronous (awaitable values are not awaited).
+        return await _overridden(template, encoding, kw, offload)  # type: ignore[no-any-return]
+    if offload:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, partial(PageTemplate.render, template, encoding, **kw))  # type: ignore[no-any-return]
+    result = render_page_async(template, encoding, kw, bool(concurrent))
+    if isinstance(result, RenderAwaitable):
+        return await result  # type: ignore[no-any-return]
+    return result  # type: ignore[no-any-return]
+
+
+async def _overridden(template: PageTemplate, encoding: str | None, kw: dict[str, Any], offload: bool) -> Any:
+    """The template's own `render` (a subclass's), in a worker thread with `offload`."""
+    call = partial(template.render, **kw) if encoding is None else partial(template.render, encoding, **kw)
+    if offload:
+        return await asyncio.get_running_loop().run_in_executor(None, call)
+    return call()
 
 
 _LONE_SURROGATE = re.compile('[\ud800-\udfff]')
@@ -863,6 +931,16 @@ class PageTextTemplateFile(PageTemplateFile):
     def render(self, encoding: str | None = None, **kw: Any) -> bytes:  # type: ignore[override]
         result = super().render(encoding, **kw)
         return result.encode(self.encoding or 'utf-8')
+
+    async def render_async(self, encoding: str | None = None, *, offload: bool = False, **kw: Any) -> bytes:  # type: ignore[override]
+        if type(self).render is not PageTextTemplateFile.render:
+            return await _overridden(self, encoding, kw, offload)  # type: ignore[no-any-return]
+        result = await super().render_async(encoding, offload=offload, **kw)
+        return result.encode(self.encoding or 'utf-8')
+
+
+# The `render` methods `render_async` stands in for; a subclass's own is called instead.
+_BASE_RENDERS = (PageTemplate.render, PageTextTemplateFile.render)
 
 
 __all__ = [

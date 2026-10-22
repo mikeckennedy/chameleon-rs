@@ -1312,6 +1312,158 @@ Real-app re-test: after this phase, repeat the owner's real-app crawl and the ow
 simultaneous requests against a single-threaded asyncio Granian worker): throughput, p50/p95/p99 latency
 and event-loop lag, chameleon-rs sync vs async vs stock Chameleon.
 
+**Results (2026-10-21), on a worktree branch from 69388cd; the owner's real-app re-test is still to
+do.** Design: architecture.md, "Phase 11 amendments".
+
+Built:
+- `render_async(encoding=None, **kw)` on `PageTemplate`, `PageTemplateFile`, the text templates
+  (`PageTextTemplateFile` returns bytes) and `BaseTemplate` (Chameleon's render protocol, sync):
+  an `async def` awaiting the native `RenderAwaitable`, which suspends the VM when an expression's
+  final value is awaitable and delegates `send`/`throw`/`close` like `yield from`. Macros, slots,
+  native partials, `tal:on-error`, i18n and code blocks work across suspensions. Errors of awaited
+  values are raised at the expression (`tal:on-error` catches them); cancellation passes through.
+- Carried items done: `rcontext` and the partial unit stack persist across suspension (saved as
+  `Py` with the rest of the render-wide state, `RenderCtx::save`/`restore`, instead of moving the
+  units into `VmState`: the sync path keeps `Bound`); the awaitable's `__traverse__`/`__clear__`
+  (`VmState::for_each_value`); `VmState::throw` for awaited errors and cancellation; a fixed
+  recursion budget for async renders. No `Mutex`: the awaitable is a non-frozen pyclass and PyO3's
+  borrow flag (atomic on free-threaded builds) gives "coroutine already executing".
+- Async iterables in `tal:repeat`: decided unsupported (an async iterable is not iterable, the
+  `TypeError` of a sync render; collect it in an async helper, which the loop awaits). Documented.
+- Opt-in concurrency: `@chameleon_rs.concurrent` helpers in `${...}` start as tasks with a
+  placeholder; `PageTemplate(..., concurrent=True)` / `@template(..., concurrent=True)` fans
+  native partials with an awaitable argument out as renders of their own. Only where the output
+  is final (`VmState::can_defer`); results filled in document order at the end. Deferred: hoisting
+  a call ahead of its position ("as soon as its free variables exist").
+- `chameleon_rs.flask`: async views (Flask, Quart) render with `render_async` (the default, since
+  output is identical without awaitable values: every chameleon-flask case run as an async view
+  matches chameleon-flask); `render_async()`, `response_async()`.
+- Offload experiment, kept as an explicit, experimental opt-in: `render_async(..., offload=True)` /
+  `@template(..., offload=True)` (the sync `render` in the loop's default executor), and strings of
+  64 KiB or more escaped with the GIL released. No gzip in Rust.
+
+Exit gate (release builds; `bench/bench_async.py`; load average 2-4 during these runs):
+
+| | GIL 3.15 | free-threaded 3.14t |
+|---|---|---|
+| Dashboard, `render()` with blocking helpers | 71.6 ms | 71.6 ms |
+| Dashboard, `render_async()`, async helpers awaited in turn | 64.6 ms | 65.0 ms |
+| Dashboard, `render_async()`, `@concurrent` helpers (gate: near the ceiling) | **21.4 ms** | **21.4 ms** |
+| Ceiling: one 20 ms wait + one 512 KiB hash | 20.5 ms | 20.4 ms |
+| Loop lag during `render_async` of 1,000 rows each awaiting (gate: < 1 ms) | **p99 171 us, max 223 us** | **p99 172 us, max 565 us** |
+| Loop lag during a sync `render()` of the report, for comparison | p99 2.3 ms | p99 2.7 ms |
+
+(The dashboard's 25 ms ceiling in `bench_render.py` counts a thread pool for the blocking helpers;
+with async helpers the ceiling is one wait plus one hash.) Free-threaded stress suite: `test_threads.py`
+(now with per-thread event loops running 50 concurrent `render_async` each, fan-out and `@concurrent`
+next to sync renders: 4,800 renders), `test_async.py` and `test_partials.py` with
+`-W error::RuntimeWarning`, the GIL disabled: 207 passed x3 on 3.14t and x3 on 3.15t, and
+`test_threads.py` x10 more on 3.14t: no failures.
+
+Offload experiment (`bench_async.py serve`: one asyncio loop, 32 closed-loop clients, each request
+2 ms of awaited I/O then a render; 1 heavy request in 5; 4 worker threads; 5 s per mode, two rounds,
+medians shown; "report" = the 1,000-row report page (~1.4 ms, CPython-heavy), "transcript" = one
+1.6 MB escaped text):
+
+| Build, heavy page | mode | req/s | light p99 | heavy p99 | loop lag p99 |
+|---|---|---|---|---|---|
+| GIL, report | sync | 3,380 | 10.6 ms | 11.1 ms | 8.6 ms |
+| | async | 3,230 | 11.1 ms | 11.7 ms | 9.2 ms |
+| | offload | 3,300 | 15.1 ms | 13.5 ms | 7.0 ms |
+| GIL, transcript | sync | 10,030 | 3.6 ms | 3.9 ms | 1.8 ms |
+| | offload | 14,310 | 2.4 ms | 3.0 ms | 0.2 ms |
+| 3.14t, report | sync | 3,030 | 12.0 ms | 12.5 ms | 9.9 ms |
+| | async | 2,930 | 12.4 ms | 13.1 ms | 10.4 ms |
+| | offload | 4,670 | 7.5 ms | 10.9 ms | 0.14 ms |
+| 3.14t, transcript | sync | 9,900 | 3.6 ms | 3.9 ms | 1.8 ms |
+| | offload | 14,640 | 2.2 ms | 2.6 ms | 0.07 ms |
+
+Verdict: the expectations held. On 3.14t offload is the big win (+54% throughput with report-heavy
+traffic, short requests' p99 -38%, loop lag from ~10 ms to 0.15 ms). On the GIL build it gives
+nothing for CPython-heavy pages (throughput -2%, short requests' p99 worse: they now wait for the GIL
+behind renders) and +43% for text-heavy pages, whose escaping releases the GIL. Kept opt-in and
+experimental. With 8 worker threads on 3.14t, mixed traffic did worse than with 4 (3,940 req/s) and
+all-heavy traffic gained only 21% over sync: every request renders the same model objects, so
+threads contend on their reference counts; real requests (distinct data) should scale better, to be
+checked in the real-app run. `async` costs 4-5% against `sync` here with no awaitable values: about 4
+ns per expression for the awaitable check and ~270 ns per render, plus the event loop's own task.
+
+Tests: 2,813 pytest passed, 7 skipped, 3 strict xfails; upstream 227 on each engine; Rust 95 + 6; `make lint` green. New: `test_async.py` (every upstream fixture
+through `render_async` against Chameleon; the plain, macro/i18n and partial render fuzzers through
+`render_async`; an awaitable-position fuzzer; positions, macros/slots/partials/on-error, protocol,
+cancellation, GC of 10,000 suspended or cancelled renders, loop lag, `@concurrent`, fan-out, offload),
+Flask async views (every chameleon-flask case as an async view against chameleon-flask), core tests for
+deferral and placeholder filling, the threaded async stress test. Fuzz: 1,000 examples per generator
+through `render_async`, no differences. Integration: 40/16/39/6 on the originals, 16/6 on the built-ins.
+
+Speed of the sync paths against 69388cd (release, `bench_ab.py`, 8 interleaved rounds, load 3-8):
+listing +4.0, +1.2, +1.2 ns per item (an earlier build with a runtime `awaits` flag measured +9-10:
+fixed by the const-generic runtime); macro -33.8, -5.4 ns; page +1.0 and +0.08 us per render (73 us;
+Phase 9 recorded +1.1 to -0.2 for unchanged code); report -19 and -1.5 us (1.47 ms). The partial
+listing cannot be A/B'd in one process (the baseline's native code resolves `PartialRenderer` in the
+current package and falls back to the Python path); across processes (wheels built the same way,
+alternating venvs) it measured +8 to +14 ns per item (about 1-2%), against a noise floor of +4 ns
+(range -26 to +13) for the baseline source rebuilt: a small regression that removing the
+`partial_step` change did not remove. Carried.
+
+What the owner's app needs (Quart on Granian, single-threaded asyncio):
+- With `chameleon_rs.compat.install()` and `@chameleon_flask.template` (now `chameleon_rs.flask`),
+  async views already render with `render_async`; output is unchanged. Nothing to change to keep
+  today's behaviour.
+- To benefit: return awaitables from the view instead of awaiting them first (`{'episodes':
+  db.recent_episodes(), 'stats': db.stats()}` with the queries left as coroutines, or tasks), so the
+  template awaits each where it is used; mark independent slow helpers with
+  `@chameleon_rs.concurrent` so their `${...}` calls run concurrently; and `@template(...,
+  concurrent=True)` on views whose `render_partial` calls take awaitable data. Helpers called inside
+  an expression (`helper().title`) must still be awaited by the helper itself.
+- Offload is for free-threaded deployments (Granian on 3.14t, if the app's dependencies run there) or
+  text-heavy pages (transcripts) on a GIL build: `@template(..., offload=True)`.
+
+Review fixes (2026-10-21, after the Rust Architect's review; each reproduced with the review's
+probes first):
+- **Blocker, GC:** a suspended render visited a shared partial target's objects once per holder
+  (units, call sites, the prepared list: `Program` 5 references, 7 visits), which can make the
+  collector clear live objects. `SavedPartials::traverse` dedupes by address; a test checks at
+  every suspension (nested partials, a foreign macro, the Fill phase) that no referent is visited
+  more often than referenced (it fails on the old code: 6 visits, 5 references).
+- **Blocker, placeholders:** the nonce came from a fixed sequence, so the k-th render of every
+  process used the same placeholder, and a value equal to it was swapped with deferred content
+  (an attribute breakout). Now 128 bits from two OS-seeded `RandomState` hashers per render, and
+  filling raises an internal error if a placeholder occurs twice or is missing. Tests: the old
+  first-render placeholder as a model value renders as text; Rust tests for the fill checks.
+- The Fill phase's task entries are traversed; a failed or cancelled render cancels its tasks
+  and awaits them (`gather(..., return_exceptions=True)`) before raising, as a `TaskGroup` does
+  (tests: the helpers' `finally` blocks, which themselves await, have run); `close()` and
+  collection during the Fill phase cancel them (tested).
+- `render_async` honours a subclass's own `render` (synchronously; with `offload`, in the
+  worker), including `PageTextTemplateFile` subclasses.
+- Nits: `send(non-None)` on a fresh render leaves it usable; `throw(instance, value)` is a
+  `TypeError`; awaitability checks the MRO's namespaces (a metaclass's `__await__` no longer
+  counts); `_native.pyi` has `concurrent`; Flask's `concurrent=None` keeps the template's
+  setting and `False` turns it off; README and architecture.md state that async views await
+  awaitable model values (a difference from chameleon-flask, also through `compat.install()`).
+
+After the fixes: 2,824 pytest passed, 7 skipped, 3 strict xfails; upstream 227 on each engine;
+Rust 95 + 9; `make lint` green; integration 40/16/39/6 and 16/6. Free-threaded: `test_async.py`,
+`test_threads.py`, `test_partials.py` with `-W error::RuntimeWarning`, 218 passed x3 on 3.14t
+and x3 on 3.15t (GIL disabled). Debug CPython 3.14.8 (`uv python install 3.14+debug`, `-X dev`):
+`test_async.py` and `test_threads.py`, 176 passed, no assertion failures. A/B against 69388cd
+(release, 8 rounds, load 2.2-3.1): listing +3.5, +6.7, +8.1, +5.0 ns per item (the earlier
+build of this phase measured +4.0, +1.2, +1.2; the review changes do not touch the sync
+per-item path, so this is at the noise edge, but it is what was measured); macro -1.6, -14.9;
+page +0.03, -0.35 us per render; report -18, -24 us. Partial listing across processes (ABBA,
+wheels built the same way, 10 rounds): +7.6 ns per item median (range -18 to +43): carried as
+below.
+
+Carried forward:
+- The owner's real-app crawl and locust runs: sync vs `render_async` vs stock Chameleon, and
+  offload on a GIL and a free-threaded build (throughput, p50/p95/p99, loop lag).
+- The partial listing's +8-14 ns per item (cross-process measurement), and the macro scenario's
+  Phase 9 note (now -5 to -34 ns against 69388cd).
+- "Start concurrent expressions as soon as their free variables exist" (hoisting): not done; calls
+  start where the render reaches them.
+- `bench_ab.py` cannot compare partial renders in one process (see above).
+
 ## Phase 12: Release
 
 Wheels for macOS, Linux and Windows (maturin), docs, a migration guide, the free-threading
