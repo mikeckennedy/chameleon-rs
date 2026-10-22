@@ -17,7 +17,7 @@ except ZeroDivisionError as error:
 LISTING = '<ul>\n  <li tal:repeat="v videos" class="${v[0]}">${v[1]} ${repeat.v.index}</li>\n</ul>'
 
 
-def test_many_threads_render_the_same_templates(tmp_path: Path) -> None:
+def test_many_threads_render_the_same_templates(tmp_path: Path, configured: Path) -> None:
     (tmp_path / 'inner.pt').write_text('<b title="${x}">${x}</b>')
     (tmp_path / 'page.pt').write_text(LISTING + '${render_partial("inner.pt", x=n)}')
     page = chameleon_rs.PageTemplateLoader(str(tmp_path))['page.pt']
@@ -111,7 +111,7 @@ def test_many_threads_render_macros_slots_and_translations() -> None:
         assert out == expected[n % 8]
 
 
-def test_many_threads_render_nested_partials(tmp_path: Path) -> None:
+def test_many_threads_render_nested_partials(tmp_path: Path, configured: Path) -> None:
     # Built-in partials (Phase 9): resolution caches, per-render units and auto_reload checks
     # shared by threads; a failing partial's formatted error in some renders.
     (tmp_path / 'shared').mkdir()

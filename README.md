@@ -19,9 +19,9 @@ Built in, with no extra package:
 
 - **Partials:** every template can call `${render_partial('shared/card.pt', item=item)}`; the
   partial renders straight into the page. `chameleon_rs.configure(template_folder='templates')`
-  says where templates live (partials are also found next to the calling template and on its
-  loader's search path). `chameleon_partials`' API (`register_extensions`, `extend_model`,
-  `render_partial`) keeps working. See `chameleon_rs.partials`.
+  says where templates live (`partial_search='caller'` also looks next to the calling template
+  and on its loader's search path). `chameleon_partials`' API (`register_extensions`,
+  `extend_model`, `render_partial`) keeps working. See `chameleon_rs.partials`.
 - **Flask and Quart:** `chameleon_rs.flask` has chameleon-flask's API (`configure` /
   `global_init`, `@template`, `render`, `response`, `not_found`, `error`, `clear`) and imports
   Flask only when it is imported itself. Views may return a dict, any mapping, a dataclass or

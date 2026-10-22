@@ -259,7 +259,7 @@ def test_file_templates_show_the_source_line(tmp_path: Path) -> None:
     assert ' - Source:     ' in got[2]
 
 
-def test_recursion_errors_are_not_formatted(tmp_path: Path) -> None:
+def test_recursion_errors_are_not_formatted(tmp_path: Path, configured: Path) -> None:
     (tmp_path / 'me.pt').write_text('<b>${render_partial("me.pt")}</b>')
     with pytest.raises(RecursionError) as info:
         chameleon_rs.PageTemplateFile(str(tmp_path / 'me.pt'))()
@@ -329,7 +329,7 @@ def test_code_block_namespaces_are_per_render() -> None:
         assert outcome(chameleon_rs, '') and template() == reference()
 
 
-def test_errors_inside_partials_are_recorded_in_their_own_render(tmp_path: Path) -> None:
+def test_errors_inside_partials_are_recorded_in_their_own_render(tmp_path: Path, configured: Path) -> None:
     # As chameleon_partials' nested `render`: the partial's frames record into its own
     # `rcontext`; the page's gets only the page's frames (none here: the error was caught).
     kept: list[dict[str, Any]] = []

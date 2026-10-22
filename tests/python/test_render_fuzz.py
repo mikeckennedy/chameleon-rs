@@ -235,6 +235,51 @@ def test_generated_templates_render_like_chameleon(body: str) -> None:
     assert canon(got) == canon(want), body
 
 
+# -- The same bodies as partials (Phase 9) -----------------------------------------------
+
+PARTIALS_DIR = __import__('tempfile').mkdtemp(prefix='chameleon-rs-fuzz-')
+_partial_count = __import__('itertools').count()
+
+
+@settings(max_examples=EXAMPLES, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@given(body=st.lists(node(2), min_size=1, max_size=3).map(''.join), in_loop=st.booleans())
+def test_generated_partials_render_like_chameleon_partials(body: str, in_loop: bool) -> None:
+    # The body rendered as a partial (native frame) by chameleon_rs, and through
+    # chameleon_partials by Chameleon, with every variable passed as a keyword; once, or
+    # twice in a loop around the call.
+    import chameleon_partials
+    import chameleon_rs._settings
+
+    name = f'p{next(_partial_count)}.pt'
+    with open(os.path.join(PARTIALS_DIR, name), 'w') as f:
+        f.write(body)
+    call = '${render_partial("%s", %s)}' % (name, ', '.join(f'{k}={k}' for k in VARIABLES))  # noqa: UP031
+    page = f'<b tal:repeat="r [1, 2]">{call}</b>' if in_loop else f'<i>{call}</i>'
+    chameleon_partials.register_extensions(PARTIALS_DIR, cache_init=False)
+    chameleon_rs.configure(template_folder=PARTIALS_DIR)
+
+    def run(engine: Any, render_partial: Any) -> Any:
+        try:
+            return engine.PageTemplate(page)(render_partial=render_partial, **VARIABLES)
+        except Exception as e:  # noqa: BLE001 - comparing exception types across engines
+            return e
+
+    try:
+        want = run(chameleon, chameleon_partials.render_partial)
+        got = run(chameleon_rs, chameleon_rs.render_partial)
+    finally:
+        chameleon_rs._settings.clear()
+    if isinstance(want, Exception):
+        assert isinstance(got, Exception), (body, want, got)
+        names = {c.__name__ for c in type(want).__mro__}
+        assert type(got).__name__ in names, (body, want, got)
+        if not isinstance(want, chameleon.exc.TemplateError):
+            assert canon(str(got)) == canon(str(want)), body
+        return
+    assert not isinstance(got, Exception), (body, want, got)
+    assert canon(got) == canon(want), body
+
+
 # -- Macros, slots and i18n (Phase 6b) ---------------------------------------------------
 
 

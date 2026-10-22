@@ -175,7 +175,6 @@ impl<'py> Partials<'py> {
         site: usize,
         func: &Bound<'py, PyAny>,
         path: &Bound<'py, PyAny>,
-        cx: &Cx<'_, 'py>,
     ) -> PyResult<Option<Rc<Target<'py>>>> {
         {
             let sites = self.sites.borrow();
@@ -193,8 +192,7 @@ impl<'py> Partials<'py> {
             }
         }
         let py = func.py();
-        let caller = cx.builtins().get_item(intern!(py, "template"))?;
-        let template = partials_attr(py, &TARGET, "_target")?.call1((func, caller, path))?;
+        let template = partials_attr(py, &TARGET, "_target")?.call1((func, path))?;
         let target = if template.is_none() { None } else { self.prepare(&template)? };
         let mut sites = self.sites.borrow_mut();
         if let Some(entry) = sites.iter_mut().find(|e| e.site == site && e.func.is(func)) {
@@ -260,7 +258,7 @@ pub(crate) fn partial_step(
         locals.set_item(key.bind(py), eval(value, cx)?)?;
     }
     let site_key = std::ptr::from_ref(site) as usize;
-    let Some(target) = cx.render.partials.target(site_key, &func, &path, cx)? else {
+    let Some(target) = cx.render.partials.target(site_key, &func, &path)? else {
         return Ok(Step::Ready(func.call((path,), Some(locals))?.unbind()));
     };
     // chameleon_partials: `template_data['render_partial'] = render_partial` unless given (the

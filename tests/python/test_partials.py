@@ -26,7 +26,6 @@ def canon(text: str) -> str:
     text = ADDRESS.sub('0x?', text)
     text = RENDERER.sub('<render_partial>', text)
     text = text.replace('chameleon_rs.partials.HTML', 'chameleon_partials.HTML')
-    text = text.replace('<PartialRenderer (', '<function (')
     return text.replace('chameleon_rs.', 'chameleon.')
 
 
@@ -47,7 +46,7 @@ def outcome(fn: Any) -> tuple[Any, ...]:
 @pytest.fixture
 def folder(tmp_path: Path) -> Any:
     yield tmp_path
-    chameleon_rs.partials.clear()
+    chameleon_rs._settings.clear()
     chameleon_partials.has_registered_extensions = False
 
 
@@ -237,10 +236,23 @@ def test_partials_match_chameleon_partials(folder: Path, files: dict[str, str], 
     compare(folder, files, **model)
 
 
-def test_partials_resolve_relative_to_the_calling_template(tmp_path: Path) -> None:
-    # No configuration: the caller's folder, then each folder above it.
+def test_default_resolution_is_the_configured_folder_only(folder: Path) -> None:
+    # As chameleon_partials: nothing configured is its `PartialsException`; a file next to the
+    # caller but not in the folder is not found.
+    write(folder, {'conf/x.pt': 'configured', 'page/x.pt': 'relative', 'page/p.pt': '${render_partial("x.pt")}'})
+    page = chameleon_rs.PageTemplateFile(str(folder / 'page' / 'p.pt'))
+    with pytest.raises(chameleon_rs.partials.PartialsException, match='register_extensions'):
+        page()
+    chameleon_rs.configure(template_folder=str(folder))
+    with pytest.raises(ValueError, match=r'Template not found: x.pt\.'):
+        page()
+    chameleon_rs.configure(template_folder=str(folder / 'conf'))
+    assert page() == 'configured'
+
+
+def test_caller_search_is_opt_in(folder: Path) -> None:
     write(
-        tmp_path,
+        folder,
         {
             'home/index.pt': '${render_partial("_near.pt")}|${render_partial("shared/far.pt", x=1)}',
             'home/_near.pt': 'near',
@@ -248,13 +260,17 @@ def test_partials_resolve_relative_to_the_calling_template(tmp_path: Path) -> No
             'shared/_sib.pt': 'sib',
         },
     )
-    page = chameleon_rs.PageTemplateFile(str(tmp_path / 'home' / 'index.pt'))
+    page = chameleon_rs.PageTemplateFile(str(folder / 'home' / 'index.pt'))
+    chameleon_rs.configure(partial_search='caller')
     assert page() == 'near|far1sib'
+    with pytest.raises(ValueError, match='partial_search'):
+        chameleon_rs.configure(partial_search='everywhere')
 
 
-def test_configured_folder_comes_first(folder: Path) -> None:
+def test_with_caller_search_the_configured_folder_comes_first(folder: Path) -> None:
     write(folder, {'conf/x.pt': 'configured', 'page/x.pt': 'relative', 'page/p.pt': '${render_partial("x.pt")}'})
     page = chameleon_rs.PageTemplateFile(str(folder / 'page' / 'p.pt'))
+    chameleon_rs.configure(partial_search='caller')
     assert page() == 'relative'
     chameleon_rs.configure(template_folder=str(folder / 'conf'))
     assert page() == 'configured'
@@ -262,18 +278,102 @@ def test_configured_folder_comes_first(folder: Path) -> None:
     assert page() == 'relative'
 
 
-def test_loader_search_path_comes_before_the_callers_folder(tmp_path: Path) -> None:
-    write(tmp_path, {'a/home/p.pt': '${render_partial("x.pt")}', 'a/home/x.pt': 'own', 'a/x.pt': 'loader'})
-    loader = chameleon_rs.PageTemplateLoader(str(tmp_path / 'a'))
+def test_with_caller_search_the_loader_path_comes_before_the_callers_folder(folder: Path) -> None:
+    write(folder, {'a/home/p.pt': '${render_partial("x.pt")}', 'a/home/x.pt': 'own', 'a/x.pt': 'loader'})
+    chameleon_rs.configure(partial_search='caller')
+    loader = chameleon_rs.PageTemplateLoader(str(folder / 'a'))
     assert loader['home/p.pt']() == 'loader'
 
 
-def test_string_templates_need_a_configured_folder(folder: Path) -> None:
+def test_string_templates_use_the_configured_folder(folder: Path) -> None:
     write(folder, CARD)
+    chameleon_rs.configure(partial_search='caller')
     with pytest.raises(ValueError, match=r'Template not found: card.pt\.'):
         chameleon_rs.PageTemplate('${render_partial("card.pt", name=1)}')()
     chameleon_rs.configure(template_folder=str(folder))
     assert chameleon_rs.PageTemplate('${render_partial("card.pt", name=1)}')() == '<b>1</b>'
+
+
+def test_the_global_render_partial_in_a_model_resolves_as_called(folder: Path) -> None:
+    # Passed in a model (`extend_model`), the global renderer has no template: with caller
+    # search on, a native call still does not search the caller's folders (calling it would not).
+    write(folder, {'p.pt': '${render_partial("card.pt", name=1)}', 'card.pt': '<b>${name}</b>'})
+    chameleon_rs.configure(partial_search='caller')
+    page = chameleon_rs.PageTemplateFile(str(folder / 'p.pt'))
+    assert page() == '<b>1</b>'
+    with pytest.raises(chameleon_rs.partials.PartialsException, match='register_extensions'):
+        page(render_partial=chameleon_rs.render_partial)
+
+
+SETUP_ORDERS = ['partials then flask', 'flask then partials', 'configure']
+
+
+@pytest.mark.parametrize('order', SETUP_ORDERS)
+def test_setup_calls_configure_their_own_consumer(folder: Path, order: str) -> None:
+    # chameleon_partials' and chameleon-flask's setup calls each configure their own library:
+    # one does not make the other's (cache_init) a no-op, nor share its folder or options.
+    flask_module = pytest.importorskip('chameleon_rs.flask')
+    write(
+        folder,
+        {
+            'p/alp.pt': '<div :class="x">p</div>',
+            'p/page.pt': '${render_partial("alp.pt")}',
+            'f/alp.pt': '<div :class="x">f</div>',
+            'f/page.pt': '${render_partial("alp.pt")}',
+        },
+    )
+    if order == 'partials then flask':
+        chameleon_rs.partials.register_extensions(str(folder / 'p'), cache_init=False)
+        flask_module.global_init(str(folder / 'f'), restricted_namespace=False)
+    elif order == 'flask then partials':
+        flask_module.global_init(str(folder / 'f'), restricted_namespace=False, cache_init=False)
+        chameleon_rs.partials.register_extensions(str(folder / 'p'))
+    else:
+        chameleon_rs.configure(template_folder=str(folder / 'p'))
+        flask_module.global_init(str(folder / 'f'), restricted_namespace=False)
+        assert flask_module.template_path == str(folder / 'p')  # global_init ignored
+        flask_module.clear()
+        flask_module.global_init(str(folder / 'f'), restricted_namespace=False)
+    try:
+        # Flask renders from its folder with its options; partials from theirs, without them
+        # (a `:class` attribute is an error there, as with chameleon_partials' own loader).
+        assert flask_module.render('alp.pt') == '<div :class="x">f</div>'
+        with pytest.raises(KeyError, match='Undefined namespace prefix'):
+            flask_module.render('page.pt')
+        assert chameleon_rs.partials.template_path == str(folder / 'p')
+    finally:
+        flask_module.clear()
+
+
+def test_flask_render_needs_flask_setup(folder: Path) -> None:
+    flask_module = pytest.importorskip('chameleon_rs.flask')
+    write(folder, CARD)
+    flask_module.clear()
+    chameleon_rs.partials.register_extensions(str(folder), cache_init=False)
+    with pytest.raises(flask_module.FlaskChameleonException, match='global_init'):
+        flask_module.render('card.pt', name=1)
+
+
+def test_translate_and_encoding_keywords_go_to_the_render(folder: Path) -> None:
+    # chameleon_partials passes them to `render`, where they are its arguments: the partial is
+    # rendered through Python.
+    write(folder, {'tr.pt': '<span i18n:translate="">Hello</span>', 'card.pt': '<b>${name}</b>'})
+    chameleon_rs.configure(template_folder=str(folder))
+    page = chameleon_rs.PageTemplate('${render_partial("tr.pt", translate=tx)}')
+    assert page(tx=lambda msgid, **kw: f'T({msgid})') == '<span>T(Hello)</span>'
+    page = chameleon_rs.PageTemplate('${render_partial("card.pt", name="a", encoding="latin-1")}')
+    with pytest.raises(TypeError, match="multiple values for keyword argument 'encoding'"):
+        page()
+
+
+def test_a_partial_uses_its_own_default_marker(folder: Path) -> None:
+    from chameleon_rs.astutil import Symbol
+
+    write(folder, {'m.pt': '<a title="${t}" tal:attributes="href default">x</a>'})
+    chameleon_rs.configure(template_folder=str(folder))
+    marker = chameleon_rs.partials  # an importable object
+    page = chameleon_rs.PageTemplate('${render_partial("m.pt", t=1)}', default_marker=Symbol(marker))
+    assert page() == chameleon_rs.PageTemplateFile(str(folder / 'm.pt'))(t=1)
 
 
 def test_markup_round_trip_from_python(folder: Path) -> None:
@@ -344,6 +444,7 @@ def test_auto_reload_is_checked_once_per_render(folder: Path) -> None:
 
 def test_infinite_recursion_is_a_recursion_error(folder: Path) -> None:
     write(folder, {'loop.pt': '<b>${render_partial("loop.pt")}</b>'})
+    chameleon_rs.configure(template_folder=str(folder))
     page = chameleon_rs.PageTemplateFile(str(folder / 'loop.pt'))
     with pytest.raises(RecursionError) as info:
         page()
@@ -355,6 +456,7 @@ def test_infinite_recursion_is_a_recursion_error(folder: Path) -> None:
 def test_partials_are_native_frames(folder: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # A whole `${render_partial(...)}` never calls the partial's `render` (or the renderer).
     write(folder, {'p.pt': '<i tal:repeat="n range(3)">${render_partial("c.pt", n=n)}</i>', 'c.pt': '${n}'})
+    chameleon_rs.configure(template_folder=str(folder))
     page = chameleon_rs.PageTemplateFile(str(folder / 'p.pt'))
     page()
     calls: list[Any] = []

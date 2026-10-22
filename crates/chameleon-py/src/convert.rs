@@ -160,7 +160,7 @@ fn quote<'py>(
     marker_is_default: bool,
     out: &mut Output,
 ) -> PyResult<Quoted<'py>> {
-    if value.is_none() || (marker_is_default && esc.drops_default() && value.is(&cx.render.marker)) {
+    if value.is_none() || (marker_is_default && esc.drops_default() && value.is(cx.marker())) {
         return Ok(Quoted::Nothing);
     }
     if let Ok(s) = value.cast_exact::<PyString>() {
@@ -237,7 +237,7 @@ fn convert<'py>(
     value: &Bound<'py, PyAny>,
     drops_default: bool,
 ) -> PyResult<Option<Bound<'py, PyAny>>> {
-    if value.is_none() || (drops_default && value.is(&cx.render.marker)) {
+    if value.is_none() || (drops_default && value.is(cx.marker())) {
         return Ok(None);
     }
     let converted = if value.is_exact_instance_of::<PyBytes>() {
@@ -414,7 +414,7 @@ pub(crate) fn convert_text<'py>(
     if (!conv.literal_false && !value.is_truthy()?) || value.is_none() {
         return Ok(py.None().into_bound(py));
     }
-    if conv.marker && value.is(&cx.render.marker) {
+    if conv.marker && value.is(cx.marker()) {
         return Ok(match &conv.default {
             Some(d) => d.bind(py).clone().into_any(),
             None => py.None().into_bound(py),

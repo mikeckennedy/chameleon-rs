@@ -528,6 +528,14 @@ impl<'py> Cx<'_, 'py> {
         }
     }
 
+    /// The object `default` evaluates to: the render's template's (a native partial's own).
+    pub(crate) fn marker(&self) -> &Bound<'py, PyAny> {
+        match &self.frame.target {
+            Some(target) => target.program.get().marker.bind(self.scope.py()),
+            None => &self.render.marker,
+        }
+    }
+
     /// The active frame's template builtins.
     pub(crate) fn builtins(&self) -> &Bound<'py, PyDict> {
         match (&self.frame.builtins, &self.frame.target) {
@@ -658,7 +666,7 @@ pub(crate) fn eval<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny
             if matches!(f.free, FreeVars::Dynamic) {
                 cx.render.scope_exposed.set(true);
             }
-            f.func.bind(py).call1((cx.scope, cx.rcontext(), &cx.render.marker, cx.builtins()))
+            f.func.bind(py).call1((cx.scope, cx.rcontext(), cx.marker(), cx.builtins()))
         }
         _ => eval_more(e, cx),
     }
@@ -876,7 +884,7 @@ fn eval_ns<'py>(code: &NsCode, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> 
     };
     ns.set_item(intern!(py, "econtext"), cx.scope)?;
     ns.set_item(intern!(py, "rcontext"), cx.rcontext())?;
-    ns.set_item(intern!(py, "__rs_default"), &cx.render.marker)?;
+    ns.set_item(intern!(py, "__rs_default"), cx.marker())?;
     ns.set_item(intern!(py, "__rs_tpl"), cx.builtins())?;
     ns.set_item(intern!(py, "__rs_attrs"), code.attrs.as_ref().map(|a| a.bind(py)))?;
     let result = if code.exec {

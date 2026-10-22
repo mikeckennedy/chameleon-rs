@@ -10,6 +10,7 @@ The old per-library calls (``chameleon_partials.register_extensions``,
 from __future__ import annotations
 
 import os
+import sys
 import threading
 from typing import Any
 
@@ -39,11 +40,21 @@ class Settings:
         )
 
 
-# The current process-wide configuration (`None`: never configured, or cleared), and a counter
-# bumped by every change, which keys the partial path caches.
-current: Settings | None = None
+# The process-wide configuration, one slot per consumer, as the original libraries each had
+# their own: `partials` (what `render_partial` resolves against; chameleon_partials'
+# `register_extensions`) and `flask` (chameleon-flask's `global_init`). `configure()` sets both,
+# each alias only its own (`None`: not configured, or cleared). `generation` is bumped by every
+# change and keys the partial path caches.
+partials: Settings | None = None
+flask: Settings | None = None
 generation = 0
 _lock = threading.Lock()
+
+# Where `render_partial` looks besides the configured folder: `'folder'` (the default: only the
+# configured folder, as chameleon_partials) or `'caller'` (opt-in: then the calling template's
+# search path, its folder and each folder above it).
+PARTIAL_SEARCH = ('folder', 'caller')
+search_mode = 'folder'
 
 
 def check_folder(template_folder: Any, error: type[Exception] = TemplateError) -> None:
@@ -74,15 +85,23 @@ def build(
     return Settings(str(folder), bool(auto_reload), bool(restricted_namespace))
 
 
-def install(settings: Settings | None) -> None:
-    """Makes ``settings`` the process-wide configuration (``None`` clears it)."""
-    global current, generation
-    with _lock:
-        current = settings
-        generation += 1
-    from chameleon_rs import partials
+_KEEP: Any = object()
 
-    partials._configured(settings)
+
+def install(*, partials_settings: Any = _KEEP, flask_settings: Any = _KEEP) -> None:
+    """Sets the slots given (``None`` clears one)."""
+    global partials, flask, generation
+    with _lock:
+        if partials_settings is not _KEEP:
+            partials = partials_settings
+        if flask_settings is not _KEEP:
+            flask = flask_settings
+        generation += 1
+    from chameleon_rs import partials as partials_module
+
+    partials_module._configured(partials)
+    if 'chameleon_rs.flask' in sys.modules:
+        sys.modules['chameleon_rs.flask']._sync()
 
 
 def configure(
@@ -90,23 +109,40 @@ def configure(
     *,
     auto_reload: bool | None = None,
     restricted_namespace: bool | None = None,
-) -> Settings:
-    """Configures chameleon-rs for the whole process: where templates loaded by name live
-    (``render_partial`` and the framework integrations look there first) and how they load.
+    partial_search: str | None = None,
+) -> Settings | None:
+    """Configures chameleon-rs for the whole process: where templates loaded by name live, for
+    ``render_partial`` and the framework integrations (``chameleon_rs.flask``), and how they load.
 
     ``template_folder``: an existing directory. ``auto_reload``: recompile a template when its
     file changes (checked at most once per file per render for partials). ``restricted_namespace``:
-    ``False`` allows attributes such as Alpine.js's ``@click`` (as chameleon-flask's option).
-    A setting left out keeps its current value; the first call must give the folder. Applies
-    every time it is called (there is no ``cache_init``); ``clear()`` resets it.
+    ``False`` allows attributes such as Alpine.js's ``@click`` (chameleon-flask's option).
+    ``partial_search``: ``'folder'`` (the default, as chameleon_partials: partials are looked for
+    in the template folder only) or ``'caller'`` (opt-in: also on the calling template's search
+    path, then in its folder and each folder above it). A setting left out keeps its current
+    value; the first call that sets anything but ``partial_search`` must give the folder.
+    Applies every time it is called (there is no ``cache_init``).
 
-    Raises ``chameleon_rs.web.TemplateError`` for a missing folder.
+    Raises ``chameleon_rs.web.TemplateError`` for a missing folder, ``ValueError`` for an
+    unknown ``partial_search``.
     """
-    settings = build(template_folder, auto_reload, restricted_namespace, base=current)
-    install(settings)
+    global search_mode
+    if partial_search is not None:
+        if partial_search not in PARTIAL_SEARCH:
+            msg = f'partial_search must be one of {PARTIAL_SEARCH}, not {partial_search!r}'
+            raise ValueError(msg)
+        search_mode = partial_search
+        if template_folder is None and auto_reload is None and restricted_namespace is None:
+            install()
+            return partials
+    settings = build(template_folder, auto_reload, restricted_namespace, base=partials or flask)
+    install(partials_settings=settings, flask_settings=settings)
     return settings
 
 
 def clear() -> None:
-    """Forgets the process-wide configuration (tests reset with it)."""
-    install(None)
+    """Forgets the process-wide configuration, both slots and ``partial_search`` (tests reset
+    with it)."""
+    global search_mode
+    search_mode = 'folder'
+    install(partials_settings=None, flask_settings=None)

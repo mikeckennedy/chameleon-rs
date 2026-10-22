@@ -1,26 +1,23 @@
 # Ported from chameleon_partials (https://github.com/mikeckennedy/chameleon_partials,
 # chameleon_partials/__init__.py at f54ca1a: `register_extensions`, `HTML`, `render_partial`,
 # `extend_model`, `PartialsException`), modified: built into chameleon-rs, `render_partial`
-# works in every template without setup and renders as a native frame of the caller's render,
-# and paths also resolve against the calling template's search path and folders.
+# is in every template without being passed in the model and renders as a native frame of the
+# caller's render; optionally, paths also resolve against the calling template's folders.
 """Built-in partials (D10): ``render_partial(path, **kwargs)`` in any template renders another
-template file with ``kwargs`` as its model, straight into the page, with no setup.
+template file with ``kwargs`` as its model, straight into the page.
 
-Where a path is looked for, in order (the first existing file wins; resolved once and cached):
+A path is looked for in the folder given to ``chameleon_rs.configure(template_folder=...)`` (or
+to the alias ``register_extensions``), as chameleon_partials does: a path not there raises
+``ValueError('Template not found: <path>.')``, and with no folder configured a call raises
+``PartialsException``. Opt-in, ``chameleon_rs.configure(partial_search='caller')`` also looks,
+after the configured folder (if any), on the calling template's search path (the folders of the
+``PageTemplateLoader`` that loaded it), then in its own folder and each folder above it.
+Resolutions are cached until the configuration changes.
 
-1. the folder given to ``chameleon_rs.configure(template_folder=...)`` (or to the aliases
-   ``register_extensions`` and ``chameleon_rs.flask.configure``/``global_init``);
-2. the calling template's search path (the folders of the ``PageTemplateLoader`` that loaded
-   it);
-3. the calling template's own folder, then each folder above it.
-
-A path found nowhere raises ``ValueError('Template not found: <path>.')``, as Chameleon's
-loader does. The partial sees only its keyword arguments and ``render_partial`` (chameleon_partials'
-semantics), and is rendered as with ``encoding='utf-8'``.
-
-Called from Python, ``render_partial(path, **kwargs)`` returns an ``HTML`` object (its
-``__html__`` gives the markup, so a template inserts it unescaped) and needs a configured
-folder. This module is also chameleon_partials' API: with ``chameleon_rs.compat.install()``,
+The partial sees only its keyword arguments and ``render_partial`` (chameleon_partials'
+semantics), and is rendered as with ``encoding='utf-8'``. Called from Python,
+``render_partial(path, **kwargs)`` returns an ``HTML`` object (its ``__html__`` gives the
+markup, so a template inserts it unescaped). This module is also chameleon_partials' API: with ``chameleon_rs.compat.install()``,
 ``import chameleon_partials`` gives this module, and ``register_extensions``,
 ``extend_model``, ``render_partial``, ``HTML`` and ``PartialsException`` keep working. A
 ``chameleon_partials.render_partial`` from the original package, passed in a model, also
@@ -71,14 +68,11 @@ class HTML:
     def __html__(self) -> str:
         return self.html_text
 
-    def __repr__(self) -> str:
-        return f'HTML({self.html_text!r})'
-
 
 class PartialRenderer:
-    """The ``render_partial`` callable: ``chameleon_rs.render_partial`` (resolving against
-    the configured folder) or a template's own (its ``render_partial`` builtin, which also
-    resolves relative to that template). Written as a whole ``${render_partial(...)}``
+    """The ``render_partial`` callable: ``chameleon_rs.render_partial`` (no calling template)
+    or a template's own (its ``render_partial`` builtin, the calling template for
+    ``partial_search='caller'``). Written as a whole ``${render_partial(...)}``
     expression it is not called at all: the partial renders as a native frame."""
 
     __slots__ = ('__weakref__', '_template')
@@ -107,17 +101,23 @@ class PartialRenderer:
         return '<render_partial>' if template is None else f'<render_partial of {template!r}>'
 
 
+# A render error lists its arguments as `<{type name} {__name__!r} at ...>`: chameleon_partials'
+# `render_partial` is a function, so the type is named as functions are (as `_native` names
+# `Scope`); `__qualname__` stays `PartialRenderer`.
+PartialRenderer.__name__ = 'function'
+
 render_partial = PartialRenderer()
 
 
 def register_extensions(template_folder: str, auto_reload: bool = False, cache_init: bool = True) -> None:
-    """chameleon_partials' setup call, kept as an alias of ``chameleon_rs.configure(
-    template_folder=..., auto_reload=...)``: a second call is ignored unless ``cache_init`` is
-    false. Raises ``PartialsException`` for a missing folder."""
+    """chameleon_partials' setup call: configures the folder ``render_partial`` uses (only
+    that; ``chameleon_rs.configure`` also configures the framework integrations). A second call
+    is ignored unless ``cache_init`` is false. Raises ``PartialsException`` for a missing
+    folder."""
     if has_registered_extensions and cache_init:
         return
     _settings.check_folder(template_folder, PartialsException)
-    _settings.install(_settings.build(template_folder, auto_reload, base=_settings.current))
+    _settings.install(partials_settings=_settings.Settings(str(template_folder), bool(auto_reload), True))
 
 
 def extend_model(model: dict[str, Any] | None) -> dict[str, Any]:
@@ -133,8 +133,8 @@ def extend_model(model: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def clear() -> None:
-    """Forgets the configured template folder (``chameleon_rs.configure``), for tests."""
-    _settings.clear()
+    """Forgets the folder partials use, for tests."""
+    _settings.install(partials_settings=None)
 
 
 def _configured(settings: _settings.Settings | None) -> None:
@@ -151,11 +151,12 @@ def resolve(caller: Any, template_file: str) -> Any:
     """The template ``render_partial(template_file)`` names when called from ``caller`` (a
     template, or ``None`` from Python). Cached per caller and path until the configuration
     changes."""
-    if caller is None and not has_registered_extensions:
+    search = caller is not None and _settings.search_mode == 'caller'
+    if not has_registered_extensions and not search:
         msg = 'You must call register_extensions() before this function can be used.'
         raise PartialsException(msg)
     # The flag too: code written for chameleon_partials resets it by hand.
-    generation = (_settings.generation, has_registered_extensions)
+    generation = (_settings.generation, has_registered_extensions, search)
     cache = None if caller is None else caller.__dict__.get('_partial_cache')
     if cache is None:
         cache = _GLOBAL_CACHE if caller is None else caller.__dict__.setdefault('_partial_cache', {})
@@ -168,25 +169,23 @@ def resolve(caller: Any, template_file: str) -> Any:
     return template
 
 
-_GLOBAL_CACHE: dict[str, tuple[tuple[int, bool], Any]] = {}
+_GLOBAL_CACHE: dict[str, tuple[tuple[int, bool, bool], Any]] = {}
 
-# Templates found on a caller's search path or folders, shared by every caller that finds the
-# same file with the same template class and settings.
+# Templates found on a caller's search path or folders (`partial_search='caller'`), shared by
+# every caller that finds the same file with the same template class and (hashable) settings.
 _SIBLINGS: dict[Any, Any] = {}
 
 
 def _find(caller: Any, template_file: str) -> Any:
     spec = template_file.strip()
-    settings = _settings.current if has_registered_extensions else None
+    settings = _settings.partials if has_registered_extensions else None
+    search = caller is not None and _settings.search_mode == 'caller'
     if settings is not None:
         try:
             return settings.loader.load(spec)
         except ValueError:
-            if caller is None:
+            if not search:
                 raise
-    if caller is None:
-        msg = f'Template not found: {spec}.'
-        raise ValueError(msg)
     for folder in _folders(caller):
         path = os.path.join(folder, spec)
         if os.path.isfile(path):
@@ -224,7 +223,8 @@ def _sibling(caller: Any, path: str) -> Any:
         key: Any = (path, cls, tuple(paths), tuple(sorted(config.items())))
         hash(key)
     except TypeError:
-        key = (path, cls, id(caller))
+        # Unhashable settings: not shared (the caller's own cache keeps it).
+        return cls(path, search_path=list(paths), **config)
     template = _SIBLINGS.get(key)
     if template is None:
         template = _SIBLINGS.setdefault(key, cls(path, search_path=list(paths), **config))
@@ -234,11 +234,12 @@ def _sibling(caller: Any, path: str) -> Any:
 # --- Native frames (called by the extension, once per call site or template per render) ---
 
 
-def _target(func: Any, caller: Any, template_file: Any) -> Any:
-    """The template a native ``render_partial`` frame renders for ``func(template_file, ...)``
-    called in ``caller``, or ``None`` when ``func`` must be called as Python."""
+def _target(func: Any, template_file: Any) -> Any:
+    """The template a native ``render_partial`` frame renders for ``func(template_file, ...)``,
+    or ``None`` when ``func`` must be called as Python. A renderer resolves as calling it would
+    (relative to its own template, not the caller: the global one, passed in a model, has none)."""
     if type(func) is PartialRenderer:
-        return resolve(caller, template_file)
+        return resolve(func.template, template_file)
     return _legacy_target(func, template_file)
 
 

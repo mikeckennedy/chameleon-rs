@@ -24,6 +24,10 @@ INTEGRATION_PYTHON ?= 3.14
 INTEGRATION_VENV := $(CURDIR)/temp/venv-integration
 INTEGRATION_SUITES := fastapi-chameleon chameleon-flask chameleon-robyn chameleon_partials
 
+# Checks out a pinned commit in a clone; a checkout without .git (sources fetched as a
+# tarball of that commit, as in a sandboxed worktree) is used as it is.
+checkout = if [ -d $(1)/.git ]; then git -C $(1) checkout -q $(2); else echo "$(1): not a git clone, used as is"; fi
+
 .PHONY: dev reference build build-release build-profiling build-pgo test test-rust test-python \
 	test-upstream test-upstream-rust integration test-integration lint fmt bench
 
@@ -32,8 +36,8 @@ dev: reference
 	$(MAKE) build
 
 reference: temp/chameleon temp/chameleon_partials
-	git -C temp/chameleon checkout -q $(CHAMELEON_COMMIT)
-	git -C temp/chameleon_partials checkout -q $(PARTIALS_COMMIT)
+	$(call checkout,temp/chameleon,$(CHAMELEON_COMMIT))
+	$(call checkout,temp/chameleon_partials,$(PARTIALS_COMMIT))
 
 temp/chameleon:
 	git clone -q $(CHAMELEON_REPO) $@
@@ -42,9 +46,9 @@ temp/chameleon_partials:
 	git clone -q $(PARTIALS_REPO) $@
 
 integration: reference temp/fastapi-chameleon temp/chameleon-flask temp/chameleon-robyn
-	git -C temp/fastapi-chameleon checkout -q $(FASTAPI_COMMIT)
-	git -C temp/chameleon-flask checkout -q $(FLASK_COMMIT)
-	git -C temp/chameleon-robyn checkout -q $(ROBYN_COMMIT)
+	$(call checkout,temp/fastapi-chameleon,$(FASTAPI_COMMIT))
+	$(call checkout,temp/chameleon-flask,$(FLASK_COMMIT))
+	$(call checkout,temp/chameleon-robyn,$(ROBYN_COMMIT))
 	test -x $(INTEGRATION_VENV)/bin/python || uv venv -q $(INTEGRATION_VENV) --python $(INTEGRATION_PYTHON)
 	uv pip install -q --python $(INTEGRATION_VENV)/bin/python fastapi httpx 'flask[async]' robyn pytest maturin
 	VIRTUAL_ENV=$(INTEGRATION_VENV) PYO3_PYTHON=$(INTEGRATION_VENV)/bin/python CARGO_TARGET_DIR=$(CURDIR)/target/integration \

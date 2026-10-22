@@ -977,18 +977,24 @@ chameleon_partials at `f54ca1a` on Chameleon (its `render_partial` calls
   (the partial template's own renderer). An error message's argument list is rebuilt in
   chameleon_partials' order (keywords, `render_partial`, defaults, `repeat`, then defines).
   A keyword named like a default or `repeat` wins, as `setdefault` does there.
-- **Path resolution** (`chameleon_rs.partials.resolve`, Python, cached per calling template
-  and path until the configuration changes): the configured folder (its loader, so `spec`
-  handling and the `Template not found: x.` `ValueError` are Chameleon's), then the calling
-  template's search path (the `search_path` it was created with, so a `PageTemplateLoader`'s
-  folders), then its own folder and each folder above it; package-resource entries are not
-  searched. A file found outside the configured folder becomes a template of the caller's
-  class with the caller's settings, shared by every caller with the same class and settings.
-  A string template (no folder) needs the configured folder. Called from Python
-  (`chameleon_rs.render_partial(path, **kw)`, or as a value in a template), the renderer
-  renders through `template.render(encoding='utf-8', ...)` and returns `HTML` (`html_text`,
-  `__html__`), chameleon_partials' class; without a configured folder the global one raises
-  chameleon_partials' `PartialsException`.
+- **Path resolution** (`chameleon_rs.partials.resolve`, Python, cached per renderer template
+  and path until the configuration changes). By default exactly chameleon_partials': the
+  configured partials folder (its loader, so `spec` handling and the `Template not found: x.`
+  `ValueError` are Chameleon's), and with no folder configured chameleon_partials'
+  `PartialsException`. Opt-in (`configure(partial_search='caller')`, review fix 4: the owner
+  signed off on the folder only), then the calling template's search path (the `search_path`
+  it was created with, so a `PageTemplateLoader`'s folders), then its own folder and each folder
+  above it; package-resource entries are not searched, and a file found there becomes a
+  template of the caller's class with its settings (shared between callers when the settings
+  are hashable). A renderer resolves relative to *its own* template, whether called or run as
+  a frame (review fix 3): a template's builtin is bound to that template, the global
+  `chameleon_rs.render_partial` (passed in a model by `extend_model`) to none, as calling it
+  would. Called from Python, the renderer renders through `template.render(encoding='utf-8',
+  ...)` and returns `HTML` (`html_text`, `__html__`, chameleon_partials' class, no `repr` of its
+  own).
+- **`translate=` and `encoding=` keywords** (review fix 2) change chameleon_partials' render
+  itself (its translation function; a second `encoding` is its `TypeError`), so a call with
+  either is lowered to the ordinary Python call, not a native frame.
 - **Per render, once:** a call site's resolution (keyed by the site, the function object and
   the path, identity first, then string equality for computed paths) and a template's
   preparation (`_prepare`: the defaults, `cook_check()`, the compilation) are made on first
@@ -997,15 +1003,19 @@ chameleon_partials at `f54ca1a` on Chameleon (its `render_partial` calls
   template, which returns bytes, a `_render` function, an overridden `render`) are called as
   Python, with the arguments already evaluated.
 - **Settings** (`chameleon_rs.configure(template_folder=..., auto_reload=...,
-  restricted_namespace=...)`, `_settings.py`): one process-wide immutable `Settings` (folder,
-  options, one `PageTemplateLoader`) swapped in whole under a lock, with a generation counter
-  that keys the resolution caches; settings left out keep their values. The old setup calls
-  are aliases: `chameleon_partials.register_extensions(folder, auto_reload, cache_init)` (a
-  second call ignored unless `cache_init` is false; `has_registered_extensions` and
-  `template_path` are module state that code may reset, as chameleon_partials' tests do) and
-  `chameleon_flask.global_init(...)`. Both libraries now share one loader, so a partial and a
-  page are one compiled template, and `restricted_namespace=False` given to Flask applies to
-  partials too (chameleon_partials' own loader never had it).
+  restricted_namespace=..., partial_search=...)`, `_settings.py`): immutable `Settings` objects
+  (folder, options, one `PageTemplateLoader`) in one slot per consumer, as the original
+  libraries each had their own state (review fix 1, the blocker: a shared slot made
+  `global_init` a no-op after `register_extensions` and dropped its `restricted_namespace`):
+  `partials` (what `render_partial` resolves against) and `flask` (the views'). `configure()`
+  and `chameleon_rs.flask.configure()` set both; the aliases only their own, each with
+  `cache_init` checked against its own slot: `chameleon_partials.register_extensions(folder,
+  auto_reload, cache_init)` (its loader has chameleon_partials' options:
+  `restricted_namespace=False` given to Flask does not reach partials; `has_registered_extensions`
+  and `template_path` stay module state that code may reset) and `chameleon_flask.global_init(...)`
+  (`render` without it is chameleon-flask's "You must call global_init()" error, whatever
+  partials have). Slots are swapped under a lock with a generation counter that keys the
+  resolution caches; settings left out keep their values.
 - **`render_partial` is a template builtin** (`PageTemplate._builtins`, overridable by a render
   keyword or `extra_builtins`), so `template.builtins` lists it. In chameleon_partials' setup
   the page's `econtext` holds it (the model has it); with the unbound built-in it does not,
@@ -1030,10 +1040,15 @@ chameleon_partials at `f54ca1a` on Chameleon (its `render_partial` calls
   `chameleon` (the original packages then run on chameleon-rs, and their `render_partial`
   passed in a model still renders natively). `flask`, `partials` and `web` are chameleon-rs's
   own modules, not aliased under `chameleon.`. The `partials=` prototype registry is removed.
-- **Not reproduced** (known differences): a partial uses the page's custom `default_marker`
-  (only custom markers differ, as for macros of other templates); `PartialRenderer` and `HTML`
-  have their own `repr`; the global `render_partial` called from Python does not know a
-  calling template, so it resolves only against the configured folder.
+- **Markers and names.** A partial frame uses its own template's `default_marker`
+  (`Cx::marker`, from the unit, as builtins and defaults are). `PartialRenderer`'s type is named
+  `function` (as `_native` renames `Scope`), so a render error's argument list prints it as
+  chameleon_partials' function. The one known difference: with the unbound builtin, the page's
+  `econtext` (and an error's argument list) lacks `render_partial`, which chameleon_partials'
+  setup puts in the model.
+- **Phase 11 note:** the unit stack lives in the `RenderCtx` as `Bound` references: fine for a
+  synchronous render (and for releasing the GIL around one), but a render that suspends needs
+  the units in the `VmState` as `Py<...>`.
 
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
@@ -1332,8 +1347,9 @@ chameleon_partials' semantics (the partial sees only its keyword arguments plus
 `render_partial`). Path resolution: the loader's search path first, then walking up from the
 calling template's directory; resolved once and cached. A partial renders as a native frame
 writing straight into the caller's buffer. The old `chameleon_partials.render_partial` passed
-in a model is recognized and routed to the native path. *(As built in Phase 9, with the
-configured folder first and settings through `chameleon_rs.configure()`: see the Phase 9
+in a model is recognized and routed to the native path. *(As built in Phase 9: resolution is
+chameleon_partials' (the configured folder only) by default; the search path and walking up
+from the caller are opt-in, `configure(partial_search='caller')`. See the Phase 9
 amendments.)*
 
 ## D11. Known, deliberate differences

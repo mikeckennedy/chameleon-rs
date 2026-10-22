@@ -206,7 +206,7 @@ impl Eval for PyRuntime<'_, '_> {
     }
 
     fn is_default(&mut self, value: &Py<PyAny>) -> bool {
-        value.bind(self.py).is(&self.render.marker)
+        value.bind(self.py).is(self.cx().marker())
     }
 
     fn truthy(&mut self, value: &Py<PyAny>) -> PyResult<bool> {
@@ -484,7 +484,7 @@ impl Attrs for PyRuntime<'_, '_> {
         let py = self.py;
         let other = match switch {
             Some(s) => s.bind(py).clone(),
-            None => self.render.marker.clone(),
+            None => self.cx().marker().clone(),
         };
         Ok(value.bind(py).rich_compare(other, CompareOp::Eq)?.unbind())
     }

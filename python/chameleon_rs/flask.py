@@ -21,7 +21,9 @@ makes ``import chameleon_flask`` give this module)::
   the process-wide configuration (the same as ``chameleon_rs.configure``, so it also tells
   ``render_partial`` where templates live), or with ``app=`` one for that Flask app, kept in
   ``app.extensions['chameleon_rs']`` and used while it handles a request. ``global_init``
-  is chameleon-flask's name (its ``cache_init=True`` ignores a second call).
+  is chameleon-flask's call: it configures the views only, as it always did (partials keep
+  the folder ``register_extensions`` gave them), and its ``cache_init=True`` ignores a second
+  call.
 - ``@template``, ``@template()``, ``@template('home/index.pt', content_type=...,
   status_code=...)`` (``mimetype=`` is accepted too): renders what the view returns (a
   ``dict``, any ``Mapping``, a dataclass or a Pydantic-like model) and builds a
@@ -116,47 +118,52 @@ def configure(
     app: Any = None,
 ) -> None:
     """Configures where templates live and how they load: for the whole process (the same as
-    ``chameleon_rs.configure``), or, with ``app``, for that Flask app only (stored in
-    ``app.extensions['chameleon_rs']``). Settings left out keep their current values.
+    ``chameleon_rs.configure``: for views and for ``render_partial``), or, with ``app``, for that
+    Flask app's views only (stored in ``app.extensions['chameleon_rs']``). Settings left out keep
+    their current values.
 
     Raises ``FlaskChameleonException`` if the folder is missing or not a directory.
     """
     if app is not None:
-        base = app.extensions.get(EXTENSION) or _settings.current
+        base = app.extensions.get(EXTENSION) or _settings.flask
         app.extensions[EXTENSION] = _settings.build(
             template_folder, auto_reload, restricted_namespace, base=base, error=FlaskChameleonException
         )
         return
     settings = _settings.build(
-        template_folder, auto_reload, restricted_namespace, base=_settings.current, error=FlaskChameleonException
+        template_folder,
+        auto_reload,
+        restricted_namespace,
+        base=_settings.flask or _settings.partials,
+        error=FlaskChameleonException,
     )
-    _settings.install(settings)
-    _sync()
+    _settings.install(partials_settings=settings, flask_settings=settings)
 
 
 def global_init(
     template_folder: str, auto_reload: bool = False, cache_init: bool = True, restricted_namespace: bool = True
 ) -> None:
-    """chameleon-flask's ``global_init``: ``configure()``, except that with ``cache_init``
-    (the default) a call after the folder is configured does nothing."""
-    if _settings.current is not None and cache_init:
+    """chameleon-flask's setup call: configures the views' templates only (partials keep their
+    own folder, from ``register_extensions``). With ``cache_init`` (the default) a call after
+    the views' folder is configured does nothing."""
+    if _settings.flask is not None and cache_init:
         return
     _settings.check_folder(template_folder, FlaskChameleonException)
-    _settings.install(_settings.Settings(str(template_folder), bool(auto_reload), bool(restricted_namespace)))
-    _sync()
+    _settings.install(
+        flask_settings=_settings.Settings(str(template_folder), bool(auto_reload), bool(restricted_namespace))
+    )
 
 
 def clear() -> None:
-    """Forgets the process-wide configuration, so a later ``configure()`` / ``global_init()``
-    starts afresh. Mostly useful in tests."""
-    global template_path
-    _settings.clear()
-    template_path = None
+    """Forgets the views' process-wide configuration, so a later ``configure()`` /
+    ``global_init()`` starts afresh. Mostly useful in tests."""
+    _settings.install(flask_settings=None)
 
 
 def _sync() -> None:
+    # Called by `_settings.install`: chameleon-flask's `template_path` module state.
     global template_path
-    current = _settings.current
+    current = _settings.flask
     template_path = None if current is None else current.template_folder
 
 
@@ -172,7 +179,7 @@ def _current_settings() -> _settings.Settings | None:
         settings = quart.current_app.extensions.get(EXTENSION)
         if settings is not None:
             return settings  # type: ignore[no-any-return]
-    return _settings.current
+    return _settings.flask
 
 
 def render(template_file: str, **template_data: Any) -> str:
@@ -192,14 +199,12 @@ def response(
     template_file: str,
     content_type: str = 'text/html',
     status_code: int = 200,
-    *,
-    mimetype: str | None = None,
     **template_data: Any,
 ) -> flask.Response:
-    """Renders a template to a ``flask.Response`` (``mimetype=`` is the same as
-    ``content_type=``)."""
+    """Renders a template to a ``flask.Response``. (Unlike ``@template``, ``mimetype`` is not a
+    keyword here: as in chameleon-flask, every other keyword is the model.)"""
     html = render(template_file, **template_data)
-    return flask.Response(response=html, content_type=mimetype or content_type, status=status_code)
+    return flask.Response(response=html, content_type=content_type, status=status_code)
 
 
 def template(

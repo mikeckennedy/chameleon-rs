@@ -85,7 +85,9 @@ impl<'py> PyExprCompiler<'_, 'py> {
         let mut kwargs = Vec::with_capacity(keywords.len());
         for kw in keywords.iter() {
             let arg = kw.getattr(intern!(py, "arg"))?;
-            if arg.is_none() {
+            // `translate=` and `encoding=` change the partial's render itself (its translation
+            // function; chameleon_partials' own `encoding` collides): the Python call does that.
+            if arg.is_none() || matches!(arg.extract::<String>()?.as_str(), "translate" | "encoding") {
                 return Ok(None);
             }
             let Some(value) = self.lower(&kw.getattr(intern!(py, "value"))?, cx)? else { return Ok(None) };

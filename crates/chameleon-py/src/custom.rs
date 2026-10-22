@@ -75,7 +75,7 @@ impl Custom {
             subs: Arc::clone(&self.subs),
             scope: cx.scope.clone().unbind(),
             rcontext: rcontext.clone().unbind(),
-            marker: cx.render.marker.clone().unbind(),
+            marker: cx.marker().clone().unbind(),
             defaults: cx.defaults().map(|d| d.clone().unbind()),
             builtins: cx.builtins().clone().unbind(),
             serial: cx.frame.serial,
@@ -83,7 +83,7 @@ impl Custom {
             context: cx.frame.context.as_ref().map(|c| c.clone().unbind()),
             target_language: cx.frame.target_language.clone().unbind(),
         };
-        self.func.bind(py).call1((cx.scope, rcontext, &cx.render.marker, cx.builtins(), sub))
+        self.func.bind(py).call1((cx.scope, rcontext, cx.marker(), cx.builtins(), sub))
     }
 }
 
