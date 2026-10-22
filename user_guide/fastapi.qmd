@@ -1,0 +1,185 @@
+---
+title: "FastAPI"
+---
+
+`chameleon_rs.fastapi` renders templates from FastAPI views. It has fastapi-chameleon's API,
+so moving an app over is an import change, or no change at all with
+`chameleon_rs.compat.install()` (which makes `import fastapi_chameleon` give this module).
+
+`import chameleon_rs` doesn't import FastAPI. Only `import chameleon_rs.fastapi` does. There is
+nothing extra to install: it uses the FastAPI your app already has.
+
+## A first view
+
+```{python}
+#| echo: false
+import pathlib, tempfile, warnings
+
+warnings.simplefilter('ignore')  # Starlette's test client asks for httpx2
+folder = pathlib.Path(tempfile.mkdtemp()) / 'templates'
+for sub in ('home', 'errors', 'shared'):
+    (folder / sub).mkdir(parents=True)
+(folder / 'home' / 'index.pt').write_text(
+    '<h1>${message}</h1>\n'
+    '<ul><li tal:repeat="v videos">${render_partial(\'shared/video.pt\', video=v)}</li></ul>'
+)
+(folder / 'shared' / 'video.pt').write_text('<a href="/videos/${video}">${video}</a>')
+(folder / 'errors' / '404.pt').write_text('<h1>Not found: ${path}</h1>')
+template_folder = str(folder)
+dev_mode = True
+```
+
+```{python}
+import fastapi
+from fastapi.testclient import TestClient
+
+import chameleon_rs.fastapi as fastapi_chameleon
+
+app = fastapi.FastAPI()
+fastapi_chameleon.configure(template_folder=template_folder, auto_reload=dev_mode, app=app)
+
+
+@app.get('/')
+@fastapi_chameleon.template('home/index.pt')
+async def index(limit: int = 2):
+    videos = ['intro', 'partials', 'async']
+    return {'message': 'Hello', 'videos': videos[:limit]}
+```
+
+The view returns the template's model, and `@template` renders it into a `fastapi.Response`
+(`text/html`):
+
+```{python}
+with TestClient(app) as client:
+    print(client.get('/?limit=1').text)
+    print(client.get('/?limit=lots').status_code)   # FastAPI's own validation
+```
+
+The decorated view keeps its signature, so path and query parameters, `Depends`, validation
+errors and the OpenAPI docs are exactly what they would be without `@template`.
+
+`configure()` here is the same call as `chameleon_rs.configure()`, so it also tells
+`render_partial` where templates live. `app=` turns on the decorator-order check below.
+
+## Decorator order
+
+`@template` goes below the route decorator. Written above it, FastAPI registers the bare view,
+the template never renders and the route quietly returns the view's dict as JSON. An app given
+to `configure(..., app=app)` checks this when it starts:
+
+```{python}
+bad = fastapi.FastAPI()
+fastapi_chameleon.configure(app=bad)
+router = fastapi.APIRouter()
+
+
+@fastapi_chameleon.template('home/index.pt')   # wrong: above the route
+@router.get('/about')
+def about():
+    return {'message': 'About', 'videos': []}
+
+
+bad.include_router(router)
+
+try:
+    with TestClient(bad):
+        pass
+except Exception as error:
+    print(type(error).__name__)
+    print(str(error).split(' at ')[0])
+```
+
+The check runs inside the app's lifespan startup, so Uvicorn and Granian report a failed
+startup and exit. When no lifespan runs (a server with lifespan events off, a test client used
+without `with`, a mounted sub-application) it runs before the first request instead. Routers
+included with `include_router` and mounted apps are checked too. A function registered raw on
+purpose (say, JSON on one route) and also decorated on another route is not flagged.
+`fastapi_chameleon.check_views(app)` runs the same check on demand.
+
+One pattern can't be told from the mistake: a function routed raw on this app whose
+`@template` wrapper is used somewhere else (called from another view, or routed on another
+app). For such an app, pass `check_order=False` to `configure()` and keep the check in a
+test with `fastapi_chameleon.check_views(app, ignore=[that_function])`.
+
+## Sync and async views
+
+- An `async def` view renders its page with `render_async` on the event loop. A model value
+  that is awaitable (a coroutine, task or future) is awaited where the template uses it, so a
+  slow query can be handed to the template unawaited.
+- A plain `def` view renders with `render()`. FastAPI runs the view, render included, in its
+  thread pool, as with fastapi-chameleon.
+
+`@template(..., concurrent=True)` renders `render_partial(...)` calls with awaitable arguments
+concurrently; `@template(..., offload=True)` (experimental) renders in a worker thread.
+
+## What a view can return
+
+- **A model:** a `dict`, any other mapping, a dataclass instance (its fields, shallowly) or a
+  Pydantic model (anything with a callable `model_dump()`).
+- **A response:** any Starlette response (`fastapi.Response`, `RedirectResponse`,
+  `JSONResponse`, ...) passes through unchanged.
+
+Anything else raises `chameleon_rs.fastapi.FastAPIChameleonException`.
+
+## The `@template` decorator
+
+```python
+@fastapi_chameleon.template('home/index.pt')                   # a template path
+@fastapi_chameleon.template('feed.pt', 'application/xml')      # mimetype=, or content_type=
+@fastapi_chameleon.template('home/created.pt', status_code=201)
+@fastapi_chameleon.template                                    # no arguments
+```
+
+With no path, it renders `{module}/{function}.html`, where `{module}` is the last part of the
+view's module name. If there's no `.html` file in the template folder, it uses
+`{module}/{function}.pt`. It checks once, when the view is decorated.
+
+## Error pages
+
+Inside a decorated view, `not_found()` and `error()` stop the view and render an error page:
+
+```{python}
+app = fastapi.FastAPI()
+
+
+@app.get('/videos/{name}')
+@fastapi_chameleon.template('home/index.pt')
+async def video(name: str, request: fastapi.Request):
+    if name != 'intro':
+        fastapi_chameleon.not_found(path=request.url.path)   # renders errors/404.pt
+    return {'message': name, 'videos': [name]}
+
+
+response = TestClient(app).get('/videos/missing')
+print(response.status_code, response.text)
+```
+
+- `not_found(template_file='errors/404.pt', **data)` renders the page with status 404.
+- `error(template_file, status_code=500, **data)` renders any error page.
+- `generic_error(template_file, status_code, template_data)` is fastapi-chameleon's name and
+  signature for `error()`.
+
+## Rendering without the decorator
+
+```python
+html = fastapi_chameleon.render('emails/welcome.pt', user=user)        # a str
+html = await fastapi_chameleon.render_async('emails/welcome.pt', user=user)
+resp = fastapi_chameleon.response('feed.pt', 'application/xml', items=items)
+resp = await fastapi_chameleon.response_async('feed.pt', status_code=201, items=items)
+```
+
+Both raise `FastAPIChameleonException` if nothing has been configured.
+
+## Coming from fastapi-chameleon
+
+| fastapi-chameleon | chameleon-rs |
+|---|---|
+| `global_init(folder, auto_reload=False, cache_init=True)` | Still works, and takes `app=`. It configures the views only, as before, and ignores a second call. `configure()` sets views and partials together, and every call applies. |
+| `@template(file, mimetype)`, `render`, `response`, `not_found`, `generic_error` | Same. `@template` also takes `status_code=` and `content_type=`; `not_found` also takes `template_file=` and template data. |
+| — | `error()`, `render_async()`, `response_async()`, `check_views()`. |
+| `FastAPIChameleonException` and the not-found / generic exceptions | Same names, now subclasses of `chameleon_rs.web.TemplateError`, `NotFound` and `ErrorPage`. |
+| Views return a `dict` | Also mappings, dataclasses and Pydantic models. |
+| Async views render synchronously | They render with `render_async`; an awaitable model value is awaited where the template uses it. |
+
+Settings are process-wide. Unlike Flask, a FastAPI app can't have a template folder of its own
+yet: the decorator has no request to find the app from.

@@ -82,6 +82,7 @@ pub(crate) fn resolve<C: ExprCompiler>(tree: &Tree, compiler: &mut C, options: &
         engine: Engine::default(),
         cached: vec![false; tree.values as usize],
         translations: Vec::new(),
+        late_error: None,
         table: Table {
             values: vec![None; tree.values as usize],
             free: vec![None; tree.values as usize],
@@ -92,6 +93,9 @@ pub(crate) fn resolve<C: ExprCompiler>(tree: &Tree, compiler: &mut C, options: &
         r.node(node)?;
     }
     r.node(&tree.body)?;
+    if let Some(e) = r.late_error {
+        return Err(e);
+    }
     Ok(r.table)
 }
 
@@ -109,6 +113,9 @@ struct Resolver<'t, C: ExprCompiler> {
     cached: Vec<bool>,
     /// `_translations`: the `i18n:name`s of each open `i18n:translate`.
     translations: Vec<Vec<String>>,
+    /// An error Chameleon raises only once the whole template is visited (while generating
+    /// code from the visited tree), so any expression error found meanwhile is raised instead.
+    late_error: Option<CompileError<C::Error>>,
     table: Table,
 }
 
@@ -255,10 +262,15 @@ impl<'t, C: ExprCompiler> Resolver<'t, C> {
                     match attr {
                         // An `on-error` fallback keeps only the static attributes, with the
                         // filters that refer to the element's dictionaries, which the fallback
-                        // never caches: Chameleon's compiler then uses `None` as an AST node.
+                        // never caches: Chameleon's compiler then uses `None` as an AST node,
+                        // which fails when the generated code is processed, after every
+                        // expression of the template compiled (an expression error wins).
                         Attr::Static { filters, .. } if !filters.is_empty() && cached == 0 => {
-                            let message = "'NoneType' object has no attribute '_fields'";
-                            return Err(CompileError::new(ErrorKind::Attribute, message, Tok::plain("")));
+                            if self.late_error.is_none() {
+                                let message = "'NoneType' object has no attribute '_fields'";
+                                self.late_error =
+                                    Some(CompileError::new(ErrorKind::Attribute, message, Tok::plain("")));
+                            }
                         }
                         Attr::Static { .. } | Attr::Dict { .. } => {}
                         Attr::Dynamic { value, filters, default, .. } => {

@@ -1317,6 +1317,112 @@ Release blockers. Each behaviour checked against Chameleon's generated code firs
   (`['<q>r', '<z>', 's', '</z>']`), where chameleon-rs has one piece (`['<q>r<z>s</z>']`); in
   a macro that fails partway inside it, Chameleon never appended the failing text node
   (`['<q>r', '<p>']`) where chameleon-rs keeps its text (`<q>r<p>x`).
+- **Compile errors found after the visit** (a separate fix, 2026-10-22). An `on-error` fallback
+  whose static attribute keeps a `tal:attributes` filter makes Chameleon's compiler use `None`
+  as an AST node; that fails (`AttributeError: 'NoneType' object has no attribute '_fields'`)
+  only when the generated module is processed, after every expression compiled, so any
+  expression or language error of the template wins. The resolver keeps that error
+  (`Resolver::late_error`) and raises it when the pass ends without another.
+
+## Integrations amendments (2026-10-22): the shared views core and FastAPI
+
+- **Shared core** (`chameleon_rs._views`, private, standard library only). An `Integration`
+  object per framework module holds everything a `@template` view does that does not depend on
+  the framework: the template name of a bare `@template` (the original libraries' rule, against
+  the framework module's `template_path` global, which it sets to `templates` when unset), the
+  sync wrapper (`render`) and the async wrapper (`render_async`, with the view's `concurrent` /
+  `offload`), the error pages (any `chameleon_rs.web.ErrorPage`, rendered as `text/html` with
+  the page's status and data), response pass-through and model conversion (`web.model_of`,
+  with the library's "expected a dict or X as the return value" message), `global_init` /
+  `clear` on its settings slot, and the decorator-order check. The framework subclass supplies
+  `is_response`, `make_response(html, content_type, status_code)`, `settings()` (Flask: the
+  app's from `current_app`, else the slot), `routes(app)` and `watch(app, check)`, plus its
+  exception class and the names used in messages. Public functions stay in each framework
+  module with the original library's signature (Flask's `template(template_file,
+  content_type, status_code)`, FastAPI's `template(template_file, mimetype)`), so typing
+  overloads and positional calls are each library's. `chameleon_rs.flask` moved onto it with no
+  change of behaviour (the chameleon-flask differential tests, its suite on the built-in, and
+  every case as an async view are unchanged).
+- **Settings slots are generic.** `_settings` has `partials` and `views`, a dict keyed by
+  `VIEW_SLOTS = ('flask', 'fastapi')`, replaced whole on change. `chameleon_rs.configure()`
+  sets every slot; `chameleon_rs.flask.configure()` / `chameleon_rs.fastapi.configure()` set
+  the partials and their own slot; each library's `global_init` (with its `cache_init` checked
+  against its own slot), `clear()` and chameleon_partials' `register_extensions` set only their
+  own, as the original packages each had their own module state. Integrations register a
+  listener (`_settings.listeners`) that keeps their legacy `template_path` global in step.
+- **`chameleon_rs.fastapi`**: fastapi-chameleon's API (`global_init`, `template`, `render`,
+  `response(template_file, mimetype, status_code, **data)`, `not_found`, `generic_error`,
+  `clear`, the module aliases `engine` / `exceptions`, `FastAPIChameleonException`,
+  `FastAPIChameleonNotFoundException`, `FastAPIChameleonGenericException` as subclasses of the
+  `web` exceptions), plus `configure`, `error`, `render_async`, `response_async`,
+  `status_code=` / `content_type=` / `concurrent=` / `offload=` on `@template`, `check_views`.
+  The wrapper is `functools.wraps`'d, so FastAPI's `inspect.signature` follows `__wrapped__`
+  (and `get_typed_signature` resolves annotations in the view's own module through
+  `inspect.unwrap`): path and query parameters, `Depends`, validation (422) and the OpenAPI
+  schema are the view's (a test compares the schema with fastapi-chameleon's and with the
+  undecorated view's). An `async def` view gets an `async def` wrapper that renders with
+  `render_async` on the loop; a sync view gets a sync wrapper, which FastAPI runs (render
+  included) in its thread pool, as before. Responses: any Starlette response passes through;
+  pages are `fastapi.Response(content, media_type, status_code)`, as fastapi-chameleon's. No
+  per-app settings: a FastAPI view has no app context to look settings up in without a
+  middleware or an injected `Request` parameter, so `configure(app=...)` adds the startup
+  check and applies settings process-wide (open for the owner). `compat.install()` maps
+  `fastapi_chameleon` (with `engine` and `exceptions`) to it, lazily like `chameleon_flask`.
+- **Decorator order** (owner's requirement: fail loudly at startup). `@template` written
+  above the route decorator means the router registered the bare view, so the wrapper never
+  runs and the route answers with the view's dict as JSON (FastAPI and Flask both do that
+  quietly). `@template` records
+  every function it wraps (with its `__wrapped__` chain) and its wrappers, in weak sets.
+  `check_views(app)` lists the app's routes (FastAPI/Starlette: `app.routes`, recursing into
+  `Mount`/`Host` and into lazily included routers, FastAPI 0.13x+ `_IncludedRouter.original_router`
+  with its prefix; Flask/Quart: `app.view_functions` with the URL rules, so blueprints are
+  included) and flags a route whose view (or a function in its `__wrapped__` chain, above any
+  `@template` wrapper) is a function `@template` wrapped, unless some route of the app calls a
+  wrapper of that function (a view registered raw on purpose and also decorated on another
+  route). The error, `web.DecoratorOrderError` (a `TemplateError`), names each view, its file
+  and line, its route and the fix. `configure(app=...)` and `global_init(..., app=...)` hook
+  the check into the app once (`_views._watched`):
+  - **FastAPI/Starlette:** `app.router.lifespan_context` is wrapped, so the check runs inside
+    the lifespan startup (Uvicorn/Granian report a failed startup and exit; a `TestClient`
+    entered with `with` raises it); and `app.build_middleware_stack` is wrapped so the built
+    stack sits behind a `_FirstRequestCheck` that runs the check on the first HTTP/WebSocket
+    request when no lifespan ran (a server with lifespan off, a test client not entered,
+    a mounted sub-app, whose lifespan Starlette never runs) and then puts the real stack back.
+    Raising from `build_middleware_stack` itself was rejected: it runs on the lifespan scope
+    too, and Uvicorn's `lifespan="auto"` treats an exception there as "lifespan unsupported"
+    and serves anyway. `_FirstRequestCheck.app` is the real stack, so FastAPI's
+    OpenTelemetry detection walks through it.
+  - **Flask:** there is no start event, so the earliest reliable hook is the first request:
+    `app.wsgi_app` is replaced by a one-shot guard that runs the check and, once it passed,
+    puts the original back (if nothing wrapped it since), so later requests pay nothing; a
+    misordered app fails every request with the error.
+  - **Quart:** `before_serving` (the app fails to start) plus the same one-shot guard on
+    `asgi_app` for HTTP/WebSocket scopes (Quart's test client does not serve).
+  Review fixes: the check is memoized per app (a middleware wrapped around `wsgi_app` after
+  `configure(app=...)`, such as ProxyFix, keeps the Flask guard in place, which then costs one
+  flag test per request instead of a scan); views are compared by `_views._key` (a bound
+  method by its function and instance, since `obj.method` is a new equal object each time,
+  anything else by identity); `check_views(app, ignore=[...])` and `configure(app=...,
+  check_order=False)` (and `global_init`'s) are the escape hatch for a function routed raw whose
+  `@template` wrapper is used elsewhere (called from another view, routed on another app),
+  which looks exactly like the mistake at runtime; `app=` must be an application (`TypeError`
+  for an `APIRouter` or a blueprint); `global_init` validates the folder before hooking the
+  app; listeners are keyed by module name and each integration syncs `template_path` when
+  imported (it was stale when imported after `chameleon_rs.configure()`, e.g. lazily through
+  `compat.install()`). Callables that cannot be weakly referenced are remembered by identity.
+  Detecting at decoration time was considered and left out: when `@template` wraps a function
+  some route already has, that is either the mistake or a view also registered raw on purpose
+  (JSON on one route, HTML on another), and the two can only be told apart once all routes
+  exist. Apps not given to `configure(app=...)` are not checked (`check_views(app)` can be
+  called directly, e.g. in a test).
+- **No extras** (owner's decision): no `[project.optional-dependencies]`. Each framework module
+  imports its framework at the top of that submodule only; `import chameleon_rs`,
+  `compat.install()` and every other module never import Flask, Quart, FastAPI, Starlette or
+  Pydantic (`test_api.test_no_runtime_dependencies` blocks third-party imports and checks).
+- **Typing.** `chameleon_rs.fastapi.template` has flask's overload shape: the decorated view
+  keeps its parameters (`ParamSpec`) and returns `fastapi.Response` (a coroutine of one for an
+  `async def` view); `tests/python/test_fastapi.py` asserts the types with `assert_type`, which
+  ty checks.
 
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 

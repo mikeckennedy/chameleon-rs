@@ -16,7 +16,7 @@ Switching an application over is one line at startup, before anything imports Ch
 ```python
 import chameleon_rs.compat
 
-chameleon_rs.compat.install()  # `import chameleon`, `chameleon_partials`, `chameleon_flask` give chameleon-rs
+chameleon_rs.compat.install()  # `import chameleon`, `chameleon_partials`, `chameleon_flask`, `fastapi_chameleon` give chameleon-rs
 ```
 
 Built in, with no extra package:
@@ -30,6 +30,43 @@ Built in, with no extra package:
   `global_init`, `@template`, `render`, `response`, `not_found`, `error`, `clear`) and imports
   Flask only when it is imported itself. Views may return a dict, any mapping, a dataclass or
   a Pydantic model.
+- **FastAPI:** `chameleon_rs.fastapi` has fastapi-chameleon's API (`global_init`,
+  `@template`, `render`, `response`, `not_found`, `generic_error`, `clear`, its exception
+  names) plus `configure`, `error`, `render_async` and `response_async`, and imports FastAPI
+  only when it is imported itself. There are no extras to install: the framework you already
+  have is the one used.
+
+```python
+import fastapi
+import chameleon_rs.fastapi as fastapi_chameleon
+
+app = fastapi.FastAPI()
+fastapi_chameleon.configure(template_folder='templates', app=app)
+
+@app.get('/episodes/{number}')                      # the route decorator first...
+@fastapi_chameleon.template('episodes/detail.pt')   # ...then @template
+async def detail(number: int):
+    episode = await db.episode(number)
+    if episode is None:
+        fastapi_chameleon.not_found()
+    return {'episode': episode}
+```
+
+The view keeps its signature, so path and query parameters, `Depends`, validation and the
+OpenAPI docs work as without `@template`. An `async def` view renders with `render_async`
+(awaitable values in the model are awaited where the template uses them, without blocking the
+event loop); a sync view renders in FastAPI's thread pool, as before.
+
+**Decorator order.** `@template` goes *below* the route decorator (`@app.get`, `@router.get`,
+`@app.route`, `@blueprint.get`). Written above it, the router registers the bare view, the
+template never renders and the route quietly returns JSON. An app given to `configure(...,
+app=app)` (or `global_init(..., app=app)`) checks this when it starts (FastAPI and Quart: at
+startup; Flask, which has no startup hook: before its first request) and raises
+`chameleon_rs.web.DecoratorOrderError` naming the view and the fix; `check_views(app)` runs the
+same check on demand. One pattern looks the same as the mistake: a function routed raw on this
+app whose `@template` wrapper is used elsewhere (called from another view, or routed on another
+app). For that, pass `check_order=False` to `configure`/`global_init` and call
+`check_views(app, ignore=[that_function])` in a test.
 
 ## Async rendering
 
@@ -58,12 +95,12 @@ html = await page.render_async(episodes=latest_episodes(), user=user)
   fixture and the render fuzzers).
 - Async iterables in `tal:repeat` are not supported (as in a sync render, they are not
   iterable): collect them first, `[x async for x in source]` in an async helper.
-- `chameleon_rs.flask`: async views (Flask's async views, Quart) render with
-  `render_async`; `render_async()` and `response_async()` are the coroutine versions of
+- `chameleon_rs.flask` and `chameleon_rs.fastapi`: async views (Flask's async views, Quart,
+  FastAPI) render with `render_async`; `render_async()` and `response_async()` are the coroutine versions of
   `render()` and `response()`. This also applies through `compat.install()`, and it is a
   difference from chameleon-flask: a model value that is awaitable (a coroutine, task or
   future, or a test double such as `AsyncMock()`) is awaited where the template uses it, where
-  chameleon-flask would have rendered the object itself.
+  chameleon-flask and fastapi-chameleon would have rendered the object itself.
 - A subclass that overrides `render()` keeps its override: `render_async()` calls it
   (synchronously, so awaitable values are not awaited).
 
@@ -71,7 +108,7 @@ Opt-in concurrency (it changes the order in which helpers run):
 
 - `@chameleon_rs.concurrent` on an async helper: its calls written as `${...}` are awaited
   concurrently with the rest of the page, each result filled in at the end.
-- `PageTemplate(..., concurrent=True)` (or `@template(..., concurrent=True)` in Flask):
+- `PageTemplate(..., concurrent=True)` (or `@template(..., concurrent=True)` in Flask and FastAPI):
   `render_partial(...)` calls of the page whose arguments are awaitable render concurrently.
 
 Experimental: `render_async(..., offload=True)` (or `@template(..., offload=True)`) renders in a

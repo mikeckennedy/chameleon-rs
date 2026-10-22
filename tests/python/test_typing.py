@@ -25,6 +25,7 @@ PUBLIC: dict[str, tuple[str, ...] | None] = {
     'chameleon_rs._async': None,
     'chameleon_rs.compat': ('install', 'installed'),
     'chameleon_rs.exc': None,
+    'chameleon_rs.fastapi': None,
     'chameleon_rs.flask': None,
     'chameleon_rs.loader': None,
     'chameleon_rs.partials': None,

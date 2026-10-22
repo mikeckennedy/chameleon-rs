@@ -526,3 +526,181 @@ def test_quart(folder: Path) -> None:
         return resp.status_code, await resp.get_data(as_text=True)
 
     assert asyncio.run(get()) == (200, '<h1>Hello q -!</h1>')
+
+
+# --- The decorator-order check --------------------------------------------------------------
+
+
+def misordered_flask_app() -> Any:
+    app = flask.Flask('misordered')
+    ours.configure(app=app)
+    blueprint = flask.Blueprint('shop', __name__)
+
+    @app.get('/fine')
+    @ours.template('home/index.pt')
+    def fine() -> Any:
+        return {'a': 1}
+
+    @ours.template('home/index.pt')
+    @blueprint.get('/detail/<int:n>')
+    def detail(n: int) -> Any:
+        return {'a': n}
+
+    app.register_blueprint(blueprint, url_prefix='/shop')
+    return app
+
+
+def test_misordered_decorators_fail_before_the_first_request(folder: Path) -> None:
+    app = misordered_flask_app()
+    client = app.test_client()
+    for _ in range(2):  # every request, until the app is fixed
+        with pytest.raises(chameleon_rs.web.DecoratorOrderError) as info:
+            client.get('/fine')
+    message = str(info.value)
+    assert message.startswith('@template must be placed below the route decorator (@app.route, @app.get')
+    assert 'on misordered_flask_app.<locals>.detail() at ' in message
+    assert '(route GET /shop/detail/<int:n>)' in message
+    assert 'fine' not in message
+    with pytest.raises(chameleon_rs.web.DecoratorOrderError):
+        ours.check_views(app)
+
+
+def test_correct_order_serves_and_unhooks(folder: Path) -> None:
+    app = flask.Flask('ordered')
+    original = app.wsgi_app
+    ours.configure(app=app)
+    ours.configure(app=app)  # watching twice checks once
+
+    @app.get('/')
+    @ours.template('home/index.pt')
+    def index() -> Any:
+        return {'a': 1}
+
+    @app.get('/raw')
+    def raw() -> Any:
+        return 'raw'
+
+    # The same function registered raw on purpose and, decorated, on another route.
+    def both() -> Any:
+        return {'a': 2}
+
+    app.add_url_rule('/both.json', 'both_json', both)
+    app.add_url_rule('/both.html', 'both_html', ours.template('home/index.pt')(both))
+
+    client = app.test_client()
+    assert client.get('/').get_data(as_text=True) == '<h1>Hello 1 -!</h1>'
+    assert app.wsgi_app == original  # the one-shot check took itself out
+    assert client.get('/raw').get_data(as_text=True) == 'raw'
+    assert client.get('/both.json').get_json() == {'a': 2}
+    assert client.get('/both.html').get_data(as_text=True) == '<h1>Hello 2 -!</h1>'
+
+
+def test_global_init_app_checks_and_keeps_process_settings(folder: Path) -> None:
+    app = flask.Flask('legacy')
+    ours.global_init(str(folder), app=app)
+    assert 'chameleon_rs' not in app.extensions
+
+    @ours.template('home/index.pt')
+    @app.route('/x')
+    def x() -> Any:
+        return {'a': 1}
+
+    with pytest.raises(chameleon_rs.web.DecoratorOrderError):
+        app.test_client().get('/x')
+
+
+def test_quart_misordered_fails_at_startup_and_first_request(folder: Path) -> None:
+    quart = pytest.importorskip('quart')
+
+    def make() -> Any:
+        app = quart.Quart('q-misordered')
+        ours.configure(app=app)
+
+        @ours.template('home/index.pt')
+        @app.get('/d')
+        async def d() -> Any:
+            return {'a': 'q'}
+
+        return app
+
+    async def serve(app: Any) -> None:
+        async with app.test_app():
+            pass
+
+    # Quart reports a failed startup as its LifespanError, with the error's text.
+    with pytest.raises(Exception, match='@template must be placed below the route decorator'):
+        asyncio.run(serve(make()))
+
+    async def get(app: Any) -> Any:
+        return await app.test_client().get('/d')
+
+    with pytest.raises(chameleon_rs.web.DecoratorOrderError):
+        asyncio.run(get(make()))
+
+
+def test_quart_correct_order(folder: Path) -> None:
+    quart = pytest.importorskip('quart')
+    app = quart.Quart('q-ordered')
+    ours.configure(app=app)
+
+    @app.get('/')
+    @ours.template('home/index.pt')
+    async def index() -> Any:
+        return {'a': 'q'}
+
+    async def run() -> tuple[int, str]:
+        async with app.test_app() as test_app:
+            resp = await test_app.test_client().get('/')
+            return resp.status_code, await resp.get_data(as_text=True)
+
+    assert asyncio.run(run()) == (200, '<h1>Hello q -!</h1>')
+
+
+def test_middleware_wrapping_the_app_after_configure(folder: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The one-shot guard cannot take itself out under a middleware added later (ProxyFix): it
+    # stays, but checks only once.
+    from werkzeug.middleware.proxy_fix import ProxyFix
+
+    calls = []
+    real = chameleon_rs._views.Integration.check_views
+
+    def counting(self: Any, app: Any, ignore: Any = ()) -> None:
+        calls.append(app)
+        real(self, app, ignore)
+
+    monkeypatch.setattr(chameleon_rs._views.Integration, 'check_views', counting)
+    app = flask.Flask('proxied')
+    ours.configure(app=app)
+    app.wsgi_app = ProxyFix(app.wsgi_app)
+
+    @app.get('/')
+    @ours.template('home/index.pt')
+    def index() -> Any:
+        return {'a': 1}
+
+    client = app.test_client()
+    for _ in range(5):
+        assert client.get('/').get_data(as_text=True) == '<h1>Hello 1 -!</h1>'
+    assert len(calls) == 1
+
+    bad = misordered_flask_app()
+    bad.wsgi_app = ProxyFix(bad.wsgi_app)
+    with pytest.raises(chameleon_rs.web.DecoratorOrderError):
+        bad.test_client().get('/fine')
+
+
+def test_flask_escape_hatch_and_app_type(folder: Path) -> None:
+    def data() -> Any:
+        return {'a': 2}
+
+    html = ours.template('home/index.pt')(data)
+    app = flask.Flask('hatch')
+    app.add_url_rule('/api', 'api', data)
+    app.add_url_rule('/html', 'html', lambda: html())
+    with pytest.raises(chameleon_rs.web.DecoratorOrderError):
+        ours.check_views(app)
+    ours.check_views(app, ignore=[data])
+    ours.configure(app=app, check_order=False)
+    assert app.test_client().get('/html').get_data(as_text=True) == '<h1>Hello 2 -!</h1>'
+    with pytest.raises(TypeError, match='Flask or Quart application, not Blueprint'):
+        ours.configure(app=flask.Blueprint('b', __name__))

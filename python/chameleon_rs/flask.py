@@ -48,24 +48,21 @@ Errors: ``chameleon_rs.web.TemplateError`` and ``NotFound``; chameleon-flask's
 
 from __future__ import annotations
 
-import inspect
-import os
 import sys
-from collections.abc import Callable, Coroutine, Mapping
-from functools import wraps
+from collections.abc import Callable, Coroutine, Iterable, Iterator, Mapping
 from typing import Any, NoReturn, Protocol, overload
 
 import flask
 import werkzeug.sansio.response
 
-from chameleon_rs import _settings
-from chameleon_rs.template import _render_async
-from chameleon_rs.web import ErrorPage, NotFound, TemplateError, model_of
+from chameleon_rs import _settings, _views
+from chameleon_rs.web import ErrorPage, NotFound, TemplateError
 
 __all__ = [
     'FlaskChameleonException',
     'FlaskChameleonGenericException',
     'FlaskChameleonNotFoundException',
+    'check_views',
     'clear',
     'configure',
     'error',
@@ -117,84 +114,181 @@ class FlaskChameleonGenericException(ErrorPage, FlaskChameleonException):
     ``template_data``) and ``status_code``."""
 
 
+class _Flask(_views.Integration):
+    name = 'flask'
+    module = __name__
+    error = FlaskChameleonException
+    response_name = 'flask.Response'
+    route_decorators = '@app.route, @app.get, @blueprint.route, ...'
+
+    def settings(self) -> _settings.Settings | None:
+        """The configuration for this request: its app's (Flask's or Quart's ``current_app``),
+        else the process-wide one."""
+        if flask.has_app_context():
+            settings = flask.current_app.extensions.get(EXTENSION)
+            if settings is not None:
+                return settings  # type: ignore[no-any-return]
+        quart = sys.modules.get('quart')
+        if quart is not None and getattr(quart, 'has_app_context', lambda: False)():
+            settings = quart.current_app.extensions.get(EXTENSION)
+            if settings is not None:
+                return settings  # type: ignore[no-any-return]
+        return _settings.views['flask']
+
+    def is_response(self, value: Any) -> bool:
+        # May be a Quart or bare werkzeug response; those types can't be named here without
+        # importing Quart.
+        return isinstance(value, werkzeug.sansio.response.Response) or str(type(value)) in response_classes
+
+    def make_response(self, html: str, content_type: str, status_code: int) -> flask.Response:
+        return flask.Response(response=html, content_type=content_type, status=status_code)
+
+    def routes(self, app: Any) -> Iterator[tuple[Any, str]]:
+        rules: dict[str, list[str]] = {}
+        for rule in app.url_map.iter_rules():
+            methods = ','.join(sorted(set(rule.methods or ()) - {'HEAD', 'OPTIONS'}))
+            rules.setdefault(rule.endpoint, []).append(f'{methods} {rule.rule}'.strip())
+        for endpoint, view in list(app.view_functions.items()):
+            yield view, ', '.join(rules.get(endpoint, [])) or endpoint
+
+    def check_app(self, app: Any) -> None:
+        if not (hasattr(app, 'view_functions') and hasattr(app, 'url_map') and hasattr(app, 'extensions')):
+            msg = f'app= takes a Flask or Quart application, not {type(app).__name__} (a blueprint is checked through the app it is registered on)'
+            raise TypeError(msg)
+
+    def watch(self, app: Any, check: Callable[[], None]) -> None:
+        # Quart: when the app starts serving (`before_serving`), and before its first request
+        # (the test client does not serve). Flask has no start event: before its first request,
+        # through a one-shot `wsgi_app` wrapper that puts the original back once the check passed.
+        if hasattr(app, 'before_serving') and hasattr(app, 'asgi_app'):
+
+            async def serving() -> None:
+                check()
+
+            app.before_serving(serving)
+            original_asgi = app.asgi_app
+
+            async def guard_asgi(scope: Any, receive: Any, send: Any) -> Any:
+                if scope.get('type') != 'lifespan':
+                    check()
+                    if app.__dict__.get('asgi_app') is guard_asgi:
+                        app.asgi_app = original_asgi
+                return await original_asgi(scope, receive, send)
+
+            app.asgi_app = guard_asgi
+            return
+        original = app.wsgi_app
+
+        def guard(environ: Any, start_response: Any) -> Any:
+            check()
+            if app.__dict__.get('wsgi_app') is guard:
+                app.wsgi_app = original
+            return original(environ, start_response)
+
+        app.wsgi_app = guard
+
+
+_flask = _Flask()
+
+
 def configure(
     template_folder: Any = None,
     *,
     auto_reload: bool | None = None,
     restricted_namespace: bool | None = None,
     app: Any = None,
+    check_order: bool = True,
 ) -> None:
     """Configures where templates live and how they load: for the whole process (the same as
     ``chameleon_rs.configure``: for views and for ``render_partial``), or, with ``app``, for that
     Flask app's views only (stored in ``app.extensions['chameleon_rs']``). Settings left out keep
     their current values.
 
+    With ``app``, the app also checks its views (Flask has no startup hook: before its first
+    request; Quart: when it starts serving, and before its first request): a view registered by
+    its route before ``@template`` wrapped it (``@template`` written above ``@app.route``) raises
+    ``chameleon_rs.web.DecoratorOrderError``. ``check_order=False`` turns that off, for an app
+    whose routes call a function raw that is also used through a ``@template`` wrapper not
+    routed on this app (call ``check_views(app, ignore=[...])`` in a test instead).
+    Raises ``TypeError`` if ``app`` is not a Flask or Quart application.
+
     Raises ``FlaskChameleonException`` if the folder is missing or not a directory.
     """
     if app is not None:
-        base = app.extensions.get(EXTENSION) or _settings.flask
+        _flask.check_app(app)
+        base = app.extensions.get(EXTENSION) or _settings.views['flask']
         app.extensions[EXTENSION] = _settings.build(
             template_folder, auto_reload, restricted_namespace, base=base, error=FlaskChameleonException
         )
+        if check_order:
+            _flask.watch_app(app)
         return
     settings = _settings.build(
         template_folder,
         auto_reload,
         restricted_namespace,
-        base=_settings.flask or _settings.partials,
+        base=_settings.views['flask'] or _settings.partials,
         error=FlaskChameleonException,
     )
-    _settings.install(partials_settings=settings, flask_settings=settings)
+    _settings.install(partials_settings=settings, views_settings={'flask': settings})
 
 
 def global_init(
-    template_folder: str, auto_reload: bool = False, cache_init: bool = True, restricted_namespace: bool = True
+    template_folder: str,
+    auto_reload: bool = False,
+    cache_init: bool = True,
+    restricted_namespace: bool = True,
+    *,
+    app: Any = None,
+    check_order: bool = True,
 ) -> None:
     """chameleon-flask's setup call: configures the views' templates only (partials keep their
     own folder, from ``register_extensions``). With ``cache_init`` (the default) a call after
-    the views' folder is configured does nothing."""
-    if _settings.flask is not None and cache_init:
-        return
-    _settings.check_folder(template_folder, FlaskChameleonException)
-    _settings.install(
-        flask_settings=_settings.Settings(str(template_folder), bool(auto_reload), bool(restricted_namespace))
-    )
+    the views' folder is configured does nothing. ``app``: check that app's views before its
+    first request, as ``configure(app=...)`` does (the settings stay process-wide;
+    ``check_order=False`` turns the check off)."""
+    if app is not None:
+        _flask.check_app(app)
+    _flask.global_init(template_folder, auto_reload, cache_init, restricted_namespace)
+    if app is not None and check_order:
+        _flask.watch_app(app)
 
 
 def clear() -> None:
     """Forgets the views' process-wide configuration, so a later ``configure()`` /
     ``global_init()`` starts afresh. Mostly useful in tests."""
-    _settings.install(flask_settings=None)
+    _flask.clear()
+
+
+def check_views(app: Any, ignore: Iterable[Any] = ()) -> None:
+    """Raises ``chameleon_rs.web.DecoratorOrderError`` if a route of ``app`` (blueprints
+    included) calls a view that ``@template`` wrapped after the route registered it. Runs by
+    itself before the app's first request, for an app given to ``configure(app=...)``.
+
+    It cannot tell the mistake from a function routed raw on purpose whose ``@template``
+    wrapper is used elsewhere (called from another view, or routed on another app): list such
+    functions in ``ignore``."""
+    _flask.check_app(app)
+    _flask.check_views(app, ignore)
 
 
 def _sync() -> None:
     # Called by `_settings.install`: chameleon-flask's `template_path` module state.
     global template_path
-    current = _settings.flask
-    template_path = None if current is None else current.template_folder
+    template_path = _flask.template_path()
+
+
+_settings.listeners[__name__] = _sync
+_sync()  # configured before this module was imported: the legacy global already says so
 
 
 def _current_settings() -> _settings.Settings | None:
-    """The configuration for this request: its app's (Flask's or Quart's ``current_app``),
-    else the process-wide one."""
-    if flask.has_app_context():
-        settings = flask.current_app.extensions.get(EXTENSION)
-        if settings is not None:
-            return settings  # type: ignore[no-any-return]
-    quart = sys.modules.get('quart')
-    if quart is not None and getattr(quart, 'has_app_context', lambda: False)():
-        settings = quart.current_app.extensions.get(EXTENSION)
-        if settings is not None:
-            return settings  # type: ignore[no-any-return]
-    return _settings.flask
+    """The configuration for this request: its app's, else the process-wide one."""
+    return _flask.settings()
 
 
 def _page(template_file: str) -> Any:
-    settings = _current_settings()
-    if settings is None:
-        msg = 'You must call global_init() before rendering templates.'
-        raise FlaskChameleonException(msg)
-    return settings.loader[template_file]
+    return _flask.page(template_file)
 
 
 def render(template_file: str, **template_data: Any) -> str:
@@ -202,13 +296,13 @@ def render(template_file: str, **template_data: Any) -> str:
 
     Raises ``FlaskChameleonException`` if nothing is configured.
     """
-    return _page(template_file).render(encoding='utf-8', **template_data)  # type: ignore[no-any-return]
+    return _flask.render(template_file, template_data)
 
 
 async def render_async(template_file: str, **template_data: Any) -> str:
     """``render`` as a coroutine: the template's ``render_async``, which awaits awaitable
     values where the template uses them (see ``PageTemplate.render_async``)."""
-    return await _page(template_file).render_async(encoding='utf-8', **template_data)  # type: ignore[no-any-return]
+    return await _flask.render_async(template_file, template_data)
 
 
 def response(
@@ -279,7 +373,8 @@ def template(
     render concurrently (``PageTemplate``'s ``concurrent`` setting, for this view; ``False``
     turns a template's setting off, ``None``, the default, keeps it).
     ``offload=True`` (async views, experimental): the page renders in a worker thread
-    (``render_async(offload=True)``).
+    (``render_async(offload=True)``). Both apply to ``async def`` views only: a sync view
+    renders with ``render`` and ignores them.
 
     Typing: the decorated view is typed as returning ``flask.Response`` (a coroutine of one for
     an ``async def`` view). A response the view returns itself passes through unchanged, so with
@@ -294,100 +389,9 @@ def template(
     content_type = mimetype or content_type
 
     def response_inner(f: Callable[..., Any]) -> Callable[..., Any]:
-        global template_path
-
-        if not template_path:
-            template_path = 'templates'
-
-        if isinstance(template_file, str) and template_file:
-            view_template: str = template_file
-        else:
-            # The default naming scheme: template_folder/module_name/function_name.html|.pt
-            module = f.__module__
-            if '.' in module:
-                module = module.split('.')[-1]
-            view = f.__name__  # ty: ignore[unresolved-attribute] - views are functions
-            view_template = f'{module}/{view}.html'
-
-            if not os.path.exists(os.path.join(template_path, view_template)):
-                view_template = f'{module}/{view}.pt'
-
-        def build_response(response_val: Any) -> flask.Response:
-            return _render_response(view_template, response_val, content_type, status_code)
-
-        @wraps(f)
-        def sync_view_method(*args: Any, **kwargs: Any) -> flask.Response:
-            try:
-                return build_response(f(*args, **kwargs))
-            except ErrorPage as page:
-                return _error_response(page)
-
-        @wraps(f)
-        async def async_view_method(*args: Any, **kwargs: Any) -> flask.Response:
-            try:
-                return await _render_response_async(
-                    view_template, await f(*args, **kwargs), content_type, status_code, concurrent, offload
-                )
-            except ErrorPage as page:
-                return await _error_response_async(page)
-
-        if inspect.iscoroutinefunction(f):
-            return async_view_method
-        return sync_view_method
+        return _flask.decorate(f, template_file, content_type, status_code, concurrent, offload)
 
     return response_inner(wrapped_function) if wrapped_function else response_inner
-
-
-def _is_response(response_val: Any) -> bool:
-    # May be a Quart or bare werkzeug response; those types can't be named here without
-    # importing Quart.
-    return isinstance(response_val, werkzeug.sansio.response.Response) or str(type(response_val)) in response_classes
-
-
-def _model(response_val: Any) -> Mapping[str, Any]:
-    model = model_of(response_val)
-    if model is None:
-        msg = f'Invalid return type {type(response_val)}, we expected a dict or flask.Response as the return value.'
-        raise FlaskChameleonException(msg)
-    return model
-
-
-def _render_response(
-    template_file: str, response_val: Any, content_type: str, status_code: int = 200
-) -> flask.Response:
-    if _is_response(response_val):
-        return response_val  # type: ignore[no-any-return]
-    html = render(template_file, **_model(response_val))
-    return flask.Response(response=html, content_type=content_type, status=status_code)
-
-
-async def _render_response_async(
-    template_file: str,
-    response_val: Any,
-    content_type: str,
-    status_code: int = 200,
-    concurrent: bool | None = None,
-    offload: bool = False,
-) -> flask.Response:
-    if _is_response(response_val):
-        return response_val  # type: ignore[no-any-return]
-    model = dict(_model(response_val))
-    page = _page(template_file)
-    if concurrent is None:
-        concurrent = page.concurrent
-    html = await _render_async(page, 'utf-8', model, concurrent, offload)
-    return flask.Response(response=html, content_type=content_type, status=status_code)
-
-
-def _error_response(page: ErrorPage) -> flask.Response:
-    # As chameleon-flask's 404 path: text/html, the page's status, its data as the model.
-    html = render(page.template_file, **(page.template_data or {}))
-    return flask.Response(response=html, content_type='text/html', status=page.status_code)
-
-
-async def _error_response_async(page: ErrorPage) -> flask.Response:
-    html = await render_async(page.template_file, **(page.template_data or {}))
-    return flask.Response(response=html, content_type='text/html', status=page.status_code)
 
 
 def not_found(
@@ -424,3 +428,15 @@ def generic_error(template_file: str, status_code: int, template_data: Mapping[s
 # chameleon-flask's submodules (`chameleon_flask.engine`, `chameleon_flask.exceptions`) are
 # this module (`chameleon_rs.compat.install()` maps their names here).
 engine = exceptions = sys.modules[__name__]
+
+__author__ = 'Michael Kennedy <michael@talkpython.fm>'
+
+
+def __getattr__(name: str) -> Any:
+    # chameleon-flask's `__version__`: chameleon-rs's (read on first use, as the package's).
+    if name == '__version__':
+        import chameleon_rs
+
+        return chameleon_rs.__version__
+    msg = f'module {__name__!r} has no attribute {name!r}'
+    raise AttributeError(msg)
