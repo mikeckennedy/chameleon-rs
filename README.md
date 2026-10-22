@@ -56,7 +56,12 @@ html = await page.render_async(episodes=latest_episodes(), user=user)
   iterable): collect them first, `[x async for x in source]` in an async helper.
 - `chameleon_rs.flask`: async views (Flask's async views, Quart) render with
   `render_async`; `render_async()` and `response_async()` are the coroutine versions of
-  `render()` and `response()`.
+  `render()` and `response()`. This also applies through `compat.install()`, and it is a
+  difference from chameleon-flask: a model value that is awaitable (a coroutine, task or
+  future, or a test double such as `AsyncMock()`) is awaited where the template uses it, where
+  chameleon-flask would have rendered the object itself.
+- A subclass that overrides `render()` keeps its override: `render_async()` calls it
+  (synchronously, so awaitable values are not awaited).
 
 Opt-in concurrency (it changes the order in which helpers run):
 

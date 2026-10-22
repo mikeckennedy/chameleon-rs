@@ -240,7 +240,7 @@ def template(
     status_code: int = 200,
     *,
     mimetype: str | None = None,
-    concurrent: bool = False,
+    concurrent: bool | None = None,
     offload: bool = False,
 ) -> Callable[..., Any]:
     """Decorates a Flask or Quart view (sync or async) to render a template with what it
@@ -248,7 +248,8 @@ def template(
     content_type=..., status_code=...)``. See the module docs.
 
     ``concurrent=True`` (async views): native partials called with an awaitable argument
-    render concurrently (``PageTemplate``'s ``concurrent`` setting, for this view).
+    render concurrently (``PageTemplate``'s ``concurrent`` setting, for this view; ``False``
+    turns a template's setting off, ``None``, the default, keeps it).
     ``offload=True`` (async views, experimental): the page renders in a worker thread
     (``render_async(offload=True)``)."""
     wrapped_function = None
@@ -330,14 +331,15 @@ async def _render_response_async(
     response_val: Any,
     content_type: str,
     status_code: int = 200,
-    concurrent: bool = False,
+    concurrent: bool | None = None,
     offload: bool = False,
 ) -> flask.Response:
     if _is_response(response_val):
         return response_val  # type: ignore[no-any-return]
     model = dict(_model(response_val))
     page = _page(template_file)
-    concurrent = concurrent or page.concurrent
+    if concurrent is None:
+        concurrent = page.concurrent
     html = await _render_async(page, 'utf-8', model, concurrent, offload)
     return flask.Response(response=html, content_type=content_type, status=status_code)
 

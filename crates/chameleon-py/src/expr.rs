@@ -461,7 +461,7 @@ pub(crate) struct RenderCtx<'py> {
     pub(crate) defer_next: Cell<bool>,
     /// Tasks started for placeholders, in document order, and the placeholders' nonce.
     pub(crate) deferred: RefCell<Vec<crate::deferred::Deferred>>,
-    pub(crate) nonce: u64,
+    pub(crate) nonce: u128,
     /// An asynchronous render's answers to "is this type awaitable".
     pub(crate) await_types: crate::awaitable::AwaitTypes<'py>,
 }
@@ -588,12 +588,12 @@ pub(crate) struct SavedRender {
     awaits: bool,
     concurrent: bool,
     pub(crate) deferred: Vec<crate::deferred::Deferred>,
-    nonce: u64,
+    nonce: u128,
 }
 
 impl SavedRender {
     /// The placeholders' nonce.
-    pub(crate) fn nonce(&self) -> u64 {
+    pub(crate) fn nonce(&self) -> u128 {
         self.nonce
     }
 

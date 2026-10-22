@@ -760,6 +760,10 @@ async def _render_async(
 ) -> str:
     """``PageTemplate.render_async`` with ``concurrent`` and ``offload`` given (the
     integrations' per-view settings)."""
+    if type(template).render not in _BASE_RENDERS:
+        # A subclass's own `render` (adding defaults, post-processing): honoured, as
+        # synchronous (awaitable values are not awaited).
+        return await _overridden(template, encoding, kw, offload)  # type: ignore[no-any-return]
     if offload:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, partial(PageTemplate.render, template, encoding, **kw))  # type: ignore[no-any-return]
@@ -767,6 +771,14 @@ async def _render_async(
     if isinstance(result, RenderAwaitable):
         return await result  # type: ignore[no-any-return]
     return result  # type: ignore[no-any-return]
+
+
+async def _overridden(template: PageTemplate, encoding: str | None, kw: dict[str, Any], offload: bool) -> Any:
+    """The template's own `render` (a subclass's), in a worker thread with `offload`."""
+    call = partial(template.render, **kw) if encoding is None else partial(template.render, encoding, **kw)
+    if offload:
+        return await asyncio.get_running_loop().run_in_executor(None, call)
+    return call()
 
 
 _LONE_SURROGATE = re.compile('[\ud800-\udfff]')
@@ -921,8 +933,14 @@ class PageTextTemplateFile(PageTemplateFile):
         return result.encode(self.encoding or 'utf-8')
 
     async def render_async(self, encoding: str | None = None, *, offload: bool = False, **kw: Any) -> bytes:  # type: ignore[override]
+        if type(self).render is not PageTextTemplateFile.render:
+            return await _overridden(self, encoding, kw, offload)  # type: ignore[no-any-return]
         result = await super().render_async(encoding, offload=offload, **kw)
         return result.encode(self.encoding or 'utf-8')
+
+
+# The `render` methods `render_async` stands in for; a subclass's own is called instead.
+_BASE_RENDERS = (PageTemplate.render, PageTextTemplateFile.render)
 
 
 __all__ = [

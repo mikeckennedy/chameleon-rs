@@ -556,9 +556,17 @@ impl<'py> Partials<'py> {
 }
 
 impl SavedPartials {
-    /// Visits every Python object held (a suspended render's `__traverse__`).
+    /// Visits every Python object held (a suspended render's `__traverse__`). A target is
+    /// shared (`Arc`) by units, call sites and the prepared list but holds one reference to each
+    /// of its objects: it is visited once (a collector must not see more visits than references).
     pub(crate) fn traverse(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
-        let target = |t: &SavedTarget| -> Result<(), PyTraverseError> {
+        let mut seen: Vec<*const SavedTarget> = Vec::new();
+        let mut target = |t: &Arc<SavedTarget>| -> Result<(), PyTraverseError> {
+            let key = Arc::as_ptr(t);
+            if seen.contains(&key) {
+                return Ok(());
+            }
+            seen.push(key);
             visit.call(&t.template)?;
             visit.call(&t.program)?;
             visit.call(&t.builtins)?;

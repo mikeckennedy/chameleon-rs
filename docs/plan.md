@@ -1414,6 +1414,42 @@ What the owner's app needs (Quart on Granian, single-threaded asyncio):
 - Offload is for free-threaded deployments (Granian on 3.14t, if the app's dependencies run there) or
   text-heavy pages (transcripts) on a GIL build: `@template(..., offload=True)`.
 
+Review fixes (2026-10-21, after the Rust Architect's review; each reproduced with the review's
+probes first):
+- **Blocker, GC:** a suspended render visited a shared partial target's objects once per holder
+  (units, call sites, the prepared list: `Program` 5 references, 7 visits), which can make the
+  collector clear live objects. `SavedPartials::traverse` dedupes by address; a test checks at
+  every suspension (nested partials, a foreign macro, the Fill phase) that no referent is visited
+  more often than referenced (it fails on the old code: 6 visits, 5 references).
+- **Blocker, placeholders:** the nonce came from a fixed sequence, so the k-th render of every
+  process used the same placeholder, and a value equal to it was swapped with deferred content
+  (an attribute breakout). Now 128 bits from two OS-seeded `RandomState` hashers per render, and
+  filling raises an internal error if a placeholder occurs twice or is missing. Tests: the old
+  first-render placeholder as a model value renders as text; Rust tests for the fill checks.
+- The Fill phase's task entries are traversed; a failed or cancelled render cancels its tasks
+  and awaits them (`gather(..., return_exceptions=True)`) before raising, as a `TaskGroup` does
+  (tests: the helpers' `finally` blocks, which themselves await, have run); `close()` and
+  collection during the Fill phase cancel them (tested).
+- `render_async` honours a subclass's own `render` (synchronously; with `offload`, in the
+  worker), including `PageTextTemplateFile` subclasses.
+- Nits: `send(non-None)` on a fresh render leaves it usable; `throw(instance, value)` is a
+  `TypeError`; awaitability checks the MRO's namespaces (a metaclass's `__await__` no longer
+  counts); `_native.pyi` has `concurrent`; Flask's `concurrent=None` keeps the template's
+  setting and `False` turns it off; README and architecture.md state that async views await
+  awaitable model values (a difference from chameleon-flask, also through `compat.install()`).
+
+After the fixes: 2,824 pytest passed, 7 skipped, 3 strict xfails; upstream 227 on each engine;
+Rust 95 + 9; `make lint` green; integration 40/16/39/6 and 16/6. Free-threaded: `test_async.py`,
+`test_threads.py`, `test_partials.py` with `-W error::RuntimeWarning`, 218 passed x3 on 3.14t
+and x3 on 3.15t (GIL disabled). Debug CPython 3.14.8 (`uv python install 3.14+debug`, `-X dev`):
+`test_async.py` and `test_threads.py`, 176 passed, no assertion failures. A/B against 69388cd
+(release, 8 rounds, load 2.2-3.1): listing +3.5, +6.7, +8.1, +5.0 ns per item (the earlier
+build of this phase measured +4.0, +1.2, +1.2; the review changes do not touch the sync
+per-item path, so this is at the noise edge, but it is what was measured); macro -1.6, -14.9;
+page +0.03, -0.35 us per render; report -18, -24 us. Partial listing across processes (ABBA,
+wheels built the same way, 10 rounds): +7.6 ns per item median (range -18 to +43): carried as
+below.
+
 Carried forward:
 - The owner's real-app crawl and locust runs: sync vs `render_async` vs stock Chameleon, and
   offload on a GIL and a free-threaded build (throughput, p50/p95/p99, loop lag).

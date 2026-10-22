@@ -1069,10 +1069,11 @@ value position and compares with Chameleon's render where `aw(v)` is `v`.
   implements `__await__` (itself), `__next__`, `send`, `throw` (one-argument and legacy
   three-argument forms), `close`, `__traverse__` and `__clear__`. Each step binds the saved
   state, runs the VM (`run`, or `throw` to raise at the suspended instruction), and saves it.
-- **What is awaited.** `PyRuntime::eval` of an async render (`RenderCtx::awaits`, one branch on
-  the sync path) checks the expression's final value: not for exact `str`, `int`, `bool`,
-  `float`, `list`, `tuple`, `dict`, `bytes` or `None`; yes when `type(value)` has `__await__`
-  (the type, not an instance attribute, as `await` uses the type slot) or the value is a
+- **What is awaited.** `PyRuntime::eval` of an async render (`PyRuntime<true>`, a separate
+  instantiation) checks the expression's final value: not for exact `str`, `int`, `bool`,
+  `float`, `list`, `tuple`, `dict`, `bytes` or `None`; yes when a class of `type(value).__mro__`
+  defines `__await__` in its own namespace (what fills the slot `await` uses: not an instance
+  attribute, not a metaclass's; answers cached per type for the render) or the value is a
   generator flagged `CO_ITERABLE_COROUTINE` (`@types.coroutine`). Every VM site that evaluates
   an expression already handled `Step::Suspend` (Phase 2 design): content, attributes,
   conditions, defines, repeat sources, switch/case, omit-tag, macro names, i18n names and
@@ -1099,7 +1100,13 @@ value position and compares with Chameleon's render where `aw(v)` is `v`.
   converted once each) at each suspension, instead of moving the unit stack into `VmState`:
   the sync path keeps its `Bound` fast path and pays nothing, and a suspension pays a few
   reference moves. `__traverse__` visits the VM state (`VmState::for_each_value`), the saved
-  render state, the program, scope and delegate; `__clear__` drops them. PyO3 skips the
+  render state, the program, scope and delegate, and in the Fill phase the tasks' entries;
+  `__clear__` drops them. Each reference is visited once: a prepared partial target is shared
+  (`Arc`) by units, call sites and the render's list but holds one reference to each object,
+  so `SavedPartials::traverse` dedupes by address (review fix: visiting it once per holder
+  over-counted, which can make the collector clear live objects). A test checks, at every
+  suspension of a render inside nested partials and a foreign macro and in the Fill phase,
+  that no referent is visited more often than it is referenced. PyO3 skips the
   traversal of an object borrowed mutably (a running render), which only delays collection.
 - **Recursion budget.** An async render's frames are not on the interpreter's stack, and the
   stack at a resume is the event loop's: `frame_budget` is the recursion limit less a fixed
@@ -1131,20 +1138,34 @@ value position and compares with Chameleon's render where `aw(v)` is `v`.
   boolean `Attr` entry anywhere on the unwind stack, so nothing written after can truncate or
   capture the placeholder (slot bodies move text, placeholders with it). Not deferred:
   `tal:content`/`tal:replace` (the value may select the default content), whole attribute
-  values, values inside a partial (fan-out is one level). A placeholder is U+10FFFD, 24 hex
-  digits (the render's nonce and the entry id) and U+10FFFD again. When the VM finishes, the
+  values, values inside a partial (fan-out is one level). A placeholder is U+10FFFD, 40 hex
+  digits (the render's nonce and the entry id) and U+10FFFD again. The nonce is 128 bits from two
+  `RandomState` (OS-seeded `SipHash`) hashers over a counter, so output text cannot be made to
+  equal a placeholder (a predictable nonce let a value equal to one be swapped with deferred
+  content in another context: review fix); filling fails with an internal error if a
+  placeholder occurs twice or is missing. When the VM finishes, the
   tasks are awaited in document order (they ran meanwhile), each value converted
   (`convert::emit` in its saved frame context) or partial output taken as is, and the output
   filled in one pass (`Output::fill_placeholders`). An error ends the render (a value's error
-  recorded at its expression and formatted; a partial's is its own render's formatted error)
-  and the other tasks are cancelled; so does a failed, cancelled, closed or dropped render.
+  recorded at its expression and formatted; a partial's is its own render's formatted error):
+  the other tasks are cancelled and awaited (`asyncio.gather(..., return_exceptions=True)`)
+  before the error is raised, as a `TaskGroup` does, so their `finally` blocks have run; the
+  same when the render is cancelled. A closed or dropped render cancels them (nothing can be
+  awaited then).
   Error messages do not list the enclosing macros' frames (the error surfaces after they
   returned). "Start as soon as the free variables exist" (hoisting a call ahead of its
   position) is deferred: the call starts where the render reaches it.
+- **Subclasses.** `render_async` honours a subclass's own `render` (it calls it; with
+  `offload`, in the worker), synchronously, so default behaviour matches what `render` does for
+  that class. The protocol follows coroutines: `send(non-None)` on a fresh render is a
+  `TypeError` that leaves it usable; `throw(instance, value)` is a `TypeError`.
 - **chameleon_rs.flask.** Async views render with `render_async` (decided as the default:
   with no awaitable value the output is `render`'s, shown by running every chameleon-flask
   case as an async view against chameleon-flask's own async handling); `render_async()` and
-  `response_async()`; `@template(..., concurrent=True)`.
+  `response_async()`; `@template(..., concurrent=True)` (`None`, the default, keeps the
+  template's setting, `False` turns it off). A deliberate difference from chameleon-flask (also
+  through `compat.install()`): an awaitable model value (a Future, an `AsyncMock()`) is awaited
+  where the template uses it instead of rendered as an object.
 - **The sync path pays nothing.** `PyRuntime<const ASYNC: bool>`: an async render is a separate
   instantiation of the VM, so the synchronous one has no awaitable check (a runtime flag cost
   the listing about 9 ns per item in the A/B); the VM's deferral paths (`defer_emitted`,

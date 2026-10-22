@@ -487,6 +487,31 @@ def test_concurrent_view(folder: Path) -> None:
     assert body == '<ul>' + ''.join(f'<i>{i * 10}</i>' for i in range(6)) + '</ul>'
 
 
+def test_concurrent_false_turns_a_page_setting_off(folder: Path) -> None:
+    import time
+
+    (folder / 'home' / 'cards2.pt').write_text(
+        '<ul><tal:x repeat="i items">${render_partial("shared/_p.pt", v=fetch(i))}</tal:x></ul>'
+    )
+    app = flask.Flask('f')
+    page = ours._page('home/cards2.pt')
+    page.concurrent = True
+
+    async def fetch(i: int) -> int:
+        await asyncio.sleep(0.03)
+        return i
+
+    @app.get('/')
+    @ours.template('home/cards2.pt', concurrent=False)
+    async def cards() -> Any:
+        return {'items': range(4), 'fetch': fetch}
+
+    start = time.perf_counter()
+    body = app.test_client().get('/').get_data(as_text=True)
+    assert time.perf_counter() - start >= 0.03 * 4
+    assert body == '<ul>' + ''.join(f'<i>{i}</i>' for i in range(4)) + '</ul>'
+
+
 def test_quart(folder: Path) -> None:
     quart = pytest.importorskip('quart')
     app = quart.Quart('q')

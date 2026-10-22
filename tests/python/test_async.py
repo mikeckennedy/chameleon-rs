@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import gc
 import os
+import sys
 import time
 import types
 import weakref
@@ -925,3 +926,221 @@ def test_partial_fan_out_error_is_the_partials_render_error(tmp_path: Path, conf
     with pytest.raises(KeyError) as error:
         run(page.render_async(aw=aw))
     assert 'bad.pt' in str(error.value)
+
+
+# -- Phase 11 review fixes -----------------------------------------------------------------
+
+
+def _gc_over_visits(obj: Any) -> list[str]:
+    """Referents of `obj` that the collector would see visited more often (by every tracked
+    object) than they have references: `tp_traverse` must visit each reference once."""
+    import collections
+
+    gc.collect()
+    refs = gc.get_referents(obj)
+    mine = collections.Counter(id(r) for r in refs)
+    everything = gc.get_objects()
+    skip = {id(refs), id(everything)}
+    visits: collections.Counter[int] = collections.Counter()
+    for container in everything:
+        if id(container) in skip:
+            continue
+        for r in gc.get_referents(container):
+            if id(r) in mine:
+                visits[id(r)] += 1
+    bad = []
+    seen: set[int] = set()
+    for r in refs:
+        if id(r) in seen:
+            continue
+        seen.add(id(r))
+        # getrefcount's own argument, and this function's `refs` list holds `mine` of them.
+        count = sys.getrefcount(r) - 1 - mine[id(r)]
+        if visits[id(r)] > count:
+            bad.append(f'{type(r).__name__}: {visits[id(r)]} visits, {count} references')
+    del everything
+    return bad
+
+
+class _Pending:
+    def __await__(self) -> Any:
+        yield 'pending'
+        return 'done'
+
+
+def test_gc_visits_each_reference_once_while_suspended(tmp_path: Path, configured: Path) -> None:
+    # A render suspended in a nested native partial (the same partial twice: its prepared
+    # target is shared by units, call sites and the render's list), and in a macro of another
+    # template.
+    (tmp_path / 'p.pt').write_text('<em>${aw(1)}${render_partial("q.pt", aw=aw)}</em>')
+    (tmp_path / 'q.pt').write_text('<b>${aw(2)}</b>')
+    (tmp_path / 'layout.pt').write_text('<div metal:define-macro="m">${aw(3)}<i metal:define-slot="s"/></div>')
+    page = PageTemplate(
+        '<div>${render_partial("p.pt", aw=aw)}${render_partial("p.pt", aw=aw)}</div>'
+        '<p metal:use-macro="layout.macros[\'m\']"><b metal:fill-slot="s">${aw(4)}</b></p>'
+    )
+    layout = PageTemplateFile(str(tmp_path / 'layout.pt'))
+    a = chameleon_rs._native.render_page_async(page, None, {'aw': lambda v: _Pending(), 'layout': layout})
+    steps = 0
+    while True:
+        try:
+            a.send(None)
+        except StopIteration:
+            break
+        steps += 1
+        assert _gc_over_visits(a) == [], steps
+    assert steps >= 6
+
+
+def test_gc_visits_each_reference_once_while_filling_and_close() -> None:
+    # The Fill phase: the render has finished and awaits the tasks of its placeholders.
+    @concurrent
+    async def slow(v: Any) -> Any:
+        await asyncio.sleep(0.05)
+        return v
+
+    async def main() -> None:
+        a = chameleon_rs._native.render_page_async(PageTemplate('${slow(1)}${slow(2)}'), None, {'slow': slow})
+        a.send(None)  # the VM finishes; the first task is awaited
+        await asyncio.sleep(0)  # the tasks start
+        assert _gc_over_visits(a) == []
+        tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+        assert len(tasks) == 2
+        a.close()
+        await asyncio.sleep(0)
+        assert all(t.cancelled() for t in tasks)
+        ref = weakref.ref(slow)
+        del a
+        gc.collect()
+        assert ref() is not None  # still ours; the render itself is gone without a trace
+
+    run(main())
+
+
+def test_a_render_in_the_fill_phase_is_collected() -> None:
+    @concurrent
+    async def slow() -> Any:
+        await asyncio.sleep(10)
+
+    class Holder:
+        pass
+
+    async def main() -> weakref.ref[Any]:
+        holder = Holder()
+        a = chameleon_rs._native.render_page_async(PageTemplate('${h}${slow()}'), None, {'slow': slow, 'h': holder})
+        holder.render = a  # a cycle through the render's scope
+        a.send(None)
+        await asyncio.sleep(0)  # the task starts
+        ref = weakref.ref(holder)
+        del a, holder
+        gc.collect()
+        await asyncio.sleep(0)
+        return ref
+
+    assert run(main())() is None
+
+
+# The placeholder the 1st render of a process got before the nonce was random (the review's
+# probe): user text equal to it must stay text.
+_OLD_FIRST_PLACEHOLDER = '\U0010fffd' + f'{0x9E3779B97F4A7C15 ^ (0x9E3779B97F4A7C15 >> 31):016x}' + '00000000\U0010fffd'
+
+
+def test_text_equal_to_a_placeholder_stays_text() -> None:
+    page = PageTemplate('<p title="${q}">x</p><div>${slow(v)}</div>${q}')
+    out = run(page.render_async(slow=cslow, q=_OLD_FIRST_PLACEHOLDER, v='<b>"t"</b>'))
+    assert out == page.render(slow=lambda v: v, q=_OLD_FIRST_PLACEHOLDER, v='<b>"t"</b>')
+    assert '<b>' not in out
+
+
+def test_render_overrides_in_subclasses_are_honoured(tmp_path: Path) -> None:
+    class Page(PageTemplate):
+        def render(self, encoding: Any = None, **kw: Any) -> str:
+            kw.setdefault('who', 'default')
+            return super().render(encoding, **kw).upper()
+
+    page = Page('<p>${who}</p>')
+    assert run(page.render_async()) == '<P>DEFAULT</P>'
+    assert run(page.render_async(offload=True, who='x')) == '<P>X</P>'
+
+    class Text(chameleon_rs.PageTextTemplateFile):
+        def render(self, encoding: Any = None, **kw: Any) -> bytes:
+            return b'[' + super().render(encoding, **kw) + b']'
+
+    (tmp_path / 't.txt').write_text('a${n}')
+    assert run(Text(str(tmp_path / 't.txt')).render_async(n=1)) == b'[a1]'
+
+
+def test_a_failed_render_waits_for_its_cancelled_tasks() -> None:
+    finished: list[str] = []
+
+    @concurrent
+    async def slow() -> str:
+        try:
+            await asyncio.sleep(10)
+        finally:
+            await asyncio.sleep(0.01)  # cleanup that itself awaits
+            finished.append('slow')
+        return 'never'
+
+    @concurrent
+    async def bad() -> str:
+        await asyncio.sleep(0.01)
+        raise KeyError('bad')
+
+    async def main() -> None:
+        with pytest.raises(KeyError):
+            await PageTemplate('${slow()}${bad()}').render_async(slow=slow, bad=bad)
+        # Already done when the error arrives (TaskGroup semantics).
+        assert finished == ['slow']
+
+    run(main())
+
+
+def test_a_cancelled_render_waits_for_its_tasks() -> None:
+    finished: list[str] = []
+
+    @concurrent
+    async def slow() -> str:
+        try:
+            await asyncio.sleep(10)
+        finally:
+            await asyncio.sleep(0.01)
+            finished.append('slow')
+        return 'never'
+
+    async def main() -> None:
+        task = asyncio.ensure_future(PageTemplate('${slow()}${slow()}').render_async(slow=slow))
+        await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert finished == ['slow', 'slow']
+
+    run(main())
+
+
+def test_protocol_send_non_none_to_a_fresh_render_leaves_it_usable() -> None:
+    a = _awaitable('a${x}', x=1)
+    with pytest.raises(TypeError, match='just-started'):
+        a.send(1)
+    with pytest.raises(StopIteration) as stop:
+        a.send(None)
+    assert stop.value.value == 'a1'
+
+
+def test_protocol_throw_instance_with_a_value_is_a_type_error() -> None:
+    a = _awaitable('x')
+    with pytest.raises(TypeError, match='instance exception may not have a separate value'):
+        a.throw(KeyError('k'), 1)
+
+
+def test_a_metaclass_await_does_not_make_instances_awaitable() -> None:
+    class Meta(type):
+        def __await__(cls) -> Any:
+            yield from ()
+
+    class Value(metaclass=Meta):
+        def __str__(self) -> str:
+            return 'value'
+
+    assert run(PageTemplate('${v}').render_async(v=Value())) == 'value'

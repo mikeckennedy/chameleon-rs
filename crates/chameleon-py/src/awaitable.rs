@@ -81,7 +81,7 @@ pub(crate) fn is_awaitable_with<'py>(value: &Bound<'py, PyAny>, cache: Option<&A
     let awaits = if let Some(a) = known {
         a
     } else {
-        let a = ty.hasattr(intern!(py, "__await__"))?;
+        let a = defines_await(&ty)?;
         if let Some(cache) = cache {
             let mut cache = cache.borrow_mut();
             if cache.len() < AWAIT_TYPES {
@@ -101,6 +101,18 @@ pub(crate) fn is_awaitable_with<'py>(value: &Bound<'py, PyAny>, cache: Option<&A
     if ty.is(generator.bind(py)) {
         let flags: u32 = value.getattr(intern!(py, "gi_code"))?.getattr(intern!(py, "co_flags"))?.extract()?;
         return Ok(flags & CO_ITERABLE_COROUTINE != 0);
+    }
+    Ok(false)
+}
+
+/// Whether a class of the type's MRO defines `__await__` in its own namespace (what fills the
+/// `am_await` slot `await` uses; `hasattr` on the type would also find a metaclass's).
+fn defines_await(ty: &Bound<'_, PyType>) -> PyResult<bool> {
+    let py = ty.py();
+    for class in ty.getattr(intern!(py, "__mro__"))?.cast_into::<PyTuple>()?.iter() {
+        if class.getattr(intern!(py, "__dict__"))?.contains(intern!(py, "__await__"))? {
+            return Ok(true);
+        }
     }
     Ok(false)
 }
@@ -139,6 +151,10 @@ enum Phase {
     /// The VM finished; the tasks started for placeholders (`crate::deferred`) are awaited in
     /// order: this one is the `next`th. `filled` holds the text of those done.
     Fill { entries: Vec<Deferred>, next: usize, filled: Vec<(u64, Vec<u8>, bool)> },
+    /// The render failed (or was cancelled) with `error` while tasks it started were running:
+    /// they were cancelled and are awaited (`asyncio.gather(..., return_exceptions=True)`), so
+    /// their `finally` blocks have run when the error is raised, as a `TaskGroup` does.
+    Joining { error: Option<PyErr> },
 }
 
 /// What happened since the last step: the render starts, or the awaited value returned or
@@ -270,18 +286,21 @@ impl Running {
         };
         loop {
             self.started = true;
-            let next = match self.phase {
+            let next = match &mut self.phase {
                 Phase::Vm => self.vm_event(py, event),
                 Phase::Fill { .. } => self.fill_event(py, event),
+                // The cancelled tasks are done (whatever they raised): the render's error.
+                Phase::Joining { error } => {
+                    Err(Outcome::Raise(error.take().unwrap_or_else(|| PyRuntimeError::new_err("render error missing"))))
+                }
             };
             let awaitable = match next {
                 Ok(awaitable) => awaitable,
-                Err(outcome) => {
-                    if matches!(outcome, Outcome::Raise(_)) {
-                        self.cancel_deferred(py);
-                    }
-                    return outcome;
-                }
+                Err(Outcome::Raise(error)) if self.has_deferred() => match self.begin_join(py, error) {
+                    Ok(awaitable) => awaitable,
+                    Err(outcome) => return outcome,
+                },
+                Err(outcome) => return outcome,
             };
             // `await awaitable`: delegate to its iterator (`__await__()` failing is an error
             // of the awaited value; a value already done returns at once).
@@ -357,7 +376,9 @@ impl Running {
         }
         let mut filled = std::mem::take(filled);
         let nonce = self.render.as_ref().map_or(0, SavedRender::nonce);
-        crate::deferred::fill(&mut self.st.out, nonce, &mut filled);
+        if let Err(message) = crate::deferred::fill(&mut self.st.out, nonce, &mut filled) {
+            return Err(Outcome::Raise(crate::errors::internal_error(py, message)));
+        }
         self.phase = Phase::Vm;
         Err(self.finish(py))
     }
@@ -415,13 +436,33 @@ impl Running {
         error
     }
 
-    /// Cancels the tasks started for placeholders (the render failed or was cancelled).
-    fn cancel_deferred(&mut self, py: Python<'_>) {
-        if let Some(render) = self.render.as_mut() {
-            crate::deferred::cancel_all(py, &std::mem::take(&mut render.deferred));
+    /// The tasks started for placeholders and not yet awaited.
+    fn take_deferred(&mut self) -> Vec<Deferred> {
+        let mut entries = self.render.as_mut().map(|r| std::mem::take(&mut r.deferred)).unwrap_or_default();
+        if let Phase::Fill { entries: fill, next, .. } = &mut self.phase {
+            let rest = std::mem::take(fill);
+            entries.extend(rest.into_iter().skip(*next));
         }
-        if let Phase::Fill { entries, .. } = &mut self.phase {
-            crate::deferred::cancel_all(py, &std::mem::take(entries));
+        entries
+    }
+
+    /// Cancels the tasks started for placeholders (the render was closed or dropped: nothing
+    /// can be awaited any more).
+    fn cancel_deferred(&mut self, py: Python<'_>) {
+        crate::deferred::cancel_all(py, &self.take_deferred());
+    }
+
+    /// The render failed with `error`: cancels the tasks it started and returns what awaits
+    /// them, after which `error` is raised (or, if they cannot be awaited, `error` at once).
+    fn begin_join(&mut self, py: Python<'_>, error: PyErr) -> Result<Py<PyAny>, Outcome> {
+        let entries = self.take_deferred();
+        crate::deferred::cancel_all(py, &entries);
+        match crate::deferred::join(py, &entries) {
+            Ok(gather) => {
+                self.phase = Phase::Joining { error: Some(error) };
+                Ok(gather.unbind())
+            }
+            Err(_) => Err(Outcome::Raise(error)),
         }
     }
 
@@ -504,6 +545,9 @@ impl RenderAwaitable {
     ) -> PyResult<Py<PyAny>> {
         let py = slf.py();
         let error = if typ.is_instance_of::<pyo3::exceptions::PyBaseException>() {
+            if val.is_some_and(|v| !v.is_none()) {
+                return Err(PyTypeError::new_err("instance exception may not have a separate value"));
+            }
             PyErr::from_value(typ.clone())
         } else if let Ok(class) = typ.cast::<PyType>()
             && class.is_subclass_of::<pyo3::exceptions::PyBaseException>()?
@@ -557,6 +601,11 @@ impl RenderAwaitable {
         if let Some(inner) = &running.inner {
             visit.call(inner)?;
         }
+        if let Phase::Fill { entries, .. } = &running.phase {
+            for entry in entries {
+                entry.traverse(&visit)?;
+            }
+        }
         Ok(())
     }
 
@@ -576,6 +625,13 @@ fn step(slf: &Bound<'_, RenderAwaitable>, input: Input) -> PyResult<Py<PyAny>> {
             Input::Send(_) => Err(PyRuntimeError::new_err("cannot reuse already awaited coroutine")),
         };
     };
+    // As a coroutine: the error, and the render can still be started.
+    if !running.started
+        && let Input::Send(v) = &input
+        && !v.is_none(py)
+    {
+        return Err(PyTypeError::new_err("can't send non-None value to a just-started coroutine"));
+    }
     match running.step(py, input) {
         Outcome::Yield(y) => Ok(y),
         Outcome::Return(value) => {
