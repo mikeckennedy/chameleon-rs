@@ -72,13 +72,12 @@ pub(crate) struct Unit<'py> {
     scope: Bound<'py, Scope>,
     /// How many keys the scope started with (its model): an error message lists them first.
     initial: usize,
-    /// The value chameleon_partials adds to the model as `render_partial` when the scope does
+    /// The value `chameleon_partials` adds to the model as `render_partial` when the scope does
     /// not hold it (a partial that never reads its scope as a whole is not given it: its
     /// builtin of the same name is the same object).
     added: Option<Bound<'py, PyAny>>,
     pub(crate) rcontext: OnceCell<Bound<'py, PyDict>>,
 }
-
 
 /// A call site's resolution in this render: the function called, the path, and the target
 /// (`None`: the function is called as Python, not as a native frame).

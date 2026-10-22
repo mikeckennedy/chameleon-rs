@@ -275,7 +275,7 @@ pub(crate) enum Target {
 fn translate<'py>(cx: &Cx<'_, 'py>, value: &Bound<'py, PyAny>, target: Target) -> PyResult<Bound<'py, PyAny>> {
     let py = value.py();
     let converted = match cx.scope_or_default(intern!(py, "__translate"))? {
-        Some(translate) if translate.is(simple_translate(py)?) => {
+        Some(translate) if is_simple(cx, &translate, value)? => {
             if target == Target::Scope {
                 // Evaluated for its error (a missing `target_language`), as the argument is.
                 cx.scope_target_language()?;
@@ -299,6 +299,30 @@ fn translate<'py>(cx: &Cx<'_, 'py>, value: &Bound<'py, PyAny>, target: Target) -
 }
 
 static SIMPLE_TRANSLATE: pyo3::sync::PyOnceLock<Py<PyAny>> = pyo3::sync::PyOnceLock::new();
+
+/// Whether calling `translate` on `value` is `simple_translate(value)`: it is that function,
+/// or `PageTemplate`'s `encoding` wrapper around it (marked `__chameleon_rs_simple__`), which
+/// only decodes a `bytes` message id first. The wrapper seen last is remembered for the render.
+fn is_simple(cx: &Cx<'_, '_>, translate: &Bound<'_, PyAny>, value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let py = value.py();
+    if translate.is(simple_translate(py)?) {
+        return Ok(true);
+    }
+    if value.is_instance_of::<pyo3::types::PyBytes>() {
+        return Ok(false);
+    }
+    let address = translate.as_ptr() as usize;
+    let (known, simple) = cx.render.simple_wrapper.get();
+    if known == address {
+        return Ok(simple);
+    }
+    let simple = translate.is_instance_of::<pyo3::types::PyFunction>()
+        && translate
+            .getattr_opt(intern!(py, "__chameleon_rs_simple__"))?
+            .is_some_and(|v| v.is(&*pyo3::types::PyBool::new(py, true)));
+    cx.render.simple_wrapper.set((address, simple));
+    Ok(simple)
+}
 
 /// The default translation function, `chameleon_rs.i18n.simple_translate`.
 fn simple_translate(py: Python<'_>) -> PyResult<&Bound<'_, PyAny>> {

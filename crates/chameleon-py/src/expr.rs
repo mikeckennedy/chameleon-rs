@@ -448,6 +448,9 @@ pub(crate) struct RenderCtx<'py> {
     /// block, a custom expression type, a dynamic fallback, a call from outside): from then
     /// on no function shares its caller's scope (`chameleon_core::Macros::may_share_scope`).
     pub(crate) scope_exposed: Cell<bool>,
+    /// The last translation function `convert` checked for being `simple_translate` in
+    /// disguise (its address, and the answer); the defaults keep it alive for the render.
+    pub(crate) simple_wrapper: Cell<(usize, bool)>,
 }
 
 /// What expressions see of the active frame: its template's builtins (a macro's are those
@@ -489,6 +492,7 @@ impl<'py> RenderCtx<'py> {
             namespaces: RefCell::new(Vec::new()),
             stream: OnceCell::new(),
             scope_exposed: Cell::new(false),
+            simple_wrapper: Cell::new((0, false)),
         }
     }
 

@@ -174,6 +174,14 @@ GRID: list[tuple[str, dict[str, str], dict[str, Any]]] = [
         {},
     ),
     (
+        'conversions with the utf-8 defaults',
+        {
+            'page.pt': '${render_partial("v.pt", vs=vs)}',
+            'v.pt': '<i tal:repeat="v vs">${v}|<b tal:content="v"/>|<a title="${v}"/></i>',
+        },
+        {'vs': [1, 2.5, None, True, b'b\xc3\xa9', type('M', (), {'default': 'd ${x}', 'mapping': {'x': 1}})()]},
+    ),
+    (
         'explicit render_partial argument',
         {
             'page.pt': '${render_partial("rp.pt", render_partial=None)}',

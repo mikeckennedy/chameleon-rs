@@ -647,6 +647,12 @@ class PageTemplate(BaseTemplate):
                     msgid = bytes.decode(msgid, encoding)
                 return txl(msgid, **kwargs)  # type: ignore[no-any-return]
 
+            if txl is simple_translate:
+                # For a value that is not bytes this is `simple_translate` itself: the native
+                # conversion takes its fast path (chameleon_partials and the integrations
+                # render with `encoding='utf-8'`).
+                translate.__chameleon_rs_simple__ = True  # type: ignore[attr-defined]
+
             def decode(inst: bytes, encoding: str = encoding) -> str:
                 return bytes.decode(inst, encoding, 'ignore')
         else:
