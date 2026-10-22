@@ -5,7 +5,35 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.48] - not yet released
+## [Unreleased]
+
+Fixes from a second, independent review of the 0.1.48 changes.
+
+### Security
+
+- **Render data could replace a code block's own `def`, parameter or import named like a
+  builtin** (`def filter(...)` in a `<?python ?>` block, data named `filter`). A regression in
+  0.1.48's code-block fix; it now matches Chameleon again.
+- **A partial lookup could loop forever**, hanging the worker, when the calling template's
+  path started with `//` and the configured folder's with `/` (or, on Windows, they differed in
+  case). A folder configured as `//...` made every partial "not found".
+- **On case-insensitive filesystems (macOS, Windows), each spelling of a name compiled and kept
+  its own template** (`INDEX.pt`, `index.PT`): 3,000 spellings took 360 MB. Templates are now
+  cached by file, in `render_partial` and the Jinja-style `get_template` APIs.
+- **More deep nesting crashes fixed:** `chameleon_rs.parser.ElementParser`, and compiles on
+  small thread stacks or with most of the stack already used, overflowed the native stack.
+  Compiling now also checks the stack actually left (with the `stacker` crate).
+
+### Fixed
+
+- A directory name given to `render_partial` or a Jinja-style `get_template` is "not found",
+  rather than an `IsADirectoryError`. `chameleon_rs.robyn.ChameleonTemplate` raises
+  `TemplateNotFound` for a missing file too.
+- With nothing configured, a template loaded by a `PageTemplateLoader` below a package's
+  `templates` folder finds partials elsewhere in that folder again (a Pyramid layout).
+- A `@concurrent` helper wrapped in `structure:` or `markdown:` runs concurrently again.
+
+## [0.1.48] - 2026-10-22
 
 Fixes from a security review of the whole codebase. Each one has a regression test.
 

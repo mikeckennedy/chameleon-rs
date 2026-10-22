@@ -409,11 +409,13 @@ DEEP_SHAPES = {
 }
 
 
+@pytest.mark.parametrize('stack', [256, 2048], ids=['256K', '2M'])
 @pytest.mark.parametrize('shape', DEEP_SHAPES)
-def test_deep_nesting_is_a_recursion_error_not_a_crash(shape: str) -> None:
+def test_deep_nesting_is_a_recursion_error_not_a_crash(shape: str, stack: int) -> None:
     # Security: a native stack overflow kills the process (SIGSEGV); Chameleon raises
     # RecursionError. In a subprocess, on a 2 MiB thread (Rust's default, servers' worker
-    # threads): every depth either compiles or raises.
+    # threads) and a small one (what's left matters, not only what a compile used): every
+    # depth either compiles or raises.
     import subprocess
     import sys
     import textwrap
@@ -429,7 +431,7 @@ def test_deep_nesting_is_a_recursion_error_not_a_crash(shape: str) -> None:
                     results.append('ok')
                 except RecursionError:
                     results.append('RecursionError')
-        threading.stack_size(2 * 1024 * 1024)
+        threading.stack_size({stack} * 1024)
         thread = threading.Thread(target=run)
         thread.start()
         thread.join()
@@ -446,3 +448,47 @@ def test_nesting_chameleon_compiles_compiles_here_too(shape: str) -> None:
     # Chameleon's own limit at the default recursion limit is 121-321 levels by shape.
     source = DEEP_SHAPES[shape](330 if shape in {'not'} else 250 if shape in {'string', 'string-attr', 'sum'} else 165)
     chameleon_rs.PageTemplate(source)(x=1)
+
+
+def test_the_element_parser_api_raises_on_deep_nesting() -> None:
+    # `chameleon_rs.parser.ElementParser` converted its tree recursively, unguarded (SIGBUS).
+    import subprocess
+    import sys
+
+    code = (
+        'from chameleon_rs.tokenize import iter_xml\n'
+        'from chameleon_rs.parser import ElementParser\n'
+        'src = "<div>" * 100_000 + "</div>" * 100_000\n'
+        'try:\n'
+        '    list(ElementParser(iter_xml(src), {"xmlns": "http://www.w3.org/XML/1998/namespace"}))\n'
+        '    print("ok")\n'
+        'except RecursionError:\n'
+        '    print("RecursionError")\n'
+    )
+    done = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, check=False)
+    assert (done.returncode, done.stdout.strip()) == (0, 'RecursionError'), done.stderr[-2000:]
+
+
+def test_ordinary_templates_compile_on_a_small_thread_stack() -> None:
+    # The stack check needs only a little left: Chameleon compiles these on 128 KiB threads.
+    import threading
+
+    source = '<div tal:repeat="i items"><p tal:content="i" class="${i}">x</p></div>' * 20
+    source = '<div>' * 20 + source + '${len(items)}' + '</div>' * 20
+    results: list[Any] = []
+
+    def run() -> None:
+        try:
+            results.append(chameleon_rs.PageTemplate(source)(items=[1, 2]))
+        except BaseException as e:  # noqa: BLE001 - reported below
+            results.append(e)
+
+    old = threading.stack_size(128 * 1024)
+    try:
+        thread = threading.Thread(target=run)
+        thread.start()
+        thread.join()
+    finally:
+        threading.stack_size(old)
+    assert isinstance(results[0], str), results[0]
+    assert results[0] == chameleon.PageTemplate(source)(items=[1, 2])

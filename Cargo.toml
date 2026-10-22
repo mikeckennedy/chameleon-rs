@@ -22,6 +22,8 @@ pyo3 = "0.30"
 comrak = { version = "0.57", default-features = false }
 # Already in the tree through comrak: the Markdown cache's key hash.
 rustc-hash = "2"
+# The stack left to a deep compile (`chameleon_core::stack`), read without unsafe code of ours.
+stacker = "0.1"
 insta = "1"
 proptest = "1"
 # Micro-benchmarks only (no plots, no rayon).

@@ -99,6 +99,9 @@ impl<'py> Conv<'py, '_> {
     }
 
     fn item(&self, item: &Item) -> PyResult<Bound<'py, PyTuple>> {
+        // Recursive over nested elements (`chameleon_core::stack`): `RecursionError`, never a
+        // native stack overflow.
+        let _deep = chameleon_core::stack::enter().map_err(crate::errors::too_deep)?;
         let py = self.py;
         let one =
             |kind: &str, span: Span| -> PyResult<Bound<'py, PyTuple>> { (kind, (self.tok(span)?,)).into_pyobject(py) };
