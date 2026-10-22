@@ -741,3 +741,47 @@ def test_render_data_cannot_replace_builtins_in_code_blocks(source: str, data: d
 
     assert outcome(chameleon_rs) == outcome(chameleon)
     assert 'HIJACK' not in outcome(chameleon_rs) or '${len(' in source
+
+
+class _HtmlNone:
+    __html__ = None
+
+    def __str__(self) -> str:
+        return '<hn>'
+
+
+class _AnyNone:
+    def __getattr__(self, name: str) -> None:
+        return None
+
+    def __str__(self) -> str:
+        return '<an>'
+
+
+@pytest.mark.parametrize('value', [_HtmlNone(), _AnyNone(), _HtmlNone], ids=['instance', 'getattr', 'class'])
+@pytest.mark.parametrize(
+    'source',
+    [
+        '<p>${x}</p>',
+        '<p tal:content="x"/>',
+        '<p title="${x}"/>',
+        '<p tal:attributes="title x"/>',
+        '<p tal:attributes="d"/>',
+        '<p>${string:a${x}}</p>',
+    ],
+)
+def test_an_html_attribute_of_none_falls_back_to_str(source: str, value: Any) -> None:
+    # Chameleon reads `getattr(target, '__html__', None)`: `None` is no `__html__` (it falls back
+    # to `str()`, escaped), never a call of `None`.
+    def outcome(engine: Any) -> str:
+        try:
+            return engine.PageTemplate(source)(x=value, d={'title': value})
+        except Exception as e:  # noqa: BLE001 - comparing exceptions across engines
+            return f'{type(e).__name__}: {str(e).splitlines()[0]}'
+
+    if source == '<p tal:attributes="d"/>' and isinstance(value, _AnyNone):
+        # Chameleon crashes here itself (its `translate` fallback gives `None`, which a
+        # dictionary attribute concatenates: TypeError); ours writes an empty value.
+        assert outcome(chameleon_rs) == '<p title=""/>'
+        return
+    assert outcome(chameleon_rs) == outcome(chameleon)

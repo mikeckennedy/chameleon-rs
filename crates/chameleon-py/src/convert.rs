@@ -243,9 +243,10 @@ fn html_of<'py>(value: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>
     if crate::repeat::is_plain_callable(value)? {
         return Ok(None);
     }
+    // `getattr(target, '__html__', None)`: an attribute set to `None` counts as absent.
     match value.getattr_opt(intern!(value.py(), "__html__"))? {
-        Some(html) => Ok(Some(html.call0()?)),
-        None => Ok(None),
+        Some(html) if !html.is_none() => Ok(Some(html.call0()?)),
+        _ => Ok(None),
     }
 }
 
