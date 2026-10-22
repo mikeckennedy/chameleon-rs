@@ -67,7 +67,7 @@ print(settings.auto_reload)
 ```
 
 For tests, `chameleon_rs.partials.clear()`, `chameleon_rs.flask.clear()`,
-`chameleon_rs.fastapi.clear()` and `chameleon_rs.starlette.clear()` forget the configuration
+`chameleon_rs.fastapi.clear()`, `chameleon_rs.starlette.clear()` and `chameleon_rs.robyn.clear()` forget the configuration
 again. Starlette's `Templates()` without a directory uses this configuration too.
 
 `chameleon_rs.flask.configure(..., app=app)` sets a configuration for one Flask or Quart app

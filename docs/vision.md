@@ -56,8 +56,10 @@ Open questions:
 > both modules on a shared private core (`chameleon_rs._views`), and the decorator-order check
 > at startup. Starlette built ("Integrations: Starlette" in plan.md): `chameleon_rs.starlette`
 > with `Templates` (Jinja2Templates' API, plus `await TemplateResponse_async(...)`) and the same
-> module API, sharing its Starlette pieces with `chameleon_rs.fastapi`. Robyn and Litestar
-> remain vision items with the same API.
+> module API, sharing its Starlette pieces with `chameleon_rs.fastapi`. Robyn built
+> ("Integrations: Robyn" in plan.md): `chameleon_rs.robyn` with chameleon-robyn's API, its
+> suite passing on the built-in, the decorator-order check in `app.start()` and Robyn's test
+> client. Litestar remains a vision item with the same API.
 >
 > Decided by Michael (2026-10-22):
 > - **No extras.** No `pip install chameleon-rs[fastapi]`: each framework module imports its
