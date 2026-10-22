@@ -27,6 +27,7 @@ PUBLIC: dict[str, tuple[str, ...] | None] = {
     'chameleon_rs.exc': None,
     'chameleon_rs.fastapi': None,
     'chameleon_rs.flask': None,
+    'chameleon_rs.litestar': None,
     'chameleon_rs.loader': None,
     'chameleon_rs.partials': None,
     'chameleon_rs.robyn': None,
@@ -240,6 +241,16 @@ def test_public_api_is_annotated(module_name: str) -> None:
 def test_public_class_annotations_resolve(module_name: str) -> None:
     # `typing.get_type_hints` evaluates the class-level annotations (and its bases'): each must
     # be valid at runtime on every supported Python (`staticmethod[...]` is not before 3.14).
+    # A class deriving from a framework's (`chameleon_rs.litestar.Template`) has its own
+    # annotations and its chameleon-rs bases' evaluated: Litestar's classes annotate with names
+    # imported only for type checkers.
     for _name, obj in _exports(module_name):
         if isinstance(obj, type) and obj.__module__ != 'chameleon_rs._native':
-            typing.get_type_hints(obj)
+            if all(
+                base.__module__ in ('builtins', 'typing') or base.__module__.startswith('chameleon_rs')
+                for base in obj.__mro__
+            ):
+                typing.get_type_hints(obj)
+            for base in obj.__mro__:
+                if base.__module__.startswith('chameleon_rs'):
+                    inspect.get_annotations(base, eval_str=True)

@@ -20,9 +20,15 @@ FLASK_REPO := https://github.com/mikeckennedy/chameleon-flask
 FLASK_COMMIT := 326644f1d55b51c3681104ab10c571c8ca8f8a3a
 ROBYN_REPO := https://github.com/mikeckennedy/chameleon-robyn
 ROBYN_COMMIT := ab4f6e83f50cf1b6d808645b34ff966a4483c048
+# H. Turgut Uyar's Litestar engine for Chameleon (third party, no built-in replacement): its
+# suite runs on the compat alias only (src/ layout, put on the path: installing it would pull in
+# stock Chameleon).
+LITESTAR_CHAMELEON_REPO := https://github.com/uyar/litestar-chameleon
+LITESTAR_CHAMELEON_COMMIT := da0652d3b3b32f42af5ae806242779e8df21ba09
+LITESTAR_CHAMELEON_VERSION := 0.3
 INTEGRATION_PYTHON ?= 3.14
 INTEGRATION_VENV := $(CURDIR)/temp/venv-integration
-INTEGRATION_SUITES := fastapi-chameleon chameleon-flask chameleon-robyn chameleon_partials
+INTEGRATION_SUITES := fastapi-chameleon chameleon-flask chameleon-robyn chameleon_partials litestar-chameleon
 
 # Checks out a pinned commit in a clone; a checkout without .git (sources fetched as a
 # tarball of that commit, as in a sandboxed worktree) is used as it is.
@@ -42,6 +48,10 @@ ROBYN_VENV := $(CURDIR)/temp/venv-robyn
 
 dev: reference
 	uv pip install --python $(PY) --group dev --group docs -e temp/chameleon -e temp/chameleon_partials
+	@# litestar-chameleon (test_litestar compares with it) depends on stock Chameleon, which venv
+	@# has (editable, above). Not in the dev group: `maturin develop` installs that group into the
+	@# integration venv, which must not have stock Chameleon.
+	uv pip install -q --python $(PY) --no-deps litestar-chameleon==$(LITESTAR_CHAMELEON_VERSION)
 	uv pip install -q --python $(PY) --only-binary robyn robyn==$(ROBYN_VERSION) \
 		|| echo "robyn has no wheel for this Python: test-robyn runs its tests on $(INTEGRATION_PYTHON)"
 	$(MAKE) temp/robyn-typing build
@@ -61,12 +71,13 @@ temp/chameleon:
 temp/chameleon_partials:
 	git clone -q $(PARTIALS_REPO) $@
 
-integration: reference temp/fastapi-chameleon temp/chameleon-flask temp/chameleon-robyn
+integration: reference temp/fastapi-chameleon temp/chameleon-flask temp/chameleon-robyn temp/litestar-chameleon
 	$(call checkout,temp/fastapi-chameleon,$(FASTAPI_COMMIT))
 	$(call checkout,temp/chameleon-flask,$(FLASK_COMMIT))
 	$(call checkout,temp/chameleon-robyn,$(ROBYN_COMMIT))
+	$(call checkout,temp/litestar-chameleon,$(LITESTAR_CHAMELEON_COMMIT))
 	test -x $(INTEGRATION_VENV)/bin/python || uv venv -q $(INTEGRATION_VENV) --python $(INTEGRATION_PYTHON)
-	uv pip install -q --python $(INTEGRATION_VENV)/bin/python fastapi httpx 'flask[async]' robyn==$(ROBYN_VERSION) pytest maturin
+	uv pip install -q --python $(INTEGRATION_VENV)/bin/python fastapi httpx 'flask[async]' robyn==$(ROBYN_VERSION) 'litestar>=2.25,<3' pytest maturin
 	VIRTUAL_ENV=$(INTEGRATION_VENV) PYO3_PYTHON=$(INTEGRATION_VENV)/bin/python CARGO_TARGET_DIR=$(CURDIR)/target/integration \
 		$(INTEGRATION_VENV)/bin/maturin develop -q --profile dev-opt
 
@@ -78,6 +89,9 @@ temp/chameleon-flask:
 
 temp/chameleon-robyn:
 	git clone -q $(ROBYN_REPO) $@
+
+temp/litestar-chameleon:
+	git clone -q $(LITESTAR_CHAMELEON_REPO) $@
 
 # Fast optimized build for the test loop; release (fat LTO) for benchmarks and wheels.
 build:
@@ -156,7 +170,7 @@ test-integration: integration
 		echo "== $$suite (original)"; \
 		cd $(CURDIR)/temp/$$suite; \
 		INTEGRATION_MODE=original \
-		PYTHONPATH=$(CURDIR)/tests/integration:$(CURDIR)/temp/$$suite:$(CURDIR)/temp/chameleon_partials \
+		PYTHONPATH=$(CURDIR)/tests/integration:$(CURDIR)/temp/$$suite:$(CURDIR)/temp/$$suite/src:$(CURDIR)/temp/chameleon_partials \
 			$(INTEGRATION_VENV)/bin/python -m pytest -q -c pyproject.toml --rootdir . \
 			-p chameleon_compat_plugin -p no:cacheprovider tests; \
 	done
