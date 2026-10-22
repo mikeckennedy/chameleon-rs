@@ -1,0 +1,14 @@
+## starlette.clear()
+
+
+Forgets the views' process-wide configuration, so a later [configure()](configure.md#chameleon_rs.configure) /
+
+
+Usage
+
+``` python
+starlette.clear()
+```
+
+
+[global_init()](flask.global_init.md#chameleon_rs.flask.global_init) starts afresh. Mostly useful in tests.

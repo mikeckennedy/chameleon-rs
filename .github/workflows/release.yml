@@ -22,8 +22,9 @@ name: Release
 #   public first, or drop those matrix entries.
 # - macOS minutes count 10x against a private repository's quota (12 macOS build jobs and 12
 #   macOS test jobs per run).
-# - The PyPI page links (Source, Issues, Changelog) and README images point at GitHub and 404
-#   while the repository is private: make it public before publishing.
+# - The PyPI page links (Source, Issues, Changelog) point at GitHub and 404 while the
+#   repository is private: make it public before publishing. (The README image is hosted
+#   outside GitHub.)
 # - Create the `pypi` environment (Settings > Environments, with required reviewers) and the
 #   trusted publisher on PyPI for this repository, `release.yml` and environment `pypi`.
 

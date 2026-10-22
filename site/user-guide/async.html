@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+<link rel="canonical" href="https://mkennedy.codes/docs/chameleon-rs/user-guide/async.html">
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.38">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Async rendering – chameleon-rs | chameleon-rs</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../user-guide/configuration.html" rel="next">
+<link href="../user-guide/markdown.html" rel="prev">
+<link href="../favicon.ico" rel="icon">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-aa1552726bdd3cb78d40c93fdbd5382a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>document.head.appendChild(Object.assign(document.createElement('link'),{rel:'stylesheet',href:(document.querySelector('meta[name="quarto:offset"]')||{content:''}).content+'termshow.css'}));</script>
+<meta name="gd-logo-dark" content="chameleon-rs-logo-dark.png">
+<link rel="icon" type="image/x-icon" href="https://mkennedy.codes/docs/chameleon-rs/favicon.ico" sizes="48x48">
+<link rel="icon" type="image/png" sizes="32x32" href="https://mkennedy.codes/docs/chameleon-rs/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="https://mkennedy.codes/docs/chameleon-rs/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="https://mkennedy.codes/docs/chameleon-rs/apple-touch-icon.png">
+<script src="../theme-init.js"></script>
+
+
+  <meta name="description" content="Chameleon renders synchronously. In an async web app (FastAPI, Starlette, Quart, Litestar, Robyn) that means a render runs on the event loop, and...">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Async rendering – chameleon-rs | chameleon-rs">
+  <meta property="og:description" content="Chameleon renders synchronously. In an async web app (FastAPI, Starlette, Quart, Litestar, Robyn) that means a render runs on the event loop, and...">
+  <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/user-guide/async.html">
+  <meta property="og:site_name" content="chameleon-rs">
+  <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Async rendering – chameleon-rs | chameleon-rs">
+  <meta name="twitter:description" content="Chameleon renders synchronously. In an async web app (FastAPI, Starlette, Quart, Litestar, Robyn) that means a render runs on the event loop, and...">
+  <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../chameleon-rs-logo-light.png" alt="chameleon-rs" class="navbar-logo light-content">
+    <img src="../chameleon-rs-logo-light.png" alt="chameleon-rs" class="navbar-logo dark-content">
+    </a>
+    <a class="navbar-brand" href="../index.html">
+    <span class="navbar-title">chameleon-rs</span>
+    </a>
+  </div>
+            <div id="quarto-search" class=""></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="../user-guide/getting-started.html" aria-current="page"> 
+<span class="menu-text">User Guide</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../language/index.html"> 
+<span class="menu-text">Language Reference</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../recipes/index.html"> 
+<span class="menu-text">Recipes</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../reference/index.html"> 
+<span class="menu-text">API Reference</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item">
+    <span class="nav-link">
+<div id="github-widget" data-owner="mikeckennedy" data-repo="chameleon-rust"></div>
+    </span>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <h1 class="quarto-secondary-nav-title no-breadcrumbs">Async rendering</h1>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">Get started</span></a>
+</div>
+      <ul id="quarto-sidebar-section-1" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting started</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/switching-from-chameleon.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Switching from Chameleon</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">Templates</span></a>
+</div>
+      <ul id="quarto-sidebar-section-2" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/template-language.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Template language</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/partials.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Partials</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/markdown.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Markdown</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/async.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Async rendering</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/configuration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Configuration</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">Web frameworks</span></a>
+</div>
+      <ul id="quarto-sidebar-section-3" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/frameworks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Web frameworks</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/flask.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Flask and Quart</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/fastapi.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FastAPI</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/starlette.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Starlette</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/robyn.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Robyn</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/litestar.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Litestar</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/pyramid.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pyramid</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">Background</span></a>
+</div>
+      <ul id="quarto-sidebar-section-4" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/compatibility.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Compatibility</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/performance.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Performance</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/migrating.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Migrating from the helper libraries</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul class="collapse">
+  <li><a href="#render_async" id="toc-render_async" class="nav-link active" data-scroll-target="#render_async"><code>render_async</code></a></li>
+  <li><a href="#what-gets-awaited" id="toc-what-gets-awaited" class="nav-link" data-scroll-target="#what-gets-awaited">What gets awaited</a></li>
+  <li><a href="#errors-macros-and-partials" id="toc-errors-macros-and-partials" class="nav-link" data-scroll-target="#errors-macros-and-partials">Errors, macros and partials</a></li>
+  <li><a href="#running-helpers-concurrently" id="toc-running-helpers-concurrently" class="nav-link" data-scroll-target="#running-helpers-concurrently">Running helpers concurrently</a>
+  <ul class="collapse">
+  <li><a href="#chameleon_rs.concurrent-helpers" id="toc-chameleon_rs.concurrent-helpers" class="nav-link" data-scroll-target="#chameleon_rs.concurrent-helpers"><code>@chameleon_rs.concurrent</code> helpers</a></li>
+  <li><a href="#partials-in-parallel-concurrenttrue" id="toc-partials-in-parallel-concurrenttrue" class="nav-link" data-scroll-target="#partials-in-parallel-concurrenttrue">Partials in parallel: <code>concurrent=True</code></a></li>
+  </ul></li>
+  <li><a href="#offloading-a-render-to-a-thread" id="toc-offloading-a-render-to-a-thread" class="nav-link" data-scroll-target="#offloading-a-render-to-a-thread">Offloading a render to a thread</a></li>
+  <li><a href="#in-the-web-frameworks" id="toc-in-the-web-frameworks" class="nav-link" data-scroll-target="#in-the-web-frameworks">In the web frameworks</a></li>
+  <li><a href="#things-to-know" id="toc-things-to-know" class="nav-link" data-scroll-target="#things-to-know">Things to know</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title d-none d-lg-block">Async rendering</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>Chameleon renders synchronously. In an async web app (FastAPI, Starlette, Quart, Litestar, Robyn) that means a render runs on the event loop, and nothing else in that worker runs until it finishes. chameleon-rs keeps <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> exactly as it was and adds <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async()</a>, which renders on the event loop without holding it while it waits for data.</p>
+<p>The framework integrations use it for you: an <code>async def</code> view decorated with <code>@template</code> renders with <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a>. This page explains what that does, and the opt-in extras built on it.</p>
+<section id="render_async" class="level1">
+<h1><a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a></h1>
+<p><code>await template.render_async(**model)</code> renders like <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a>, except that when a value the template uses is awaitable (a coroutine, task or future), the render awaits it right there and continues with the result. While it waits, the event loop serves other requests.</p>
+<div id="ca9aa27d" class="cell" data-execution_count="1">
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> asyncio</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplate</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>page <span class="op">=</span> PageTemplate(<span class="st">"""</span><span class="op">\</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="st">&lt;h1&gt;$</span><span class="sc">{title}</span><span class="st">&lt;/h1&gt;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="st">&lt;ul&gt;</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="st">  &lt;li tal:repeat="episode episodes"&gt;$</span><span class="sc">{episode}</span><span class="st">&lt;/li&gt;</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="st">&lt;/ul&gt;</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="st">"""</span>)</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> latest_episodes():</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">await</span> asyncio.sleep(<span class="fl">0.01</span>)   <span class="co"># a database query, say</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> [<span class="st">'Rust for Python devs'</span>, <span class="st">'Async templates'</span>]</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="cf">await</span> page.render_async(title<span class="op">=</span><span class="st">'Latest'</span>, episodes<span class="op">=</span>latest_episodes()))</span></code></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>&lt;h1&gt;Latest&lt;/h1&gt;
+&lt;ul&gt;
+  &lt;li&gt;Rust for Python devs&lt;/li&gt;
+  &lt;li&gt;Async templates&lt;/li&gt;
+&lt;/ul&gt;
+</code></pre>
+</div>
+</div>
+<p><code>latest_episodes()</code> is passed unawaited. The render reaches <code>tal:repeat</code>, awaits it, and repeats over the list it returns.</p>
+<p>With no awaitable values, <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async()</a> gives exactly <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a>’s output. That’s tested against every Chameleon fixture template and the render fuzzers, so switching a view from <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> to <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async()</a> changes nothing until you pass it something to await.</p>
+<div class="callout callout-style-default callout-tip callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Tip</span>Loading data in the view is still a good default
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>You don’t have to hand coroutines to the template. Loading the data in the view (or a view model) with <code>asyncio.gather</code> keeps data access in one place and makes the template a pure function of its model:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> episode_page(number: <span class="bu">int</span>):</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    episode, related <span class="op">=</span> <span class="cf">await</span> asyncio.gather(db.episode(number), db.related(number))</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'episode'</span>: episode, <span class="st">'related'</span>: related}</span></code></pre></div>
+<p><a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a> still matters then: a big page renders without blocking the loop (see <a href="#offloading-a-render-to-a-thread">Offloading</a>), and the integrations need no change in your views. Passing awaitables to the template is useful when a value is only sometimes used (a sidebar behind a <code>tal:condition</code>), so it is never loaded when the page doesn’t show it.</p>
+</div>
+</div>
+</section>
+<section id="what-gets-awaited" class="level1">
+<h1>What gets awaited</h1>
+<p>Only an expression’s <strong>final value</strong> is awaited:</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Template</th>
+<th>With <code>episodes=load()</code> (a coroutine)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>${episodes}</code>, <code>tal:content="episodes"</code></td>
+<td>Awaited, then inserted.</td>
+</tr>
+<tr class="even">
+<td><code>tal:repeat="e episodes"</code></td>
+<td>Awaited, then repeated over.</td>
+</tr>
+<tr class="odd">
+<td><code>tal:condition="episodes"</code></td>
+<td>Awaited, and the condition tested on the result.</td>
+</tr>
+<tr class="even">
+<td><code>tal:define="items episodes"</code></td>
+<td>Awaited once; <code>items</code> is the result.</td>
+</tr>
+<tr class="odd">
+<td><code>${episodes.count}</code></td>
+<td>Not awaited: <code>.count</code> is looked up on the coroutine, an <code>AttributeError</code> as in a sync render.</td>
+</tr>
+<tr class="even">
+<td><code>${len(episodes)}</code></td>
+<td>Not awaited: <code>len()</code> gets the coroutine.</td>
+</tr>
+</tbody>
+</table>
+<p>So pass the awaitable the template needs as a whole, or <code>tal:define</code> it first and use the result:</p>
+<div id="991eb642" class="cell" data-execution_count="2">
+<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>page <span class="op">=</span> PageTemplate(<span class="st">"""</span><span class="op">\</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="st">&lt;p tal:define="items episodes"&gt;${len(items)} episodes, the first is $</span><span class="sc">{items[0]}</span><span class="st">.&lt;/p&gt;</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="st">"""</span>)</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="cf">await</span> page.render_async(episodes<span class="op">=</span>latest_episodes()))</span></code></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>&lt;p&gt;2 episodes, the first is Rust for Python devs.&lt;/p&gt;
+</code></pre>
+</div>
+</div>
+<p>Async iterables (an <code>async def</code> generator) aren’t supported in <code>tal:repeat</code>, as they aren’t iterable in a sync render either. Collect them in a helper first: <code>[x async for x in source]</code>.</p>
+</section>
+<section id="errors-macros-and-partials" class="level1">
+<h1>Errors, macros and partials</h1>
+<p>Everything in the language works across a wait:</p>
+<ul>
+<li><strong>Macros and slots.</strong> A layout’s macro and the page’s slot fills can await values.</li>
+<li><strong>Partials.</strong> <code>${render_partial('shared/card.pt', item=item)}</code> renders natively, and the partial can await values of its own.</li>
+<li><strong><code>tal:on-error</code>.</strong> An exception raised by an awaited value is raised where the expression is, so the nearest <code>tal:on-error</code> handles it, as for any other error.</li>
+<li><strong>Cancellation.</strong> Cancelling the task that runs the render cancels the value being awaited.</li>
+</ul>
+<div id="75f36c5b" class="cell" data-execution_count="3">
+<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> broken():</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">raise</span> <span class="pp">LookupError</span>(<span class="st">'the recommendations service is down'</span>)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>page <span class="op">=</span> PageTemplate(<span class="st">"""</span><span class="op">\</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="st">&lt;aside tal:on-error="string:Recommendations are unavailable."&gt;</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="st">  &lt;p tal:repeat="r recommendations"&gt;$</span><span class="sc">{r}</span><span class="st">&lt;/p&gt;</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="st">&lt;/aside&gt;</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="st">"""</span>)</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="cf">await</span> page.render_async(recommendations<span class="op">=</span>broken()))</span></code></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>&lt;aside&gt;Recommendations are unavailable.&lt;/aside&gt;
+</code></pre>
+</div>
+</div>
+</section>
+<section id="running-helpers-concurrently" class="level1">
+<h1>Running helpers concurrently</h1>
+<p>By default the render awaits one value at a time, in document order. A page that calls three slow helpers waits for each in turn. Two opt-in settings let them run at the same time. Both change the order in which your code runs, which is why they’re off by default.</p>
+<section id="chameleon_rs.concurrent-helpers" class="level2">
+<h2 class="anchored" data-anchor-id="chameleon_rs.concurrent-helpers"><code>@chameleon_rs.concurrent</code> helpers</h2>
+<p>Decorate an async helper with <code>@chameleon_rs.concurrent</code>, and each call to it written as a whole <code>${...}</code> starts as a task. The render writes a placeholder and keeps going, and each placeholder is filled in, escaped as usual, when the render reaches the end:</p>
+<div id="9f083f81" class="cell" data-execution_count="4">
+<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> time</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_rs.concurrent</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> fetch(name, delay):</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">await</span> asyncio.sleep(delay)</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="ss">f'</span><span class="sc">{</span>name<span class="sc">}</span><span class="ss"> (</span><span class="sc">{</span>delay<span class="sc">}</span><span class="ss">s)'</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>page <span class="op">=</span> PageTemplate(<span class="st">"""</span><span class="op">\</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a><span class="st">&lt;p&gt;${fetch('downloads', 0.2)}&lt;/p&gt;</span></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a><span class="st">&lt;p&gt;${fetch('reviews', 0.2)}&lt;/p&gt;</span></span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a><span class="st">&lt;p&gt;${fetch('sponsors', 0.2)}&lt;/p&gt;</span></span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a><span class="st">"""</span>)</span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>start <span class="op">=</span> time.perf_counter()</span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="cf">await</span> page.render_async(fetch<span class="op">=</span>fetch))</span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'</span><span class="sc">{</span>time<span class="sc">.</span>perf_counter() <span class="op">-</span> start<span class="sc">:.1f}</span><span class="ss">s, not 0.6s'</span>)</span></code></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>&lt;p&gt;downloads (0.2s)&lt;/p&gt;
+&lt;p&gt;reviews (0.2s)&lt;/p&gt;
+&lt;p&gt;sponsors (0.2s)&lt;/p&gt;
+
+0.2s, not 0.6s</code></pre>
+</div>
+</div>
+<p>A call runs concurrently only where its output can simply be written later: a whole <code>${...}</code> in text, or one inside an attribute value. Anywhere its value decides what the template does (a condition, a <code>tal:define</code>, <code>tal:content</code> / <code>tal:replace</code>, which may choose the default content) or where the output might be taken back (inside <code>tal:on-error</code> or a translation), it is awaited in place, like any awaitable.</p>
+<p>If a concurrent call raises, the error is raised when the render reaches the end, in document order, and the other tasks are cancelled. In a sync <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> the decorator has no effect.</p>
+</section>
+<section id="partials-in-parallel-concurrenttrue" class="level2">
+<h2 class="anchored" data-anchor-id="partials-in-parallel-concurrenttrue">Partials in parallel: <code>concurrent=True</code></h2>
+<p>A template created with <code>concurrent=True</code> also renders its <code>render_partial(...)</code> calls concurrently, when a call has an awaitable argument. Each such partial renders as a render of its own, in a task:</p>
+<div id="ec80fb9b" class="cell" data-execution_count="5">
+<div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pathlib, tempfile</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>folder <span class="op">=</span> pathlib.Path(tempfile.mkdtemp())</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>(folder <span class="op">/</span> <span class="st">'card.pt'</span>).write_text(<span class="st">'&lt;div class="card"&gt;$</span><span class="sc">{data}</span><span class="st">&lt;/div&gt;'</span>)</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>chameleon_rs.configure(template_folder<span class="op">=</span><span class="bu">str</span>(folder))</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> load(name):</span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">await</span> asyncio.sleep(<span class="fl">0.2</span>)</span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> name</span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>page <span class="op">=</span> PageTemplate(<span class="st">"""</span><span class="op">\</span></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a><span class="st">&lt;section tal:repeat="name names"&gt;${render_partial('card.pt', data=load(name))}&lt;/section&gt;</span></span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a><span class="st">"""</span>, concurrent<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a>start <span class="op">=</span> time.perf_counter()</span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="cf">await</span> page.render_async(names<span class="op">=</span>[<span class="st">'a'</span>, <span class="st">'b'</span>, <span class="st">'c'</span>], load<span class="op">=</span>load))</span>
+<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="ss">f'</span><span class="sc">{</span>time<span class="sc">.</span>perf_counter() <span class="op">-</span> start<span class="sc">:.1f}</span><span class="ss">s'</span>)</span></code></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>&lt;section&gt;&lt;div class="card"&gt;a&lt;/div&gt;&lt;/section&gt;
+&lt;section&gt;&lt;div class="card"&gt;b&lt;/div&gt;&lt;/section&gt;
+&lt;section&gt;&lt;div class="card"&gt;c&lt;/div&gt;&lt;/section&gt;
+
+0.2s</code></pre>
+</div>
+</div>
+<p>The integrations take the same setting on the decorator: <code>@template('page.pt', concurrent=True)</code>, and <code>TemplateResponse_async(..., concurrent=True)</code> for Starlette’s <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates" class="gdls-link gdls-code">Templates</a>.</p>
+</section>
+</section>
+<section id="offloading-a-render-to-a-thread" class="level1">
+<h1>Offloading a render to a thread</h1>
+<p>Experimental. <code>render_async(..., offload=True)</code> (or <code>@template(..., offload=True)</code>) runs the render in a worker thread (the event loop’s default executor) and awaits it. The render is synchronous there, so awaitable values aren’t awaited: load the data first.</p>
+<ul>
+<li><strong>On free-threaded Python (3.14t, 3.15t)</strong> renders then run in parallel with the event loop and with each other. chameleon-rs ships free-threaded wheels and doesn’t turn the GIL back on.</li>
+<li><strong>On a regular (GIL) build</strong> it helps only pages dominated by long text, whose escaping releases the GIL. For most pages, a thread hop costs more than it saves.</li>
+</ul>
+</section>
+<section id="in-the-web-frameworks" class="level1">
+<h1>In the web frameworks</h1>
+<p>Every integration renders <code>async def</code> views with <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a>, so all of the above applies to the model a view returns:</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Integration</th>
+<th><code>async def</code> view</th>
+<th>Plain <code>def</code> view</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><a href="../user-guide/flask.html">Flask and Quart</a></td>
+<td><a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a> (Flask’s async views, Quart)</td>
+<td><a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a></td>
+</tr>
+<tr class="even">
+<td><a href="../user-guide/fastapi.html">FastAPI</a></td>
+<td><a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a> on the event loop</td>
+<td><a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> in FastAPI’s thread pool</td>
+</tr>
+<tr class="odd">
+<td><a href="../user-guide/starlette.html">Starlette</a></td>
+<td><a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a>, and <code>await templates.TemplateResponse_async(...)</code></td>
+<td><a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> in Starlette’s thread pool</td>
+</tr>
+<tr class="even">
+<td><a href="../user-guide/robyn.html">Robyn</a></td>
+<td><a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a> on Robyn’s event loop</td>
+<td><a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> on Robyn’s worker thread</td>
+</tr>
+<tr class="odd">
+<td><a href="../user-guide/litestar.html">Litestar</a></td>
+<td><a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a> with <code>@template</code>; <a href="../reference/litestar.ChameleonEngine.html#chameleon_rs.litestar.ChameleonEngine" class="gdls-link gdls-code">ChameleonEngine</a> (Litestar’s <a href="../reference/litestar.Template.html#chameleon_rs.litestar.Template" class="gdls-link gdls-code">Template</a> responses) always renders synchronously</td>
+<td><a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a>, in a thread with <code>sync_to_thread=True</code></td>
+</tr>
+</tbody>
+</table>
+<p>Each module also has <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async()</a> and <a href="../reference/robyn.response_async.html#chameleon_rs.robyn.response_async" class="gdls-link gdls-code">response_async()</a>, the coroutine versions of <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> and <a href="../reference/flask.response.html#chameleon_rs.flask.response" class="gdls-link gdls-code">response()</a>.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>A difference from the original libraries
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>chameleon-flask, fastapi-chameleon and chameleon-robyn rendered async views synchronously, so an awaitable in the model was inserted as the object itself (<code>&lt;coroutine object ...&gt;</code>). The built-ins await it. That includes test doubles such as <code>AsyncMock()</code> in a model.</p>
+</div>
+</div>
+</section>
+<section id="things-to-know" class="level1">
+<h1>Things to know</h1>
+<ul>
+<li><strong><code>markdown:</code> and other expression types</strong> follow the same rule: the expression’s final value is awaited. Load Markdown text before rendering rather than passing a coroutine for <code>markdown:</code> to convert.</li>
+<li><strong>A subclass that overrides <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a></strong> keeps its override: <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async()</a> calls it, synchronously, so awaitable values aren’t awaited. A monkeypatched <a href="../reference/PageTemplate.render.html#chameleon_rs.PageTemplate.render" class="gdls-link gdls-code">PageTemplate.render</a> (to time renders, say) counts as an override. See <a href="../user-guide/migrating.html#timing-renders">Migrating</a>.</li>
+<li><strong><a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> never awaits.</strong> In a sync render a coroutine in the model is just an object, as in Chameleon.</li>
+</ul>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/mkennedy\.codes\/docs\/chameleon-rs\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../user-guide/markdown.html" class="pagination-link" aria-label="Markdown">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Markdown</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../user-guide/configuration.html" class="pagination-link" aria-label="Configuration">
+        <span class="nav-page-text">Configuration</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+<div class="nav-footer-center">
+<p>Developed by <a href="https://mkennedy.codes"><strong>Michael&nbsp;Kennedy</strong></a>.<br>Site created with <strong>Great&nbsp;Docs</strong>.</p>
+</div>
+</div>
+</footer>
+<script src="../github-widget.js"></script>
+<script src="../copy-page.js"></script>
+<script src="../sidebar-wrap.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'sidebar-float.js';document.body.appendChild(s);})();</script>
+<script src="../sidebar-filter.js"></script>
+<script src="../dark-mode-toggle.js"></script>
+<script src="../back-to-top.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'on-this-page.js';document.body.appendChild(s);})();</script>
+<script src="../keyboard-nav.js"></script>
+<script src="../copy-code.js"></script>
+<script src="../details.js"></script>
+<script src="../mermaid-renderer.js"></script>
+<script src="../tooltips.js"></script>
+<script>(function(){var s=document.createElement('script');s.src=(document.querySelector('link[rel="canonical"]')||{href:location.href}).href.replace(/\/[^\/]*$/,'').replace(/\/[^\/]*$/,'')+'/color-swatch.js';var h=document.currentScript;h.parentNode.insertBefore(s,h.nextSibling);})()</script>
+<script src="../responsive-tables.js"></script>
+<script src="video-embed.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'termshow.js';document.body.appendChild(s);})();</script>
+<script src="../navbar-widgets.js"></script>
+
+
+
+
+</body></html>

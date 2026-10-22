@@ -1,9 +1,11 @@
 ## What chameleon-rs is
 
-A Rust implementation of the Chameleon page template engine (`import chameleon_rs`, PyPI
+Chameleon's template language on a new engine written in Rust (`import chameleon_rs`, PyPI
 `chameleon-rs`). Same template language (TAL, METAL, i18n, `${...}`), same Python API, the
-same output byte for byte, and faster rendering. It has no runtime dependencies, and stock
-Chameleon doesn't need to be installed.
+same output byte for byte, several times faster. It adds async rendering (`render_async`),
+built-in Flask/Quart, FastAPI, Starlette, Robyn and Litestar integrations, built-in partials,
+`markdown:` expressions, and free-threaded Python support. It has no runtime dependencies, and
+stock Chameleon doesn't need to be installed.
 
 ## Switching an existing Chameleon app
 
@@ -15,8 +17,8 @@ import chameleon_rs.compat
 chameleon_rs.compat.install()
 ```
 
-After that, `import chameleon`, `import chameleon_partials` and `import chameleon_flask` give
-chameleon-rs's modules. Don't change templates or other code. If `chameleon` was imported
+After that, `import chameleon`, `import chameleon_partials`, `import chameleon_flask`,
+`import fastapi_chameleon` and `import chameleon_robyn` give chameleon-rs's modules. Don't change templates or other code. If `chameleon` was imported
 before `install()`, objects taken from it stay stock Chameleon objects, so move the call
 earlier.
 
@@ -63,6 +65,42 @@ def index():
 `chameleon_flask.not_found()` and `chameleon_flask.error(template, status_code)` end a
 decorated view with an error page. `chameleon_rs.render_partial(path, **model).html_text`
 returns a fragment as a string, for HTMX responses.
+
+## Other frameworks
+
+`chameleon_rs.fastapi`, `chameleon_rs.starlette`, `chameleon_rs.robyn` and
+`chameleon_rs.litestar` have the same decorator API (`configure(template_folder=..., app=app)`,
+`@template('page.pt')` below the route decorator, `not_found`, `error`, `render`, `response`,
+`render_async`, `response_async`). Also:
+
+- Starlette: `chameleon_rs.starlette.Templates(directory=...)` is a drop-in for
+  `Jinja2Templates`; use `await templates.TemplateResponse_async(request, name, context)` in
+  async endpoints.
+- Litestar: `TemplateConfig(engine=chameleon_rs.litestar.ChameleonEngine, directory=...)`, and
+  return `chameleon_rs.litestar.Template` (serves `.pt` as `text/html`).
+- Pyramid: no module; pyramid_chameleon runs unchanged after `chameleon_rs.compat.install()`.
+
+## Async rendering
+
+`await template.render_async(**model)` awaits an awaitable model value (coroutine, task,
+future) where the template uses it, without blocking the event loop. Only an expression's final
+value is awaited: `${episodes}` and `tal:repeat="e episodes"` await, `${episodes.count}` does
+not. An `async def` view with `@template` renders this way in every integration. Opt-in:
+`@chameleon_rs.concurrent` helpers and `concurrent=True` partials run concurrently.
+
+## Markdown
+
+```python
+chameleon_rs.configure(markdown=True)   # at startup, before templates compile
+```
+
+```html
+<article>${markdown: post.body}</article>
+```
+
+Raw HTML in the text is escaped by default; a profile such as
+`configure(markdown={'markdown': {}, 'md-trusted': {'raw_html': 'allow'}})` adds an
+`md-trusted:` prefix for trusted content.
 
 ## Known differences from Chameleon
 

@@ -34,7 +34,7 @@ chameleon_rs.configure(
 How it behaves:
 
 - **An option you leave out keeps its current value.** So `configure(partial_search='registered')` changes only the search mode.
-- **Every call applies.** There's no `cache_init` as in chameleon_partials and chameleon-flask, so a second call with a different folder takes effect.
+- **Every call applies.** There's no `cache_init` as in chameleon_partials, chameleon-flask and fastapi-chameleon, so a second call with a different folder takes effect.
 - **It's safe with threads.** Each configuration is an immutable object that's swapped in whole, so a render running at the same time never sees half of one. Still, call it at startup, not per request.
 - **`partial_search` and the Markdown settings don't need a folder.** Every other option needs one, on the first call.
 - It returns the new settings, and raises [chameleon_rs.web.TemplateError](../reference/web.TemplateError.md#chameleon_rs.web.TemplateError) for a missing folder, or `ValueError` for an unknown `partial_search` or an invalid Markdown setting (`TypeError` for one of the wrong type). A call that raises changes nothing.
@@ -56,7 +56,7 @@ print(settings.auto_reload)
     True
 
 
-For tests, [chameleon_rs.partials.clear()](../reference/partials.clear.md#chameleon_rs.partials.clear) and [chameleon_rs.flask.clear()](../reference/flask.clear.md#chameleon_rs.flask.clear) forget the configuration again.
+For tests, [chameleon_rs.partials.clear()](../reference/partials.clear.md#chameleon_rs.partials.clear), [chameleon_rs.flask.clear()](../reference/flask.clear.md#chameleon_rs.flask.clear), [chameleon_rs.fastapi.clear()](../reference/fastapi.clear.md#chameleon_rs.fastapi.clear), [chameleon_rs.starlette.clear()](../reference/starlette.clear.md#chameleon_rs.starlette.clear), [chameleon_rs.robyn.clear()](../reference/robyn.clear.md#chameleon_rs.robyn.clear) and [chameleon_rs.litestar.clear()](../reference/litestar.clear.md#chameleon_rs.litestar.clear) forget the configuration again. Starlette's [Templates()](../reference/starlette.Templates.md#chameleon_rs.starlette.Templates) and Litestar's [ChameleonEngine()](../reference/litestar.ChameleonEngine.md#chameleon_rs.litestar.ChameleonEngine) without a directory use this configuration too.
 
 `chameleon_rs.flask.configure(..., app=app)` sets a configuration for one Flask or Quart app only. See [Flask and Quart](flask.md#one-configuration-per-app).
 

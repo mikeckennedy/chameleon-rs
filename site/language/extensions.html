@@ -260,6 +260,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#literal-content" id="toc-literal-content" class="nav-link" data-scroll-target="#literal-content">Literal content</a></li>
   <li><a href="#switch-statement" id="toc-switch-statement" class="nav-link" data-scroll-target="#switch-statement">Switch statement</a></li>
   <li><a href="#partials-chameleon-rs" id="toc-partials-chameleon-rs" class="nav-link" data-scroll-target="#partials-chameleon-rs">Partials (chameleon-rs)</a></li>
+  <li><a href="#markdown-expressions-chameleon-rs" id="toc-markdown-expressions-chameleon-rs" class="nav-link" data-scroll-target="#markdown-expressions-chameleon-rs">Markdown expressions (chameleon-rs)</a></li>
   </ul></li>
   <li><a href="#incompatibilities-and-differences" id="toc-incompatibilities-and-differences" class="nav-link" data-scroll-target="#incompatibilities-and-differences">Incompatibilities and differences</a>
   <ul class="collapse">
@@ -373,6 +374,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span></code></pre></div>
 <p>It’s the API of the <a href="https://github.com/mikeckennedy/chameleon_partials">chameleon_partials</a> package, built in. See <a href="../user-guide/partials.html">Partials</a>.</p>
 </section>
+<section id="markdown-expressions-chameleon-rs" class="level2">
+<h2 class="anchored" data-anchor-id="markdown-expressions-chameleon-rs">Markdown expressions (chameleon-rs)</h2>
+<p>chameleon-rs can add a <code>markdown:</code> expression type, which converts a value from Markdown to HTML while the page renders and inserts it as markup:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">article</span><span class="dt">&gt;</span>${markdown: post.body}<span class="dt">&lt;/</span><span class="kw">article</span><span class="dt">&gt;</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"markdown: comment.text"</span><span class="dt">&gt;&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>It’s off until you turn it on with <code>chameleon_rs.configure(markdown=True)</code>, and named profiles (<code>md-comment:</code>, <code>md-trusted:</code>) give different content different settings. See <a href="../user-guide/markdown.html">Markdown</a>.</p>
+</section>
 </section>
 <section id="incompatibilities-and-differences" class="level1">
 <h1>Incompatibilities and differences</h1>
@@ -385,9 +393,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h2 class="anchored" data-anchor-id="template-arguments">Template arguments</h2>
 <p>Arguments passed by keyword to the render- or call method are inserted directly into the template execution namespace. This is different from ZPT where these are only available through the <code>options</code> dictionary.</p>
 <p>Zope:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"options/title"</span><span class="ot"> </span><span class="dt">/&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb10"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"options/title"</span><span class="ot"> </span><span class="dt">/&gt;</span></span></code></pre></div>
 <p>Chameleon:</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"title"</span><span class="ot"> </span><span class="dt">/&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"title"</span><span class="ot"> </span><span class="dt">/&gt;</span></span></code></pre></div>
 </section>
 <section id="special-symbols" class="level2">
 <h2 class="anchored" data-anchor-id="special-symbols">Special symbols</h2>

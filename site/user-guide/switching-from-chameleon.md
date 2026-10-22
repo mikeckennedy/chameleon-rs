@@ -20,6 +20,8 @@ From then on:
 | [chameleon](../reference/shadow.ShadowDifference.md#chameleon_rs.shadow.ShadowDifference.chameleon), `chameleon.zpt.template`, `chameleon.tales`, … | the chameleon-rs module of the same name |
 | `chameleon_partials` | `chameleon_rs.partials` (built in) |
 | `chameleon_flask` (and `.engine`, `.exceptions`) | `chameleon_rs.flask` (built in) |
+| `fastapi_chameleon` (and `.engine`, `.exceptions`) | `chameleon_rs.fastapi` (built in) |
+| `chameleon_robyn` (and `.engine`, `.exceptions`) | `chameleon_rs.robyn` (built in) |
 
 
 ``` python
@@ -39,7 +41,7 @@ print(PageTemplate('<p>${1 + 1}</p>')())
     <p>2</p>
 
 
-Stock Chameleon doesn't need to be installed, and chameleon-rs never imports it. Libraries that use Chameleon internally, such as fastapi-chameleon and chameleon-robyn, get chameleon-rs the same way. Their own test suites pass on it unmodified.
+Stock Chameleon doesn't need to be installed, and chameleon-rs never imports it. Libraries that use Chameleon internally get chameleon-rs the same way: litestar-chameleon's test suite passes on it unmodified, and so does pyramid_chameleon's but for one test (see [Pyramid](pyramid.md#compatibility)). Each framework's guide is listed in [Web frameworks](frameworks.md).
 
 > **Warning: Install before the first import**
 >

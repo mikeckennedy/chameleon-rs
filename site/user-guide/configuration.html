@@ -69,8 +69,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-search/fuse.min.js"></script>
 <script src="../site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="../">
-<link href="../user-guide/flask.html" rel="next">
-<link href="../user-guide/markdown.html" rel="prev">
+<link href="../user-guide/frameworks.html" rel="next">
+<link href="../user-guide/async.html" rel="prev">
 <link href="../favicon.ico" rel="icon">
 <script src="../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
@@ -245,6 +245,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Async rendering</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/configuration.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Configuration</span></a>
   </div>
@@ -259,8 +265,44 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <ul id="quarto-sidebar-section-3" class="list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/frameworks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Web frameworks</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/flask.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Flask and Quart</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/fastapi.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FastAPI</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/starlette.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Starlette</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/robyn.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Robyn</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/litestar.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Litestar</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/pyramid.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pyramid</span></a>
   </div>
 </li>
       </ul>
@@ -391,12 +433,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>How it behaves:</p>
 <ul>
 <li><strong>An option you leave out keeps its current value.</strong> So <code>configure(partial_search='registered')</code> changes only the search mode.</li>
-<li><strong>Every call applies.</strong> There’s no <code>cache_init</code> as in chameleon_partials and chameleon-flask, so a second call with a different folder takes effect.</li>
+<li><strong>Every call applies.</strong> There’s no <code>cache_init</code> as in chameleon_partials, chameleon-flask and fastapi-chameleon, so a second call with a different folder takes effect.</li>
 <li><strong>It’s safe with threads.</strong> Each configuration is an immutable object that’s swapped in whole, so a render running at the same time never sees half of one. Still, call it at startup, not per request.</li>
 <li><strong><code>partial_search</code> and the Markdown settings don’t need a folder.</strong> Every other option needs one, on the first call.</li>
 <li>It returns the new settings, and raises <a href="../reference/web.TemplateError.html#chameleon_rs.web.TemplateError" class="gdls-link gdls-code">chameleon_rs.web.TemplateError</a> for a missing folder, or <code>ValueError</code> for an unknown <code>partial_search</code> or an invalid Markdown setting (<code>TypeError</code> for one of the wrong type). A call that raises changes nothing.</li>
 </ul>
-<div id="11ebee7f" class="cell" data-execution_count="2">
+<div id="dfe01369" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>settings <span class="op">=</span> chameleon_rs.configure(template_folder<span class="op">=</span>template_folder, auto_reload<span class="op">=</span><span class="va">True</span>)</span>
@@ -410,7 +452,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 True</code></pre>
 </div>
 </div>
-<p>For tests, <a href="../reference/partials.clear.html#chameleon_rs.partials.clear" class="gdls-link gdls-code">chameleon_rs.partials.clear()</a> and <a href="../reference/flask.clear.html#chameleon_rs.flask.clear" class="gdls-link gdls-code">chameleon_rs.flask.clear()</a> forget the configuration again.</p>
+<p>For tests, <a href="../reference/partials.clear.html#chameleon_rs.partials.clear" class="gdls-link gdls-code">chameleon_rs.partials.clear()</a>, <a href="../reference/flask.clear.html#chameleon_rs.flask.clear" class="gdls-link gdls-code">chameleon_rs.flask.clear()</a>, <a href="../reference/fastapi.clear.html#chameleon_rs.fastapi.clear" class="gdls-link gdls-code">chameleon_rs.fastapi.clear()</a>, <a href="../reference/starlette.clear.html#chameleon_rs.starlette.clear" class="gdls-link gdls-code">chameleon_rs.starlette.clear()</a>, <a href="../reference/robyn.clear.html#chameleon_rs.robyn.clear" class="gdls-link gdls-code">chameleon_rs.robyn.clear()</a> and <a href="../reference/litestar.clear.html#chameleon_rs.litestar.clear" class="gdls-link gdls-code">chameleon_rs.litestar.clear()</a> forget the configuration again. Starlette’s <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates" class="gdls-link gdls-code">Templates()</a> and Litestar’s <a href="../reference/litestar.ChameleonEngine.html#chameleon_rs.litestar.ChameleonEngine" class="gdls-link gdls-code">ChameleonEngine()</a> without a directory use this configuration too.</p>
 <p><code>chameleon_rs.flask.configure(..., app=app)</code> sets a configuration for one Flask or Quart app only. See <a href="../user-guide/flask.html#one-configuration-per-app">Flask and Quart</a>.</p>
 </section>
 <section id="template-options" class="level1">
@@ -887,13 +929,13 @@ True</code></pre>
   </script>
 <nav class="page-navigation">
   <div class="nav-page nav-page-previous">
-      <a href="../user-guide/markdown.html" class="pagination-link" aria-label="Markdown">
-        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Markdown</span>
+      <a href="../user-guide/async.html" class="pagination-link" aria-label="Async rendering">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Async rendering</span>
       </a>          
   </div>
   <div class="nav-page nav-page-next">
-      <a href="../user-guide/flask.html" class="pagination-link" aria-label="Flask and Quart">
-        <span class="nav-page-text">Flask and Quart</span> <i class="bi bi-arrow-right-short"></i>
+      <a href="../user-guide/frameworks.html" class="pagination-link" aria-label="Web frameworks">
+        <span class="nav-page-text">Web frameworks</span> <i class="bi bi-arrow-right-short"></i>
       </a>
   </div>
 </nav>

@@ -76,14 +76,17 @@ user_guide:
       - template-language.qmd
       - partials.qmd
       - markdown.qmd
+      - async.qmd
       - configuration.qmd
   - section: "Web frameworks"
     contents:
+      - frameworks.qmd
       - flask.qmd
       - fastapi.qmd
       - starlette.qmd
       - robyn.qmd
       - litestar.qmd
+      - pyramid.qmd
   - section: "Background"
     contents:
       - compatibility.qmd
@@ -108,6 +111,9 @@ skill:
     - "configure() applies on every call (there is no cache_init); the first call must give template_folder."
     - "template.source does not exist as Python code: with keep_source=True it is a dump of the compiled program."
     - "Custom expression types that return Python AST work through a bridge at fallback speed; types that depend on Chameleon's compiler internals are not supported."
+    - "render_async awaits only an expression's final value: ${episodes} and tal:repeat=\"e episodes\" await a coroutine, ${episodes.count} and ${len(episodes)} do not."
+    - "markdown: expressions exist only after chameleon_rs.configure(markdown=True) (or a dict of profiles), called before the templates that use them compile."
+    - "Pyramid has no chameleon_rs module: pyramid_chameleon runs unchanged after chameleon_rs.compat.install() at the top of the package whose main() builds the app."
   best_practices:
     - "Call chameleon_rs.configure(template_folder=..., auto_reload=dev_mode) once at startup, before the first render."
     - "To switch an existing app, add `import chameleon_rs.compat; chameleon_rs.compat.install()` as the first lines of the entry point, and leave the rest of the code unchanged."
@@ -135,6 +141,14 @@ skill:
       use: "chameleon_rs.starlette.Templates(directory=folder); await templates.TemplateResponse_async(request, 'page.pt', context) in async endpoints"
     - need: "Render Chameleon templates from Robyn handlers"
       use: "chameleon_rs.robyn: configure(folder, app=app), then @template('page.pt') below @app.get (Robyn has wheels for Python 3.10-3.14)"
+    - need: "Render without blocking the event loop"
+      use: "await template.render_async(**model); in the framework integrations, an async def view with @template does this"
+    - need: "Run several slow async helpers of one page at the same time"
+      use: "@chameleon_rs.concurrent on the helper, called as a whole ${helper(...)}; or PageTemplate(..., concurrent=True) / @template(..., concurrent=True) for partials with awaitable arguments"
+    - need: "Convert Markdown to HTML in a template"
+      use: "chameleon_rs.configure(markdown=True), then ${markdown: post.body}; profiles such as {'md-trusted': {'raw_html': 'allow'}} for different content"
+    - need: "Render Chameleon templates from Pyramid views"
+      use: "pyramid_chameleon unchanged (config.include('pyramid_chameleon'), renderer='templates/page.pt'), with chameleon_rs.compat.install() before it is imported"
     - need: "Use Chameleon templates as Litestar's template engine"
       use: "TemplateConfig(engine=chameleon_rs.litestar.ChameleonEngine, directory=folder); return chameleon_rs.litestar.Template('page.pt', context=...) (served as text/html; renders synchronously)"
     - need: "Render Chameleon templates from async Litestar handlers without blocking the loop"
@@ -158,8 +172,9 @@ reference:
   title: "API Reference"
   desc: >-
     The public API of chameleon-rs. It mirrors Chameleon's (PageTemplate,
-    PageTemplateFile, PageTemplateLoader, ...), plus built-in partials, process-wide
-    configuration and the Flask/Quart, FastAPI, Starlette, Robyn and Litestar integrations.
+    PageTemplateFile, PageTemplateLoader, ...), plus async rendering, built-in partials,
+    process-wide configuration (including Markdown) and the Flask/Quart, FastAPI, Starlette,
+    Robyn and Litestar integrations.
   sections:
     - title: Templates
       desc: "Compile and render templates from strings, files and folders."
@@ -170,10 +185,14 @@ reference:
         - PageTextTemplateFile
         - PageTemplateLoader
     - title: Configuration
-      desc: "Process-wide settings for templates loaded by name."
+      desc: "Process-wide settings for templates loaded by name, partials and Markdown."
       contents:
         - configure
         - core_version
+    - title: Async
+      desc: "Opt-in concurrency for render_async. See also PageTemplate.render_async."
+      contents:
+        - concurrent
     - title: Partials
       desc: "Render one template inside another. Also chameleon_partials' API."
       contents:

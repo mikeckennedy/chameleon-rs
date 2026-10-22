@@ -245,6 +245,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Async rendering</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/configuration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Configuration</span></a>
   </div>
@@ -259,8 +265,44 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <ul id="quarto-sidebar-section-3" class="list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/frameworks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Web frameworks</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/flask.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Flask and Quart</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/fastapi.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FastAPI</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/starlette.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Starlette</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/robyn.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Robyn</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/litestar.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Litestar</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/pyramid.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pyramid</span></a>
   </div>
 </li>
       </ul>
@@ -389,7 +431,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </tr>
 </tbody>
 </table>
-<p>Profile-guided builds (<code>make build-pgo</code>) are about 10% faster again.</p>
+<p>Profile-guided builds (<code>make build-pgo</code>) are about 10% faster again. The published wheels are profile-guided (on musllinux and Windows arm64, where the build can make a profile).</p>
 <p>The pages that gain least spend their time in the application’s Python: the report page’s rows call property getters and formatting helpers, which cost the same on both engines.</p>
 </section>
 <section id="compile-time-and-the-first-request" class="level1">

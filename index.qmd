@@ -3,10 +3,14 @@
 pagetitle: "chameleon-rs"
 ---
 
-**chameleon-rs** is a Rust implementation of the
-[Chameleon](https://github.com/malthe/chameleon) page template engine for Python. It aims to
-be a drop-in replacement: the same template language, the same Python API, byte-identical
-output, and much faster rendering.
+**Chameleon templates, modernized. Several times faster.**
+
+chameleon-rs is [Chameleon](https://github.com/malthe/chameleon)'s template language on a new
+engine written in Rust. Your existing templates and code run unchanged, with byte-identical
+output, several times faster. It also adds what a modern Python web app expects: async
+rendering that never blocks the event loop, built-in integrations for Flask/Quart, FastAPI,
+Starlette, Robyn and Litestar, partials, Markdown, and support for free-threaded Python. No
+runtime dependencies.
 
 ```python
 from chameleon_rs import PageTemplate
@@ -20,35 +24,17 @@ print(page(names=['World', 'Rust']))
 <p>Hello, Rust!</p>
 ```
 
-## Why chameleon-rs
-
-- **Drop-in.** Chameleon's own test suite passes unmodified, and two production Flask/Quart
-  sites render byte-identical HTML on every page. An existing app switches with one line at
-  startup, and nothing else changes.
-- **Fast.** Rendering is about 4x to 7x faster than Chameleon on synthetic pages, and about 2.2x
-  faster across real application pages, where the app's own Python code takes most of the
-  time. Templates compile about 70x faster, so the first request after a deploy or reload is
-  quick too.
-- **Partials built in.** Every template can call
-  `${render_partial('shared/card.pt', item=item)}`. The partial renders natively inside
-  the page, about 10x faster than Chameleon with chameleon_partials.
-- **Web frameworks built in.** Flask and Quart (`chameleon_rs.flask`, chameleon-flask's API),
-  FastAPI (`chameleon_rs.fastapi`, fastapi-chameleon's), Starlette (a drop-in for
-  `Jinja2Templates`), Robyn (`chameleon_rs.robyn`, chameleon-robyn's) and Litestar (a template
-  engine for `TemplateConfig`). Async views render without blocking the event loop.
-- **No runtime dependencies.** The package uses only the standard library. Stock Chameleon
-  doesn't need to be installed.
-
 ## Install
 
 ```bash
 uv pip install chameleon-rs
 ```
 
-chameleon-rs needs Python 3.12 or later. The wheels include the compiled engine, so you don't
-need a Rust toolchain.
+CPython 3.12 to 3.15, including the free-threaded builds (3.14t, 3.15t). The wheels for Linux,
+macOS and Windows include the compiled engine, so you don't need a Rust toolchain, and stock
+Chameleon doesn't need to be installed.
 
-## Switch an existing app
+## Already on Chameleon?
 
 Put this at the very top of your app's entry point, before anything imports Chameleon:
 
@@ -58,15 +44,76 @@ import chameleon_rs.compat
 chameleon_rs.compat.install()
 ```
 
-From then on, `import chameleon`, `import chameleon_partials`, `import chameleon_flask`,
-`import fastapi_chameleon` and `import chameleon_robyn` all give you chameleon-rs. See [Switching from Chameleon](user-guide/switching-from-chameleon.qmd).
+From then on `import chameleon` gives chameleon-rs, and so do `chameleon_partials`,
+`chameleon_flask`, `fastapi_chameleon` and `chameleon_robyn`. Templates and code stay as they
+are.
+
+- **Same output.** Chameleon's own test suite passes unmodified, all 122 of its fixture
+  templates render byte-identical, and so does every page of two production Flask/Quart sites.
+  See [Compatibility](user-guide/compatibility.qmd).
+- **Check your own app first.** Shadow mode renders a sample of real traffic with both engines
+  and reports any difference, while Chameleon keeps serving. See
+  [Switching from Chameleon](user-guide/switching-from-chameleon.qmd).
+
+## Starting fresh?
+
+Chameleon templates are HTML with `tal:` attributes and `${...}` expressions, so a template is
+still valid HTML that an editor or browser opens as-is. Point chameleon-rs at a folder and
+decorate your views. With FastAPI:
+
+```python
+import fastapi
+
+import chameleon_rs.fastapi as fastapi_chameleon
+
+app = fastapi.FastAPI()
+fastapi_chameleon.configure(template_folder='templates', app=app)
+
+
+@app.get('/episodes/{number}')                      # the route decorator first...
+@fastapi_chameleon.template('episodes/detail.pt')   # ...then @template
+async def detail(number: int):
+    episode = await db.episode(number)
+    if episode is None:
+        fastapi_chameleon.not_found()
+    return {'episode': episode}
+```
+
+[Getting started](user-guide/getting-started.qmd) walks through it, and
+[Web frameworks](user-guide/frameworks.qmd) shows the same page in every framework.
+
+## What's new compared with Chameleon
+
+- **[Async rendering](user-guide/async.qmd).** `await template.render_async(**model)` awaits
+  awaitable model values where the template uses them, without blocking the event loop. Opt-in
+  settings run helpers and partials concurrently.
+- **[Web frameworks](user-guide/frameworks.qmd).** Flask and Quart, FastAPI, Starlette (a
+  drop-in for `Jinja2Templates`), Robyn and Litestar (a template engine for `TemplateConfig`)
+  are built in; Pyramid's pyramid_chameleon runs unchanged.
+- **[Partials](user-guide/partials.qmd).** `${render_partial('shared/card.pt', item=item)}`
+  works in every template and renders natively, about 10x faster than Chameleon with
+  chameleon_partials.
+- **[Markdown](user-guide/markdown.qmd).** `${markdown: post.body}` converts CommonMark plus
+  the GitHub extensions while the page renders, in Rust, with raw HTML escaped by default:
+  about 26x faster than mistune, a pure-Python converter.
+- **[One place for settings](user-guide/configuration.qmd).** `chameleon_rs.configure()` sets
+  the template folder, reloading, partial lookup and Markdown for the whole process.
+- **Free-threaded Python.** Wheels for 3.14t and 3.15t that keep the GIL off.
+- **Typed.** Type information for the whole API, checked with `ty`.
+
+## Fast
+
+Rendering is about 4x to 7x faster than Chameleon on synthetic pages, and 2.2x faster across
+the pages of a production site, where the app's own Python code takes much of the time.
+Templates compile about 70x faster, so the first request after a deploy or reload is quick
+too. See [Performance](user-guide/performance.qmd).
 
 ## Where to next
 
 - [Getting started](user-guide/getting-started.qmd): render a first template and set up a
   template folder.
-- [Language reference](language/index.qmd): TAL, METAL, i18n and `${...}`, the language
-  you already know from Chameleon.
-- [Compatibility](user-guide/compatibility.qmd): what's identical, the few known
-  differences, and how compatibility is measured.
-- [Performance](user-guide/performance.qmd): the benchmarks and how to reproduce them.
+- [Switching from Chameleon](user-guide/switching-from-chameleon.qmd): the one-line switch and
+  shadow mode.
+- [Web frameworks](user-guide/frameworks.qmd): Flask, Quart, FastAPI, Starlette, Robyn,
+  Litestar and Pyramid.
+- [Language reference](language/index.qmd): TAL, METAL, i18n and `${...}`.

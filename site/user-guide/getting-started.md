@@ -9,7 +9,7 @@ This page installs chameleon-rs, renders a template from a string, then sets up 
 uv pip install chameleon-rs
 ```
 
-chameleon-rs supports CPython 3.12 and later, including the free-threaded build. The wheel contains the compiled engine and has no dependencies.
+chameleon-rs supports CPython 3.12 to 3.15, including the free-threaded builds (3.14t, 3.15t). The wheel contains the compiled engine and has no dependencies. The framework integrations use the framework your app already has, so there are no extras to install.
 
 
 # Render a template string
@@ -143,8 +143,32 @@ chameleon_rs.configure(template_folder=template_folder, auto_reload=dev_mode)
 `auto_reload=True` recompiles a template when its file changes. Turn it on in development and leave it off in production.
 
 
+# In a web app
+
+In a web app you rarely call templates yourself. The framework integrations configure the folder and render what your views return:
+
+``` python
+import fastapi
+
+import chameleon_rs.fastapi as fastapi_chameleon
+
+app = fastapi.FastAPI()
+fastapi_chameleon.configure(template_folder=template_folder, auto_reload=dev_mode, app=app)
+
+
+@app.get('/')
+@fastapi_chameleon.template('home/index.pt')
+async def index():
+    return {'title': 'Latest videos', 'videos': await load_videos()}
+```
+
+[Web frameworks](frameworks.md) shows the same view in Flask, Quart, FastAPI, Starlette, Robyn, Litestar and Pyramid, and links to each framework's guide.
+
+
 # Next steps
 
 - Already have a Chameleon app? See [Switching from Chameleon](switching-from-chameleon.md).
-- Using Flask or Quart? See [Flask and Quart](flask.md).
+- Pick your framework: [Flask and Quart](flask.md), [FastAPI](fastapi.md), [Starlette](starlette.md), [Robyn](robyn.md), [Litestar](litestar.md) or [Pyramid](pyramid.md).
+- Async views: [Async rendering](async.md) explains how a render awaits data without blocking the event loop.
+- Content in Markdown? The [`markdown:` expression](markdown.md) converts it while the page renders.
 - The [language reference](../language/index.md) covers TAL, METAL, i18n and expressions.

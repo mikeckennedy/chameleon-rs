@@ -244,6 +244,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Async rendering</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/configuration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Configuration</span></a>
   </div>
@@ -258,8 +264,44 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <ul id="quarto-sidebar-section-3" class="list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/frameworks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Web frameworks</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/flask.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Flask and Quart</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/fastapi.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FastAPI</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/starlette.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Starlette</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/robyn.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Robyn</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/litestar.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Litestar</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/pyramid.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pyramid</span></a>
   </div>
 </li>
       </ul>
@@ -303,6 +345,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#install" id="toc-install" class="nav-link active" data-scroll-target="#install">Install</a></li>
   <li><a href="#render-a-template-string" id="toc-render-a-template-string" class="nav-link" data-scroll-target="#render-a-template-string">Render a template string</a></li>
   <li><a href="#render-templates-from-files" id="toc-render-templates-from-files" class="nav-link" data-scroll-target="#render-templates-from-files">Render templates from files</a></li>
+  <li><a href="#in-a-web-app" id="toc-in-a-web-app" class="nav-link" data-scroll-target="#in-a-web-app">In a web app</a></li>
   <li><a href="#next-steps" id="toc-next-steps" class="nav-link" data-scroll-target="#next-steps">Next steps</a></li>
   </ul>
 </nav>
@@ -333,12 +376,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="install" class="level1">
 <h1>Install</h1>
 <div class="sourceCode" id="cb1"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install chameleon-rs</span></code></pre></div>
-<p>chameleon-rs supports CPython 3.12 and later, including the free-threaded build. The wheel contains the compiled engine and has no dependencies.</p>
+<p>chameleon-rs supports CPython 3.12 to 3.15, including the free-threaded builds (3.14t, 3.15t). The wheel contains the compiled engine and has no dependencies. The framework integrations use the framework your app already has, so there are no extras to install.</p>
 </section>
 <section id="render-a-template-string" class="level1">
 <h1>Render a template string</h1>
 <p><a href="../reference/PageTemplate.html#chameleon_rs.PageTemplate" class="gdls-link gdls-code">PageTemplate</a> compiles a template from a string. Calling it renders the template, with the keyword arguments as the template’s variables:</p>
-<div id="89447ee9" class="cell" data-execution_count="1">
+<div id="5b75e9dd" class="cell" data-execution_count="1">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplate</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>page <span class="op">=</span> PageTemplate(<span class="st">"""</span></span>
@@ -366,7 +409,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <p>The template compiles once, when it’s first rendered. Every later render reuses the compiled program, so keep template objects around (module level, or in a loader) rather than building one per request.</p>
 <p><code>${...}</code> inserts a value with HTML escaping. To insert markup as-is, use <code>structure:</code>, or pass an object with an <code>__html__</code> method:</p>
-<div id="0724d2e2" class="cell" data-execution_count="2">
+<div id="da9b5d9e" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>page <span class="op">=</span> PageTemplate(<span class="st">'&lt;p&gt;$</span><span class="sc">{text}</span><span class="st">&lt;/p&gt; &lt;p&gt;${structure: text}&lt;/p&gt;'</span>)</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(page(text<span class="op">=</span><span class="st">'&lt;b&gt;bold&lt;/b&gt;'</span>))</span></code></pre></div>
 <div class="cell-output cell-output-stdout">
@@ -395,7 +438,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>and <code>shared/video.pt</code>:</p>
 <div class="sourceCode" id="cb8"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">a</span><span class="ot"> href</span><span class="op">=</span><span class="st">"/videos/${video.id}"</span><span class="dt">&gt;</span>${video.title}<span class="dt">&lt;/</span><span class="kw">a</span><span class="dt">&gt;</span></span></code></pre></div>
 <p>Configure the folder once at startup with <a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">chameleon_rs.configure()</a>, then load templates by name:</p>
-<div id="fabea716" class="cell" data-execution_count="4">
+<div id="3f6143ce" class="cell" data-execution_count="4">
 <div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> dataclasses <span class="im">import</span> dataclass</span>
 <span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
@@ -438,11 +481,30 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>chameleon_rs.configure(template_folder<span class="op">=</span>template_folder, auto_reload<span class="op">=</span>dev_mode)</span></code></pre></div>
 <p><code>auto_reload=True</code> recompiles a template when its file changes. Turn it on in development and leave it off in production.</p>
 </section>
+<section id="in-a-web-app" class="level1">
+<h1>In a web app</h1>
+<p>In a web app you rarely call templates yourself. The framework integrations configure the folder and render what your views return:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> fastapi</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.fastapi <span class="im">as</span> fastapi_chameleon</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> fastapi.FastAPI()</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>fastapi_chameleon.configure(template_folder<span class="op">=</span>template_folder, auto_reload<span class="op">=</span>dev_mode, app<span class="op">=</span>app)</span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/'</span>)</span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a><span class="at">@fastapi_chameleon.template</span>(<span class="st">'home/index.pt'</span>)</span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> index():</span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'title'</span>: <span class="st">'Latest videos'</span>, <span class="st">'videos'</span>: <span class="cf">await</span> load_videos()}</span></code></pre></div>
+<p><a href="../user-guide/frameworks.html">Web frameworks</a> shows the same view in Flask, Quart, FastAPI, Starlette, Robyn, Litestar and Pyramid, and links to each framework’s guide.</p>
+</section>
 <section id="next-steps" class="level1">
 <h1>Next steps</h1>
 <ul>
 <li>Already have a Chameleon app? See <a href="../user-guide/switching-from-chameleon.html">Switching from Chameleon</a>.</li>
-<li>Using Flask or Quart? See <a href="../user-guide/flask.html">Flask and Quart</a>.</li>
+<li>Pick your framework: <a href="../user-guide/flask.html">Flask and Quart</a>, <a href="../user-guide/fastapi.html">FastAPI</a>, <a href="../user-guide/starlette.html">Starlette</a>, <a href="../user-guide/robyn.html">Robyn</a>, <a href="../user-guide/litestar.html">Litestar</a> or <a href="../user-guide/pyramid.html">Pyramid</a>.</li>
+<li>Async views: <a href="../user-guide/async.html">Async rendering</a> explains how a render awaits data without blocking the event loop.</li>
+<li>Content in Markdown? The <a href="../user-guide/markdown.html"><code>markdown:</code> expression</a> converts it while the page renders.</li>
 <li>The <a href="../language/index.html">language reference</a> covers TAL, METAL, i18n and expressions.</li>
 </ul>
 

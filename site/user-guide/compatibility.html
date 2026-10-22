@@ -35,7 +35,7 @@ ul.task-list li input[type="checkbox"] {
 <script src="../site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="../">
 <link href="../user-guide/performance.html" rel="next">
-<link href="../user-guide/flask.html" rel="prev">
+<link href="../user-guide/pyramid.html" rel="prev">
 <link href="../favicon.ico" rel="icon">
 <script src="../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
@@ -210,6 +210,12 @@ ul.task-list li input[type="checkbox"] {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Async rendering</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/configuration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Configuration</span></a>
   </div>
@@ -224,8 +230,44 @@ ul.task-list li input[type="checkbox"] {
       <ul id="quarto-sidebar-section-3" class="list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/frameworks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Web frameworks</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/flask.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Flask and Quart</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/fastapi.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FastAPI</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/starlette.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Starlette</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/robyn.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Robyn</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/litestar.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Litestar</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/pyramid.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pyramid</span></a>
   </div>
 </li>
       </ul>
@@ -268,7 +310,15 @@ ul.task-list li input[type="checkbox"] {
   <ul class="collapse">
   <li><a href="#how-its-measured" id="toc-how-its-measured" class="nav-link active" data-scroll-target="#how-its-measured">How it’s measured</a></li>
   <li><a href="#whats-identical" id="toc-whats-identical" class="nav-link" data-scroll-target="#whats-identical">What’s identical</a></li>
-  <li><a href="#known-differences" id="toc-known-differences" class="nav-link" data-scroll-target="#known-differences">Known differences</a></li>
+  <li><a href="#known-differences" id="toc-known-differences" class="nav-link" data-scroll-target="#known-differences">Known differences</a>
+  <ul class="collapse">
+  <li><a href="#code-blocks" id="toc-code-blocks" class="nav-link" data-scroll-target="#code-blocks">Code blocks</a></li>
+  <li><a href="#render_partial-in-econtext" id="toc-render_partial-in-econtext" class="nav-link" data-scroll-target="#render_partial-in-econtext"><code>render_partial</code> in <code>econtext</code></a></li>
+  <li><a href="#corner-cases-in-slot-bodies" id="toc-corner-cases-in-slot-bodies" class="nav-link" data-scroll-target="#corner-cases-in-slot-bodies">Corner cases in slot bodies</a></li>
+  <li><a href="#behaviour-of-the-helper-libraries" id="toc-behaviour-of-the-helper-libraries" class="nav-link" data-scroll-target="#behaviour-of-the-helper-libraries">Behaviour of the helper libraries</a></li>
+  <li><a href="#a-macro-removed-while-reloading" id="toc-a-macro-removed-while-reloading" class="nav-link" data-scroll-target="#a-macro-removed-while-reloading">A macro removed while reloading</a></li>
+  <li><a href="#render_async-and-a-replaced-render" id="toc-render_async-and-a-replaced-render" class="nav-link" data-scroll-target="#render_async-and-a-replaced-render"><code>render_async</code> and a replaced <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render</a></a></li>
+  </ul></li>
   <li><a href="#found-a-difference" id="toc-found-a-difference" class="nav-link" data-scroll-target="#found-a-difference">Found a difference?</a></li>
   </ul>
 </nav>
@@ -320,7 +370,7 @@ ul.task-list li input[type="checkbox"] {
 <td>No differences in 20,000 examples per generator.</td>
 </tr>
 <tr class="even">
-<td><strong>Integration suites.</strong> The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn and chameleon_partials, unmodified, on chameleon-rs.</td>
+<td><strong>Integration suites.</strong> The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials and litestar-chameleon, unmodified, on chameleon-rs.</td>
 <td>All pass.</td>
 </tr>
 <tr class="odd">
@@ -338,7 +388,7 @@ ul.task-list li input[type="checkbox"] {
 <li><strong>The Python API</strong>: the template classes and their options, <a href="../reference/PageTemplateLoader.html#chameleon_rs.PageTemplateLoader" class="gdls-link gdls-code">PageTemplateLoader</a>, macros, <code>translate</code> functions, <code>tal:on-error</code> handlers, and <code>CHAMELEON_*</code> environment variables.</li>
 <li><strong>The modules</strong>: <a href="../reference/compat.install.html#chameleon_rs.compat.install" class="gdls-link gdls-code">chameleon_rs.compat.install()</a> maps each Chameleon module to the chameleon-rs module of the same name.</li>
 <li><strong>Errors</strong>: the same exception types, and the same formatted messages with the template position and expression.</li>
-<li><strong>The helper libraries</strong>: chameleon_partials’ and chameleon-flask’s APIs, built in.</li>
+<li><strong>The helper libraries</strong>: the APIs of chameleon_partials, chameleon-flask, fastapi-chameleon and chameleon-robyn, built in.</li>
 </ul>
 </section>
 <section id="known-differences" class="level1">
@@ -375,7 +425,44 @@ ul.task-list li input[type="checkbox"] {
 </tr>
 </tbody>
 </table>
-<p>The built-in partials have one behaviour change, which you can turn off: a path that isn’t in the configured template folder is also looked for next to the calling template, where chameleon_partials would raise. <code>configure(partial_search='registered')</code> restores the original lookup. See <a href="../user-guide/partials.html#how-a-path-is-found">Partials</a>.</p>
+<section id="code-blocks" class="level2">
+<h2 class="anchored" data-anchor-id="code-blocks">Code blocks</h2>
+<p>Chameleon compiles <code>&lt;?python ... ?&gt;</code> blocks into the template’s render function, so what a block defines is a local of that call. chameleon-rs runs a block in a namespace kept per template and render, which differs in two ways:</p>
+<ul>
+<li><strong>Recursive partials share it.</strong> Two frames of the same template in one render (a partial that renders itself) see each other’s block definitions, where each Chameleon call has its own.</li>
+<li><strong><code>default</code> and <code>attrs</code> inside a block</strong> are ordinary names. Chameleon aliases them there as in expressions (the default marker and the element’s attributes).</li>
+</ul>
+</section>
+<section id="render_partial-in-econtext" class="level2">
+<h2 class="anchored" data-anchor-id="render_partial-in-econtext"><a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a> in <code>econtext</code></h2>
+<p>With chameleon_partials, <a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a> is a model value, so it shows up in the template’s <code>econtext</code> and in the argument list of a render error. The built-in <a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a> is a builtin of every template, so it is not in either.</p>
+</section>
+<section id="corner-cases-in-slot-bodies" class="level2">
+<h2 class="anchored" data-anchor-id="corner-cases-in-slot-bodies">Corner cases in slot bodies</h2>
+<p>Three cases, all involving the slot fills of a macro call together with <code>tal:on-error</code> or i18n settings, render differently. No real template we’ve seen does this; each is pinned by a test that fails if the behaviour changes.</p>
+<ul>
+<li><strong>A failing expression under a handler in a slot body</strong> whose slot sits inside <code>i18n:translate</code> or <code>i18n:name</code>. Chameleon writes a text node and its expressions as one piece, so when an expression fails, the text before it in the same node is dropped with it. chameleon-rs writes that text first, so it stays (<code>&lt;q&gt;Q</code> where Chameleon gives <code>&lt;q&gt;</code>).</li>
+<li><strong>A handler on an <code>i18n:name</code> element</strong> whose content calls a macro that fails partway: the same difference, for the text of the failing node inside the macro.</li>
+<li><strong>A fill no macro took</strong>, used by a later macro call while the calling template has different <code>i18n:domain</code>, <code>i18n:context</code> or <code>i18n:target</code> settings: values converted by that fill use the settings where it was defined. Chameleon uses the settings at the later call.</li>
+</ul>
+</section>
+<section id="behaviour-of-the-helper-libraries" class="level2">
+<h2 class="anchored" data-anchor-id="behaviour-of-the-helper-libraries">Behaviour of the helper libraries</h2>
+<p>The built-ins differ from chameleon_partials, chameleon-flask, fastapi-chameleon and chameleon-robyn in a few ways that don’t affect templates that worked before:</p>
+<ul>
+<li><strong>Partial paths.</strong> A path that isn’t in the configured template folder is also looked for next to the calling template, where chameleon_partials would raise. <code>configure(partial_search='registered')</code> restores the original lookup. See <a href="../user-guide/partials.html#how-a-path-is-found">Partials</a>.</li>
+<li><strong>Async views await model values.</strong> An async view renders with <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a>, so a model value that is awaitable (a coroutine, task or future, or a test double such as <code>AsyncMock()</code>) is awaited where the template uses it. The original libraries rendered the object itself.</li>
+<li><strong>Setup.</strong> Every <a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">configure()</a> call applies (<a href="../reference/partials.register_extensions.html#chameleon_rs.partials.register_extensions" class="gdls-link gdls-code">register_extensions</a> ignored later calls), and <code>configure(..., app=app)</code> checks the decorator order at startup.</li>
+</ul>
+</section>
+<section id="a-macro-removed-while-reloading" class="level2">
+<h2 class="anchored" data-anchor-id="a-macro-removed-while-reloading">A macro removed while reloading</h2>
+<p>With <code>auto_reload</code>, Chameleon re-cooks a changed template into the same object and keeps the macro functions of the old version on it. So a macro that the new source no longer defines can still be looked up by name (and renders its old content). chameleon-rs replaces the macros with the new source’s and raises <code>KeyError('Macro does not exist: ...')</code>. This shows up in Pyramid with a <code>#macro</code> renderer when you edit a template to remove or rename that macro: one test in pyramid_chameleon’s suite checks it. See <a href="../user-guide/pyramid.html#compatibility">Pyramid</a>.</p>
+</section>
+<section id="render_async-and-a-replaced-render" class="level2">
+<h2 class="anchored" data-anchor-id="render_async-and-a-replaced-render"><a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a> and a replaced <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render</a></h2>
+<p><a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async()</a> honours a <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> that a subclass overrides, since the override may add defaults or post-process the output: it calls it, synchronously, so awaitable values are not awaited. Assigning a new function to <a href="../reference/PageTemplate.render.html#chameleon_rs.PageTemplate.render" class="gdls-link gdls-code">PageTemplate.render</a> (a monkeypatch, for example to time renders) counts as such an override. Every <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async()</a>, including the async views of the framework integrations, then renders synchronously through your function. See <a href="../user-guide/migrating.html#timing-renders">Migrating</a> for a way to time both.</p>
+</section>
 </section>
 <section id="found-a-difference" class="level1">
 <h1>Found a difference?</h1>
@@ -725,8 +812,8 @@ ul.task-list li input[type="checkbox"] {
   </script>
 <nav class="page-navigation">
   <div class="nav-page nav-page-previous">
-      <a href="../user-guide/flask.html" class="pagination-link" aria-label="Flask and Quart">
-        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Flask and Quart</span>
+      <a href="../user-guide/pyramid.html" class="pagination-link" aria-label="Pyramid">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Pyramid</span>
       </a>          
   </div>
   <div class="nav-page nav-page-next">

@@ -245,6 +245,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Async rendering</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/configuration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Configuration</span></a>
   </div>
@@ -259,8 +265,44 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <ul id="quarto-sidebar-section-3" class="list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/frameworks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Web frameworks</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/flask.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Flask and Quart</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/fastapi.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FastAPI</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/starlette.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Starlette</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/robyn.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Robyn</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/litestar.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Litestar</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/pyramid.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pyramid</span></a>
   </div>
 </li>
       </ul>
@@ -360,9 +402,17 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td><code>chameleon_flask</code> (and <code>.engine</code>, <code>.exceptions</code>)</td>
 <td><code>chameleon_rs.flask</code> (built in)</td>
 </tr>
+<tr class="even">
+<td><code>fastapi_chameleon</code> (and <code>.engine</code>, <code>.exceptions</code>)</td>
+<td><code>chameleon_rs.fastapi</code> (built in)</td>
+</tr>
+<tr class="odd">
+<td><code>chameleon_robyn</code> (and <code>.engine</code>, <code>.exceptions</code>)</td>
+<td><code>chameleon_rs.robyn</code> (built in)</td>
+</tr>
 </tbody>
 </table>
-<div id="337c7f8b" class="cell" data-execution_count="1">
+<div id="4e41242b" class="cell" data-execution_count="1">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.compat</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>chameleon_rs.compat.install()</span>
@@ -377,7 +427,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 &lt;p&gt;2&lt;/p&gt;</code></pre>
 </div>
 </div>
-<p>Stock Chameleon doesn’t need to be installed, and chameleon-rs never imports it. Libraries that use Chameleon internally, such as fastapi-chameleon and chameleon-robyn, get chameleon-rs the same way. Their own test suites pass on it unmodified.</p>
+<p>Stock Chameleon doesn’t need to be installed, and chameleon-rs never imports it. Libraries that use Chameleon internally get chameleon-rs the same way: litestar-chameleon’s test suite passes on it unmodified, and so does pyramid_chameleon’s but for one test (see <a href="../user-guide/pyramid.html#compatibility">Pyramid</a>). Each framework’s guide is listed in <a href="../user-guide/frameworks.html">Web frameworks</a>.</p>
 <div class="callout callout-style-default callout-warning callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">

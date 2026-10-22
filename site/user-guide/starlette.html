@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+<link rel="canonical" href="https://mkennedy.codes/docs/chameleon-rs/user-guide/starlette.html">
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.38">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Starlette – chameleon-rs | chameleon-rs</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../user-guide/robyn.html" rel="next">
+<link href="../user-guide/fastapi.html" rel="prev">
+<link href="../favicon.ico" rel="icon">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-aa1552726bdd3cb78d40c93fdbd5382a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>document.head.appendChild(Object.assign(document.createElement('link'),{rel:'stylesheet',href:(document.querySelector('meta[name="quarto:offset"]')||{content:''}).content+'termshow.css'}));</script>
+<meta name="gd-logo-dark" content="chameleon-rs-logo-dark.png">
+<link rel="icon" type="image/x-icon" href="https://mkennedy.codes/docs/chameleon-rs/favicon.ico" sizes="48x48">
+<link rel="icon" type="image/png" sizes="32x32" href="https://mkennedy.codes/docs/chameleon-rs/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="https://mkennedy.codes/docs/chameleon-rs/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="https://mkennedy.codes/docs/chameleon-rs/apple-touch-icon.png">
+<script src="../theme-init.js"></script>
+
+
+  <meta name="description" content="A test compares it with Jinja2Templates request by request (status, headers, body, context, background tasks), and its HTML with stock Chameleon’s.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Starlette – chameleon-rs | chameleon-rs">
+  <meta property="og:description" content="A test compares it with Jinja2Templates request by request (status, headers, body, context, background tasks), and its HTML with stock Chameleon’s.">
+  <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/user-guide/starlette.html">
+  <meta property="og:site_name" content="chameleon-rs">
+  <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Starlette – chameleon-rs | chameleon-rs">
+  <meta name="twitter:description" content="A test compares it with Jinja2Templates request by request (status, headers, body, context, background tasks), and its HTML with stock Chameleon’s.">
+  <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../chameleon-rs-logo-light.png" alt="chameleon-rs" class="navbar-logo light-content">
+    <img src="../chameleon-rs-logo-light.png" alt="chameleon-rs" class="navbar-logo dark-content">
+    </a>
+    <a class="navbar-brand" href="../index.html">
+    <span class="navbar-title">chameleon-rs</span>
+    </a>
+  </div>
+            <div id="quarto-search" class=""></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="../user-guide/getting-started.html" aria-current="page"> 
+<span class="menu-text">User Guide</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../language/index.html"> 
+<span class="menu-text">Language Reference</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../recipes/index.html"> 
+<span class="menu-text">Recipes</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../reference/index.html"> 
+<span class="menu-text">API Reference</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item">
+    <span class="nav-link">
+<div id="github-widget" data-owner="mikeckennedy" data-repo="chameleon-rust"></div>
+    </span>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <h1 class="quarto-secondary-nav-title no-breadcrumbs">Starlette</h1>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">Get started</span></a>
+</div>
+      <ul id="quarto-sidebar-section-1" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting started</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/switching-from-chameleon.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Switching from Chameleon</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">Templates</span></a>
+</div>
+      <ul id="quarto-sidebar-section-2" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/template-language.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Template language</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/partials.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Partials</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/markdown.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Markdown</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Async rendering</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/configuration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Configuration</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">Web frameworks</span></a>
+</div>
+      <ul id="quarto-sidebar-section-3" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/frameworks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Web frameworks</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/flask.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Flask and Quart</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/fastapi.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FastAPI</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/starlette.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Starlette</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/robyn.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Robyn</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/litestar.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Litestar</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/pyramid.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pyramid</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">Background</span></a>
+</div>
+      <ul id="quarto-sidebar-section-4" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/compatibility.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Compatibility</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/performance.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Performance</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/migrating.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Migrating from the helper libraries</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul class="collapse">
+  <li><a href="#templates-jinja2templates-for-chameleon-rs" id="toc-templates-jinja2templates-for-chameleon-rs" class="nav-link active" data-scroll-target="#templates-jinja2templates-for-chameleon-rs">Templates: Jinja2Templates for chameleon-rs</a>
+  <ul class="collapse">
+  <li><a href="#differences-from-older-starlette" id="toc-differences-from-older-starlette" class="nav-link" data-scroll-target="#differences-from-older-starlette">Differences from older Starlette</a></li>
+  </ul></li>
+  <li><a href="#rendering-without-blocking-the-event-loop" id="toc-rendering-without-blocking-the-event-loop" class="nav-link" data-scroll-target="#rendering-without-blocking-the-event-loop">Rendering without blocking the event loop</a></li>
+  <li><a href="#the-decorator-api" id="toc-the-decorator-api" class="nav-link" data-scroll-target="#the-decorator-api">The decorator API</a></li>
+  <li><a href="#decorator-order" id="toc-decorator-order" class="nav-link" data-scroll-target="#decorator-order">Decorator order</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title d-none d-lg-block">Starlette</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p><code>chameleon_rs.starlette</code> renders templates from Starlette endpoints, two ways:</p>
+<ul>
+<li><a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates" class="gdls-link gdls-code">Templates</a>, a drop-in for Starlette’s <code>Jinja2Templates</code>, with an async <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates.TemplateResponse_async" class="gdls-link gdls-code">TemplateResponse_async</a> that never blocks the event loop.</li>
+<li>The decorator API of the <a href="../user-guide/flask.html">Flask</a> and <a href="../user-guide/fastapi.html">FastAPI</a> modules: an endpoint returns its model and <code>@template</code> renders it.</li>
+</ul>
+<p><code>import chameleon_rs</code> doesn’t import Starlette. Only <code>import chameleon_rs.starlette</code> does, and it uses the Starlette your app already has (1.x, and 0.46 or later).</p>
+<section id="templates-jinja2templates-for-chameleon-rs" class="level1">
+<h1>Templates: Jinja2Templates for chameleon-rs</h1>
+<div id="791f8596" class="cell" data-execution_count="2">
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> starlette.applications <span class="im">import</span> Starlette</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> starlette.routing <span class="im">import</span> Route</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> starlette.testclient <span class="im">import</span> TestClient</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs.starlette <span class="im">import</span> Templates</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> site(request):</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'site'</span>: <span class="st">'Talk Python'</span>}</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>templates <span class="op">=</span> Templates(directory<span class="op">=</span>template_folder, context_processors<span class="op">=</span>[site])</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> index(request):</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> templates.TemplateResponse(request, <span class="st">'home/index.pt'</span>, {<span class="st">'title'</span>: <span class="st">'Hello'</span>, <span class="st">'videos'</span>: [<span class="st">'intro'</span>, <span class="st">'async'</span>]})</span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> video(request):</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> templates.TemplateResponse(request, <span class="st">'home/index.pt'</span>, {<span class="st">'title'</span>: request.path_params[<span class="st">'name'</span>], <span class="st">'videos'</span>: []})</span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> Starlette(routes<span class="op">=</span>[Route(<span class="st">'/'</span>, index), Route(<span class="st">'/videos/</span><span class="sc">{name}</span><span class="st">'</span>, video, name<span class="op">=</span><span class="st">'video'</span>)])</span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> TestClient(app) <span class="im">as</span> client:</span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    response <span class="op">=</span> client.get(<span class="st">'/'</span>)</span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(response.text)</span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(response.template.name, <span class="bu">sorted</span>(response.context))</span></code></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>&lt;h1&gt;Hello&lt;/h1&gt;
+&lt;ul&gt;&lt;li&gt;&lt;b&gt;intro&lt;/b&gt;&lt;/li&gt;
+&lt;li&gt;&lt;b&gt;async&lt;/b&gt;&lt;/li&gt;&lt;/ul&gt;
+&lt;a href="http://testserver/videos/intro"&gt;Talk Python&lt;/a&gt;
+home/index.pt ['request', 'site', 'title', 'videos']</code></pre>
+</div>
+</div>
+<p><code>TemplateResponse(request, name, context=None, status_code=200, headers=None, media_type=None, background=None)</code> behaves as Starlette’s:</p>
+<ul>
+<li><code>request</code> is added to the context (unless the context has one), then each context processor runs and its dict updates the context.</li>
+<li>The template can call <code>url_for(name, **path_params)</code>, which is <code>request.url_for</code>.</li>
+<li><code>templates.globals</code> is Jinja’s <code>env.globals</code>: variables every template gets, below the context (<code>templates.globals['site_name'] = ...</code>). <code>url_for</code> is one of them, so it can be replaced there.</li>
+<li>The response is an <code>HTMLResponse</code>; <code>status_code</code>, <code>headers</code>, <code>media_type</code> and <code>background</code> are passed to it.</li>
+<li>It sends Starlette’s <code>http.response.debug</code> event, so with the test client <code>response.context</code> is the context and <code>response.template</code> the page template, with Jinja’s <code>name</code>: Starlette’s documented <code>assert response.template.name == 'index.html'</code> works. (Other attributes are the page template’s: <code>filename</code> is its full path.)</li>
+<li>A missing template raises <a href="../reference/web.TemplateNotFound.html#chameleon_rs.web.TemplateNotFound" class="gdls-link gdls-code">chameleon_rs.web.TemplateNotFound</a> (also importable from <code>chameleon_rs.starlette</code>): catch it where you caught <code>jinja2.TemplateNotFound</code>. It is a <code>ValueError</code> and a <code>LookupError</code>. Only <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates" class="gdls-link gdls-code">Templates</a> raises it: <a href="../reference/PageTemplateLoader.html#chameleon_rs.PageTemplateLoader" class="gdls-link gdls-code">PageTemplateLoader</a>, the decorator API and <a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a> raise Chameleon’s plain <code>ValueError</code>.</li>
+<li>A name that could reach outside the template folder (absolute, a <code>..</code> segment, a backslash, a drive letter or a <code>package:</code> spec) is refused with <a href="../reference/web.TemplateNotFound.html#chameleon_rs.web.TemplateNotFound" class="gdls-link gdls-code">TemplateNotFound</a>, as Jinja’s <code>FileSystemLoader</code> refuses it.</li>
+</ul>
+<p>A test compares it with <code>Jinja2Templates</code> request by request (status, headers, body, context, background tasks), and its HTML with stock Chameleon’s.</p>
+<p><code>directory</code> can be a list of folders, searched in order, and <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates" class="gdls-link gdls-code">Templates</a> also takes <code>auto_reload=</code> and <code>restricted_namespace=</code> (the loader’s options). Without <code>directory</code>, it uses the process-wide configuration, looked up at each render:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>chameleon_rs.configure(template_folder<span class="op">=</span><span class="st">'templates'</span>, auto_reload<span class="op">=</span>dev_mode)</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>templates <span class="op">=</span> Templates()</span></code></pre></div>
+<p><code>templates.get_template(name)</code> returns the page template, and <code>templates.loader</code> the loader. There is no <code>env=</code> (a Jinja <code>Environment</code>): Jinja’s environment settings have no chameleon-rs equivalent. <code>templates.env.globals[...]</code> becomes <code>templates.globals[...]</code>; for the rest, use <a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">chameleon_rs.configure()</a> (Markdown, partial lookup) or the loader options.</p>
+<section id="differences-from-older-starlette" class="level2">
+<h2 class="anchored" data-anchor-id="differences-from-older-starlette">Differences from older Starlette</h2>
+<p>Starlette 1.x’s signature is the one implemented, request first. On Starlette 0.46 and later 0.x, <code>Jinja2Templates</code> also accepts the old <code>TemplateResponse(name, {'request': request})</code> form with a <code>DeprecationWarning</code>; <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates" class="gdls-link gdls-code">Templates</a> raises a <code>TypeError</code> saying the request comes first. And 0.x adds <code>request</code> to a <code>context={}</code> you pass in (1.x, and <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates" class="gdls-link gdls-code">Templates</a>, give an empty context a new dict, leaving yours untouched).</p>
+</section>
+</section>
+<section id="rendering-without-blocking-the-event-loop" class="level1">
+<h1>Rendering without blocking the event loop</h1>
+<p>Jinja’s <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates.TemplateResponse" class="gdls-link gdls-code">TemplateResponse</a> renders on the event loop: while a big page renders, nothing else runs. <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates.TemplateResponse_async" class="gdls-link gdls-code">TemplateResponse_async</a> takes the same arguments and renders with <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a>:</p>
+<div id="be74c2cd" class="cell" data-execution_count="3">
+<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> asyncio</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> latest_videos():</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">await</span> asyncio.sleep(<span class="fl">0.01</span>)   <span class="co"># a database query, say</span></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> [<span class="st">'intro'</span>, <span class="st">'partials'</span>]</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> home(request):</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Unawaited: the template awaits it where it uses it.</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="cf">await</span> templates.TemplateResponse_async(</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>        request, <span class="st">'home/index.pt'</span>, {<span class="st">'title'</span>: <span class="st">'Latest'</span>, <span class="st">'videos'</span>: latest_videos()}</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> Starlette(routes<span class="op">=</span>[Route(<span class="st">'/'</span>, home), Route(<span class="st">'/videos/</span><span class="sc">{name}</span><span class="st">'</span>, video, name<span class="op">=</span><span class="st">'video'</span>)])</span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(TestClient(app).get(<span class="st">'/'</span>).text)</span></code></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>&lt;h1&gt;Latest&lt;/h1&gt;
+&lt;ul&gt;&lt;li&gt;&lt;b&gt;intro&lt;/b&gt;&lt;/li&gt;
+&lt;li&gt;&lt;b&gt;partials&lt;/b&gt;&lt;/li&gt;&lt;/ul&gt;
+&lt;a href="http://testserver/videos/intro"&gt;Talk Python&lt;/a&gt;</code></pre>
+</div>
+</div>
+<p>A model value that is awaitable (a coroutine, task or future) is awaited where the template uses it. <code>TemplateResponse_async(..., concurrent=True)</code> renders <code>render_partial(...)</code> calls with awaitable arguments concurrently; <code>offload=True</code> (experimental) renders in a worker thread. With no awaitable values the HTML is exactly <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates.TemplateResponse" class="gdls-link gdls-code">TemplateResponse</a>’s.</p>
+<p><a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates.TemplateResponse_async" class="gdls-link gdls-code">TemplateResponse_async</a> is a coroutine: call it with <code>await</code> from an <code>async def</code> endpoint. A sync endpoint uses <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates.TemplateResponse" class="gdls-link gdls-code">TemplateResponse</a> (Starlette runs sync endpoints in its thread pool).</p>
+<p>The name keeps Starlette’s <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates.TemplateResponse" class="gdls-link gdls-code">TemplateResponse</a> and adds the <code>_async</code> of <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a>, so moving an endpoint over is <code>await templates.TemplateResponse_async(...)</code> in place of <code>templates.TemplateResponse(...)</code>.</p>
+</section>
+<section id="the-decorator-api" class="level1">
+<h1>The decorator API</h1>
+<div id="45ffed57" class="cell" data-execution_count="4">
+<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.starlette <span class="im">as</span> chameleon_starlette</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>chameleon_starlette.configure(template_folder<span class="op">=</span>template_folder)</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_starlette.template</span>(<span class="st">'home/index.pt'</span>)</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> listing(request):</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    name <span class="op">=</span> request.path_params[<span class="st">'name'</span>]</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> name <span class="op">==</span> <span class="st">'missing'</span>:</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>        chameleon_starlette.not_found(path<span class="op">=</span>request.url.path)   <span class="co"># renders errors/404.pt</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'title'</span>: name, <span class="st">'videos'</span>: [name], <span class="st">'site'</span>: <span class="st">'TP'</span>}</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> Starlette(routes<span class="op">=</span>[Route(<span class="st">'/v/</span><span class="sc">{name}</span><span class="st">'</span>, listing), Route(<span class="st">'/videos/</span><span class="sc">{name}</span><span class="st">'</span>, video, name<span class="op">=</span><span class="st">'video'</span>)])</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>chameleon_starlette.configure(app<span class="op">=</span>app)   <span class="co"># the decorator-order check at startup</span></span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> TestClient(app) <span class="im">as</span> client:</span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(client.get(<span class="st">'/v/intro'</span>).text)</span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(client.get(<span class="st">'/v/missing'</span>).status_code)</span></code></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>&lt;h1&gt;intro&lt;/h1&gt;
+&lt;ul&gt;&lt;li&gt;&lt;b&gt;intro&lt;/b&gt;&lt;/li&gt;&lt;/ul&gt;
+&lt;a href="http://testserver/videos/intro"&gt;TP&lt;/a&gt;
+404</code></pre>
+</div>
+</div>
+<p>It is the API of <code>chameleon_rs.flask</code> and <code>chameleon_rs.fastapi</code>:</p>
+<ul>
+<li><code>configure(template_folder=..., auto_reload=..., restricted_namespace=..., app=None, check_order=True)</code>, the same call as <a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">chameleon_rs.configure()</a>; <code>global_init(folder, auto_reload, cache_init)</code> configures the views only.</li>
+<li><code>@template</code>, <code>@template()</code>, <code>@template('page.pt', content_type=..., status_code=...)</code> (<code>mimetype=</code> works too). Bare, it renders <code>{module}/{function}.html</code>, or <code>.pt</code>. The endpoint returns a dict, a mapping, a dataclass or a Pydantic model; a Starlette response passes through. The template also gets <code>request</code> and <code>url_for</code> (unless the model has them).</li>
+<li>Function endpoints and the methods of an <code>HTTPEndpoint</code> class, sync or async. An <code>async def</code> endpoint renders with <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a> on the event loop; a sync one renders with <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> in Starlette’s thread pool. <code>concurrent=</code> and <code>offload=</code> as above.</li>
+<li><code>not_found(template_file='errors/404.pt', **data)</code>, <code>error(template_file, status_code=500, **data)</code> and <code>generic_error(template_file, status_code, template_data)</code> end a decorated endpoint with an error page. The error page also gets <code>request</code> and <code>url_for</code> (the data you pass wins), so a layout that links with <code>url_for</code> works there too.</li>
+<li><a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a>, <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async()</a>, <a href="../reference/flask.response.html#chameleon_rs.flask.response" class="gdls-link gdls-code">response()</a>, <a href="../reference/robyn.response_async.html#chameleon_rs.robyn.response_async" class="gdls-link gdls-code">response_async()</a>, <a href="../reference/flask.clear.html#chameleon_rs.flask.clear" class="gdls-link gdls-code">clear()</a>, <code>check_views(app)</code>.</li>
+</ul>
+<p>Errors are <a href="../reference/web.TemplateError.html#chameleon_rs.web.TemplateError" class="gdls-link gdls-code">chameleon_rs.web.TemplateError</a>, <a href="../reference/web.NotFound.html#chameleon_rs.web.NotFound" class="gdls-link gdls-code">NotFound</a>, <a href="../reference/web.ErrorPage.html#chameleon_rs.web.ErrorPage" class="gdls-link gdls-code">ErrorPage</a> and <a href="../reference/web.DecoratorOrderError.html#chameleon_rs.web.DecoratorOrderError" class="gdls-link gdls-code">DecoratorOrderError</a>, also importable from <code>chameleon_rs.starlette</code> (a missing template here is Chameleon’s <code>ValueError</code>, as in the other integrations).</p>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Warning</span>Template names come from your code
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The names given to <code>@template</code>, <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a>, <a href="../reference/flask.response.html#chameleon_rs.flask.response" class="gdls-link gdls-code">response()</a>, <a href="../reference/flask.not_found.html#chameleon_rs.flask.not_found" class="gdls-link gdls-code">not_found()</a> / <a href="../reference/flask.error.html#chameleon_rs.flask.error" class="gdls-link gdls-code">error()</a> and <a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial()</a> are looked up as the original libraries look them up, which allows <code>..</code> and absolute paths. Write them in your code; never build one from a request (a path or query parameter, a header). <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates" class="gdls-link gdls-code">chameleon_rs.starlette.Templates</a>, the Jinja drop-in, refuses names that reach outside its folder, as Jinja does.</p>
+</div>
+</div>
+</section>
+<section id="decorator-order" class="level1">
+<h1>Decorator order</h1>
+<p>Starlette routes are usually lists (<code>Route('/', endpoint)</code>), where the order can’t go wrong. It can with <code>app.add_route()</code>, Starlette 0.x’s <code>@app.route</code>, or a route decorator of your own: a route registered before <code>@template</code> wrapped its endpoint calls the bare endpoint. An app given to <code>configure(app=app)</code> checks this inside its lifespan startup (Uvicorn and Granian report a failed startup), or before its first request when no lifespan runs, and raises <a href="../reference/web.DecoratorOrderError.html#chameleon_rs.web.DecoratorOrderError" class="gdls-link gdls-code">DecoratorOrderError</a> naming the endpoint, its file and line, its route and the fix. Mounted apps and routers (<code>Mount</code>, <code>Host</code>, <code>Router</code>, also behind middleware such as <code>Mount('/g', app=GZipMiddleware(sub_app))</code>) and <code>HTTPEndpoint</code> classes are checked too, and <code>check_views(app)</code> (or a <code>Router</code>) runs the check on demand. <code>check_order=False</code> and <code>check_views(app, ignore=[...])</code> are the escape hatch, as for <a href="../user-guide/fastapi.html#decorator-order">FastAPI</a>.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/mkennedy\.codes\/docs\/chameleon-rs\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../user-guide/fastapi.html" class="pagination-link" aria-label="FastAPI">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">FastAPI</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../user-guide/robyn.html" class="pagination-link" aria-label="Robyn">
+        <span class="nav-page-text">Robyn</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+<div class="nav-footer-center">
+<p>Developed by <a href="https://mkennedy.codes"><strong>Michael&nbsp;Kennedy</strong></a>.<br>Site created with <strong>Great&nbsp;Docs</strong>.</p>
+</div>
+</div>
+</footer>
+<script src="../github-widget.js"></script>
+<script src="../copy-page.js"></script>
+<script src="../sidebar-wrap.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'sidebar-float.js';document.body.appendChild(s);})();</script>
+<script src="../sidebar-filter.js"></script>
+<script src="../dark-mode-toggle.js"></script>
+<script src="../back-to-top.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'on-this-page.js';document.body.appendChild(s);})();</script>
+<script src="../keyboard-nav.js"></script>
+<script src="../copy-code.js"></script>
+<script src="../details.js"></script>
+<script src="../mermaid-renderer.js"></script>
+<script src="../tooltips.js"></script>
+<script>(function(){var s=document.createElement('script');s.src=(document.querySelector('link[rel="canonical"]')||{href:location.href}).href.replace(/\/[^\/]*$/,'').replace(/\/[^\/]*$/,'')+'/color-swatch.js';var h=document.currentScript;h.parentNode.insertBefore(s,h.nextSibling);})()</script>
+<script src="../responsive-tables.js"></script>
+<script src="video-embed.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'termshow.js';document.body.appendChild(s);})();</script>
+<script src="../navbar-widgets.js"></script>
+
+
+
+
+</body></html>

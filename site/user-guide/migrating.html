@@ -118,16 +118,16 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../theme-init.js"></script>
 
 
-  <meta name="description" content="chameleon-rs builds in what chameleon_partials and chameleon-flask provide. With chameleon_rs.compat.install() you don’t have to change anything: the...">
+  <meta name="description" content="chameleon-rs builds in what chameleon_partials, chameleon-flask, fastapi-chameleon and chameleon-robyn provide, and has its own Litestar engine. With...">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Migrating from the helper libraries – chameleon-rs | chameleon-rs">
-  <meta property="og:description" content="chameleon-rs builds in what chameleon_partials and chameleon-flask provide. With chameleon_rs.compat.install() you don’t have to change anything: the...">
+  <meta property="og:description" content="chameleon-rs builds in what chameleon_partials, chameleon-flask, fastapi-chameleon and chameleon-robyn provide, and has its own Litestar engine. With...">
   <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/user-guide/migrating.html">
   <meta property="og:site_name" content="chameleon-rs">
   <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Migrating from the helper libraries – chameleon-rs | chameleon-rs">
-  <meta name="twitter:description" content="chameleon-rs builds in what chameleon_partials and chameleon-flask provide. With chameleon_rs.compat.install() you don’t have to change anything: the...">
+  <meta name="twitter:description" content="chameleon-rs builds in what chameleon_partials, chameleon-flask, fastapi-chameleon and chameleon-robyn provide, and has its own Litestar engine. With...">
   <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
 </head>
 
@@ -244,6 +244,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Async rendering</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/configuration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Configuration</span></a>
   </div>
@@ -258,8 +264,44 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <ul id="quarto-sidebar-section-3" class="list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/frameworks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Web frameworks</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/flask.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Flask and Quart</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/fastapi.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FastAPI</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/starlette.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Starlette</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/robyn.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Robyn</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/litestar.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Litestar</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/pyramid.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pyramid</span></a>
   </div>
 </li>
       </ul>
@@ -303,7 +345,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#at-a-glance" id="toc-at-a-glance" class="nav-link active" data-scroll-target="#at-a-glance">At a glance</a></li>
   <li><a href="#chameleon_partials" id="toc-chameleon_partials" class="nav-link" data-scroll-target="#chameleon_partials">chameleon_partials</a></li>
   <li><a href="#chameleon-flask" id="toc-chameleon-flask" class="nav-link" data-scroll-target="#chameleon-flask">chameleon-flask</a></li>
-  <li><a href="#fastapi-chameleon-and-chameleon-robyn" id="toc-fastapi-chameleon-and-chameleon-robyn" class="nav-link" data-scroll-target="#fastapi-chameleon-and-chameleon-robyn">fastapi-chameleon and chameleon-robyn</a></li>
+  <li><a href="#fastapi-chameleon" id="toc-fastapi-chameleon" class="nav-link" data-scroll-target="#fastapi-chameleon">fastapi-chameleon</a></li>
+  <li><a href="#chameleon-robyn" id="toc-chameleon-robyn" class="nav-link" data-scroll-target="#chameleon-robyn">chameleon-robyn</a></li>
+  <li><a href="#litestar-chameleon" id="toc-litestar-chameleon" class="nav-link" data-scroll-target="#litestar-chameleon">litestar-chameleon</a></li>
+  <li><a href="#timing-renders" id="toc-timing-renders" class="nav-link" data-scroll-target="#timing-renders">Timing renders</a></li>
   <li><a href="#pitfalls" id="toc-pitfalls" class="nav-link" data-scroll-target="#pitfalls">Pitfalls</a></li>
   </ul>
 </nav>
@@ -330,7 +375,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<p>chameleon-rs builds in what chameleon_partials and chameleon-flask provide. With <a href="../reference/compat.install.html#chameleon_rs.compat.install" class="gdls-link gdls-code">chameleon_rs.compat.install()</a> you don’t have to change anything: the old imports give the built-ins. This page is for when you want to move to the new names, and drop the old setup code that’s no longer needed.</p>
+<p>chameleon-rs builds in what chameleon_partials, chameleon-flask, fastapi-chameleon and chameleon-robyn provide, and has its own Litestar engine. With <a href="../reference/compat.install.html#chameleon_rs.compat.install" class="gdls-link gdls-code">chameleon_rs.compat.install()</a> you don’t have to change anything: the old imports give the built-ins (see <a href="../user-guide/switching-from-chameleon.html">Switching from Chameleon</a> for Chameleon itself). This page is for when you want to move to the new names, and drop the old setup code that’s no longer needed.</p>
 <section id="at-a-glance" class="level1">
 <h1>At a glance</h1>
 <table class="caption-top table">
@@ -362,14 +407,26 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <td><code>import chameleon_rs.flask as chameleon_flask</code></td>
 </tr>
 <tr class="even">
+<td><code>import fastapi_chameleon</code></td>
+<td><code>import chameleon_rs.fastapi as fastapi_chameleon</code></td>
+</tr>
+<tr class="odd">
+<td><code>import chameleon_robyn</code></td>
+<td><code>import chameleon_rs.robyn as chameleon_robyn</code></td>
+</tr>
+<tr class="even">
+<td><code>from litestar_chameleon import ChameleonTemplateEngine</code></td>
+<td><code>from chameleon_rs.litestar import ChameleonEngine</code>, and return <a href="../reference/litestar.Template.html#chameleon_rs.litestar.Template" class="gdls-link gdls-code">chameleon_rs.litestar.Template</a></td>
+</tr>
+<tr class="odd">
 <td><code>chameleon_partials.render_partial(path, **m).html_text</code></td>
 <td><code>chameleon_rs.render_partial(path, **m).html_text</code></td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td><code>except chameleon_partials.PartialsException</code>, <code>except chameleon_flask.exceptions.FlaskChameleonException</code></td>
 <td>Still work. <code>except chameleon_rs.web.TemplateError</code> catches both</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td><code>has_registered_extensions = False</code> in test teardown</td>
 <td><a href="../reference/partials.clear.html#chameleon_rs.partials.clear" class="gdls-link gdls-code">chameleon_rs.partials.clear()</a></td>
 </tr>
@@ -422,14 +479,69 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </ul>
 <p>See <a href="../user-guide/flask.html">Flask and Quart</a>.</p>
 </section>
-<section id="fastapi-chameleon-and-chameleon-robyn" class="level1">
-<h1>fastapi-chameleon and chameleon-robyn</h1>
-<p>chameleon-rs doesn’t build these in yet. Keep using them, with <a href="../reference/compat.install.html#chameleon_rs.compat.install" class="gdls-link gdls-code">chameleon_rs.compat.install()</a> at the top of your entry point: they import <a href="../reference/shadow.ShadowDifference.html#chameleon_rs.shadow.ShadowDifference.chameleon" class="gdls-link gdls-code">chameleon</a>, so they render with chameleon-rs. Their test suites pass unmodified on it.</p>
+<section id="fastapi-chameleon" class="level1">
+<h1>fastapi-chameleon</h1>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> fastapi_chameleon</span></code></pre></div>
+<p>becomes</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.fastapi <span class="im">as</span> fastapi_chameleon</span></code></pre></div>
+<p>or stays as it is with <a href="../reference/compat.install.html#chameleon_rs.compat.install" class="gdls-link gdls-code">chameleon_rs.compat.install()</a>. Every name keeps working (<a href="../reference/flask.global_init.html#chameleon_rs.flask.global_init" class="gdls-link gdls-code">global_init</a>, <code>@template</code>, <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render</a>, <a href="../reference/flask.response.html#chameleon_rs.flask.response" class="gdls-link gdls-code">response</a>, <a href="../reference/flask.not_found.html#chameleon_rs.flask.not_found" class="gdls-link gdls-code">not_found</a>, <a href="../reference/robyn.generic_error.html#chameleon_rs.robyn.generic_error" class="gdls-link gdls-code">generic_error</a>, <a href="../reference/flask.clear.html#chameleon_rs.flask.clear" class="gdls-link gdls-code">clear</a>, the exception classes), and its test suite passes unmodified on the built-in. Differences:</p>
+<ul>
+<li>Async views render with <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a>: an awaitable model value is awaited where the template uses it.</li>
+<li><code>configure(..., app=app)</code> (or <code>global_init(..., app=app)</code>) checks at startup that every <code>@template</code> sits below its route decorator.</li>
+<li><a href="../reference/flask.error.html#chameleon_rs.flask.error" class="gdls-link gdls-code">error()</a>, <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async()</a>, <a href="../reference/robyn.response_async.html#chameleon_rs.robyn.response_async" class="gdls-link gdls-code">response_async()</a>, and <code>status_code=</code> on <code>@template</code>.</li>
+</ul>
+<p>See <a href="../user-guide/fastapi.html">FastAPI</a>.</p>
+</section>
+<section id="chameleon-robyn" class="level1">
+<h1>chameleon-robyn</h1>
+<div class="sourceCode" id="cb7"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_robyn</span></code></pre></div>
+<p>becomes</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.robyn <span class="im">as</span> chameleon_robyn</span></code></pre></div>
+<p>or stays as it is with <a href="../reference/compat.install.html#chameleon_rs.compat.install" class="gdls-link gdls-code">chameleon_rs.compat.install()</a>. Every name keeps working (<a href="../reference/flask.global_init.html#chameleon_rs.flask.global_init" class="gdls-link gdls-code">global_init</a>, <code>@template</code>, <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render</a>, <a href="../reference/flask.response.html#chameleon_rs.flask.response" class="gdls-link gdls-code">response</a>, <a href="../reference/flask.not_found.html#chameleon_rs.flask.not_found" class="gdls-link gdls-code">not_found</a>, <a href="../reference/flask.clear.html#chameleon_rs.flask.clear" class="gdls-link gdls-code">clear</a>, <a href="../reference/robyn.ChameleonTemplate.html#chameleon_rs.robyn.ChameleonTemplate" class="gdls-link gdls-code">ChameleonTemplate</a>, <code>__response_callback__</code>, the exception classes), and its test suite passes unmodified on the built-in. Differences:</p>
+<ul>
+<li>Async handlers render with <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a>: an awaitable model value is awaited where the template uses it.</li>
+<li><code>configure(..., app=app)</code> (or <code>global_init(..., app=app)</code>) checks in <code>app.start()</code> (and when Robyn’s test client is built) that every <code>@template</code> sits below its route decorator.</li>
+<li><a href="../reference/flask.error.html#chameleon_rs.flask.error" class="gdls-link gdls-code">error()</a>, <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async()</a>, <a href="../reference/robyn.response_async.html#chameleon_rs.robyn.response_async" class="gdls-link gdls-code">response_async()</a>, data for <a href="../reference/flask.not_found.html#chameleon_rs.flask.not_found" class="gdls-link gdls-code">not_found()</a>, and <a href="../reference/robyn.ChameleonTemplate.html#chameleon_rs.robyn.ChameleonTemplate.render_template_async" class="gdls-link gdls-code">ChameleonTemplate.render_template_async()</a>.</li>
+</ul>
+<p>See <a href="../user-guide/robyn.html">Robyn</a>.</p>
+</section>
+<section id="litestar-chameleon" class="level1">
+<h1>litestar-chameleon</h1>
+<p><a href="https://github.com/uyar/litestar-chameleon">litestar-chameleon</a> is a third-party package, not built in: it keeps working as it is with <a href="../reference/compat.install.html#chameleon_rs.compat.install" class="gdls-link gdls-code">chameleon_rs.compat.install()</a>. To move to the built-in engine instead:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> litestar_chameleon <span class="im">import</span> ChameleonTemplateEngine</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> litestar.response <span class="im">import</span> Template</span></code></pre></div>
+<p>becomes</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs.litestar <span class="im">import</span> ChameleonEngine <span class="im">as</span> ChameleonTemplateEngine</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs.litestar <span class="im">import</span> Template   <span class="co"># .pt served as text/html</span></span></code></pre></div>
+<p>Differences: <code>url_for_static_asset</code> is registered too, a name outside the template folder is refused, a context key wins over a template callable of the same name (as for Jinja), the loader options are <a href="../reference/litestar.ChameleonEngine.html#chameleon_rs.litestar.ChameleonEngine" class="gdls-link gdls-code">ChameleonEngine</a> arguments (<code>CHAMELEON_RELOAD</code> rather than <code>CHAMELEON_AUTO_RELOAD</code>), and stock Chameleon need not be installed. See <a href="../user-guide/litestar.html">Litestar</a>.</p>
+</section>
+<section id="timing-renders" class="level1">
+<h1>Timing renders</h1>
+<p>Instrumentation that replaces <a href="../reference/PageTemplate.render.html#chameleon_rs.PageTemplate.render" class="gdls-link gdls-code">PageTemplate.render</a> to time every render (common in apps that log slow templates) changes how async renders run on chameleon-rs. <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async()</a> honours a <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> that differs from the built-in one, because a subclass’s override may add defaults or post-process the output, and a monkeypatched <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render</a> looks exactly like that override. So with the patch in place, every <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async()</a>, including those of async <code>@template</code> views, calls your <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render</a> synchronously, and awaitable model values are not awaited.</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Makes every render_async() render synchronously:</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>original <span class="op">=</span> PageTemplate.render</span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> timed_render(<span class="va">self</span>, <span class="op">*</span>args, <span class="op">**</span>kwargs):</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>    start <span class="op">=</span> time.perf_counter()</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">try</span>:</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> original(<span class="va">self</span>, <span class="op">*</span>args, <span class="op">**</span>kwargs)</span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">finally</span>:</span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>        log_render(<span class="va">self</span>.filename, time.perf_counter() <span class="op">-</span> start)</span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>PageTemplate.render <span class="op">=</span> timed_render</span></code></pre></div>
+<p>Wrapping <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a> as well doesn’t help: the original <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a> still sees the replaced <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render</a>. Instead:</p>
+<ul>
+<li><strong>Time the request or the view</strong>, in middleware or around the call that renders. The template’s share is then the view’s time minus its data loading.</li>
+<li><strong>Use a sampling profiler</strong> such as py-spy for a breakdown by template and helper, with no code change.</li>
+<li><strong>Keep the patch only in apps that render synchronously.</strong> There it changes nothing but the timing.</li>
+</ul>
+<p>The same applies to a subclass that overrides <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a>: its <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async()</a> renders synchronously through the override. See <a href="../user-guide/compatibility.html#render_async-and-a-replaced-render">Compatibility</a>.</p>
 </section>
 <section id="pitfalls" class="level1">
 <h1>Pitfalls</h1>
 <ul>
 <li><strong>Install the alias first.</strong> <a href="../reference/compat.install.html#chameleon_rs.compat.install" class="gdls-link gdls-code">chameleon_rs.compat.install()</a> must run before the first <code>import chameleon</code>, including imports inside your framework integration. Put it in the entry point itself, above every other import.</li>
+<li><strong>A patched <a href="../reference/PageTemplate.render.html#chameleon_rs.PageTemplate.render" class="gdls-link gdls-code">PageTemplate.render</a> makes async renders synchronous.</strong> See <a href="#timing-renders">Timing renders</a>.</li>
 <li><strong>Don’t mix shadow mode with the alias.</strong> Shadow mode needs stock Chameleon as <a href="../reference/shadow.ShadowDifference.html#chameleon_rs.shadow.ShadowDifference.chameleon" class="gdls-link gdls-code">chameleon</a>.</li>
 <li><strong><code>template.source</code> isn’t Python.</strong> Code that read the generated module (rare, mostly debugging tools) gets a program dump instead. See <a href="../user-guide/compatibility.html#known-differences">Compatibility</a>.</li>
 </ul>

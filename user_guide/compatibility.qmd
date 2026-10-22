@@ -31,7 +31,8 @@ type and message of any error a template raises.
   chameleon-rs module of the same name.
 - **Errors**: the same exception types, and the same formatted messages with the template
   position and expression.
-- **The helper libraries**: chameleon_partials' and chameleon-flask's APIs, built in.
+- **The helper libraries**: the APIs of chameleon_partials, chameleon-flask, fastapi-chameleon
+  and chameleon-robyn, built in.
 
 ## Known differences
 
@@ -95,6 +96,15 @@ chameleon-robyn in a few ways that don't affect templates that worked before:
   object itself.
 - **Setup.** Every `configure()` call applies (`register_extensions` ignored later calls), and
   `configure(..., app=app)` checks the decorator order at startup.
+
+### A macro removed while reloading
+
+With `auto_reload`, Chameleon re-cooks a changed template into the same object and keeps the
+macro functions of the old version on it. So a macro that the new source no longer defines can
+still be looked up by name (and renders its old content). chameleon-rs replaces the macros
+with the new source's and raises `KeyError('Macro does not exist: ...')`. This shows up in
+Pyramid with a `#macro` renderer when you edit a template to remove or rename that macro: one
+test in pyramid_chameleon's suite checks it. See [Pyramid](pyramid.qmd#compatibility).
 
 ### `render_async` and a replaced `render`
 

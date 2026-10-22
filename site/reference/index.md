@@ -1,7 +1,7 @@
 # API Reference
 
 
-The public API of chameleon-rs. It mirrors Chameleon's (PageTemplate, PageTemplateFile, PageTemplateLoader, …), plus built-in partials, process-wide configuration and the Flask/Quart integration.
+The public API of chameleon-rs. It mirrors Chameleon's (PageTemplate, PageTemplateFile, PageTemplateLoader, …), plus async rendering, built-in partials, process-wide configuration (including Markdown) and the Flask/Quart, FastAPI, Starlette, Robyn and Litestar integrations.
 
 
 ## Templates
@@ -53,7 +53,7 @@ Render template to string, awaiting awaitable values (D9).
 ## Configuration
 
 
-Process-wide settings for templates loaded by name.
+Process-wide settings for templates loaded by name, partials and Markdown.
 
 
 [configure()](configure.md#chameleon_rs.configure)  
@@ -61,6 +61,16 @@ Configures chameleon-rs for the whole process: where templates loaded by name li
 
 [core_version()](core_version.md#chameleon_rs.core_version)  
 Version of the Rust core, for bug reports and for checking which build is loaded.
+
+
+## Async
+
+
+Opt-in concurrency for render_async. See also PageTemplate.render_async.
+
+
+[concurrent()](concurrent.md#chameleon_rs.concurrent)  
+Marks an async helper so that an asynchronous render awaits its calls concurrently
 
 
 ## Partials
@@ -120,6 +130,196 @@ Ends the current `@template` view with an error page: `template_file` rendered w
 [flask.clear()](flask.clear.md#chameleon_rs.flask.clear)  
 Forgets the views' process-wide configuration, so a later `configure()` /
 
+[flask.check_views()](flask.check_views.md#chameleon_rs.flask.check_views)  
+Raises `chameleon_rs.web.DecoratorOrderError` if a route of `app` (blueprints
+
+
+## FastAPI
+
+
+fastapi-chameleon's API, built in. Imports FastAPI only when imported itself.
+
+
+[fastapi.configure()](fastapi.configure.md#chameleon_rs.fastapi.configure)  
+Configures where templates live and how they load, for the whole process (the same as
+
+[fastapi.global_init()](fastapi.global_init.md#chameleon_rs.fastapi.global_init)  
+fastapi-chameleon's setup call: configures the views' templates only (partials keep
+
+[fastapi.template()](fastapi.template.md#chameleon_rs.fastapi.template)  
+Decorates a FastAPI view (sync or async) to render a template with what it returns:
+
+[fastapi.render()](fastapi.render.md#chameleon_rs.fastapi.render)  
+Renders a template (path relative to the template folder) to a `str`.
+
+[fastapi.render_async()](fastapi.render_async.md#chameleon_rs.fastapi.render_async)  
+`render` as a coroutine: the template's `render_async`, which awaits awaitable
+
+[fastapi.response()](fastapi.response.md#chameleon_rs.fastapi.response)  
+Renders a template to a `fastapi.Response`. (As in fastapi-chameleon, every keyword
+
+[fastapi.response_async()](fastapi.response_async.md#chameleon_rs.fastapi.response_async)  
+`response` as a coroutine, rendering with `render_async`.
+
+[fastapi.not_found()](fastapi.not_found.md#chameleon_rs.fastapi.not_found)  
+Ends the current `@template` view with a 404 page: `template_file`
+
+[fastapi.error()](fastapi.error.md#chameleon_rs.fastapi.error)  
+Ends the current `@template` view with an error page: `template_file` rendered with
+
+[fastapi.generic_error()](fastapi.generic_error.md#chameleon_rs.fastapi.generic_error)  
+fastapi-chameleon's name and signature for `error()`.
+
+[fastapi.clear()](fastapi.clear.md#chameleon_rs.fastapi.clear)  
+Forgets the views' process-wide configuration, so a later `configure()` /
+
+[fastapi.check_views()](fastapi.check_views.md#chameleon_rs.fastapi.check_views)  
+Raises `chameleon_rs.web.DecoratorOrderError` if a route of `app` (sub-routers and
+
+
+## Starlette
+
+
+Jinja2Templates' API for chameleon-rs, and the decorator API. Imports Starlette only when imported itself.
+
+
+[starlette.Templates](starlette.Templates.md#chameleon_rs.starlette.Templates)  
+Starlette's `Jinja2Templates` for chameleon-rs templates.
+
+[starlette.configure()](starlette.configure.md#chameleon_rs.starlette.configure)  
+Configures where templates live and how they load, for the whole process (the same as
+
+[starlette.global_init()](starlette.global_init.md#chameleon_rs.starlette.global_init)  
+fastapi-chameleon's setup call, for Starlette: configures the views' templates only
+
+[starlette.template()](starlette.template.md#chameleon_rs.starlette.template)  
+Decorates a Starlette endpoint (a function, or a method of an `HTTPEndpoint` class;
+
+[starlette.render()](starlette.render.md#chameleon_rs.starlette.render)  
+Renders a template (path relative to the template folder) to a `str`.
+
+[starlette.render_async()](starlette.render_async.md#chameleon_rs.starlette.render_async)  
+`render` as a coroutine: the template's `render_async`, which awaits awaitable
+
+[starlette.response()](starlette.response.md#chameleon_rs.starlette.response)  
+Renders a template to an `HTMLResponse` (every keyword but `content_type` and
+
+[starlette.response_async()](starlette.response_async.md#chameleon_rs.starlette.response_async)  
+`response` as a coroutine, rendering with `render_async`.
+
+[starlette.not_found()](starlette.not_found.md#chameleon_rs.starlette.not_found)  
+Ends the current `@template` endpoint with a 404 page: `template_file` rendered with
+
+[starlette.error()](starlette.error.md#chameleon_rs.starlette.error)  
+Ends the current `@template` endpoint with an error page: `template_file` rendered
+
+[starlette.generic_error()](starlette.generic_error.md#chameleon_rs.starlette.generic_error)  
+fastapi-chameleon's name and signature for `error()`.
+
+[starlette.clear()](starlette.clear.md#chameleon_rs.starlette.clear)  
+Forgets the views' process-wide configuration, so a later `configure()` /
+
+[starlette.check_views()](starlette.check_views.md#chameleon_rs.starlette.check_views)  
+Raises `chameleon_rs.web.DecoratorOrderError` if a route of `app` (a Starlette app
+
+
+## Robyn
+
+
+chameleon-robyn's API, built in. Imports Robyn only when imported itself.
+
+
+[robyn.configure()](robyn.configure.md#chameleon_rs.robyn.configure)  
+Configures where templates live and how they load, for the whole process (the same as
+
+[robyn.global_init()](robyn.global_init.md#chameleon_rs.robyn.global_init)  
+chameleon-robyn's setup call: configures the handlers' templates only (partials keep
+
+[robyn.template()](robyn.template.md#chameleon_rs.robyn.template)  
+Decorates a Robyn route handler (sync or async) to render a template with what it
+
+[robyn.render()](robyn.render.md#chameleon_rs.robyn.render)  
+Renders a template (path relative to the template folder) to a `str` (no response):
+
+[robyn.render_async()](robyn.render_async.md#chameleon_rs.robyn.render_async)  
+`render` as a coroutine: the template's `render_async`, which awaits awaitable
+
+[robyn.response()](robyn.response.md#chameleon_rs.robyn.response)  
+Renders a template into a `robyn.Response` with \`\`Content-Type: {content_type};
+
+[robyn.response_async()](robyn.response_async.md#chameleon_rs.robyn.response_async)  
+`response` as a coroutine, rendering with `render_async`.
+
+[robyn.not_found()](robyn.not_found.md#chameleon_rs.robyn.not_found)  
+Ends the current `@template` handler with a 404 page: `template_file`
+
+[robyn.error()](robyn.error.md#chameleon_rs.robyn.error)  
+Ends the current `@template` handler with an error page: `template_file` rendered as
+
+[robyn.generic_error()](robyn.generic_error.md#chameleon_rs.robyn.generic_error)  
+fastapi-chameleon's name and signature for `error()`.
+
+[robyn.clear()](robyn.clear.md#chameleon_rs.robyn.clear)  
+Forgets the handlers' process-wide configuration, so a later `configure()` /
+
+[robyn.check_views()](robyn.check_views.md#chameleon_rs.robyn.check_views)  
+Raises `chameleon_rs.web.DecoratorOrderError` if a route of `app` (a Robyn app, with
+
+[robyn.ChameleonTemplate](robyn.ChameleonTemplate.md#chameleon_rs.robyn.ChameleonTemplate)  
+Chameleon templates through Robyn's `TemplateInterface`, as its `JinjaTemplate`:
+
+
+## Litestar
+
+
+Litestar's template engine interface for chameleon-rs, and the decorator API. Imports Litestar only when imported itself.
+
+
+[litestar.ChameleonEngine](litestar.ChameleonEngine.md#chameleon_rs.litestar.ChameleonEngine)  
+Litestar's `TemplateEngineProtocol` for chameleon-rs templates:
+
+[litestar.ChameleonTemplate](litestar.ChameleonTemplate.md#chameleon_rs.litestar.ChameleonTemplate)  
+A page template as Litestar's `TemplateProtocol`: `render(**context)` renders it with
+
+[litestar.Template](litestar.Template.md#chameleon_rs.litestar.Template)  
+Litestar's `Template` response, served as `text/html` when Litestar cannot guess the
+
+[litestar.configure()](litestar.configure.md#chameleon_rs.litestar.configure)  
+Configures where templates live and how they load, for the whole process (the same as
+
+[litestar.global_init()](litestar.global_init.md#chameleon_rs.litestar.global_init)  
+The other integrations' setup call, for Litestar: configures the handlers' templates only
+
+[litestar.template()](litestar.template.qmd#chameleon_rs.litestar.template)  
+Decorates a Litestar route handler function (sync or async; a `Controller` method too)
+
+[litestar.render()](litestar.render.md#chameleon_rs.litestar.render)  
+Renders a template (path relative to the template folder) to a `str`.
+
+[litestar.render_async()](litestar.render_async.md#chameleon_rs.litestar.render_async)  
+`render` as a coroutine: the template's `render_async`, which awaits awaitable
+
+[litestar.response()](litestar.response.md#chameleon_rs.litestar.response)  
+Renders a template into a `litestar.Response` (every keyword but `content_type` and
+
+[litestar.response_async()](litestar.response_async.md#chameleon_rs.litestar.response_async)  
+`response` as a coroutine, rendering with `render_async`.
+
+[litestar.not_found()](litestar.not_found.md#chameleon_rs.litestar.not_found)  
+Ends the current `@template` handler with a 404 page: `template_file` rendered with
+
+[litestar.error()](litestar.error.md#chameleon_rs.litestar.error)  
+Ends the current `@template` handler with an error page: `template_file` rendered
+
+[litestar.generic_error()](litestar.generic_error.md#chameleon_rs.litestar.generic_error)  
+fastapi-chameleon's name and signature for `error()`.
+
+[litestar.clear()](litestar.clear.md#chameleon_rs.litestar.clear)  
+Forgets the handlers' process-wide configuration, so a later `configure()` /
+
+[litestar.check_views()](litestar.check_views.md#chameleon_rs.litestar.check_views)  
+Raises `chameleon_rs.web.DecoratorOrderError` if a route of `app` (a Litestar app or
+
 
 ## Errors and web helpers
 
@@ -138,6 +338,12 @@ Raised inside a decorated view to answer with an error page: the decorator rende
 
 [web.NotFound](web.NotFound.md#chameleon_rs.web.NotFound)  
 Raised by `not_found()`: the decorator renders `template_file` (`errors/404.pt`
+
+[web.TemplateNotFound](web.TemplateNotFound.md#chameleon_rs.web.TemplateNotFound)  
+No template of that name, or a name reaching outside the template folder: raised by
+
+[web.DecoratorOrderError](web.DecoratorOrderError.md#chameleon_rs.web.DecoratorOrderError)  
+A view was registered with its framework before `@template` wrapped it (`@template`
 
 [web.model_of()](web.model_of.md#chameleon_rs.web.model_of)  
 The template model a view returned: a `dict` as is; any other `Mapping` as a

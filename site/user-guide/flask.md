@@ -41,6 +41,29 @@ print(client.get('/').text)
 [configure()](../reference/configure.md#chameleon_rs.configure) here is the same call as [chameleon_rs.configure()](../reference/configure.md#chameleon_rs.configure), so it also tells [render_partial](../reference/render_partial.md#chameleon_rs.render_partial) where templates live.
 
 
+# Decorator order
+
+`@template` goes below the route decorator. Written above it, Flask registers the bare view, the template never renders and the route quietly returns the view's dict as JSON. Give the app to [configure()](../reference/configure.md#chameleon_rs.configure) and it checks before its first request (Quart: when it starts serving):
+
+``` python
+chameleon_flask.configure(template_folder=template_folder, app=app)
+
+
+@chameleon_flask.template('home/index.pt')   # wrong: above the route
+@app.get('/about')
+def about():
+    return {'message': 'About', 'videos': []}
+
+# The first request raises chameleon_rs.web.DecoratorOrderError:
+# @template must be placed below the route decorator (@app.route, @app.get,
+# @blueprint.route, ...) on about() at app.py:12 (route GET /about): ...
+```
+
+Flask has no startup hook, so the check runs on the first request. Blueprints are included. `chameleon_flask.check_views(app)` runs the same check on demand, for example in a test. Once the check passes, the app runs without it.
+
+One pattern can't be told from the mistake: a function routed raw on this app whose `@template` wrapper is used somewhere else (called from another view, or routed on another app). For such an app, pass `check_order=False` to [configure()](../reference/configure.md#chameleon_rs.configure) and keep the check in a test with `chameleon_flask.check_views(app, ignore=[that_function])`.
+
+
 # What a view can return
 
 - **A model:** a `dict`, any other mapping, a dataclass instance (its fields, shallowly) or a Pydantic model (anything with a callable `model_dump()`).
@@ -94,6 +117,10 @@ print(response.status_code, response.text)
 
 They raise [chameleon_rs.web.NotFound](../reference/web.NotFound.md#chameleon_rs.web.NotFound) and [chameleon_rs.web.ErrorPage](../reference/web.ErrorPage.md#chameleon_rs.web.ErrorPage), which the decorator turns into the response.
 
+> **Warning: Template names come from your code**
+>
+> The names given to `@template`, [render()](../reference/flask.render.md#chameleon_rs.flask.render), [response()](../reference/flask.response.md#chameleon_rs.flask.response), [not_found()](../reference/flask.not_found.md#chameleon_rs.flask.not_found) / [error()](../reference/flask.error.md#chameleon_rs.flask.error) and [render_partial()](../reference/render_partial.md#chameleon_rs.render_partial) are looked up as the original libraries look them up, which allows `..` and absolute paths. Write them in your code; never build one from a request (a path or query parameter, a header). [chameleon_rs.starlette.Templates](../reference/starlette.Templates.md#chameleon_rs.starlette.Templates), the Jinja drop-in, refuses names that reach outside its folder, as Jinja does.
+
 
 # Rendering without the decorator
 
@@ -107,7 +134,7 @@ resp = chameleon_flask.response('feed.pt', content_type='application/xml', items
 
 # One configuration per app
 
-Pass `app=` to give one Flask or Quart app its own template folder. It's stored in `app.extensions['chameleon_rs']` and used while that app handles a request. Other apps, and code outside a request, use the process-wide configuration.
+Pass `app=` to give one Flask or Quart app its own template folder. It's stored in `app.extensions['chameleon_rs']` and used while that app handles a request. Other apps, and code outside a request, use the process-wide configuration. It also turns on the decorator-order check for that app.
 
 ``` python
 chameleon_flask.configure(template_folder='admin/templates', app=admin_app)
@@ -134,9 +161,7 @@ async def index():
     return {'message': 'Hello', 'videos': videos}
 ```
 
-> **Note: Renders are synchronous for now**
->
-> An async view awaits your code, then renders the template synchronously, as chameleon-flask does. Async rendering, which doesn't block the event loop, is in progress.
+An async view's page renders with [render_async](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async): a model value that is awaitable (a coroutine, task or future) is awaited where the template uses it, without blocking the event loop. With no awaitable values the output is the same as [render()](../reference/flask.render.md#chameleon_rs.flask.render)'s.
 
 
 # Coming from chameleon-flask

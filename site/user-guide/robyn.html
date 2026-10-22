@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+<link rel="canonical" href="https://mkennedy.codes/docs/chameleon-rs/user-guide/robyn.html">
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.38">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Robyn – chameleon-rs | chameleon-rs</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../user-guide/litestar.html" rel="next">
+<link href="../user-guide/starlette.html" rel="prev">
+<link href="../favicon.ico" rel="icon">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-aa1552726bdd3cb78d40c93fdbd5382a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>document.head.appendChild(Object.assign(document.createElement('link'),{rel:'stylesheet',href:(document.querySelector('meta[name="quarto:offset"]')||{content:''}).content+'termshow.css'}));</script>
+<meta name="gd-logo-dark" content="chameleon-rs-logo-dark.png">
+<link rel="icon" type="image/x-icon" href="https://mkennedy.codes/docs/chameleon-rs/favicon.ico" sizes="48x48">
+<link rel="icon" type="image/png" sizes="32x32" href="https://mkennedy.codes/docs/chameleon-rs/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="https://mkennedy.codes/docs/chameleon-rs/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="https://mkennedy.codes/docs/chameleon-rs/apple-touch-icon.png">
+<script src="../theme-init.js"></script>
+
+
+  <meta name="description" content="Robyn publishes wheels for CPython 3.10 to 3.14 only (no 3.15 and no free-threaded build yet), so chameleon_rs.robyn works wherever Robyn installs. The...">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Robyn – chameleon-rs | chameleon-rs">
+  <meta property="og:description" content="Robyn publishes wheels for CPython 3.10 to 3.14 only (no 3.15 and no free-threaded build yet), so chameleon_rs.robyn works wherever Robyn installs. The...">
+  <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/user-guide/robyn.html">
+  <meta property="og:site_name" content="chameleon-rs">
+  <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Robyn – chameleon-rs | chameleon-rs">
+  <meta name="twitter:description" content="Robyn publishes wheels for CPython 3.10 to 3.14 only (no 3.15 and no free-threaded build yet), so chameleon_rs.robyn works wherever Robyn installs. The...">
+  <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a href="../index.html" class="navbar-brand navbar-brand-logo">
+    <img src="../chameleon-rs-logo-light.png" alt="chameleon-rs" class="navbar-logo light-content">
+    <img src="../chameleon-rs-logo-light.png" alt="chameleon-rs" class="navbar-logo dark-content">
+    </a>
+    <a class="navbar-brand" href="../index.html">
+    <span class="navbar-title">chameleon-rs</span>
+    </a>
+  </div>
+            <div id="quarto-search" class=""></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link active" href="../user-guide/getting-started.html" aria-current="page"> 
+<span class="menu-text">User Guide</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../language/index.html"> 
+<span class="menu-text">Language Reference</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../recipes/index.html"> 
+<span class="menu-text">Recipes</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="../reference/index.html"> 
+<span class="menu-text">API Reference</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item">
+    <span class="nav-link">
+<div id="github-widget" data-owner="mikeckennedy" data-repo="chameleon-rust"></div>
+    </span>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <h1 class="quarto-secondary-nav-title no-breadcrumbs">Robyn</h1>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">Get started</span></a>
+</div>
+      <ul id="quarto-sidebar-section-1" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/getting-started.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting started</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/switching-from-chameleon.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Switching from Chameleon</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">Templates</span></a>
+</div>
+      <ul id="quarto-sidebar-section-2" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/template-language.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Template language</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/partials.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Partials</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/markdown.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Markdown</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Async rendering</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/configuration.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Configuration</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">Web frameworks</span></a>
+</div>
+      <ul id="quarto-sidebar-section-3" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/frameworks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Web frameworks</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/flask.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Flask and Quart</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/fastapi.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FastAPI</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/starlette.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Starlette</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/robyn.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Robyn</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/litestar.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Litestar</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/pyramid.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pyramid</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">Background</span></a>
+</div>
+      <ul id="quarto-sidebar-section-4" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/compatibility.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Compatibility</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/performance.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Performance</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/migrating.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Migrating from the helper libraries</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul class="collapse">
+  <li><a href="#a-first-handler" id="toc-a-first-handler" class="nav-link active" data-scroll-target="#a-first-handler">A first handler</a></li>
+  <li><a href="#decorator-order" id="toc-decorator-order" class="nav-link" data-scroll-target="#decorator-order">Decorator order</a></li>
+  <li><a href="#sync-and-async-handlers" id="toc-sync-and-async-handlers" class="nav-link" data-scroll-target="#sync-and-async-handlers">Sync and async handlers</a></li>
+  <li><a href="#what-a-handler-can-return" id="toc-what-a-handler-can-return" class="nav-link" data-scroll-target="#what-a-handler-can-return">What a handler can return</a></li>
+  <li><a href="#the-template-decorator" id="toc-the-template-decorator" class="nav-link" data-scroll-target="#the-template-decorator">The <code>@template</code> decorator</a></li>
+  <li><a href="#error-pages" id="toc-error-pages" class="nav-link" data-scroll-target="#error-pages">Error pages</a></li>
+  <li><a href="#rendering-without-the-decorator" id="toc-rendering-without-the-decorator" class="nav-link" data-scroll-target="#rendering-without-the-decorator">Rendering without the decorator</a></li>
+  <li><a href="#robyns-template-interface" id="toc-robyns-template-interface" class="nav-link" data-scroll-target="#robyns-template-interface">Robyn’s template interface</a></li>
+  <li><a href="#coming-from-chameleon-robyn" id="toc-coming-from-chameleon-robyn" class="nav-link" data-scroll-target="#coming-from-chameleon-robyn">Coming from chameleon-robyn</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title d-none d-lg-block">Robyn</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p><code>chameleon_rs.robyn</code> renders templates from <a href="https://robyn.tech">Robyn</a> route handlers. It has chameleon-robyn’s API, so moving an app over is an import change, or no change at all with <a href="../reference/compat.install.html#chameleon_rs.compat.install" class="gdls-link gdls-code">chameleon_rs.compat.install()</a> (which makes <code>import chameleon_robyn</code> give this module).</p>
+<p><code>import chameleon_rs</code> doesn’t import Robyn. Only <code>import chameleon_rs.robyn</code> does. There is nothing extra to install: it uses the Robyn your app already has.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Python versions
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>Robyn publishes wheels for CPython 3.10 to 3.14 only (no 3.15 and no free-threaded build yet), so <code>chameleon_rs.robyn</code> works wherever Robyn installs. The examples on this page are not run when the docs are built, as the other framework pages are.</p>
+</div>
+</div>
+<section id="a-first-handler" class="level1">
+<h1>A first handler</h1>
+<div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> robyn <span class="im">import</span> Robyn</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.robyn <span class="im">as</span> chameleon_robyn</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> Robyn(<span class="va">__file__</span>)</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>chameleon_robyn.configure(template_folder<span class="op">=</span><span class="st">'templates'</span>, auto_reload<span class="op">=</span>dev_mode, app<span class="op">=</span>app)</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/'</span>)</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_robyn.template</span>(<span class="st">'home/index.pt'</span>)</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> index(query_params):</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    videos <span class="op">=</span> [<span class="st">'intro'</span>, <span class="st">'partials'</span>, <span class="st">'async'</span>]</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'message'</span>: <span class="st">'Hello'</span>, <span class="st">'videos'</span>: videos[: <span class="bu">int</span>(query_params.get(<span class="st">'limit'</span>, <span class="st">'2'</span>))]}</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>app.start(port<span class="op">=</span><span class="dv">8080</span>)</span></code></pre></div>
+<p>The handler returns the template’s model, and <code>@template</code> renders it into a <code>robyn.Response</code> with <code>Content-Type: text/html; charset=utf-8</code>. The decorated handler keeps its signature, so Robyn passes it the same request parts (<code>request</code>, <code>query_params</code>, path parameters, …) as without <code>@template</code>.</p>
+<p><a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">configure()</a> here is the same call as <a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">chameleon_rs.configure()</a>, so it also tells <a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a> where templates live. <code>app=</code> turns on the decorator-order check below. <code>global_init(template_folder, auto_reload=False, cache_init=True, restricted_namespace=True)</code> is chameleon-robyn’s call and still works.</p>
+</section>
+<section id="decorator-order" class="level1">
+<h1>Decorator order</h1>
+<p><code>@template</code> goes below the route decorator. Written above it, Robyn registers the bare handler, the template never renders and the route quietly returns the handler’s dict as JSON. An app given to <code>configure(..., app=app)</code> checks this when it starts:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_robyn.template</span>(<span class="st">'home/about.pt'</span>)   <span class="co"># wrong: above the route</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/about'</span>)</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> about():</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'message'</span>: <span class="st">'About'</span>}</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>app.start(port<span class="op">=</span><span class="dv">8080</span>)</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="co"># chameleon_rs.web.DecoratorOrderError: @template must be placed below the route decorator</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="co"># (@app.get, @app.post, @router.get, app.add_route, ...) on about() at app.py:12</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="co"># (route GET /about): the route was registered with the undecorated view, so its template</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="co"># never renders. Put the route decorator first (outermost) and @template under it.</span></span></code></pre></div>
+<p>The check runs in <code>app.start()</code>, in the main process before the server starts, so a misordered app fails to start. Robyn’s own startup hook was not used: an app has one startup handler (a second <code>startup_handler</code> replaces the first) and Robyn runs it inside each server process. Robyn’s in-process test client (<code>robyn.testing.TestClient(app)</code>) never calls <code>start()</code>, so the check also runs whenever the app’s route table is read with routes added since the last check, which the test client does when it is built: a misordered app fails there too. Reading the table early (a route listing built at import time) does not end the check: routes added afterwards are checked at the next read and in <code>start()</code>. Once <code>start()</code> passed the check, both hooks remove themselves.</p>
+<p>Routes of a <code>SubRouter</code> included with <code>app.include_router(...)</code> are checked with the app. <code>chameleon_robyn.check_views(app)</code> (or a <code>SubRouter</code>) runs the same check on demand. A function registered raw on purpose (JSON on one route) and also decorated on another route is not flagged. One pattern can’t be told from the mistake: a function routed raw on this app whose <code>@template</code> wrapper is used somewhere else (called from another handler, or routed on another app). For such an app, pass <code>check_order=False</code> to <a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">configure()</a> and keep the check in a test with <code>chameleon_robyn.check_views(app, ignore=[that_function])</code>.</p>
+</section>
+<section id="sync-and-async-handlers" class="level1">
+<h1>Sync and async handlers</h1>
+<ul>
+<li>An <code>async def</code> handler renders its page with <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a> on Robyn’s event loop. A model value that is awaitable (a coroutine, task or future) is awaited where the template uses it, so a slow query can be handed to the template unawaited, and other requests keep being served while it waits.</li>
+<li>A plain <code>def</code> handler renders with <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> where Robyn runs it: on its Rust worker thread, not on the event loop and not in a thread pool. While it renders, that worker (one per process by default) handles nothing else, as with chameleon-robyn.</li>
+</ul>
+<p><code>@template(..., concurrent=True)</code> renders <code>render_partial(...)</code> calls with awaitable arguments concurrently; <code>@template(..., offload=True)</code> (experimental) renders in a worker thread. Both apply to <code>async def</code> handlers only.</p>
+</section>
+<section id="what-a-handler-can-return" class="level1">
+<h1>What a handler can return</h1>
+<ul>
+<li><strong>A model:</strong> a <code>dict</code>, any other mapping, a dataclass instance (its fields, shallowly) or a Pydantic model (anything with a callable <code>model_dump()</code>).</li>
+<li><strong>A response:</strong> a <code>robyn.Response</code> passes through unchanged (redirects, custom errors).</li>
+</ul>
+<p>Anything else raises <code>chameleon_rs.robyn.ChameleonRobynException</code>.</p>
+<p>A <code>__response_callback__</code> in the model is not a template variable: it is called with the response before it is returned, to set cookies or headers. The handler’s dict is not changed, so a shared or module-level model keeps working.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> remember(response):</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    response.set_cookie(<span class="st">'session'</span>, session_id)</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">@app.post</span>(<span class="st">'/login'</span>)</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_robyn.template</span>(<span class="st">'account/welcome.pt'</span>)</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> login(request):</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'user'</span>: user, <span class="st">'__response_callback__'</span>: remember}</span></code></pre></div>
+</section>
+<section id="the-template-decorator" class="level1">
+<h1>The <code>@template</code> decorator</h1>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_robyn.template</span>(<span class="st">'home/index.pt'</span>)                       <span class="co"># a template path</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_robyn.template</span>(<span class="st">'feed.pt'</span>, <span class="st">'application/xml'</span>)          <span class="co"># content_type=, or mimetype=</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_robyn.template</span>(<span class="st">'home/created.pt'</span>, status_code<span class="op">=</span><span class="dv">201</span>)</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_robyn.template</span>                                        <span class="co"># no arguments</span></span></code></pre></div>
+<p>With no path, it renders <code>{module}/{function}.html</code>, where <code>{module}</code> is the last part of the handler’s module name; if there’s no <code>.html</code> file in the template folder, it uses <code>{module}/{function}.pt</code>. As in chameleon-robyn, the choice is made at the first request, once a template folder is configured, so handlers can be decorated at import time and <a href="../reference/flask.global_init.html#chameleon_rs.flask.global_init" class="gdls-link gdls-code">global_init()</a> called later from <code>main()</code>.</p>
+</section>
+<section id="error-pages" class="level1">
+<h1>Error pages</h1>
+<p>Inside a decorated handler, <a href="../reference/flask.not_found.html#chameleon_rs.flask.not_found" class="gdls-link gdls-code">not_found()</a> and <a href="../reference/flask.error.html#chameleon_rs.flask.error" class="gdls-link gdls-code">error()</a> stop the handler and render an error page as <code>text/html</code>. The template gets <code>message</code> (<code>'The URL resulted in a 404 response.'</code> or <code>'The URL resulted in an error.'</code>) and the data passed:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/videos/:name'</span>)</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_robyn.template</span>(<span class="st">'home/index.pt'</span>)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> video(name):</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> name <span class="kw">not</span> <span class="kw">in</span> videos:</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>        chameleon_robyn.not_found(name<span class="op">=</span>name)   <span class="co"># renders errors/404.pt with status 404</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'message'</span>: name, <span class="st">'videos'</span>: [name]}</span></code></pre></div>
+<ul>
+<li><code>not_found(template_file='errors/404.pt', **data)</code> renders the page with status 404 (<code>four04template_file=</code> is chameleon-robyn’s name for the template).</li>
+<li><code>error(template_file, status_code=500, **data)</code> renders any error page.</li>
+<li><code>generic_error(template_file, status_code, template_data)</code> is fastapi-chameleon’s name and signature for <a href="../reference/flask.error.html#chameleon_rs.flask.error" class="gdls-link gdls-code">error()</a>.</li>
+</ul>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Warning</span>Template names come from your code
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The names given to <code>@template</code>, <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a>, <a href="../reference/flask.response.html#chameleon_rs.flask.response" class="gdls-link gdls-code">response()</a>, <a href="../reference/flask.not_found.html#chameleon_rs.flask.not_found" class="gdls-link gdls-code">not_found()</a> / <a href="../reference/flask.error.html#chameleon_rs.flask.error" class="gdls-link gdls-code">error()</a>, <a href="../reference/robyn.ChameleonTemplate.html#chameleon_rs.robyn.ChameleonTemplate.render_template" class="gdls-link gdls-code">ChameleonTemplate.render_template()</a> and <a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial()</a> are looked up as the original libraries look them up, which allows <code>..</code> and absolute paths. Write them in your code; never build one from a request (a path or query parameter, a header).</p>
+</div>
+</div>
+</section>
+<section id="rendering-without-the-decorator" class="level1">
+<h1>Rendering without the decorator</h1>
+<div class="sourceCode" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>html <span class="op">=</span> chameleon_robyn.render(<span class="st">'emails/welcome.pt'</span>, user<span class="op">=</span>user)        <span class="co"># a str</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>html <span class="op">=</span> <span class="cf">await</span> chameleon_robyn.render_async(<span class="st">'emails/welcome.pt'</span>, user<span class="op">=</span>user)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>resp <span class="op">=</span> chameleon_robyn.response(<span class="st">'feed.pt'</span>, <span class="st">'application/xml'</span>, items<span class="op">=</span>items)</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>resp <span class="op">=</span> <span class="cf">await</span> chameleon_robyn.response_async(<span class="st">'feed.pt'</span>, status_code<span class="op">=</span><span class="dv">201</span>, items<span class="op">=</span>items)</span></code></pre></div>
+<p>Both raise <code>ChameleonRobynException</code> if nothing has been configured.</p>
+</section>
+<section id="robyns-template-interface" class="level1">
+<h1>Robyn’s template interface</h1>
+<p><a href="../reference/robyn.ChameleonTemplate.html#chameleon_rs.robyn.ChameleonTemplate" class="gdls-link gdls-code">ChameleonTemplate</a> implements Robyn’s <code>TemplateInterface</code>, as its <code>JinjaTemplate</code> does. It has a loader of its own and needs no <a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">configure()</a>:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs.robyn <span class="im">import</span> ChameleonTemplate</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>templates <span class="op">=</span> ChameleonTemplate(<span class="st">'templates'</span>, auto_reload<span class="op">=</span>dev_mode)</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/about'</span>)</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> about():</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="cf">await</span> templates.render_template_async(<span class="st">'home/about.pt'</span>, message<span class="op">=</span><span class="st">'About'</span>)</span></code></pre></div>
+<p><code>render_template(name, **data)</code> returns a 200 <code>robyn.Response</code>; <a href="../reference/robyn.ChameleonTemplate.html#chameleon_rs.robyn.ChameleonTemplate.render_template_async" class="gdls-link gdls-code">render_template_async</a> is its coroutine. <code>robyn.templating.render(name, template_engine=ChameleonTemplate, ...)</code> works too, and type-checks there. (At runtime <a href="../reference/robyn.ChameleonTemplate.html#chameleon_rs.robyn.ChameleonTemplate" class="gdls-link gdls-code">ChameleonTemplate</a> follows Robyn’s interface without subclassing its abstract class, which would import Jinja2, as chameleon-robyn does.)</p>
+</section>
+<section id="coming-from-chameleon-robyn" class="level1">
+<h1>Coming from chameleon-robyn</h1>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>chameleon-robyn</th>
+<th>chameleon-rs</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>global_init(folder, auto_reload=False, cache_init=True, restricted_namespace=True)</code></td>
+<td>Still works, and takes <code>app=</code>. It configures the handlers only, as before, and ignores a second call. <a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">configure()</a> sets handlers and partials together, and every call applies.</td>
+</tr>
+<tr class="even">
+<td><code>@template(file, content_type, status_code)</code>, <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render</a>, <a href="../reference/flask.response.html#chameleon_rs.flask.response" class="gdls-link gdls-code">response</a>, <a href="../reference/flask.not_found.html#chameleon_rs.flask.not_found" class="gdls-link gdls-code">not_found</a>, <a href="../reference/flask.clear.html#chameleon_rs.flask.clear" class="gdls-link gdls-code">clear</a>, <a href="../reference/robyn.ChameleonTemplate.html#chameleon_rs.robyn.ChameleonTemplate" class="gdls-link gdls-code">ChameleonTemplate</a></td>
+<td>Same. <code>@template</code> also takes <code>mimetype=</code>, <code>concurrent=</code> and <code>offload=</code>; <a href="../reference/flask.not_found.html#chameleon_rs.flask.not_found" class="gdls-link gdls-code">not_found</a> also takes <code>template_file=</code> and template data.</td>
+</tr>
+<tr class="odd">
+<td>—</td>
+<td><a href="../reference/flask.error.html#chameleon_rs.flask.error" class="gdls-link gdls-code">error()</a>, <a href="../reference/robyn.generic_error.html#chameleon_rs.robyn.generic_error" class="gdls-link gdls-code">generic_error()</a>, <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async()</a>, <a href="../reference/robyn.response_async.html#chameleon_rs.robyn.response_async" class="gdls-link gdls-code">response_async()</a>, <a href="../reference/robyn.ChameleonTemplate.html#chameleon_rs.robyn.ChameleonTemplate.render_template_async" class="gdls-link gdls-code">ChameleonTemplate.render_template_async()</a>, <a href="../reference/flask.check_views.html#chameleon_rs.flask.check_views" class="gdls-link gdls-code">check_views()</a>.</td>
+</tr>
+<tr class="even">
+<td><code>ChameleonRobynException</code>, <code>ChameleonRobynNotFoundException</code></td>
+<td>Same names, now subclasses of <a href="../reference/web.TemplateError.html#chameleon_rs.web.TemplateError" class="gdls-link gdls-code">chameleon_rs.web.TemplateError</a> and <a href="../reference/web.NotFound.html#chameleon_rs.web.NotFound" class="gdls-link gdls-code">NotFound</a>.</td>
+</tr>
+<tr class="odd">
+<td>Handlers return a <code>dict</code></td>
+<td>Also mappings, dataclasses and Pydantic models.</td>
+</tr>
+<tr class="even">
+<td>Async handlers render synchronously</td>
+<td>They render with <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a>; an awaitable model value is awaited where the template uses it.</td>
+</tr>
+</tbody>
+</table>
+<p>Settings are process-wide: a Robyn handler has no app to find settings of its own in.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/mkennedy\.codes\/docs\/chameleon-rs\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../user-guide/starlette.html" class="pagination-link" aria-label="Starlette">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Starlette</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../user-guide/litestar.html" class="pagination-link" aria-label="Litestar">
+        <span class="nav-page-text">Litestar</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+<div class="nav-footer-center">
+<p>Developed by <a href="https://mkennedy.codes"><strong>Michael&nbsp;Kennedy</strong></a>.<br>Site created with <strong>Great&nbsp;Docs</strong>.</p>
+</div>
+</div>
+</footer>
+<script src="../github-widget.js"></script>
+<script src="../copy-page.js"></script>
+<script src="../sidebar-wrap.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'sidebar-float.js';document.body.appendChild(s);})();</script>
+<script src="../sidebar-filter.js"></script>
+<script src="../dark-mode-toggle.js"></script>
+<script src="../back-to-top.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'on-this-page.js';document.body.appendChild(s);})();</script>
+<script src="../keyboard-nav.js"></script>
+<script src="../copy-code.js"></script>
+<script src="../details.js"></script>
+<script src="../mermaid-renderer.js"></script>
+<script src="../tooltips.js"></script>
+<script>(function(){var s=document.createElement('script');s.src=(document.querySelector('link[rel="canonical"]')||{href:location.href}).href.replace(/\/[^\/]*$/,'').replace(/\/[^\/]*$/,'')+'/color-swatch.js';var h=document.currentScript;h.parentNode.insertBefore(s,h.nextSibling);})()</script>
+<script src="../responsive-tables.js"></script>
+<script src="video-embed.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'termshow.js';document.body.appendChild(s);})();</script>
+<script src="../navbar-widgets.js"></script>
+
+
+
+
+</body></html>

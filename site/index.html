@@ -117,14 +117,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="theme-init.js"></script>
 
 
-  <meta name="description" content="A Rust implementation of the Chameleon page template engine, compatible with Chameleon's syntax and API.">
+  <meta name="description" content="Chameleon templates, modernized: a Rust engine that runs Chameleon templates unchanged, several times faster, with async rendering and built-in framework integrations.">
   <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "SoftwareSourceCode",
   "name": "chameleon-rs",
-  "description": "A Rust implementation of the Chameleon page template engine, compatible with Chameleon's syntax and API.",
-  "codeRepository": "https://github.com/mikeckennedy/chameleon-rust",
+  "description": "Chameleon templates, modernized: a Rust engine that runs Chameleon templates unchanged, several times faster, with async rendering and built-in framework integrations.",
   "license": "LicenseRef-Chameleon",
   "url": "https://mkennedy.codes/docs/chameleon-rs",
   "documentation": "https://mkennedy.codes/docs/chameleon-rs",
@@ -136,13 +135,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </script>
   <meta property="og:type" content="website">
   <meta property="og:title" content="chameleon-rs | chameleon-rs">
-  <meta property="og:description" content="A Rust implementation of the Chameleon page template engine, compatible with Chameleon's syntax and API.">
+  <meta property="og:description" content="Chameleon templates, modernized: a Rust engine that runs Chameleon templates unchanged, several times faster, with async rendering and built-in framework integrations.">
   <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs">
   <meta property="og:site_name" content="chameleon-rs">
   <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="chameleon-rs | chameleon-rs">
-  <meta name="twitter:description" content="A Rust implementation of the Chameleon page template engine, compatible with Chameleon's syntax and API.">
+  <meta name="twitter:description" content="Chameleon templates, modernized: a Rust engine that runs Chameleon templates unchanged, several times faster, with async rendering and built-in framework integrations.">
   <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
 </head>
 
@@ -220,14 +219,14 @@ section.level2:first-of-type > h2:first-child,
 <div class="gd-hero">
 <img src="assets/chameleon-rs-slogan.png" alt="Logo" class="gd-hero-logo" style="max-height:220px">
 <p class="gd-hero-name">chameleon-rs</p>
-<p class="gd-hero-tagline">A Rust implementation of the Chameleon page template engine, compatible with Chameleon's syntax and API.</p>
+<p class="gd-hero-tagline">Chameleon templates, modernized: a Rust engine that runs Chameleon templates unchanged, several times faster, with async rendering and built-in framework integrations.</p>
 </div>
 
 
 <div class="no-row-height column-margin column-container"><div class="">
 <section id="links" class="level3">
 <h3 class="anchored" data-anchor-id="links">Links</h3>
-<p><a href="https://pypi.org/project/chameleon-rs/">View on PyPI</a><br> <a href="https://github.com/mikeckennedy/chameleon-rust">Browse source code</a><br></p>
+<p><a href="https://pypi.org/project/chameleon-rs/">View on PyPI</a><br> <a href="https://github.com/mikeckennedy/chameleon-rust/blob/main/CHANGELOG.md">Changelog</a><br> <a href="https://github.com/mikeckennedy/chameleon-rust">Source</a><br> <a href="https://github.com/mikeckennedy/chameleon-rust/issues">Issues</a><br> <a href="https://github.com/sponsors/mikeckennedy">Funding</a><br></p>
 </section>
 <section id="ai-agents" class="level3">
 <h3 class="anchored" data-anchor-id="ai-agents">AI / Agents</h3>
@@ -251,43 +250,74 @@ section.level2:first-of-type > h2:first-child,
 <h3 class="anchored" data-anchor-id="meta">Meta</h3>
 <p><strong>Requires:</strong> Python <code>&gt;=3.12</code></p>
 </section>
-</div></div><p><strong>chameleon-rs</strong> is a Rust implementation of the <a href="https://github.com/malthe/chameleon">Chameleon</a> page template engine for Python. It aims to be a drop-in replacement: the same template language, the same Python API, byte-identical output, and much faster rendering.</p>
+</div></div><p><strong>Chameleon templates, modernized. Several times faster.</strong></p>
+<p>chameleon-rs is <a href="https://github.com/malthe/chameleon">Chameleon</a>’s template language on a new engine written in Rust. Your existing templates and code run unchanged, with byte-identical output, several times faster. It also adds what a modern Python web app expects: async rendering that never blocks the event loop, built-in integrations for Flask/Quart, FastAPI, Starlette, Robyn and Litestar, partials, Markdown, and support for free-threaded Python. No runtime dependencies.</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplate</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>page <span class="op">=</span> PageTemplate(<span class="st">'&lt;p tal:repeat="name names"&gt;Hello, $</span><span class="sc">{name}</span><span class="st">!&lt;/p&gt;'</span>)</span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(page(names<span class="op">=</span>[<span class="st">'World'</span>, <span class="st">'Rust'</span>]))</span></code></pre></div>
 <div class="sourceCode" id="cb2"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="dt">&gt;</span>Hello, World!<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="dt">&gt;</span>Hello, Rust!<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span></code></pre></div>
-<section id="why-chameleon-rs" class="level2">
-<h2 class="anchored" data-anchor-id="why-chameleon-rs">Why chameleon-rs</h2>
-<ul>
-<li><strong>Drop-in.</strong> Chameleon’s own test suite passes unmodified, and two production Flask/Quart sites render byte-identical HTML on every page. An existing app switches with one line at startup, and nothing else changes.</li>
-<li><strong>Fast.</strong> Rendering is about 4x to 7x faster than Chameleon on synthetic pages, and about 2.2x faster across real application pages, where the app’s own Python code takes most of the time. Templates compile about 70x faster, so the first request after a deploy or reload is quick too.</li>
-<li><strong>Partials built in.</strong> Every template can call <code>${render_partial('shared/card.pt', item=item)}</code>. The partial renders natively inside the page, about 10x faster than Chameleon with chameleon_partials.</li>
-<li><strong>Flask and Quart built in.</strong> <code>chameleon_rs.flask</code> has chameleon-flask’s API.</li>
-<li><strong>No runtime dependencies.</strong> The package uses only the standard library. Stock Chameleon doesn’t need to be installed.</li>
-</ul>
-</section>
 <section id="install" class="level2">
 <h2 class="anchored" data-anchor-id="install">Install</h2>
 <div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install chameleon-rs</span></code></pre></div>
-<p>chameleon-rs needs Python 3.12 or later. The wheels include the compiled engine, so you don’t need a Rust toolchain.</p>
+<p>CPython 3.12 to 3.15, including the free-threaded builds (3.14t, 3.15t). The wheels for Linux, macOS and Windows include the compiled engine, so you don’t need a Rust toolchain, and stock Chameleon doesn’t need to be installed.</p>
 </section>
-<section id="switch-an-existing-app" class="level2">
-<h2 class="anchored" data-anchor-id="switch-an-existing-app">Switch an existing app</h2>
+<section id="already-on-chameleon" class="level2">
+<h2 class="anchored" data-anchor-id="already-on-chameleon">Already on Chameleon?</h2>
 <p>Put this at the very top of your app’s entry point, before anything imports Chameleon:</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.compat</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>chameleon_rs.compat.install()</span></code></pre></div>
-<p>From then on, <code>import chameleon</code>, <code>import chameleon_partials</code> and <code>import chameleon_flask</code> all give you chameleon-rs. See <a href="./user-guide/switching-from-chameleon.html">Switching from Chameleon</a>.</p>
+<p>From then on <code>import chameleon</code> gives chameleon-rs, and so do <code>chameleon_partials</code>, <code>chameleon_flask</code>, <code>fastapi_chameleon</code> and <code>chameleon_robyn</code>. Templates and code stay as they are.</p>
+<ul>
+<li><strong>Same output.</strong> Chameleon’s own test suite passes unmodified, all 122 of its fixture templates render byte-identical, and so does every page of two production Flask/Quart sites. See <a href="./user-guide/compatibility.html">Compatibility</a>.</li>
+<li><strong>Check your own app first.</strong> Shadow mode renders a sample of real traffic with both engines and reports any difference, while Chameleon keeps serving. See <a href="./user-guide/switching-from-chameleon.html">Switching from Chameleon</a>.</li>
+</ul>
+</section>
+<section id="starting-fresh" class="level2">
+<h2 class="anchored" data-anchor-id="starting-fresh">Starting fresh?</h2>
+<p>Chameleon templates are HTML with <code>tal:</code> attributes and <code>${...}</code> expressions, so a template is still valid HTML that an editor or browser opens as-is. Point chameleon-rs at a folder and decorate your views. With FastAPI:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> fastapi</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.fastapi <span class="im">as</span> fastapi_chameleon</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> fastapi.FastAPI()</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>fastapi_chameleon.configure(template_folder<span class="op">=</span><span class="st">'templates'</span>, app<span class="op">=</span>app)</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/episodes/</span><span class="sc">{number}</span><span class="st">'</span>)                      <span class="co"># the route decorator first...</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="at">@fastapi_chameleon.template</span>(<span class="st">'episodes/detail.pt'</span>)   <span class="co"># ...then @template</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> detail(number: <span class="bu">int</span>):</span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    episode <span class="op">=</span> <span class="cf">await</span> db.episode(number)</span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> episode <span class="kw">is</span> <span class="va">None</span>:</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>        fastapi_chameleon.not_found()</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'episode'</span>: episode}</span></code></pre></div>
+<p><a href="./user-guide/getting-started.html">Getting started</a> walks through it, and <a href="./user-guide/frameworks.html">Web frameworks</a> shows the same page in every framework.</p>
+</section>
+<section id="whats-new-compared-with-chameleon" class="level2">
+<h2 class="anchored" data-anchor-id="whats-new-compared-with-chameleon">What’s new compared with Chameleon</h2>
+<ul>
+<li><strong><a href="./user-guide/async.html">Async rendering</a>.</strong> <code>await template.render_async(**model)</code> awaits awaitable model values where the template uses them, without blocking the event loop. Opt-in settings run helpers and partials concurrently.</li>
+<li><strong><a href="./user-guide/frameworks.html">Web frameworks</a>.</strong> Flask and Quart, FastAPI, Starlette (a drop-in for <code>Jinja2Templates</code>), Robyn and Litestar (a template engine for <code>TemplateConfig</code>) are built in; Pyramid’s pyramid_chameleon runs unchanged.</li>
+<li><strong><a href="./user-guide/partials.html">Partials</a>.</strong> <code>${render_partial('shared/card.pt', item=item)}</code> works in every template and renders natively, about 10x faster than Chameleon with chameleon_partials.</li>
+<li><strong><a href="./user-guide/markdown.html">Markdown</a>.</strong> <code>${markdown: post.body}</code> converts CommonMark plus the GitHub extensions while the page renders, in Rust, with raw HTML escaped by default: about 26x faster than mistune, a pure-Python converter.</li>
+<li><strong><a href="./user-guide/configuration.html">One place for settings</a>.</strong> <a href="reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">chameleon_rs.configure()</a> sets the template folder, reloading, partial lookup and Markdown for the whole process.</li>
+<li><strong>Free-threaded Python.</strong> Wheels for 3.14t and 3.15t that keep the GIL off.</li>
+<li><strong>Typed.</strong> Type information for the whole API, checked with <code>ty</code>.</li>
+</ul>
+</section>
+<section id="fast" class="level2">
+<h2 class="anchored" data-anchor-id="fast">Fast</h2>
+<p>Rendering is about 4x to 7x faster than Chameleon on synthetic pages, and 2.2x faster across the pages of a production site, where the app’s own Python code takes much of the time. Templates compile about 70x faster, so the first request after a deploy or reload is quick too. See <a href="./user-guide/performance.html">Performance</a>.</p>
 </section>
 <section id="where-to-next" class="level2">
 <h2 class="anchored" data-anchor-id="where-to-next">Where to next</h2>
 <ul>
 <li><a href="./user-guide/getting-started.html">Getting started</a>: render a first template and set up a template folder.</li>
-<li><a href="./language/index.html">Language reference</a>: TAL, METAL, i18n and <code>${...}</code>, the language you already know from Chameleon.</li>
-<li><a href="./user-guide/compatibility.html">Compatibility</a>: what’s identical, the few known differences, and how compatibility is measured.</li>
-<li><a href="./user-guide/performance.html">Performance</a>: the benchmarks and how to reproduce them.</li>
+<li><a href="./user-guide/switching-from-chameleon.html">Switching from Chameleon</a>: the one-line switch and shadow mode.</li>
+<li><a href="./user-guide/frameworks.html">Web frameworks</a>: Flask, Quart, FastAPI, Starlette, Robyn, Litestar and Pyramid.</li>
+<li><a href="./language/index.html">Language reference</a>: TAL, METAL, i18n and <code>${...}</code>.</li>
 </ul>
 
 

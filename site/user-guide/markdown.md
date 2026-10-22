@@ -225,4 +225,4 @@ Changing the Markdown settings empties the cache.
 
 # Async renders
 
-[render_async](../reference/PageTemplate.render_async.md#chameleon_rs.PageTemplate.render_async) works with `markdown:`, with one rule shared by every expression type: only an expression's final value is awaited, not a value inside it. Load the Markdown text in your view before rendering, rather than passing a coroutine for `markdown:` to convert.
+[render_async](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async) works with `markdown:`, with one rule shared by every expression type: only an expression's final value is awaited, not a value inside it. Load the Markdown text in your view before rendering, rather than passing a coroutine for `markdown:` to convert.

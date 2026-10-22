@@ -96,6 +96,11 @@ print(page(layout=layout, user='Ada'))
 In a template loaded from a file, `load:` loads the layout relative to the page: `metal:use-macro="load: ../shared/_layout.pt"`.
 
 
-# Partials
+# What chameleon-rs adds
 
-chameleon-rs adds one builtin, [render_partial](../reference/render_partial.md#chameleon_rs.render_partial), to every template: `${render_partial('shared/card.pt', item=item)}`. See [Partials](partials.md).
+Two additions, both of which leave existing templates unchanged:
+
+- **[render_partial](../reference/render_partial.md#chameleon_rs.render_partial)**, a builtin in every template: `${render_partial('shared/card.pt', item=item)}`. See [Partials](partials.md).
+- **`markdown:`**, an expression type you turn on with `chameleon_rs.configure(markdown=True)`: `${markdown: post.body}`. See [Markdown](markdown.md).
+
+And one way to render: `await template.render_async(**model)` awaits awaitable values where the template uses them. The language is the same; see [Async rendering](async.md).

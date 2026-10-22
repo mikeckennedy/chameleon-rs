@@ -12,7 +12,7 @@ Each level is a check that runs on every change:
 | **Chameleon's own test suite.** All 233 tests, vendored unmodified, run against chameleon-rs. | Every test that passes on Chameleon passes on chameleon-rs: 227 of 227. The other 6 depend on the test environment and are skipped on both engines. |
 | **Fixture renders.** Every input template in Chameleon's test suite, rendered by both engines. | All 122 byte-identical. |
 | **Differential fuzzing.** Generated templates, models and expressions, rendered by both engines and compared. | No differences in 20,000 examples per generator. |
-| **Integration suites.** The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn and chameleon_partials, unmodified, on chameleon-rs. | All pass. |
+| **Integration suites.** The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials and litestar-chameleon, unmodified, on chameleon-rs. | All pass. |
 | **Real sites.** Every page of two production Flask/Quart apps, crawled with both engines: anonymous and signed in, with all their partials and layouts. | Every page byte-identical. |
 
 The upstream suite and the fuzzers compare output byte for byte, and they also compare the type and message of any error a template raises.
@@ -24,7 +24,7 @@ The upstream suite and the fuzzers compare output byte for byte, and they also c
 - **The Python API**: the template classes and their options, [PageTemplateLoader](../reference/PageTemplateLoader.md#chameleon_rs.PageTemplateLoader), macros, `translate` functions, `tal:on-error` handlers, and `CHAMELEON_*` environment variables.
 - **The modules**: [chameleon_rs.compat.install()](../reference/compat.install.md#chameleon_rs.compat.install) maps each Chameleon module to the chameleon-rs module of the same name.
 - **Errors**: the same exception types, and the same formatted messages with the template position and expression.
-- **The helper libraries**: chameleon_partials' and chameleon-flask's APIs, built in.
+- **The helper libraries**: the APIs of chameleon_partials, chameleon-flask, fastapi-chameleon and chameleon-robyn, built in.
 
 
 # Known differences
@@ -38,7 +38,46 @@ These are deliberate. Each comes from chameleon-rs compiling to a native program
 | `CHAMELEON_CACHE` | Writes the generated modules to disk and loads them on the next start. | Checks the directory but writes nothing. Compiling is about 70x faster than Chameleon, so there's little to cache. |
 | Code-generation modules | `chameleon.nodes`, `chameleon.program`, `chameleon.zpt.program`, `chameleon.benchmark`. | Not provided, since chameleon-rs doesn't generate code. Importing them raises `ModuleNotFoundError`. |
 
-The built-in partials have one behaviour change, which you can turn off: a path that isn't in the configured template folder is also looked for next to the calling template, where chameleon_partials would raise. `configure(partial_search='registered')` restores the original lookup. See [Partials](partials.md#how-a-path-is-found).
+
+## Code blocks
+
+Chameleon compiles `<?python ... ?>` blocks into the template's render function, so what a block defines is a local of that call. chameleon-rs runs a block in a namespace kept per template and render, which differs in two ways:
+
+- **Recursive partials share it.** Two frames of the same template in one render (a partial that renders itself) see each other's block definitions, where each Chameleon call has its own.
+- **`default` and `attrs` inside a block** are ordinary names. Chameleon aliases them there as in expressions (the default marker and the element's attributes).
+
+
+## [render_partial](../reference/render_partial.md#chameleon_rs.render_partial) in `econtext`
+
+With chameleon_partials, [render_partial](../reference/render_partial.md#chameleon_rs.render_partial) is a model value, so it shows up in the template's `econtext` and in the argument list of a render error. The built-in [render_partial](../reference/render_partial.md#chameleon_rs.render_partial) is a builtin of every template, so it is not in either.
+
+
+## Corner cases in slot bodies
+
+Three cases, all involving the slot fills of a macro call together with `tal:on-error` or i18n settings, render differently. No real template we've seen does this; each is pinned by a test that fails if the behaviour changes.
+
+- **A failing expression under a handler in a slot body** whose slot sits inside `i18n:translate` or `i18n:name`. Chameleon writes a text node and its expressions as one piece, so when an expression fails, the text before it in the same node is dropped with it. chameleon-rs writes that text first, so it stays (`<q>Q` where Chameleon gives `<q>`).
+- **A handler on an `i18n:name` element** whose content calls a macro that fails partway: the same difference, for the text of the failing node inside the macro.
+- **A fill no macro took**, used by a later macro call while the calling template has different `i18n:domain`, `i18n:context` or `i18n:target` settings: values converted by that fill use the settings where it was defined. Chameleon uses the settings at the later call.
+
+
+## Behaviour of the helper libraries
+
+The built-ins differ from chameleon_partials, chameleon-flask, fastapi-chameleon and chameleon-robyn in a few ways that don't affect templates that worked before:
+
+- **Partial paths.** A path that isn't in the configured template folder is also looked for next to the calling template, where chameleon_partials would raise. `configure(partial_search='registered')` restores the original lookup. See [Partials](partials.md#how-a-path-is-found).
+- **Async views await model values.** An async view renders with [render_async](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async), so a model value that is awaitable (a coroutine, task or future, or a test double such as `AsyncMock()`) is awaited where the template uses it. The original libraries rendered the object itself.
+- **Setup.** Every [configure()](../reference/configure.md#chameleon_rs.configure) call applies ([register_extensions](../reference/partials.register_extensions.md#chameleon_rs.partials.register_extensions) ignored later calls), and `configure(..., app=app)` checks the decorator order at startup.
+
+
+## A macro removed while reloading
+
+With `auto_reload`, Chameleon re-cooks a changed template into the same object and keeps the macro functions of the old version on it. So a macro that the new source no longer defines can still be looked up by name (and renders its old content). chameleon-rs replaces the macros with the new source's and raises `KeyError('Macro does not exist: ...')`. This shows up in Pyramid with a `#macro` renderer when you edit a template to remove or rename that macro: one test in pyramid_chameleon's suite checks it. See [Pyramid](pyramid.md#compatibility).
+
+
+## [render_async](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async) and a replaced [render](../reference/flask.render.md#chameleon_rs.flask.render)
+
+[render_async()](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async) honours a [render()](../reference/flask.render.md#chameleon_rs.flask.render) that a subclass overrides, since the override may add defaults or post-process the output: it calls it, synchronously, so awaitable values are not awaited. Assigning a new function to [PageTemplate.render](../reference/PageTemplate.render.md#chameleon_rs.PageTemplate.render) (a monkeypatch, for example to time renders) counts as such an override. Every [render_async()](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async), including the async views of the framework integrations, then renders synchronously through your function. See [Migrating](migrating.md#timing-renders) for a way to time both.
 
 
 # Found a difference?

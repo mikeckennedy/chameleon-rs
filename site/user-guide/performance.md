@@ -17,7 +17,7 @@ Times per render, or per item for listings. Both engines ran in the same process
 | Partial listing, per item (native [render_partial](../reference/render_partial.md#chameleon_rs.render_partial) vs chameleon_partials) | 654-680 ns | 7,300 ns | 10.9x |
 | chameleon_partials through [compat.install()](../reference/compat.install.md#chameleon_rs.compat.install), per item | 2,500 ns | 7,300 ns | 2.9x |
 
-Profile-guided builds (`make build-pgo`) are about 10% faster again.
+Profile-guided builds (`make build-pgo`) are about 10% faster again. The published wheels are profile-guided (on musllinux and Windows arm64, where the build can make a profile).
 
 The pages that gain least spend their time in the application's Python: the report page's rows call property getters and formatting helpers, which cost the same on both engines.
 

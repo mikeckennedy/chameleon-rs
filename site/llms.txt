@@ -1,6 +1,6 @@
 # chameleon_rs
 
-> A Rust implementation of the Chameleon page template engine, compatible with Chameleon's syntax and API.
+> Chameleon templates, modernized: a Rust engine that runs Chameleon templates unchanged, several times faster, with async rendering and built-in framework integrations.
 
 ## Docs
 
@@ -27,10 +27,15 @@
 - [PageTemplate.digest](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.digest.html)
 
 #### Configuration
-> Process-wide settings for templates loaded by name.
+> Process-wide settings for templates loaded by name, partials and Markdown.
 
 - [configure](https://mkennedy.codes/docs/chameleon-rs/reference/configure.html): Configures chameleon-rs for the whole process: where templates loaded by name live, for
 - [core_version](https://mkennedy.codes/docs/chameleon-rs/reference/core_version.html): Version of the Rust core, for bug reports and for checking which build is loaded
+
+#### Async
+> Opt-in concurrency for render_async. See also PageTemplate.render_async.
+
+- [concurrent](https://mkennedy.codes/docs/chameleon-rs/reference/concurrent.html): Marks an async helper so that an asynchronous render awaits its calls concurrently
 
 #### Partials
 > Render one template inside another. Also chameleon_partials' API.
@@ -54,6 +59,76 @@
 - [flask.not_found](https://mkennedy.codes/docs/chameleon-rs/reference/flask.not_found.html)
 - [flask.error](https://mkennedy.codes/docs/chameleon-rs/reference/flask.error.html)
 - [flask.clear](https://mkennedy.codes/docs/chameleon-rs/reference/flask.clear.html)
+- [flask.check_views](https://mkennedy.codes/docs/chameleon-rs/reference/flask.check_views.html)
+
+#### FastAPI
+> fastapi-chameleon's API, built in. Imports FastAPI only when imported itself.
+
+- [fastapi.configure](https://mkennedy.codes/docs/chameleon-rs/reference/fastapi.configure.html)
+- [fastapi.global_init](https://mkennedy.codes/docs/chameleon-rs/reference/fastapi.global_init.html)
+- [fastapi.template](https://mkennedy.codes/docs/chameleon-rs/reference/fastapi.template.html)
+- [fastapi.render](https://mkennedy.codes/docs/chameleon-rs/reference/fastapi.render.html)
+- [fastapi.render_async](https://mkennedy.codes/docs/chameleon-rs/reference/fastapi.render_async.html)
+- [fastapi.response](https://mkennedy.codes/docs/chameleon-rs/reference/fastapi.response.html)
+- [fastapi.response_async](https://mkennedy.codes/docs/chameleon-rs/reference/fastapi.response_async.html)
+- [fastapi.not_found](https://mkennedy.codes/docs/chameleon-rs/reference/fastapi.not_found.html)
+- [fastapi.error](https://mkennedy.codes/docs/chameleon-rs/reference/fastapi.error.html)
+- [fastapi.generic_error](https://mkennedy.codes/docs/chameleon-rs/reference/fastapi.generic_error.html)
+- [fastapi.clear](https://mkennedy.codes/docs/chameleon-rs/reference/fastapi.clear.html)
+- [fastapi.check_views](https://mkennedy.codes/docs/chameleon-rs/reference/fastapi.check_views.html)
+
+#### Starlette
+> Jinja2Templates' API for chameleon-rs, and the decorator API. Imports Starlette only when imported itself.
+
+- [starlette.Templates](https://mkennedy.codes/docs/chameleon-rs/reference/starlette.Templates.html)
+- [starlette.configure](https://mkennedy.codes/docs/chameleon-rs/reference/starlette.configure.html)
+- [starlette.global_init](https://mkennedy.codes/docs/chameleon-rs/reference/starlette.global_init.html)
+- [starlette.template](https://mkennedy.codes/docs/chameleon-rs/reference/starlette.template.html)
+- [starlette.render](https://mkennedy.codes/docs/chameleon-rs/reference/starlette.render.html)
+- [starlette.render_async](https://mkennedy.codes/docs/chameleon-rs/reference/starlette.render_async.html)
+- [starlette.response](https://mkennedy.codes/docs/chameleon-rs/reference/starlette.response.html)
+- [starlette.response_async](https://mkennedy.codes/docs/chameleon-rs/reference/starlette.response_async.html)
+- [starlette.not_found](https://mkennedy.codes/docs/chameleon-rs/reference/starlette.not_found.html)
+- [starlette.error](https://mkennedy.codes/docs/chameleon-rs/reference/starlette.error.html)
+- [starlette.generic_error](https://mkennedy.codes/docs/chameleon-rs/reference/starlette.generic_error.html)
+- [starlette.clear](https://mkennedy.codes/docs/chameleon-rs/reference/starlette.clear.html)
+- [starlette.check_views](https://mkennedy.codes/docs/chameleon-rs/reference/starlette.check_views.html)
+
+#### Robyn
+> chameleon-robyn's API, built in. Imports Robyn only when imported itself.
+
+- [robyn.configure](https://mkennedy.codes/docs/chameleon-rs/reference/robyn.configure.html)
+- [robyn.global_init](https://mkennedy.codes/docs/chameleon-rs/reference/robyn.global_init.html)
+- [robyn.template](https://mkennedy.codes/docs/chameleon-rs/reference/robyn.template.html)
+- [robyn.render](https://mkennedy.codes/docs/chameleon-rs/reference/robyn.render.html)
+- [robyn.render_async](https://mkennedy.codes/docs/chameleon-rs/reference/robyn.render_async.html)
+- [robyn.response](https://mkennedy.codes/docs/chameleon-rs/reference/robyn.response.html)
+- [robyn.response_async](https://mkennedy.codes/docs/chameleon-rs/reference/robyn.response_async.html)
+- [robyn.not_found](https://mkennedy.codes/docs/chameleon-rs/reference/robyn.not_found.html)
+- [robyn.error](https://mkennedy.codes/docs/chameleon-rs/reference/robyn.error.html)
+- [robyn.generic_error](https://mkennedy.codes/docs/chameleon-rs/reference/robyn.generic_error.html)
+- [robyn.clear](https://mkennedy.codes/docs/chameleon-rs/reference/robyn.clear.html)
+- [robyn.check_views](https://mkennedy.codes/docs/chameleon-rs/reference/robyn.check_views.html)
+- [robyn.ChameleonTemplate](https://mkennedy.codes/docs/chameleon-rs/reference/robyn.ChameleonTemplate.html)
+
+#### Litestar
+> Litestar's template engine interface for chameleon-rs, and the decorator API. Imports Litestar only when imported itself.
+
+- [litestar.ChameleonEngine](https://mkennedy.codes/docs/chameleon-rs/reference/litestar.ChameleonEngine.html)
+- [litestar.ChameleonTemplate](https://mkennedy.codes/docs/chameleon-rs/reference/litestar.ChameleonTemplate.html)
+- [litestar.Template](https://mkennedy.codes/docs/chameleon-rs/reference/litestar.Template.html)
+- [litestar.configure](https://mkennedy.codes/docs/chameleon-rs/reference/litestar.configure.html)
+- [litestar.global_init](https://mkennedy.codes/docs/chameleon-rs/reference/litestar.global_init.html)
+- [litestar.template](https://mkennedy.codes/docs/chameleon-rs/reference/litestar.template.html)
+- [litestar.render](https://mkennedy.codes/docs/chameleon-rs/reference/litestar.render.html)
+- [litestar.render_async](https://mkennedy.codes/docs/chameleon-rs/reference/litestar.render_async.html)
+- [litestar.response](https://mkennedy.codes/docs/chameleon-rs/reference/litestar.response.html)
+- [litestar.response_async](https://mkennedy.codes/docs/chameleon-rs/reference/litestar.response_async.html)
+- [litestar.not_found](https://mkennedy.codes/docs/chameleon-rs/reference/litestar.not_found.html)
+- [litestar.error](https://mkennedy.codes/docs/chameleon-rs/reference/litestar.error.html)
+- [litestar.generic_error](https://mkennedy.codes/docs/chameleon-rs/reference/litestar.generic_error.html)
+- [litestar.clear](https://mkennedy.codes/docs/chameleon-rs/reference/litestar.clear.html)
+- [litestar.check_views](https://mkennedy.codes/docs/chameleon-rs/reference/litestar.check_views.html)
 
 #### Errors and web helpers
 > Exceptions, and the pieces shared by the framework integrations.
@@ -62,6 +137,8 @@
 - [web.TemplateError](https://mkennedy.codes/docs/chameleon-rs/reference/web.TemplateError.html)
 - [web.ErrorPage](https://mkennedy.codes/docs/chameleon-rs/reference/web.ErrorPage.html)
 - [web.NotFound](https://mkennedy.codes/docs/chameleon-rs/reference/web.NotFound.html)
+- [web.TemplateNotFound](https://mkennedy.codes/docs/chameleon-rs/reference/web.TemplateNotFound.html)
+- [web.DecoratorOrderError](https://mkennedy.codes/docs/chameleon-rs/reference/web.DecoratorOrderError.html)
 - [web.model_of](https://mkennedy.codes/docs/chameleon-rs/reference/web.model_of.html)
 
 #### Compatibility

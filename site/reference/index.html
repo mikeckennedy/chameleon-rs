@@ -82,14 +82,13 @@ ul.task-list li input[type="checkbox"] {
 <script src="../theme-init.js"></script>
 
 
-  <meta name="description" content="The public API of chameleon-rs. It mirrors Chameleon’s (PageTemplate, PageTemplateFile, PageTemplateLoader, …), plus built-in partials, process-wide...">
+  <meta name="description" content="The public API of chameleon-rs. It mirrors Chameleon’s (PageTemplate, PageTemplateFile, PageTemplateLoader, …), plus async rendering, built-in...">
   <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "SoftwareSourceCode",
   "name": "chameleon-rs",
-  "description": "A Rust implementation of the Chameleon page template engine, compatible with Chameleon's syntax and API.",
-  "codeRepository": "https://github.com/mikeckennedy/chameleon-rust",
+  "description": "Chameleon templates, modernized: a Rust engine that runs Chameleon templates unchanged, several times faster, with async rendering and built-in framework integrations.",
   "license": "LicenseRef-Chameleon",
   "url": "https://mkennedy.codes/docs/chameleon-rs",
   "documentation": "https://mkennedy.codes/docs/chameleon-rs",
@@ -101,13 +100,13 @@ ul.task-list li input[type="checkbox"] {
 </script>
   <meta property="og:type" content="website">
   <meta property="og:title" content="API Reference – chameleon-rs | chameleon-rs">
-  <meta property="og:description" content="The public API of chameleon-rs. It mirrors Chameleon’s (PageTemplate, PageTemplateFile, PageTemplateLoader, …), plus built-in partials, process-wide...">
+  <meta property="og:description" content="The public API of chameleon-rs. It mirrors Chameleon’s (PageTemplate, PageTemplateFile, PageTemplateLoader, …), plus async rendering, built-in...">
   <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/reference/">
   <meta property="og:site_name" content="chameleon-rs">
   <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="API Reference – chameleon-rs | chameleon-rs">
-  <meta name="twitter:description" content="The public API of chameleon-rs. It mirrors Chameleon’s (PageTemplate, PageTemplateFile, PageTemplateLoader, …), plus built-in partials, process-wide...">
+  <meta name="twitter:description" content="The public API of chameleon-rs. It mirrors Chameleon’s (PageTemplate, PageTemplateFile, PageTemplateLoader, …), plus async rendering, built-in...">
   <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
 </head>
 
@@ -295,9 +294,23 @@ ul.task-list li input[type="checkbox"] {
         <li class="sidebar-item sidebar-item-section">
       <div class="sidebar-item-container"> 
             <a class="sidebar-item-text sidebar-link text-start">
- <span class="menu-text">Partials</span></a>
+ <span class="menu-text">Async</span></a>
 </div>
       <ul id="quarto-sidebar-section-4" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/concurrent.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">concurrent()</span></span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">Partials</span></a>
+</div>
+      <ul id="quarto-sidebar-section-5" class="list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../reference/render_partial.html" class="sidebar-item-text sidebar-link">
@@ -347,7 +360,7 @@ ul.task-list li input[type="checkbox"] {
             <a class="sidebar-item-text sidebar-link text-start">
  <span class="menu-text">Flask and Quart</span></a>
 </div>
-      <ul id="quarto-sidebar-section-5" class="list-unstyled sidebar-section depth1 show">  
+      <ul id="quarto-sidebar-section-6" class="list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../reference/flask.configure.html" class="sidebar-item-text sidebar-link">
@@ -396,6 +409,356 @@ ul.task-list li input[type="checkbox"] {
  <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">flask.clear()</span></span></a>
   </div>
 </li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/flask.check_views.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">flask.check_views()</span></span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">FastAPI</span></a>
+</div>
+      <ul id="quarto-sidebar-section-7" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/fastapi.configure.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">fastapi.configure()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/fastapi.global_init.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">fastapi.global_init()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/fastapi.template.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">fastapi.template()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/fastapi.render.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">fastapi.render()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/fastapi.render_async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-async">fastapi.render_async()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/fastapi.response.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">fastapi.response()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/fastapi.response_async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-async">fastapi.response_async()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/fastapi.not_found.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">fastapi.not_found()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/fastapi.error.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">fastapi.error()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/fastapi.generic_error.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">fastapi.generic_error()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/fastapi.clear.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">fastapi.clear()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/fastapi.check_views.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">fastapi.check_views()</span></span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">Starlette</span></a>
+</div>
+      <ul id="quarto-sidebar-section-8" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/starlette.Templates.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-class doc-label doc-label-class">starlette.Templates</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/starlette.configure.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">starlette.configure()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/starlette.global_init.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">starlette.global_init()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/starlette.template.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">starlette.template()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/starlette.render.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">starlette.render()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/starlette.render_async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-async">starlette.render_async()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/starlette.response.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">starlette.response()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/starlette.response_async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-async">starlette.response_async()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/starlette.not_found.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">starlette.not_found()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/starlette.error.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">starlette.error()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/starlette.generic_error.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">starlette.generic_error()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/starlette.clear.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">starlette.clear()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/starlette.check_views.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">starlette.check_views()</span></span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">Robyn</span></a>
+</div>
+      <ul id="quarto-sidebar-section-9" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/robyn.configure.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">robyn.configure()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/robyn.global_init.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">robyn.global_init()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/robyn.template.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">robyn.template()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/robyn.render.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">robyn.render()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/robyn.render_async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-async">robyn.render_async()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/robyn.response.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">robyn.response()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/robyn.response_async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-async">robyn.response_async()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/robyn.not_found.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">robyn.not_found()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/robyn.error.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">robyn.error()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/robyn.generic_error.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">robyn.generic_error()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/robyn.clear.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">robyn.clear()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/robyn.check_views.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">robyn.check_views()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/robyn.ChameleonTemplate.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-class doc-label doc-label-class">robyn.ChameleonTemplate</span></span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start">
+ <span class="menu-text">Litestar</span></a>
+</div>
+      <ul id="quarto-sidebar-section-10" class="list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/litestar.ChameleonEngine.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-class doc-label doc-label-class">litestar.ChameleonEngine</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/litestar.ChameleonTemplate.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-class doc-label doc-label-class">litestar.ChameleonTemplate</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/litestar.Template.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">litestar.template()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/litestar.configure.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">litestar.configure()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/litestar.global_init.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">litestar.global_init()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/litestar.render.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">litestar.render()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/litestar.render_async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-async">litestar.render_async()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/litestar.response.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">litestar.response()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/litestar.response_async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-async">litestar.response_async()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/litestar.not_found.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">litestar.not_found()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/litestar.error.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">litestar.error()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/litestar.generic_error.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">litestar.generic_error()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/litestar.clear.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">litestar.clear()</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/litestar.check_views.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">litestar.check_views()</span></span></a>
+  </div>
+</li>
       </ul>
   </li>
         <li class="sidebar-item sidebar-item-section">
@@ -403,7 +766,7 @@ ul.task-list li input[type="checkbox"] {
             <a class="sidebar-item-text sidebar-link text-start">
  <span class="menu-text">Errors and web helpers</span></a>
 </div>
-      <ul id="quarto-sidebar-section-6" class="list-unstyled sidebar-section depth1 show">  
+      <ul id="quarto-sidebar-section-11" class="list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../reference/TemplateError.html" class="sidebar-item-text sidebar-link">
@@ -430,6 +793,18 @@ ul.task-list li input[type="checkbox"] {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../reference/web.TemplateNotFound.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-class doc-label doc-label-exception">web.TemplateNotFound</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../reference/web.DecoratorOrderError.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="doc-object-name doc-class doc-label doc-label-class">web.DecoratorOrderError</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../reference/web.model_of.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text"><span class="doc-object-name doc-function doc-label doc-label-function">web.model_of()</span></span></a>
   </div>
@@ -441,7 +816,7 @@ ul.task-list li input[type="checkbox"] {
             <a class="sidebar-item-text sidebar-link text-start">
  <span class="menu-text">Compatibility</span></a>
 </div>
-      <ul id="quarto-sidebar-section-7" class="list-unstyled sidebar-section depth1 show">  
+      <ul id="quarto-sidebar-section-12" class="list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../reference/compat.install.html" class="sidebar-item-text sidebar-link">
@@ -481,8 +856,13 @@ ul.task-list li input[type="checkbox"] {
   <li><a href="#templates" id="toc-templates" class="nav-link active" data-scroll-target="#templates">Templates</a></li>
   <li><a href="#pagetemplate-methods" id="toc-pagetemplate-methods" class="nav-link" data-scroll-target="#pagetemplate-methods">PageTemplate Methods</a></li>
   <li><a href="#configuration" id="toc-configuration" class="nav-link" data-scroll-target="#configuration">Configuration</a></li>
+  <li><a href="#async" id="toc-async" class="nav-link" data-scroll-target="#async">Async</a></li>
   <li><a href="#partials" id="toc-partials" class="nav-link" data-scroll-target="#partials">Partials</a></li>
   <li><a href="#flask-and-quart" id="toc-flask-and-quart" class="nav-link" data-scroll-target="#flask-and-quart">Flask and Quart</a></li>
+  <li><a href="#fastapi" id="toc-fastapi" class="nav-link" data-scroll-target="#fastapi">FastAPI</a></li>
+  <li><a href="#starlette" id="toc-starlette" class="nav-link" data-scroll-target="#starlette">Starlette</a></li>
+  <li><a href="#robyn" id="toc-robyn" class="nav-link" data-scroll-target="#robyn">Robyn</a></li>
+  <li><a href="#litestar" id="toc-litestar" class="nav-link" data-scroll-target="#litestar">Litestar</a></li>
   <li><a href="#errors-and-web-helpers" id="toc-errors-and-web-helpers" class="nav-link" data-scroll-target="#errors-and-web-helpers">Errors and web helpers</a></li>
   <li><a href="#compatibility" id="toc-compatibility" class="nav-link" data-scroll-target="#compatibility">Compatibility</a></li>
   </ul>
@@ -511,7 +891,7 @@ ul.task-list li input[type="checkbox"] {
 
 
 <div class="doc-description">
-<p>The public API of chameleon-rs. It mirrors Chameleon’s (PageTemplate, PageTemplateFile, PageTemplateLoader, …), plus built-in partials, process-wide configuration and the Flask/Quart integration.</p>
+<p>The public API of chameleon-rs. It mirrors Chameleon’s (PageTemplate, PageTemplateFile, PageTemplateLoader, …), plus async rendering, built-in partials, process-wide configuration (including Markdown) and the Flask/Quart, FastAPI, Starlette, Robyn and Litestar integrations.</p>
 </div>
 <section id="templates" class="level2 doc-group">
 <h2 class="doc-group">Templates</h2>
@@ -580,7 +960,7 @@ ul.task-list li input[type="checkbox"] {
 <section id="configuration" class="level2 doc-group">
 <h2 class="doc-group">Configuration</h2>
 <div class="doc-description">
-<p>Process-wide settings for templates loaded by name.</p>
+<p>Process-wide settings for templates loaded by name, partials and Markdown.</p>
 </div>
 <dl>
 <dt><a href="../reference/configure.html#chameleon_rs.configure" class="doc-function doc-label doc-label-function">configure()</a></dt>
@@ -590,6 +970,18 @@ ul.task-list li input[type="checkbox"] {
 <dt><a href="../reference/core_version.html#chameleon_rs.core_version" class="doc-function doc-label doc-label-function">core_version()</a></dt>
 <dd>
 <p>Version of the Rust core, for bug reports and for checking which build is loaded.</p>
+</dd>
+</dl>
+</section>
+<section id="async" class="level2 doc-group">
+<h2 class="doc-group">Async</h2>
+<div class="doc-description">
+<p>Opt-in concurrency for render_async. See also PageTemplate.render_async.</p>
+</div>
+<dl>
+<dt><a href="../reference/concurrent.html#chameleon_rs.concurrent" class="doc-function doc-label doc-label-function">concurrent()</a></dt>
+<dd>
+<p>Marks an async helper so that an asynchronous render awaits its calls concurrently</p>
 </dd>
 </dl>
 </section>
@@ -667,6 +1059,254 @@ ul.task-list li input[type="checkbox"] {
 <dd>
 <p>Forgets the views’ process-wide configuration, so a later <code>configure()</code> /</p>
 </dd>
+<dt><a href="../reference/flask.check_views.html#chameleon_rs.flask.check_views" class="doc-function doc-label doc-label-function">flask.check_views()</a></dt>
+<dd>
+<p>Raises <code>chameleon_rs.web.DecoratorOrderError</code> if a route of <code>app</code> (blueprints</p>
+</dd>
+</dl>
+</section>
+<section id="fastapi" class="level2 doc-group">
+<h2 class="doc-group">FastAPI</h2>
+<div class="doc-description">
+<p>fastapi-chameleon’s API, built in. Imports FastAPI only when imported itself.</p>
+</div>
+<dl>
+<dt><a href="../reference/fastapi.configure.html#chameleon_rs.fastapi.configure" class="doc-function doc-label doc-label-function">fastapi.configure()</a></dt>
+<dd>
+<p>Configures where templates live and how they load, for the whole process (the same as</p>
+</dd>
+<dt><a href="../reference/fastapi.global_init.html#chameleon_rs.fastapi.global_init" class="doc-function doc-label doc-label-function">fastapi.global_init()</a></dt>
+<dd>
+<p>fastapi-chameleon’s setup call: configures the views’ templates only (partials keep</p>
+</dd>
+<dt><a href="../reference/fastapi.template.html#chameleon_rs.fastapi.template" class="doc-function doc-label doc-label-function">fastapi.template()</a></dt>
+<dd>
+<p>Decorates a FastAPI view (sync or async) to render a template with what it returns:</p>
+</dd>
+<dt><a href="../reference/fastapi.render.html#chameleon_rs.fastapi.render" class="doc-function doc-label doc-label-function">fastapi.render()</a></dt>
+<dd>
+<p>Renders a template (path relative to the template folder) to a <code>str</code>.</p>
+</dd>
+<dt><a href="../reference/fastapi.render_async.html#chameleon_rs.fastapi.render_async" class="doc-function doc-label doc-label-async">fastapi.render_async()</a></dt>
+<dd>
+<p><code>render</code> as a coroutine: the template’s <code>render_async</code>, which awaits awaitable</p>
+</dd>
+<dt><a href="../reference/fastapi.response.html#chameleon_rs.fastapi.response" class="doc-function doc-label doc-label-function">fastapi.response()</a></dt>
+<dd>
+<p>Renders a template to a <code>fastapi.Response</code>. (As in fastapi-chameleon, every keyword</p>
+</dd>
+<dt><a href="../reference/fastapi.response_async.html#chameleon_rs.fastapi.response_async" class="doc-function doc-label doc-label-async">fastapi.response_async()</a></dt>
+<dd>
+<p><code>response</code> as a coroutine, rendering with <code>render_async</code>.</p>
+</dd>
+<dt><a href="../reference/fastapi.not_found.html#chameleon_rs.fastapi.not_found" class="doc-function doc-label doc-label-function">fastapi.not_found()</a></dt>
+<dd>
+<p>Ends the current <code>@template</code> view with a 404 page: <code>template_file</code></p>
+</dd>
+<dt><a href="../reference/fastapi.error.html#chameleon_rs.fastapi.error" class="doc-function doc-label doc-label-function">fastapi.error()</a></dt>
+<dd>
+<p>Ends the current <code>@template</code> view with an error page: <code>template_file</code> rendered with</p>
+</dd>
+<dt><a href="../reference/fastapi.generic_error.html#chameleon_rs.fastapi.generic_error" class="doc-function doc-label doc-label-function">fastapi.generic_error()</a></dt>
+<dd>
+<p>fastapi-chameleon’s name and signature for <code>error()</code>.</p>
+</dd>
+<dt><a href="../reference/fastapi.clear.html#chameleon_rs.fastapi.clear" class="doc-function doc-label doc-label-function">fastapi.clear()</a></dt>
+<dd>
+<p>Forgets the views’ process-wide configuration, so a later <code>configure()</code> /</p>
+</dd>
+<dt><a href="../reference/fastapi.check_views.html#chameleon_rs.fastapi.check_views" class="doc-function doc-label doc-label-function">fastapi.check_views()</a></dt>
+<dd>
+<p>Raises <code>chameleon_rs.web.DecoratorOrderError</code> if a route of <code>app</code> (sub-routers and</p>
+</dd>
+</dl>
+</section>
+<section id="starlette" class="level2 doc-group">
+<h2 class="doc-group">Starlette</h2>
+<div class="doc-description">
+<p>Jinja2Templates’ API for chameleon-rs, and the decorator API. Imports Starlette only when imported itself.</p>
+</div>
+<dl>
+<dt><a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates" class="doc-class doc-label doc-label-class">starlette.Templates</a></dt>
+<dd>
+<p>Starlette’s <code>Jinja2Templates</code> for chameleon-rs templates.</p>
+</dd>
+<dt><a href="../reference/starlette.configure.html#chameleon_rs.starlette.configure" class="doc-function doc-label doc-label-function">starlette.configure()</a></dt>
+<dd>
+<p>Configures where templates live and how they load, for the whole process (the same as</p>
+</dd>
+<dt><a href="../reference/starlette.global_init.html#chameleon_rs.starlette.global_init" class="doc-function doc-label doc-label-function">starlette.global_init()</a></dt>
+<dd>
+<p>fastapi-chameleon’s setup call, for Starlette: configures the views’ templates only</p>
+</dd>
+<dt><a href="../reference/starlette.template.html#chameleon_rs.starlette.template" class="doc-function doc-label doc-label-function">starlette.template()</a></dt>
+<dd>
+<p>Decorates a Starlette endpoint (a function, or a method of an <code>HTTPEndpoint</code> class;</p>
+</dd>
+<dt><a href="../reference/starlette.render.html#chameleon_rs.starlette.render" class="doc-function doc-label doc-label-function">starlette.render()</a></dt>
+<dd>
+<p>Renders a template (path relative to the template folder) to a <code>str</code>.</p>
+</dd>
+<dt><a href="../reference/starlette.render_async.html#chameleon_rs.starlette.render_async" class="doc-function doc-label doc-label-async">starlette.render_async()</a></dt>
+<dd>
+<p><code>render</code> as a coroutine: the template’s <code>render_async</code>, which awaits awaitable</p>
+</dd>
+<dt><a href="../reference/starlette.response.html#chameleon_rs.starlette.response" class="doc-function doc-label doc-label-function">starlette.response()</a></dt>
+<dd>
+<p>Renders a template to an <code>HTMLResponse</code> (every keyword but <code>content_type</code> and</p>
+</dd>
+<dt><a href="../reference/starlette.response_async.html#chameleon_rs.starlette.response_async" class="doc-function doc-label doc-label-async">starlette.response_async()</a></dt>
+<dd>
+<p><code>response</code> as a coroutine, rendering with <code>render_async</code>.</p>
+</dd>
+<dt><a href="../reference/starlette.not_found.html#chameleon_rs.starlette.not_found" class="doc-function doc-label doc-label-function">starlette.not_found()</a></dt>
+<dd>
+<p>Ends the current <code>@template</code> endpoint with a 404 page: <code>template_file</code> rendered with</p>
+</dd>
+<dt><a href="../reference/starlette.error.html#chameleon_rs.starlette.error" class="doc-function doc-label doc-label-function">starlette.error()</a></dt>
+<dd>
+<p>Ends the current <code>@template</code> endpoint with an error page: <code>template_file</code> rendered</p>
+</dd>
+<dt><a href="../reference/starlette.generic_error.html#chameleon_rs.starlette.generic_error" class="doc-function doc-label doc-label-function">starlette.generic_error()</a></dt>
+<dd>
+<p>fastapi-chameleon’s name and signature for <code>error()</code>.</p>
+</dd>
+<dt><a href="../reference/starlette.clear.html#chameleon_rs.starlette.clear" class="doc-function doc-label doc-label-function">starlette.clear()</a></dt>
+<dd>
+<p>Forgets the views’ process-wide configuration, so a later <code>configure()</code> /</p>
+</dd>
+<dt><a href="../reference/starlette.check_views.html#chameleon_rs.starlette.check_views" class="doc-function doc-label doc-label-function">starlette.check_views()</a></dt>
+<dd>
+<p>Raises <code>chameleon_rs.web.DecoratorOrderError</code> if a route of <code>app</code> (a Starlette app</p>
+</dd>
+</dl>
+</section>
+<section id="robyn" class="level2 doc-group">
+<h2 class="doc-group">Robyn</h2>
+<div class="doc-description">
+<p>chameleon-robyn’s API, built in. Imports Robyn only when imported itself.</p>
+</div>
+<dl>
+<dt><a href="../reference/robyn.configure.html#chameleon_rs.robyn.configure" class="doc-function doc-label doc-label-function">robyn.configure()</a></dt>
+<dd>
+<p>Configures where templates live and how they load, for the whole process (the same as</p>
+</dd>
+<dt><a href="../reference/robyn.global_init.html#chameleon_rs.robyn.global_init" class="doc-function doc-label doc-label-function">robyn.global_init()</a></dt>
+<dd>
+<p>chameleon-robyn’s setup call: configures the handlers’ templates only (partials keep</p>
+</dd>
+<dt><a href="../reference/robyn.template.html#chameleon_rs.robyn.template" class="doc-function doc-label doc-label-function">robyn.template()</a></dt>
+<dd>
+<p>Decorates a Robyn route handler (sync or async) to render a template with what it</p>
+</dd>
+<dt><a href="../reference/robyn.render.html#chameleon_rs.robyn.render" class="doc-function doc-label doc-label-function">robyn.render()</a></dt>
+<dd>
+<p>Renders a template (path relative to the template folder) to a <code>str</code> (no response):</p>
+</dd>
+<dt><a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="doc-function doc-label doc-label-async">robyn.render_async()</a></dt>
+<dd>
+<p><code>render</code> as a coroutine: the template’s <code>render_async</code>, which awaits awaitable</p>
+</dd>
+<dt><a href="../reference/robyn.response.html#chameleon_rs.robyn.response" class="doc-function doc-label doc-label-function">robyn.response()</a></dt>
+<dd>
+<p>Renders a template into a <code>robyn.Response</code> with ``Content-Type: {content_type};</p>
+</dd>
+<dt><a href="../reference/robyn.response_async.html#chameleon_rs.robyn.response_async" class="doc-function doc-label doc-label-async">robyn.response_async()</a></dt>
+<dd>
+<p><code>response</code> as a coroutine, rendering with <code>render_async</code>.</p>
+</dd>
+<dt><a href="../reference/robyn.not_found.html#chameleon_rs.robyn.not_found" class="doc-function doc-label doc-label-function">robyn.not_found()</a></dt>
+<dd>
+<p>Ends the current <code>@template</code> handler with a 404 page: <code>template_file</code></p>
+</dd>
+<dt><a href="../reference/robyn.error.html#chameleon_rs.robyn.error" class="doc-function doc-label doc-label-function">robyn.error()</a></dt>
+<dd>
+<p>Ends the current <code>@template</code> handler with an error page: <code>template_file</code> rendered as</p>
+</dd>
+<dt><a href="../reference/robyn.generic_error.html#chameleon_rs.robyn.generic_error" class="doc-function doc-label doc-label-function">robyn.generic_error()</a></dt>
+<dd>
+<p>fastapi-chameleon’s name and signature for <code>error()</code>.</p>
+</dd>
+<dt><a href="../reference/robyn.clear.html#chameleon_rs.robyn.clear" class="doc-function doc-label doc-label-function">robyn.clear()</a></dt>
+<dd>
+<p>Forgets the handlers’ process-wide configuration, so a later <code>configure()</code> /</p>
+</dd>
+<dt><a href="../reference/robyn.check_views.html#chameleon_rs.robyn.check_views" class="doc-function doc-label doc-label-function">robyn.check_views()</a></dt>
+<dd>
+<p>Raises <code>chameleon_rs.web.DecoratorOrderError</code> if a route of <code>app</code> (a Robyn app, with</p>
+</dd>
+<dt><a href="../reference/robyn.ChameleonTemplate.html#chameleon_rs.robyn.ChameleonTemplate" class="doc-class doc-label doc-label-class">robyn.ChameleonTemplate</a></dt>
+<dd>
+<p>Chameleon templates through Robyn’s <code>TemplateInterface</code>, as its <code>JinjaTemplate</code>:</p>
+</dd>
+</dl>
+</section>
+<section id="litestar" class="level2 doc-group">
+<h2 class="doc-group">Litestar</h2>
+<div class="doc-description">
+<p>Litestar’s template engine interface for chameleon-rs, and the decorator API. Imports Litestar only when imported itself.</p>
+</div>
+<dl>
+<dt><a href="../reference/litestar.ChameleonEngine.html#chameleon_rs.litestar.ChameleonEngine" class="doc-class doc-label doc-label-class">litestar.ChameleonEngine</a></dt>
+<dd>
+<p>Litestar’s <code>TemplateEngineProtocol</code> for chameleon-rs templates:</p>
+</dd>
+<dt><a href="../reference/litestar.ChameleonTemplate.html#chameleon_rs.litestar.ChameleonTemplate" class="doc-class doc-label doc-label-class">litestar.ChameleonTemplate</a></dt>
+<dd>
+<p>A page template as Litestar’s <code>TemplateProtocol</code>: <code>render(**context)</code> renders it with</p>
+</dd>
+<dt><a href="../reference/litestar.Template.html#chameleon_rs.litestar.Template" class="doc-class doc-label doc-label-class">litestar.Template</a></dt>
+<dd>
+<p>Litestar’s <code>Template</code> response, served as <code>text/html</code> when Litestar cannot guess the</p>
+</dd>
+<dt><a href="../reference/litestar.configure.html#chameleon_rs.litestar.configure" class="doc-function doc-label doc-label-function">litestar.configure()</a></dt>
+<dd>
+<p>Configures where templates live and how they load, for the whole process (the same as</p>
+</dd>
+<dt><a href="../reference/litestar.global_init.html#chameleon_rs.litestar.global_init" class="doc-function doc-label doc-label-function">litestar.global_init()</a></dt>
+<dd>
+<p>The other integrations’ setup call, for Litestar: configures the handlers’ templates only</p>
+</dd>
+<dt><a href="litestar.template.qmd#chameleon_rs.litestar.template" class="doc-function doc-label doc-label-function">litestar.template()</a></dt>
+<dd>
+<p>Decorates a Litestar route handler function (sync or async; a <code>Controller</code> method too)</p>
+</dd>
+<dt><a href="../reference/litestar.render.html#chameleon_rs.litestar.render" class="doc-function doc-label doc-label-function">litestar.render()</a></dt>
+<dd>
+<p>Renders a template (path relative to the template folder) to a <code>str</code>.</p>
+</dd>
+<dt><a href="../reference/litestar.render_async.html#chameleon_rs.litestar.render_async" class="doc-function doc-label doc-label-async">litestar.render_async()</a></dt>
+<dd>
+<p><code>render</code> as a coroutine: the template’s <code>render_async</code>, which awaits awaitable</p>
+</dd>
+<dt><a href="../reference/litestar.response.html#chameleon_rs.litestar.response" class="doc-function doc-label doc-label-function">litestar.response()</a></dt>
+<dd>
+<p>Renders a template into a <code>litestar.Response</code> (every keyword but <code>content_type</code> and</p>
+</dd>
+<dt><a href="../reference/litestar.response_async.html#chameleon_rs.litestar.response_async" class="doc-function doc-label doc-label-async">litestar.response_async()</a></dt>
+<dd>
+<p><code>response</code> as a coroutine, rendering with <code>render_async</code>.</p>
+</dd>
+<dt><a href="../reference/litestar.not_found.html#chameleon_rs.litestar.not_found" class="doc-function doc-label doc-label-function">litestar.not_found()</a></dt>
+<dd>
+<p>Ends the current <code>@template</code> handler with a 404 page: <code>template_file</code> rendered with</p>
+</dd>
+<dt><a href="../reference/litestar.error.html#chameleon_rs.litestar.error" class="doc-function doc-label doc-label-function">litestar.error()</a></dt>
+<dd>
+<p>Ends the current <code>@template</code> handler with an error page: <code>template_file</code> rendered</p>
+</dd>
+<dt><a href="../reference/litestar.generic_error.html#chameleon_rs.litestar.generic_error" class="doc-function doc-label doc-label-function">litestar.generic_error()</a></dt>
+<dd>
+<p>fastapi-chameleon’s name and signature for <code>error()</code>.</p>
+</dd>
+<dt><a href="../reference/litestar.clear.html#chameleon_rs.litestar.clear" class="doc-function doc-label doc-label-function">litestar.clear()</a></dt>
+<dd>
+<p>Forgets the handlers’ process-wide configuration, so a later <code>configure()</code> /</p>
+</dd>
+<dt><a href="../reference/litestar.check_views.html#chameleon_rs.litestar.check_views" class="doc-function doc-label doc-label-function">litestar.check_views()</a></dt>
+<dd>
+<p>Raises <code>chameleon_rs.web.DecoratorOrderError</code> if a route of <code>app</code> (a Litestar app or</p>
+</dd>
 </dl>
 </section>
 <section id="errors-and-web-helpers" class="level2 doc-group">
@@ -690,6 +1330,14 @@ ul.task-list li input[type="checkbox"] {
 <dt><a href="../reference/web.NotFound.html#chameleon_rs.web.NotFound" class="doc-class doc-label doc-label-class">web.NotFound</a></dt>
 <dd>
 <p>Raised by <code>not_found()</code>: the decorator renders <code>template_file</code> (<code>errors/404.pt</code></p>
+</dd>
+<dt><a href="../reference/web.TemplateNotFound.html#chameleon_rs.web.TemplateNotFound" class="doc-class doc-label doc-label-exception">web.TemplateNotFound</a></dt>
+<dd>
+<p>No template of that name, or a name reaching outside the template folder: raised by</p>
+</dd>
+<dt><a href="../reference/web.DecoratorOrderError.html#chameleon_rs.web.DecoratorOrderError" class="doc-class doc-label doc-label-class">web.DecoratorOrderError</a></dt>
+<dd>
+<p>A view was registered with its framework before <code>@template</code> wrapped it (<code>@template</code></p>
 </dd>
 <dt><a href="../reference/web.model_of.html#chameleon_rs.web.model_of" class="doc-function doc-label doc-label-function">web.model_of()</a></dt>
 <dd>

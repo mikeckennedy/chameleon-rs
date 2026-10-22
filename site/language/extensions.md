@@ -116,6 +116,18 @@ chameleon-rs adds a built-in [render_partial](../reference/render_partial.md#cha
 It's the API of the [chameleon_partials](https://github.com/mikeckennedy/chameleon_partials) package, built in. See [Partials](../user-guide/partials.md).
 
 
+## Markdown expressions (chameleon-rs)
+
+chameleon-rs can add a `markdown:` expression type, which converts a value from Markdown to HTML while the page renders and inserts it as markup:
+
+``` html
+<article>${markdown: post.body}</article>
+<div tal:content="markdown: comment.text"></div>
+```
+
+It's off until you turn it on with `chameleon_rs.configure(markdown=True)`, and named profiles (`md-comment:`, `md-trusted:`) give different content different settings. See [Markdown](../user-guide/markdown.md).
+
+
 # Incompatibilities and differences
 
 There are a number of incompatibilities and differences between the Chameleon language implementation and the Zope reference implementation (ZPT). chameleon-rs follows Chameleon in each of them.

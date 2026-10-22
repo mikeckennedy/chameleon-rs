@@ -69,8 +69,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-search/fuse.min.js"></script>
 <script src="../site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="../">
-<link href="../user-guide/compatibility.html" rel="next">
-<link href="../user-guide/configuration.html" rel="prev">
+<link href="../user-guide/fastapi.html" rel="next">
+<link href="../user-guide/frameworks.html" rel="prev">
 <link href="../favicon.ico" rel="icon">
 <script src="../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
@@ -245,6 +245,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/async.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Async rendering</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/configuration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Configuration</span></a>
   </div>
@@ -259,8 +265,44 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <ul id="quarto-sidebar-section-3" class="list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/frameworks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Web frameworks</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/flask.html" class="sidebar-item-text sidebar-link active">
  <span class="menu-text">Flask and Quart</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/fastapi.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">FastAPI</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/starlette.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Starlette</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/robyn.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Robyn</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/litestar.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Litestar</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../user-guide/pyramid.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Pyramid</span></a>
   </div>
 </li>
       </ul>
@@ -302,6 +344,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
    
   <ul class="collapse">
   <li><a href="#a-first-view" id="toc-a-first-view" class="nav-link active" data-scroll-target="#a-first-view">A first view</a></li>
+  <li><a href="#decorator-order" id="toc-decorator-order" class="nav-link" data-scroll-target="#decorator-order">Decorator order</a></li>
   <li><a href="#what-a-view-can-return" id="toc-what-a-view-can-return" class="nav-link" data-scroll-target="#what-a-view-can-return">What a view can return</a></li>
   <li><a href="#the-template-decorator" id="toc-the-template-decorator" class="nav-link" data-scroll-target="#the-template-decorator">The <code>@template</code> decorator</a></li>
   <li><a href="#error-pages" id="toc-error-pages" class="nav-link" data-scroll-target="#error-pages">Error pages</a></li>
@@ -338,7 +381,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p><code>import chameleon_rs</code> doesn’t import Flask. Only <code>import chameleon_rs.flask</code> does.</p>
 <section id="a-first-view" class="level1">
 <h1>A first view</h1>
-<div id="cb0f72c2" class="cell" data-execution_count="2">
+<div id="cd583f8b" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> flask</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.flask <span class="im">as</span> chameleon_flask</span>
@@ -353,7 +396,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'message'</span>: <span class="st">'Hello'</span>, <span class="st">'videos'</span>: [<span class="st">'intro'</span>, <span class="st">'partials'</span>]}</span></code></pre></div>
 </div>
 <p>The view returns the template’s model, and <code>@template</code> renders it into a <code>flask.Response</code>:</p>
-<div id="85342492" class="cell" data-execution_count="3">
+<div id="2af01bc9" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>client <span class="op">=</span> app.test_client()</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(client.get(<span class="st">'/'</span>).text)</span></code></pre></div>
 <div class="cell-output cell-output-stdout">
@@ -363,6 +406,23 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 </div>
 <p><a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">configure()</a> here is the same call as <a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">chameleon_rs.configure()</a>, so it also tells <a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a> where templates live.</p>
+</section>
+<section id="decorator-order" class="level1">
+<h1>Decorator order</h1>
+<p><code>@template</code> goes below the route decorator. Written above it, Flask registers the bare view, the template never renders and the route quietly returns the view’s dict as JSON. Give the app to <a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">configure()</a> and it checks before its first request (Quart: when it starts serving):</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>chameleon_flask.configure(template_folder<span class="op">=</span>template_folder, app<span class="op">=</span>app)</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_flask.template</span>(<span class="st">'home/index.pt'</span>)   <span class="co"># wrong: above the route</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/about'</span>)</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> about():</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'message'</span>: <span class="st">'About'</span>, <span class="st">'videos'</span>: []}</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="co"># The first request raises chameleon_rs.web.DecoratorOrderError:</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="co"># @template must be placed below the route decorator (@app.route, @app.get,</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="co"># @blueprint.route, ...) on about() at app.py:12 (route GET /about): ...</span></span></code></pre></div>
+<p>Flask has no startup hook, so the check runs on the first request. Blueprints are included. <code>chameleon_flask.check_views(app)</code> runs the same check on demand, for example in a test. Once the check passes, the app runs without it.</p>
+<p>One pattern can’t be told from the mistake: a function routed raw on this app whose <code>@template</code> wrapper is used somewhere else (called from another view, or routed on another app). For such an app, pass <code>check_order=False</code> to <a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">configure()</a> and keep the check in a test with <code>chameleon_flask.check_views(app, ignore=[that_function])</code>.</p>
 </section>
 <section id="what-a-view-can-return" class="level1">
 <h1>What a view can return</h1>
@@ -374,30 +434,30 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="the-template-decorator" class="level1">
 <h1>The <code>@template</code> decorator</h1>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_flask.template</span>(<span class="st">'home/index.pt'</span>)                            <span class="co"># a template path</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_flask.template</span>(<span class="st">'feed.pt'</span>, content_type<span class="op">=</span><span class="st">'application/xml'</span>)  <span class="co"># or mimetype=</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_flask.template</span>(<span class="st">'home/created.pt'</span>, status_code<span class="op">=</span><span class="dv">201</span>)</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_flask.template</span>                                             <span class="co"># no arguments</span></span></code></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_flask.template</span>(<span class="st">'home/index.pt'</span>)                            <span class="co"># a template path</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_flask.template</span>(<span class="st">'feed.pt'</span>, content_type<span class="op">=</span><span class="st">'application/xml'</span>)  <span class="co"># or mimetype=</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_flask.template</span>(<span class="st">'home/created.pt'</span>, status_code<span class="op">=</span><span class="dv">201</span>)</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_flask.template</span>                                             <span class="co"># no arguments</span></span></code></pre></div>
 <p>With no path, it renders <code>{module}/{function}.html</code>, where <code>{module}</code> is the last part of the view’s module name. If there’s no <code>.html</code> file in the template folder, it uses <code>{module}/{function}.pt</code>. It checks once, when the view is decorated.</p>
 <p>It works on sync views, Flask’s async views and Quart views alike.</p>
 </section>
 <section id="error-pages" class="level1">
 <h1>Error pages</h1>
 <p>Inside a decorated view, <a href="../reference/flask.not_found.html#chameleon_rs.flask.not_found" class="gdls-link gdls-code">not_found()</a> and <a href="../reference/flask.error.html#chameleon_rs.flask.error" class="gdls-link gdls-code">error()</a> stop the view and render an error page:</p>
-<div id="1c360ff2" class="cell" data-execution_count="4">
-<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> flask.Flask(<span class="va">__name__</span>)</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/videos/&lt;name&gt;'</span>)</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_flask.template</span>(<span class="st">'home/index.pt'</span>)</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> video(name):</span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> name <span class="op">!=</span> <span class="st">'intro'</span>:</span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>        chameleon_flask.not_found(path<span class="op">=</span>flask.request.path)   <span class="co"># renders errors/404.pt</span></span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'message'</span>: name, <span class="st">'videos'</span>: [name]}</span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>response <span class="op">=</span> app.test_client().get(<span class="st">'/videos/missing'</span>)</span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(response.status_code, response.text)</span></code></pre></div>
+<div id="91121811" class="cell" data-execution_count="4">
+<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> flask.Flask(<span class="va">__name__</span>)</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/videos/&lt;name&gt;'</span>)</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_flask.template</span>(<span class="st">'home/index.pt'</span>)</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> video(name):</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> name <span class="op">!=</span> <span class="st">'intro'</span>:</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>        chameleon_flask.not_found(path<span class="op">=</span>flask.request.path)   <span class="co"># renders errors/404.pt</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'message'</span>: name, <span class="st">'videos'</span>: [name]}</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>response <span class="op">=</span> app.test_client().get(<span class="st">'/videos/missing'</span>)</span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(response.status_code, response.text)</span></code></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>404 &lt;h1&gt;Not found: /videos/missing&lt;/h1&gt;</code></pre>
 </div>
@@ -408,47 +468,48 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><code>generic_error(template_file, status_code, template_data)</code> is fastapi-chameleon’s name for <a href="../reference/flask.error.html#chameleon_rs.flask.error" class="gdls-link gdls-code">error()</a>.</li>
 </ul>
 <p>They raise <a href="../reference/web.NotFound.html#chameleon_rs.web.NotFound" class="gdls-link gdls-code">chameleon_rs.web.NotFound</a> and <a href="../reference/web.ErrorPage.html#chameleon_rs.web.ErrorPage" class="gdls-link gdls-code">chameleon_rs.web.ErrorPage</a>, which the decorator turns into the response.</p>
-</section>
-<section id="rendering-without-the-decorator" class="level1">
-<h1>Rendering without the decorator</h1>
-<div class="sourceCode" id="cb7"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>html <span class="op">=</span> chameleon_flask.render(<span class="st">'emails/welcome.pt'</span>, user<span class="op">=</span>user)            <span class="co"># a str</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>resp <span class="op">=</span> chameleon_flask.response(<span class="st">'feed.pt'</span>, content_type<span class="op">=</span><span class="st">'application/xml'</span>, items<span class="op">=</span>items)</span></code></pre></div>
-<p><a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> and <a href="../reference/flask.response.html#chameleon_rs.flask.response" class="gdls-link gdls-code">response()</a> work anywhere, such as in a view that builds its own response or in a background job. Both raise <code>FlaskChameleonException</code> if nothing has been configured.</p>
-</section>
-<section id="one-configuration-per-app" class="level1">
-<h1>One configuration per app</h1>
-<p>Pass <code>app=</code> to give one Flask or Quart app its own template folder. It’s stored in <code>app.extensions['chameleon_rs']</code> and used while that app handles a request. Other apps, and code outside a request, use the process-wide configuration.</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>chameleon_flask.configure(template_folder<span class="op">=</span><span class="st">'admin/templates'</span>, app<span class="op">=</span>admin_app)</span></code></pre></div>
-</section>
-<section id="quart" class="level1">
-<h1>Quart</h1>
-<p>The same module works with Quart, with no extra install:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> quart</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.flask <span class="im">as</span> chameleon_flask</span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> quart.Quart(<span class="va">__name__</span>)</span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>chameleon_flask.configure(template_folder<span class="op">=</span>template_folder)</span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/'</span>)</span>
-<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_flask.template</span>(<span class="st">'home/index.pt'</span>)</span>
-<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> index():</span>
-<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>    videos <span class="op">=</span> <span class="cf">await</span> load_videos()</span>
-<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'message'</span>: <span class="st">'Hello'</span>, <span class="st">'videos'</span>: videos}</span></code></pre></div>
-<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout callout-style-default callout-warning callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
 <i class="callout-icon"></i>
 </div>
 <div class="callout-title-container flex-fill">
-<span class="screen-reader-only">Note</span>Renders are synchronous for now
+<span class="screen-reader-only">Warning</span>Template names come from your code
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>An async view awaits your code, then renders the template synchronously, as chameleon-flask does. Async rendering, which doesn’t block the event loop, is in progress.</p>
+<p>The names given to <code>@template</code>, <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a>, <a href="../reference/flask.response.html#chameleon_rs.flask.response" class="gdls-link gdls-code">response()</a>, <a href="../reference/flask.not_found.html#chameleon_rs.flask.not_found" class="gdls-link gdls-code">not_found()</a> / <a href="../reference/flask.error.html#chameleon_rs.flask.error" class="gdls-link gdls-code">error()</a> and <a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial()</a> are looked up as the original libraries look them up, which allows <code>..</code> and absolute paths. Write them in your code; never build one from a request (a path or query parameter, a header). <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates" class="gdls-link gdls-code">chameleon_rs.starlette.Templates</a>, the Jinja drop-in, refuses names that reach outside its folder, as Jinja does.</p>
 </div>
 </div>
+</section>
+<section id="rendering-without-the-decorator" class="level1">
+<h1>Rendering without the decorator</h1>
+<div class="sourceCode" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>html <span class="op">=</span> chameleon_flask.render(<span class="st">'emails/welcome.pt'</span>, user<span class="op">=</span>user)            <span class="co"># a str</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>resp <span class="op">=</span> chameleon_flask.response(<span class="st">'feed.pt'</span>, content_type<span class="op">=</span><span class="st">'application/xml'</span>, items<span class="op">=</span>items)</span></code></pre></div>
+<p><a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> and <a href="../reference/flask.response.html#chameleon_rs.flask.response" class="gdls-link gdls-code">response()</a> work anywhere, such as in a view that builds its own response or in a background job. Both raise <code>FlaskChameleonException</code> if nothing has been configured.</p>
+</section>
+<section id="one-configuration-per-app" class="level1">
+<h1>One configuration per app</h1>
+<p>Pass <code>app=</code> to give one Flask or Quart app its own template folder. It’s stored in <code>app.extensions['chameleon_rs']</code> and used while that app handles a request. Other apps, and code outside a request, use the process-wide configuration. It also turns on the decorator-order check for that app.</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>chameleon_flask.configure(template_folder<span class="op">=</span><span class="st">'admin/templates'</span>, app<span class="op">=</span>admin_app)</span></code></pre></div>
+</section>
+<section id="quart" class="level1">
+<h1>Quart</h1>
+<p>The same module works with Quart, with no extra install:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> quart</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.flask <span class="im">as</span> chameleon_flask</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> quart.Quart(<span class="va">__name__</span>)</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>chameleon_flask.configure(template_folder<span class="op">=</span>template_folder)</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/'</span>)</span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_flask.template</span>(<span class="st">'home/index.pt'</span>)</span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> index():</span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>    videos <span class="op">=</span> <span class="cf">await</span> load_videos()</span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'message'</span>: <span class="st">'Hello'</span>, <span class="st">'videos'</span>: videos}</span></code></pre></div>
+<p>An async view’s page renders with <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a>: a model value that is awaitable (a coroutine, task or future) is awaited where the template uses it, without blocking the event loop. With no awaitable values the output is the same as <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a>’s.</p>
 </section>
 <section id="coming-from-chameleon-flask" class="level1">
 <h1>Coming from chameleon-flask</h1>
@@ -827,13 +888,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   </script>
 <nav class="page-navigation">
   <div class="nav-page nav-page-previous">
-      <a href="../user-guide/configuration.html" class="pagination-link" aria-label="Configuration">
-        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Configuration</span>
+      <a href="../user-guide/frameworks.html" class="pagination-link" aria-label="Web frameworks">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Web frameworks</span>
       </a>          
   </div>
   <div class="nav-page nav-page-next">
-      <a href="../user-guide/compatibility.html" class="pagination-link" aria-label="Compatibility">
-        <span class="nav-page-text">Compatibility</span> <i class="bi bi-arrow-right-short"></i>
+      <a href="../user-guide/fastapi.html" class="pagination-link" aria-label="FastAPI">
+        <span class="nav-page-text">FastAPI</span> <i class="bi bi-arrow-right-short"></i>
       </a>
   </div>
 </nav>
