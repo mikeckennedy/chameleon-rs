@@ -82,6 +82,7 @@ impl Custom {
             domain: cx.frame.domain.as_ref().map(|d| d.clone().unbind()),
             context: cx.frame.context.as_ref().map(|c| c.clone().unbind()),
             target_language: cx.frame.target_language.clone().unbind(),
+            helpers: cx.frame.helpers.as_ref().map(|h| h.unbind()),
         };
         self.func.bind(py).call1((cx.scope, rcontext, cx.marker(), cx.builtins(), sub))
     }
@@ -100,6 +101,7 @@ pub(crate) struct SubEval {
     domain: Option<Py<PyString>>,
     context: Option<Py<PyString>>,
     target_language: Py<PyAny>,
+    helpers: Option<crate::expr::HelpersPy>,
 }
 
 #[pymethods]
@@ -122,6 +124,7 @@ impl SubEval {
             domain: self.domain.as_ref().map(|d| d.bind(py).clone()),
             context: self.context.as_ref().map(|c| c.bind(py).clone()),
             target_language: self.target_language.bind(py).clone(),
+            helpers: self.helpers.as_ref().map(|h| Box::new(h.bind(py))),
         };
         let cx = Cx { scope, render: &render, frame: &frame };
         let value = eval(&sub.expr, &cx)?;
@@ -149,6 +152,9 @@ impl SubEval {
         }
         if let Some(c) = &self.context {
             visit.call(c)?;
+        }
+        if let Some(h) = &self.helpers {
+            h.traverse(&visit)?;
         }
         if let Some(d) = &self.defaults {
             visit.call(d)?;

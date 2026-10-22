@@ -259,7 +259,7 @@ impl Macros for Toy {
 }
 
 impl Translate for Toy {
-    fn i18n_changed(&mut self, _i18n: &I18n<V>) -> Result<(), String> {
+    fn i18n_changed(&mut self, _i18n: &I18n<V>, _helpers: Option<&I18n<V>>) -> Result<(), String> {
         Ok(())
     }
 

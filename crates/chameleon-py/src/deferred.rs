@@ -108,6 +108,7 @@ pub(crate) struct ValueSite {
     pub(crate) domain: Option<Py<PyString>>,
     pub(crate) context: Option<Py<PyString>>,
     pub(crate) target_language: Py<PyAny>,
+    pub(crate) helpers: Option<crate::expr::HelpersPy>,
     pub(crate) program: Py<Program>,
     pub(crate) token: u32,
 }
@@ -141,6 +142,9 @@ impl Deferred {
                 visit.call(c)?;
             }
             visit.call(&site.target_language)?;
+            if let Some(h) = &site.helpers {
+                h.traverse(visit)?;
+            }
             visit.call(&site.program)?;
         }
         Ok(())

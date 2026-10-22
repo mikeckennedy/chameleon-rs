@@ -21,7 +21,7 @@ use chameleon_core::{
 };
 
 use crate::convert;
-use crate::expr::{Cx, FrameCx, RenderCtx, eval, eval_emitted};
+use crate::expr::{Cx, FrameCx, Helpers, RenderCtx, eval, eval_emitted};
 use crate::macros::{Macro, SlotFill};
 use crate::program::{Program, record_error};
 use crate::scope::Scope;
@@ -110,6 +110,33 @@ impl<'a, 'py, const ASYNC: bool> PyRuntime<'a, 'py, ASYNC> {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// A slot body's conversion helpers' i18n settings (`Translate::i18n_changed`), kept
+    /// only when they differ from the frame's own (`i18n`), which they do when the body (or
+    /// the slot body the fill was defined in) set its own.
+    #[inline(never)]
+    fn set_helpers(&mut self, i18n: &I18n<Py<PyAny>>, helpers: Option<&I18n<Py<PyAny>>>) -> PyResult<()> {
+        let py = self.py;
+        let target = |t: &Option<Py<PyAny>>| t.as_ref().filter(|t| !t.is_none(py)).map(Py::as_ptr);
+        self.frame.helpers = match helpers {
+            Some(h)
+                if h.domain != i18n.domain
+                    || h.context != i18n.context
+                    || target(&h.target_language) != target(&i18n.target_language) =>
+            {
+                Some(Box::new(Helpers {
+                    domain: h.domain.as_deref().map(|d| self.source_str(d)).transpose()?,
+                    context: h.context.as_deref().map(|c| self.source_str(c)).transpose()?,
+                    target_language: h
+                        .target_language
+                        .as_ref()
+                        .map_or_else(|| py.None().into_bound(py), |t| t.bind(py).clone()),
+                }))
+            }
+            _ => None,
+        };
         Ok(())
     }
 
@@ -303,6 +330,7 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
             domain: self.frame.domain.clone().map(Bound::unbind),
             context: self.frame.context.clone().map(Bound::unbind),
             target_language: self.frame.target_language.clone().unbind(),
+            helpers: self.frame.helpers.as_ref().map(|h| h.unbind()),
             program: self.code.clone().unbind(),
             token,
         };
@@ -774,8 +802,12 @@ impl<const ASYNC: bool> Macros for PyRuntime<'_, '_, ASYNC> {
 }
 
 impl<const ASYNC: bool> Translate for PyRuntime<'_, '_, ASYNC> {
-    fn i18n_changed(&mut self, i18n: &I18n<Py<PyAny>>) -> PyResult<()> {
-        self.set_i18n(i18n)
+    fn i18n_changed(&mut self, i18n: &I18n<Py<PyAny>>, helpers: Option<&I18n<Py<PyAny>>>) -> PyResult<()> {
+        self.set_i18n(i18n)?;
+        if helpers.is_some() || self.frame.helpers.is_some() {
+            self.set_helpers(i18n, helpers)?;
+        }
+        Ok(())
     }
 
     /// The render function's `translate` (`econtext['__translate']`), called with exactly the

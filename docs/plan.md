@@ -1531,6 +1531,59 @@ extend-macro whose slot sits in an `i18n:name`, with a recursive translated fill
 `test_macros.test_extended_slot_inside_a_name_with_a_recursive_translated_fill`, a strict
 xfail; present since Phase 8). Wheels are built with `make build-pgo`.
 
+**12a done (2026-10-21): the release blocker and one of the two other slot-body xfails.**
+Details: architecture.md, "Phase 12 amendments".
+
+- **The blocker** (now a passing test). Root cause, from Chameleon's generated code: a slot
+  body writes with its defining function's `__append`, so what it writes before opening a
+  translation (or name, or capture) of its own is in that function's stream at once. Our
+  `flush_fill` moved a body's output to its stream before a macro or slot call only when the
+  body had no stream of its own open; with one open, the body's earlier output (`<b>`) stayed
+  where it was until the body returned, and the other fill of the same extend-macro, taken by
+  the recursive call and writing to the same stream, landed before it. Now the output before
+  the body's first open stream moves before the call (an in-place rotation,
+  `Output::move_back`); the rest stays the body's. Twelve neighbouring cases compared with
+  Chameleon in `test_macros.py` (not recursive, the body's translation or name after text of
+  its own, two names and two slots, nested extend-macro three ways, a slot outside any
+  translation, handlers before and around the body's translation); eight of them differed
+  before the fix.
+- **`test_conversion_in_a_slot_body_ignores_its_i18n_context`: fixed.** Chameleon's
+  conversion helpers are closures of the render function, so in a slot body they use that
+  function's i18n domain, context and target language; the body's inline conversions and
+  `translate` calls use the body's own. Slot-body frames keep the helpers' settings when they
+  can differ (the body sets its own, or a fill defined in a slot body); 12 cases in
+  `test_i18n.py` compare the translate protocol and output (`i18n:domain`/`context`/`target`
+  on and inside the body, around the call, a translated slot, macros and fills inside the
+  body, extend-macro), and the macro/i18n fuzzer no longer keeps `i18n:domain`/`context` out
+  of slot bodies. One narrower case is a new strict xfail: a fill no macro took, taken by a
+  later call of the same function, sees the function's settings at that call in Chameleon
+  (closure cells) and where it was defined here. Reading them live meant tracking the
+  function's frame, which cost 15-40 ns per slot call in the macro A/B, so it was dropped.
+- **`test_handler_in_a_slot_body_drops_the_failing_text_node`: left as a known difference.**
+  Chameleon appends a text node with its expressions, an interpolated attribute, a comment as
+  one string each, so a failing expression drops the piece's text before it; we join static
+  text at compile time across those boundaries and write it before evaluating. Matching it
+  needs a second lowering mode for code under a handler inside a slot body (text split at
+  Chameleon's append boundaries, an instruction marking each piece's start), for a handler in
+  a slot body whose slot sits inside a translation or name: not contained, so not done.
+- **Fuzzing** (final build): the three render fuzzers at 10,000 examples each (generated
+  templates, partials, macros/slots/i18n with `i18n:domain`/`context` now allowed in slot
+  bodies), zero differences. The expression fuzzer's normalization learned the dict of
+  overlapping pairs a comprehension over a repr builds (`{q: q for q in str(repeat)}`), a
+  harness gap that turned up during the run (addresses and the package name in it).
+- **Tests:** Rust 96 core + 9 `chameleon-py`; 2,855 pytest passed, 2 skipped, 2 strict xfails
+  (corpus set, integration checkouts present); upstream 227 passed and 6 xpassed on each
+  engine; `make test-integration` green (fastapi-chameleon 40, chameleon-flask 16,
+  chameleon-robyn 39, chameleon_partials 6, built-in flask 16 and partials 6); `make lint`
+  clean.
+- **Speed** (`bench/bench_ab.py 239fd36`, release, same-process interleaved, load 2-3):
+  listing -6.3 ns per item (8 rounds, range -8..+4) and +0.1 ns (12 rounds, -12..+8); macro
+  call with a fill +5.3 ns per item (12 rounds, +3..+9) and -3.5 ns (12 rounds, -29..+1);
+  page -619 ns per render of 69 µs (-0.9%, range -777..-389). The same tree against itself
+  read -8 ns on the macro scenario, the noise floor of these runs. The stream fix alone was
+  free (macro -13 ns); the helpers cost nothing until a render has a slot body with settings
+  of its own (one test per frame activation).
+
 ## Risks
 
 | Risk | Impact | Mitigation |

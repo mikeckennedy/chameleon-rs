@@ -95,7 +95,7 @@ impl Macro {
             stream,
             econtext,
             rcontext,
-            i18n,
+            (i18n, None),
             Vec::new(),
         )?;
         stream.call_method1(pyo3::intern!(py, "append"), (text,))?;
@@ -126,6 +126,9 @@ pub(crate) struct SlotFill {
     target_language: Option<Py<PyAny>>,
     slots: Vec<Option<Py<PyAny>>>,
     stream: Option<u64>,
+    /// The i18n settings of the render function around a fill defined in a slot body
+    /// (`Fill::helpers`).
+    helpers: Option<Box<I18n<Py<PyAny>>>>,
 }
 
 impl SlotFill {
@@ -139,6 +142,7 @@ impl SlotFill {
             target_language: fill.i18n.target_language,
             slots: fill.slots,
             stream: fill.stream,
+            helpers: fill.helpers,
         }
     }
 
@@ -151,6 +155,7 @@ impl SlotFill {
             i18n: self.i18n(py),
             slots: self.slots.iter().map(|s| s.as_ref().map(|v| v.clone_ref(py))).collect(),
             stream: self.stream,
+            helpers: self.helpers.as_ref().map(|h| Box::new(copy_i18n(py, h))),
         }
     }
 
@@ -160,6 +165,19 @@ impl SlotFill {
             context: self.context.clone(),
             target_language: self.target_language.as_ref().map(|t| t.clone_ref(py)),
         }
+    }
+
+    /// The i18n settings the body's conversion helpers use.
+    fn helpers(&self, py: Python<'_>) -> I18n<Py<PyAny>> {
+        self.helpers.as_ref().map_or_else(|| self.i18n(py), |h| copy_i18n(py, h))
+    }
+}
+
+fn copy_i18n(py: Python<'_>, i18n: &I18n<Py<PyAny>>) -> I18n<Py<PyAny>> {
+    I18n {
+        domain: i18n.domain.clone(),
+        context: i18n.context.clone(),
+        target_language: i18n.target_language.as_ref().map(|t| t.clone_ref(py)),
     }
 }
 
@@ -180,8 +198,8 @@ impl SlotFill {
             Err(_) => (code.cast::<Program>()?.clone(), PyDict::new(py)),
         };
         let slots = self.slots.iter().map(|s| s.as_ref().map(|v| v.clone_ref(py))).collect();
-        let text =
-            render_function(&program, self.entry, code, builtins, stream, econtext, rcontext, self.i18n(py), slots)?;
+        let i18n = (self.i18n(py), Some(self.helpers(py)));
+        let text = render_function(&program, self.entry, code, builtins, stream, econtext, rcontext, i18n, slots)?;
         stream.call_method1(pyo3::intern!(py, "append"), (text,))?;
         Ok(())
     }
@@ -189,6 +207,9 @@ impl SlotFill {
     fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
         visit.call(&self.code)?;
         if let Some(t) = &self.target_language {
+            visit.call(t)?;
+        }
+        if let Some(t) = self.helpers.as_ref().and_then(|h| h.target_language.as_ref()) {
             visit.call(t)?;
         }
         for slot in self.slots.iter().flatten() {
@@ -210,7 +231,7 @@ fn render_function<'py>(
     stream: &Bound<'py, PyAny>,
     econtext: &Bound<'py, PyAny>,
     rcontext: &Bound<'py, PyAny>,
-    i18n: I18n<Py<PyAny>>,
+    (i18n, helpers): (I18n<Py<PyAny>>, Option<I18n<Py<PyAny>>>),
     slots: Vec<Option<Py<PyAny>>>,
 ) -> PyResult<Bound<'py, PyString>> {
     let py = program.py();
@@ -233,6 +254,9 @@ fn render_function<'py>(
     let _ = render.stream.set(stream.clone());
     let compiled = Arc::clone(&program.get().core);
     let mut st = VmState::at(compiled, entry, code.unbind(), scope.clone().into_any().unbind(), i18n, slots);
+    if let Some(helpers) = helpers {
+        st = st.with_helpers(helpers);
+    }
     let mut rt = PyRuntime::<false>::new(&render, program.clone(), scope);
     match run(&mut st, &mut rt) {
         Ok(Done::Finished) => {}

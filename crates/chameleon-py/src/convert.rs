@@ -284,10 +284,13 @@ fn translate<'py>(cx: &Cx<'_, 'py>, value: &Bound<'py, PyAny>, target: Target) -
         }
         Some(translate) => {
             let kwargs = PyDict::new(py);
-            kwargs.set_item(intern!(py, "domain"), &cx.frame.domain)?;
-            kwargs.set_item(intern!(py, "context"), &cx.frame.context)?;
+            // The helpers of a slot body see the i18n settings of the function they belong to.
+            let helpers = cx.frame.helpers.as_deref().filter(|_| target == Target::Local);
+            let (domain, context) = helpers.map_or((&cx.frame.domain, &cx.frame.context), |h| (&h.domain, &h.context));
+            kwargs.set_item(intern!(py, "domain"), domain)?;
+            kwargs.set_item(intern!(py, "context"), context)?;
             let target_language = match target {
-                Target::Local => cx.frame.target_language.clone(),
+                Target::Local => helpers.map_or(&cx.frame.target_language, |h| &h.target_language).clone(),
                 Target::Scope => cx.scope_target_language()?,
             };
             kwargs.set_item(intern!(py, "target_language"), target_language)?;

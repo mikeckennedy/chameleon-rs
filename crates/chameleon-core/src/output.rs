@@ -78,11 +78,16 @@ impl Output {
         if mark.0 >= self.buf.len() { Vec::new() } else { self.buf.split_off(mark.0) }
     }
 
-    /// Inserts `bytes` at `mark`, moving what follows (a slot's output written to the stream
-    /// its caller had open, before streams opened since).
-    pub fn insert_at(&mut self, mark: Mark, bytes: &[u8]) {
-        let at = mark.0.min(self.buf.len());
-        self.buf.splice(at..at, bytes.iter().copied());
+    /// Moves the bytes between `from` and `to` back to `dest`, shifting what lay between
+    /// `dest` and `from` after them (a slot body's output written to its defining function's
+    /// stream, before streams opened since). Nothing unless `dest <= from <= to <= len`.
+    pub fn move_back(&mut self, dest: Mark, from: Mark, to: Mark) {
+        if dest.0 <= from.0
+            && from.0 <= to.0
+            && let Some(region) = self.buf.get_mut(dest.0..to.0)
+        {
+            region.rotate_right(to.0 - from.0);
+        }
     }
 
     /// Replaces each occurrence of `prefix` followed by `width` bytes and `prefix` again (a
@@ -145,5 +150,23 @@ impl std::fmt::Write for Output {
     fn write_str(&mut self, s: &str) -> std::fmt::Result {
         self.push_str(s);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn move_back_rotates_a_range_before_what_preceded_it() {
+        let mut out = Output::default();
+        out.push_str("ab[cd]ef");
+        // "[cd]" moves before "ab"; "ef" stays.
+        out.move_back(Mark(0), Mark(2), Mark(6));
+        assert_eq!(out.as_bytes(), b"[cd]abef");
+        // Out-of-order or out-of-range marks change nothing.
+        out.move_back(Mark(3), Mark(2), Mark(6));
+        out.move_back(Mark(0), Mark(2), Mark(60));
+        assert_eq!(out.as_bytes(), b"[cd]abef");
     }
 }
