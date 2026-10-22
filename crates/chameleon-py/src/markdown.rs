@@ -16,6 +16,7 @@ use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 
 use chameleon_core::markdown::{Element, Extensions, Profile, RawHtml, Settings};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::sync::{MutexExt, PyOnceLock};
 use pyo3::types::PyString;
@@ -158,7 +159,10 @@ pub(crate) fn to_markup<'py>(
     })?;
     let result = markup(py, &html)?;
     if cacheable {
-        let evicted = lock(py).insert(key, s, html.len(), result.clone().unbind());
+        // The `str`'s own size: 1, 2 or 4 bytes a character, whichever its widest needs (one
+        // emoji makes it 4), so its UTF-8 length could undercount it 4 times.
+        let html_size = result.call_method0(intern!(py, "__sizeof__"))?.extract::<usize>()?;
+        let evicted = lock(py).insert(key, s, html_size, result.clone().unbind());
         // Released after the lock: freeing an object can run Python code.
         drop(evicted);
     }
@@ -202,7 +206,7 @@ struct Key {
 struct Entry {
     text: Box<str>,
     html: Py<PyAny>,
-    /// The text's and the HTML's length, counted against [`MAX_CACHE_BYTES`].
+    /// The text's length and the HTML `str`'s size, counted against [`MAX_CACHE_BYTES`].
     bytes: usize,
     stamp: u64,
 }
@@ -234,8 +238,8 @@ impl Cache {
     /// Adds a conversion; returns what it evicted or replaced, for the caller to drop after
     /// releasing the lock.
     #[must_use]
-    fn insert(&mut self, key: Key, text: &str, html_len: usize, html: Py<PyAny>) -> Vec<Entry> {
-        let bytes = text.len() + html_len;
+    fn insert(&mut self, key: Key, text: &str, html_size: usize, html: Py<PyAny>) -> Vec<Entry> {
+        let bytes = text.len() + html_size;
         if self.capacity == 0 {
             return vec![Entry { text: Box::from(""), html, bytes: 0, stamp: 0 }];
         }

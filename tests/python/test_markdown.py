@@ -439,6 +439,19 @@ def test_the_cache_limits_bytes() -> None:
     assert 0 < entries < 1_200
 
 
+def test_the_cache_counts_the_html_strs_real_size() -> None:
+    # One astral character makes the whole `str` 4 bytes a character: counting its UTF-8 let
+    # the cache hold up to 4 times its byte limit.
+    import sys
+
+    chameleon_rs.configure(markdown=True)
+    profile = chameleon_rs._settings.markdown_profiles['markdown']
+    html = profile.convert('\U0001f600' + 'x' * 10_000)
+    _, entries, size = markdown_cache_info()
+    assert entries == 1
+    assert size >= sys.getsizeof(html) >= 4 * 10_000
+
+
 def test_cache_size_zero_turns_it_off() -> None:
     chameleon_rs.configure(markdown=True, markdown_cache=0)
     profile = chameleon_rs._settings.markdown_profiles['markdown']
