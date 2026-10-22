@@ -388,7 +388,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p><code>import chameleon_rs</code> doesn’t import Flask. Only <code>import chameleon_rs.flask</code> does.</p>
 <section id="a-first-view" class="level1">
 <h1>A first view</h1>
-<div id="a98dce21" class="cell" data-execution_count="2">
+<div id="bc53616d" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> flask</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.flask <span class="im">as</span> chameleon_flask</span>
@@ -403,7 +403,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'message'</span>: <span class="st">'Hello'</span>, <span class="st">'videos'</span>: [<span class="st">'intro'</span>, <span class="st">'partials'</span>]}</span></code></pre></div>
 </div>
 <p>The view returns the template’s model, and <code>@template</code> renders it into a <code>flask.Response</code>:</p>
-<div id="747a5465" class="cell" data-execution_count="3">
+<div id="7374a4cf" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>client <span class="op">=</span> app.test_client()</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(client.get(<span class="st">'/'</span>).text)</span></code></pre></div>
 <div class="cell-output cell-output-stdout">
@@ -452,7 +452,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="error-pages" class="level1">
 <h1>Error pages</h1>
 <p>Inside a decorated view, <a href="../reference/flask.not_found.html#chameleon_rs.flask.not_found" class="gdls-link gdls-code">not_found()</a> and <a href="../reference/flask.error.html#chameleon_rs.flask.error" class="gdls-link gdls-code">error()</a> stop the view and render an error page:</p>
-<div id="f5daf68d" class="cell" data-execution_count="4">
+<div id="0b24b034" class="cell" data-execution_count="4">
 <div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> flask.Flask(<span class="va">__name__</span>)</span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
