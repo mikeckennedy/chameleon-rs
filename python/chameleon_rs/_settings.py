@@ -1,10 +1,11 @@
 """Process-wide settings for templates loaded by name: ``chameleon_rs.configure()``.
 
 One call configures the template folder and its loader for everything that loads templates by
-name: the built-in ``render_partial`` and the framework integrations (``chameleon_rs.flask``).
-The old per-library calls (``chameleon_partials.register_extensions``,
-``chameleon_flask.global_init``) are aliases of it. A configuration is an immutable
-``Settings`` object swapped in whole, so a render never sees half of one (free-threading).
+name: the built-in ``render_partial`` and the framework integrations (``chameleon_rs.flask``,
+``chameleon_rs.fastapi``). The old per-library calls (``chameleon_partials.register_extensions``,
+``chameleon_flask.global_init``, ``fastapi_chameleon.global_init``) are aliases of it, each
+setting only its own slot. A configuration is an immutable ``Settings`` object swapped in
+whole, so a render never sees half of one (free-threading).
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import os
 import re
 import sys
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any, Literal, TypedDict
 
 from chameleon_rs import _native
@@ -72,13 +73,17 @@ class Settings:
 
 # The process-wide configuration, one slot per consumer, as the original libraries each had
 # their own: `partials` (what `render_partial` resolves against; chameleon_partials'
-# `register_extensions`) and `flask` (chameleon-flask's `global_init`). `configure()` sets both,
-# each alias only its own (`None`: not configured, or cleared). `generation` is bumped by every
-# change and keys the partial path caches.
+# `register_extensions`) and one per framework integration in `views`, keyed by the names in
+# `VIEW_SLOTS` (chameleon-flask's and fastapi-chameleon's `global_init`). `configure()` sets
+# every slot, each alias only its own (`None`: not configured, or cleared). `views` is replaced
+# whole, never mutated. `generation` is bumped by every change and keys the partial path caches.
+VIEW_SLOTS = ('flask', 'fastapi')
 partials: Settings | None = None
-flask: Settings | None = None
+views: dict[str, Settings | None] = dict.fromkeys(VIEW_SLOTS)
 generation = 0
 _lock = threading.Lock()
+# Called after every change (the integrations keep their legacy `template_path` in step).
+listeners: list[Callable[[], None]] = []
 
 # Where `render_partial` looks: `'caller'` (the default, approved by Michael: the registered
 # folder, then the calling template's search path, its folder and each folder above it; it only
@@ -217,20 +222,38 @@ def build(
 _KEEP: Any = object()
 
 
-def install(*, partials_settings: Any = _KEEP, flask_settings: Any = _KEEP) -> None:
-    """Sets the slots given (``None`` clears one)."""
-    global partials, flask, generation
+def first_configured() -> Settings | None:
+    """The configuration a ``configure()`` that leaves a setting out starts from: the partials'
+    slot, else the first configured integration's."""
+    if partials is not None:
+        return partials
+    return next((settings for settings in views.values() if settings is not None), None)
+
+
+def install(*, partials_settings: Any = _KEEP, views_settings: Mapping[str, Settings | None] | None = None) -> None:
+    """Sets the slots given (``None`` clears one): ``views_settings`` maps integration slot names
+    (``VIEW_SLOTS``) to their new configuration."""
+    global partials, views, generation
     with _lock:
         if partials_settings is not _KEEP:
             partials = partials_settings
-        if flask_settings is not _KEEP:
-            flask = flask_settings
+        if views_settings:
+            unknown = set(views_settings) - set(VIEW_SLOTS)
+            if unknown:
+                msg = f'unknown settings slot {min(unknown)!r}'
+                raise ValueError(msg)
+            views = {**views, **views_settings}
         generation += 1
     from chameleon_rs import partials as partials_module
 
     partials_module._configured(partials)
-    if 'chameleon_rs.flask' in sys.modules:
-        sys.modules['chameleon_rs.flask']._sync()
+    for listener in listeners:
+        listener()
+
+
+def all_views(settings: Settings | None) -> dict[str, Settings | None]:
+    """Every integration slot set to ``settings``."""
+    return dict.fromkeys(VIEW_SLOTS, settings)
 
 
 def configure(
@@ -243,7 +266,8 @@ def configure(
     markdown_cache: int | None = None,
 ) -> Settings | None:
     """Configures chameleon-rs for the whole process: where templates loaded by name live, for
-    ``render_partial`` and the framework integrations (``chameleon_rs.flask``), and how they load.
+    ``render_partial`` and the framework integrations (``chameleon_rs.flask``,
+    ``chameleon_rs.fastapi``), and how they load.
 
     ``template_folder``: an existing directory. ``auto_reload``: recompile a template when its
     file changes (checked at most once per file per render for partials). ``restricted_namespace``:
@@ -278,7 +302,7 @@ def configure(
     profiles = markdown_settings(markdown) if markdown is not None else None
     folder_given = template_folder is not None or auto_reload is not None or restricted_namespace is not None
     if folder_given:
-        settings = build(template_folder, auto_reload, restricted_namespace, base=partials or flask)
+        settings = build(template_folder, auto_reload, restricted_namespace, base=first_configured())
     if profiles is not None or markdown_cache is not None:
         size = markdown_cache_size if markdown_cache is None else markdown_cache
         # First, so a failure leaves the settings as they were. It also empties the cache:
@@ -293,8 +317,8 @@ def configure(
         if partial_search is not None or profiles is not None or markdown_cache is not None:
             install()
             return partials
-        settings = build(base=partials or flask)
-    install(partials_settings=settings, flask_settings=settings)
+        settings = build(base=first_configured())
+    install(partials_settings=settings, views_settings=all_views(settings))
     return settings
 
 
@@ -306,4 +330,4 @@ def clear() -> None:
     markdown_profiles = {}
     markdown_cache_size = DEFAULT_MARKDOWN_CACHE
     _native.set_markdown_cache(DEFAULT_MARKDOWN_CACHE)
-    install(partials_settings=None, flask_settings=None)
+    install(partials_settings=None, views_settings=all_views(None))

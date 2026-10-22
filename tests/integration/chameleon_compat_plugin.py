@@ -2,8 +2,8 @@
 compat alias (`import chameleon` gives chameleon_rs) before the project's tests import
 anything. Used by `make test-integration` with `-p chameleon_compat_plugin`.
 
-`INTEGRATION_MODE=builtin` also maps `chameleon_partials` and `chameleon_flask` to
-chameleon-rs's built-ins (`compat.install()`'s default), so those projects' own suites test
+`INTEGRATION_MODE=builtin` also maps `chameleon_partials`, `chameleon_flask` and
+`fastapi_chameleon` to chameleon-rs's built-ins (`compat.install()`'s default), so those projects' own suites test
 the built-ins; otherwise (`original`) only `chameleon` is aliased and the original packages
 run on it."""
 
@@ -31,14 +31,18 @@ def pytest_report_header(config):
         import chameleon_partials
 
         assert chameleon_partials is sys.modules['chameleon_rs.partials'], chameleon_partials
-        lines.append('chameleon_partials, chameleon_flask: chameleon-rs built-ins')
+        lines.append('chameleon_partials, chameleon_flask, fastapi_chameleon: chameleon-rs built-ins')
     return lines
 
 
 def pytest_sessionfinish(session, exitstatus):
     # The suite really ran on what the mode says (an original package found first on the
     # path would make a builtin run test nothing).
-    expected = {'chameleon_partials': 'chameleon_rs.partials', 'chameleon_flask': 'chameleon_rs.flask'}
+    expected = {
+        'chameleon_partials': 'chameleon_rs.partials',
+        'chameleon_flask': 'chameleon_rs.flask',
+        'fastapi_chameleon': 'chameleon_rs.fastapi',
+    }
     for old, builtin in expected.items():
         module = sys.modules.get(old)
         if module is None:

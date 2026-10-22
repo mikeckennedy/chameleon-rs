@@ -20,9 +20,11 @@ code-generation internals with no counterpart here (``NOT_PROVIDED``), and chame
 private modules (``chameleon._native`` would load the extension a second time).
 
 It also maps the libraries chameleon-rs has built in (``INTEGRATIONS``):
-``import chameleon_partials`` gives ``chameleon_rs.partials`` and ``import chameleon_flask``
+``import chameleon_partials`` gives ``chameleon_rs.partials``, ``import chameleon_flask``
 (with ``chameleon_flask.engine`` and ``chameleon_flask.exceptions``) gives
-``chameleon_rs.flask``, imported only when the old name is (Flask is not imported before).
+``chameleon_rs.flask`` and ``import fastapi_chameleon`` (with its ``engine`` and
+``exceptions``) gives ``chameleon_rs.fastapi``, each imported only when the old name is (Flask
+and FastAPI are not imported before).
 ``install(integrations=False)`` maps only ``chameleon``, to run the original packages.
 """
 
@@ -41,13 +43,14 @@ from types import ModuleType
 NOT_PROVIDED = frozenset({'nodes', 'program', 'zpt.program', 'benchmark'})
 
 # chameleon-rs's own public modules that are not Chameleon's (not aliased under `chameleon.`).
-OWN_MODULES = frozenset({'flask', 'partials', 'web'})
+OWN_MODULES = frozenset({'fastapi', 'flask', 'partials', 'web'})
 
 # Libraries built into chameleon-rs: old top-level name -> (module, submodule names that are
 # the same module).
 INTEGRATIONS: dict[str, tuple[str, tuple[str, ...]]] = {
     'chameleon_partials': ('chameleon_rs.partials', ()),
     'chameleon_flask': ('chameleon_rs.flask', ('engine', 'exceptions')),
+    'fastapi_chameleon': ('chameleon_rs.fastapi', ('engine', 'exceptions')),
 }
 
 
@@ -120,10 +123,10 @@ def _is_old(name: str, prefixes: tuple[str, ...]) -> bool:
 
 def install(*, integrations: bool = True) -> ModuleType:
     """Makes ``import chameleon`` (and its submodules) resolve to chameleon-rs and, with
-    ``integrations`` (the default), ``import chameleon_partials`` / ``import chameleon_flask``
-    to the built-ins (see the module docs). Modules already imported under these names are
-    replaced, with a ``RuntimeWarning`` naming them (code that imported them keeps its
-    references). Idempotent; returns the module now known as ``chameleon``."""
+    ``integrations`` (the default), ``import chameleon_partials`` / ``import chameleon_flask`` /
+    ``import fastapi_chameleon`` to the built-ins (see the module docs). Modules already
+    imported under these names are replaced, with a ``RuntimeWarning`` naming them (code that
+    imported them keeps its references). Idempotent; returns the module now known as ``chameleon``."""
     top = importlib.import_module('chameleon_rs')
     old = ('chameleon', *INTEGRATIONS) if integrations else ('chameleon',)
     evicted = []

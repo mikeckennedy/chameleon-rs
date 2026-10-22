@@ -1,6 +1,6 @@
-"""Shared pieces of the web framework integrations (``chameleon_rs.flask``; FastAPI and Robyn
-later): the exceptions every integration raises, and the conversion of a view's return value
-to a template model. Imports only the standard library.
+"""Shared pieces of the web framework integrations (``chameleon_rs.flask``,
+``chameleon_rs.fastapi``): the exceptions every integration raises, and the conversion of a
+view's return value to a template model. Imports only the standard library.
 
 Each integration's old exception names (``FlaskChameleonException``, ...) are subclasses of
 these, so ``except chameleon_rs.web.TemplateError`` catches all of them and old ``except``
@@ -51,6 +51,14 @@ class NotFound(ErrorPage):
         super().__init__(template_file, 404, message, template_data)
 
 
+class DecoratorOrderError(TemplateError):
+    """A view was registered with its framework before ``@template`` wrapped it (``@template``
+    written above ``@app.get`` / ``@app.route`` / ``@router.get``), so the route calls the bare
+    view and the template never renders. Raised when the app starts (or on its first request),
+    for apps given to ``configure(app=...)`` or ``global_init(..., app=...)``, and by
+    ``check_views(app)``."""
+
+
 def model_of(value: Any) -> dict[str, Any] | None:
     """The template model a view returned: a ``dict`` as is; any other ``Mapping`` as a
     ``dict``; a dataclass instance as its fields (shallow: field values are not converted);
@@ -70,4 +78,4 @@ def model_of(value: Any) -> dict[str, Any] | None:
     return None
 
 
-__all__ = ['ErrorPage', 'NotFound', 'TemplateError', 'model_of']
+__all__ = ['DecoratorOrderError', 'ErrorPage', 'NotFound', 'TemplateError', 'model_of']

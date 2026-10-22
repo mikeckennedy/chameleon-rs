@@ -109,8 +109,9 @@ test-upstream-rust: build
 
 # Each suite runs from its own checkout (its own rootdir and conftest), unmodified: first the
 # original packages on the compat alias, then (BUILTIN_SUITES) the same suites against
-# chameleon-rs's built-in chameleon_partials and chameleon_flask (compat.install()'s mapping).
-BUILTIN_SUITES := chameleon-flask chameleon_partials
+# chameleon-rs's built-in chameleon_partials, chameleon_flask and fastapi_chameleon
+# (compat.install()'s mapping).
+BUILTIN_SUITES := fastapi-chameleon chameleon-flask chameleon_partials
 
 test-integration: integration
 	set -e; for suite in $(INTEGRATION_SUITES); do \

@@ -752,7 +752,7 @@ def test_no_runtime_dependencies() -> None:
     result = run_python("""
         import importlib, importlib.abc, pkgutil, sys, sysconfig
         stdlib = sysconfig.get_paths()['stdlib']
-        FRAMEWORKS = {'chameleon_rs.flask'}
+        FRAMEWORKS = {'chameleon_rs.flask', 'chameleon_rs.fastapi'}
 
         class Block(importlib.abc.MetaPathFinder):
             on = True
@@ -772,21 +772,29 @@ def test_no_runtime_dependencies() -> None:
         for info in pkgutil.walk_packages(chameleon_rs.__path__, 'chameleon_rs.'):
             if info.name not in FRAMEWORKS:
                 importlib.import_module(info.name)
-        assert not any(name in sys.modules for name in ('flask', 'werkzeug', 'chameleon_rs.flask')), 'framework imported'
-        try:
-            import chameleon_flask
-        except ImportError as e:
-            print('blocked:', e)
-        sys.modules.pop('chameleon_rs.flask', None)
+        imported = {'flask', 'werkzeug', 'quart', 'fastapi', 'starlette', 'pydantic'} & set(sys.modules)
+        assert not imported and not FRAMEWORKS & set(sys.modules), 'framework imported'
+        for old in ('chameleon_flask', 'fastapi_chameleon'):
+            try:
+                importlib.import_module(old)
+            except ImportError as e:
+                print('blocked:', e)
+            sys.modules.pop(old, None)
+        for module in FRAMEWORKS:
+            sys.modules.pop(module, None)
         block.on = False
         for module in FRAMEWORKS:
             importlib.import_module(module)
         import chameleon_flask, chameleon_flask.engine
         from chameleon_flask.exceptions import FlaskChameleonException
         assert chameleon_flask.engine is chameleon_flask is chameleon_rs.flask
+        import fastapi_chameleon, fastapi_chameleon.engine
+        from fastapi_chameleon.exceptions import FastAPIChameleonException
+        assert fastapi_chameleon.engine is fastapi_chameleon is chameleon_rs.fastapi
         print('ok')
     """)
-    assert result.stdout == 'blocked: not the standard library: flask\nok\n', result.stderr
+    blocked = 'blocked: not the standard library: flask\nblocked: not the standard library: fastapi\n'
+    assert result.stdout == blocked + 'ok\n', result.stderr
 
 
 # --- custom types subclassing TalesExpr (z3c.pt's pattern) ----------------------------------
