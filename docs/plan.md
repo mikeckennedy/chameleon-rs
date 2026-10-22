@@ -1684,6 +1684,81 @@ Details: architecture.md, "Phase 12 amendments".
   - ~~The `tal:on-error` + `tal:attributes` compile error found by the async render fuzzer~~:
     fixed in the integrations phase below (692e749).
 
+**12b done (2026-10-22): release preparation, on a worktree branch from 6c64b5a.** Nothing
+published, no tag, version unchanged (0.1.0 in Cargo.toml). GitHub Actions is blocked by
+billing, so everything below was verified locally; the workflow is correct by inspection and
+`actionlint` 1.7.7 (with shellcheck) only.
+
+Built:
+- **Metadata** (`pyproject.toml`): classifiers (Development Status 4 - Beta; Python 3.12-3.15,
+  3 :: Only, CPython; `Free Threading :: 2 - Beta`, tested on 3.14t/3.15t but not yet in
+  production; Framework :: Flask, FastAPI, Litestar, Litestar :: 2; OS MacOS, Windows, Linux;
+  Rust; Web Environment; HTML/XML markup and dynamic content topics; Typing :: Typed),
+  keywords, readme content type, URLs (Homepage and Documentation: the docs site; Changelog,
+  Source, Issues on GitHub; Funding: GitHub Sponsors, as in chameleon_partials). No
+  `License ::` classifier: PEP 639 forbids them next to the `LicenseRef-Chameleon` expression
+  (Chameleon's would be "Repoze Public License"). No Starlette or Robyn trove classifier
+  exists. `twine check --strict` passes on every artifact.
+- **`scripts/pgo_wheel.py`** (`make wheels`): `make build-pgo`'s steps for a wheel, per
+  interpreter (a training venv per interpreter: PyO3's code differs per Python version and for
+  free-threaded builds, so one profile does not fit all), failing on a stale profile; paths
+  under the builder's home are remapped out of the binary (`--remap-path-prefix`, not part of
+  the crate hash). `--profile-only` is what the Linux release jobs run inside the
+  manylinux/musllinux container. **`scripts/check_wheel.py`** (`make check-wheels`): each
+  wheel (or an sdist, built from scratch) in a fresh venv with only pytest: a smoke render
+  (sync, `render_async` awaiting a value, `markdown:`, the compat alias, every non-framework
+  module importable with the standard library only), the upstream suite on chameleon_rs, then
+  `test_typing.py` with Flask, FastAPI and Litestar installed. `make sdist`.
+- **`.github/workflows/release.yml`**, manual trigger only (`workflow_dispatch`, a `publish`
+  checkbox, off by default): 48 wheels (CPython 3.12, 3.13, 3.14, 3.14t, 3.15, 3.15t ×
+  manylinux_2_28 and musllinux_1_2 x86_64/aarch64 via `PyO3/maturin-action` in the PyPA images
+  on native runners, PGO trained in the container by `before-script-linux`; macOS arm64 and
+  x86_64 and Windows x64 by `pgo_wheel.py`; Windows arm64 without PGO, untried there) and the
+  sdist (maturin-action); a test job per platform and interpreter running `check_wheel.py`
+  (musllinux inside its image by `docker run`, as JavaScript actions cannot run in Alpine;
+  on Windows the smoke test blocks and the upstream suite is `continue-on-error`, never run on
+  Windows before); the sdist built from scratch and checked; and `publish`, which runs only
+  with the checkbox, after every build and test job, counts 48 wheels + 1 sdist, and uploads
+  with PyPI trusted publishing (environment `pypi`, `id-token: write`, no secrets).
+- **CHANGELOG.md** (an "Unreleased" section) and docs: README (install, quick start, docs
+  links, the measured numbers of Phases 9-10, absolute links so it renders on PyPI), the
+  Compatibility page (every known difference in one place: slot-body corner cases from the
+  Phase 8/12 amendments, the helper libraries' behaviour changes, `render_async` with a
+  replaced `render`), the migration page (litestar-chameleon in the table, "Timing renders":
+  a monkeypatched `PageTemplate.render` counts as an override, so `render_async` renders
+  synchronously; wrapping `render_async` too does not help, checked: time the view or use
+  py-spy), the home page's integrations bullet, the Performance page (PGO wheels). Great Docs
+  0.13.0 builds its Changelog page from GitHub Releases, not from CHANGELOG.md: the page
+  appears once a release exists (and the repository is public; the build reports it as not
+  found today). `make docs` builds; `site/` was reverted, as in the integration phases.
+
+Verified locally (macOS arm64, load about 2):
+- `make wheels`: profile-guided wheels for 3.12.15, 3.13.16, 3.14.8, 3.14.7t, 3.15.0,
+  3.15.0t, 1.62-1.64 MiB each (about 4 MiB unpacked, 43 files: the package, `_native` with
+  `.pyi`, `py.typed`, licenses, maturin's CycloneDX SBOM), no stale-profile warning; sdist
+  360 KiB, 199 files (no Markdown spec data). `make check-wheels`: each wheel smoke ok
+  (GIL builds report GIL, 3.14t/3.15t free-threaded), upstream 227 passed, 5 xfailed, 1
+  xpassed (the non-strict environmental entries), test_typing 34 passed, 2 skipped (Robyn).
+  The sdist, built into a wheel from scratch on 3.13 in a clean venv: the same results.
+- Artifact scan: no corpus or app material, no `temp/` content; the only "talkpython" strings
+  are the author e-mail (METADATA, PKG-INFO, `pyproject.toml`) and the `__author__` lines
+  of `flask.py`, `fastapi.py` and `robyn.py` (as in the packages they mirror). Local wheels'
+  SBOM names the checkout path (a CI build names the runner's); the extension has no local
+  path after the remap.
+- A manylinux_2_28 x86_64 wheel cross-built with `maturin build --zig` (zig from Homebrew,
+  non-PGO, cp313): maturin's manylinux check passes, 1.61 MiB; not run (Docker not running).
+
+What remains for the owner:
+- Choose the version (Cargo.toml `[workspace.package] version`), move the CHANGELOG section
+  under it with the date, and decide the Development Status and free-threading classifiers.
+- On PyPI, add a trusted publisher for `chameleon-rs` (pending publisher: this repository,
+  workflow `release.yml`, environment `pypi`); in GitHub, create the `pypi` environment
+  (required reviewers recommended).
+- Once Actions runs: trigger Release with `publish` off first; check the Windows upstream
+  results (then make that step blocking), and try `pgo: true` for Windows arm64. Then run it
+  again with `publish` on, tag the commit, and create a GitHub Release from the CHANGELOG
+  section (Great Docs then builds the Changelog page); commit the rebuilt `site/`.
+
 ## Integrations: shared core and FastAPI
 
 Scope (Michael's decisions, 2026-10-22): a private core shared by the framework modules;
