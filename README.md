@@ -139,6 +139,8 @@ outside their folder, as Jinja does.
 
 ## Performance
 
+![chameleon-rs speedup over Chameleon: native partials 10.9x, macro calls 6.9x, listings 6.6x, app-shaped page 4.3x, template compilation about 70x; on a production Quart site, template rendering 2.2x, throughput 1.34x, whole requests 1.3x](https://mkennedy-shared.nyc3.digitaloceanspaces.com/github/chamelon-rs-perf-graph-light.png)
+
 In synthetic benchmarks (release build, same process, interleaved with Chameleon): listings
 6.6x faster per item, macro calls 6.9x, an app-shaped page 4.3x, native partials 10.9x, and
 templates compile about 70x faster. On a production Quart site, template rendering was 2.2x

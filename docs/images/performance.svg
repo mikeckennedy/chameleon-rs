@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 466" width="880" height="466" role="img" aria-labelledby="t d">
+<title id="t">chameleon-rs speedup over Chameleon</title>
+<desc id="d">Times faster than Chameleon. Synthetic: native partials 10.9x, macro calls 6.9x, listings 6.6x, app-shaped page 4.3x, template compilation about 70x. Production Quart site: template rendering 2.2x, throughput under load 1.34x, whole requests 1.3x.</desc>
+<style>
+  :root { --bg:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#8a8984; --grid:#e8e7e3; --bar:#2a78d6; --card:#eef4fc; --hero:#1d5fae; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0d1117; --ink:#f0efec; --ink2:#c3c2b7; --muted:#8b8a83; --grid:#262b33; --bar:#3987e5; --card:#132235; --hero:#6aa8f0; }
+  }
+  text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .bg { fill: var(--bg); }
+  .h1 { fill: var(--ink); font-size: 22px; font-weight: 700; }
+  .sub { fill: var(--ink2); font-size: 14px; }
+  .grp { fill: var(--ink2); font-size: 12px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; }
+  .lbl { fill: var(--ink); font-size: 14px; }
+  .val { fill: var(--ink); font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tick { fill: var(--muted); font-size: 12px; }
+  .grid { stroke: var(--grid); stroke-width: 1; }
+  .base { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  .bar { fill: var(--bar); }
+  .card { fill: var(--card); }
+  .heronum { fill: var(--hero); font-size: 56px; font-weight: 800; letter-spacing: -.02em; }
+  .herolbl { fill: var(--ink2); font-size: 15px; }
+  .foot { fill: var(--muted); font-size: 12px; }
+</style>
+<rect class="bg" width="880" height="466" rx="14"/>
+<text class="h1" x="24" y="42">How much faster is chameleon-rs?</text>
+<text class="sub" x="24" y="66">Times faster than Chameleon on the same templates, byte-identical output. Longer is better.</text>
+<line class="grid" x1="232.0" y1="112" x2="232.0" y2="392"/>
+<text class="tick" x="232.0" y="410" text-anchor="middle">0×</text>
+<line class="grid" x1="295.0" y1="112" x2="295.0" y2="392"/>
+<text class="tick" x="295.0" y="410" text-anchor="middle">2×</text>
+<line class="grid" x1="358.0" y1="112" x2="358.0" y2="392"/>
+<text class="tick" x="358.0" y="410" text-anchor="middle">4×</text>
+<line class="grid" x1="421.0" y1="112" x2="421.0" y2="392"/>
+<text class="tick" x="421.0" y="410" text-anchor="middle">6×</text>
+<line class="grid" x1="484.0" y1="112" x2="484.0" y2="392"/>
+<text class="tick" x="484.0" y="410" text-anchor="middle">8×</text>
+<line class="grid" x1="547.0" y1="112" x2="547.0" y2="392"/>
+<text class="tick" x="547.0" y="410" text-anchor="middle">10×</text>
+<line class="grid" x1="610.0" y1="112" x2="610.0" y2="392"/>
+<text class="tick" x="610.0" y="410" text-anchor="middle">12×</text>
+<line class="base" x1="263.5" y1="112" x2="263.5" y2="396"/>
+<text class="tick" x="263.5" y="426" text-anchor="middle">▲ Chameleon = 1×</text>
+<text class="grp" x="24" y="104">Synthetic benchmarks</text>
+<text class="lbl" x="220" y="142.0" text-anchor="end">Native partials</text>
+<path class="bar" d="M232,128.0 h339.3 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-339.3 z"/>
+<text class="val" x="583.3" y="142.0">10.9×</text>
+<text class="lbl" x="220" y="176.0" text-anchor="end">Macro calls</text>
+<path class="bar" d="M232,162.0 h213.4 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-213.4 z"/>
+<text class="val" x="457.4" y="176.0">6.9×</text>
+<text class="lbl" x="220" y="210.0" text-anchor="end">Listings, per item</text>
+<path class="bar" d="M232,196.0 h203.9 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-203.9 z"/>
+<text class="val" x="447.9" y="210.0">6.6×</text>
+<text class="lbl" x="220" y="244.0" text-anchor="end">App-shaped page</text>
+<path class="bar" d="M232,230.0 h131.4 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-131.4 z"/>
+<text class="val" x="375.4" y="244.0">4.3×</text>
+<text class="grp" x="24" y="274">Production Quart site</text>
+<text class="lbl" x="220" y="312.0" text-anchor="end">Template rendering, total</text>
+<path class="bar" d="M232,298.0 h65.3 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-65.3 z"/>
+<text class="val" x="309.3" y="312.0">2.2×</text>
+<text class="lbl" x="220" y="346.0" text-anchor="end">Throughput under load</text>
+<path class="bar" d="M232,332.0 h38.2 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-38.2 z"/>
+<text class="val" x="282.2" y="346.0">1.34×</text>
+<text class="lbl" x="220" y="380.0" text-anchor="end">Whole requests</text>
+<path class="bar" d="M232,366.0 h36.9 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-36.9 z"/>
+<text class="val" x="280.9" y="380.0">1.3×</text>
+<rect class="card" x="652" y="112" width="204" height="280" rx="12"/>
+<text class="heronum" x="754.0" y="246.0" text-anchor="middle">~70×</text>
+<text class="herolbl" x="754.0" y="276.0" text-anchor="middle">faster template</text>
+<text class="herolbl" x="754.0" y="296.0" text-anchor="middle">compilation</text>
+<text class="foot" x="24" y="450">Released wheels are profile-guided, about 10% faster again. Methodology: mkennedy.codes/docs/chameleon-rs/user-guide/performance.html</text>
+</svg>
