@@ -6,9 +6,11 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import functools
 import importlib
 import re
 import sys
+import types
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
@@ -388,6 +390,101 @@ def test_flask_app_with_async_view(folder: Path) -> None:
     assert client.get('/3').get_data(as_text=True) == '<h1>Hello 3 -!</h1>'
     resp = client.get('/0')
     assert (resp.status_code, resp.get_data(as_text=True)) == (404, '<h1>Not here ?</h1>')
+
+
+def test_async_views_render_with_render_async(folder: Path) -> None:
+    # A value the view returns that is awaitable is awaited where the template uses it.
+    app = flask.Flask('c')
+
+    async def later(value: Any) -> Any:
+        await asyncio.sleep(0)
+        return value
+
+    @app.get('/')
+    @ours.template('home/index.pt')
+    async def index() -> Any:
+        return {'a': later('<x>'), 'b': later(2)}
+
+    assert app.test_client().get('/').get_data(as_text=True) == '<h1>Hello &lt;x&gt; 2!</h1>'
+
+
+def test_render_async_and_response_async(folder: Path) -> None:
+    async def later(value: Any) -> Any:
+        await asyncio.sleep(0)
+        return value
+
+    async def main() -> tuple[str, Any]:
+        html = await ours.render_async('home/index.pt', a=later(1))
+        with flask.Flask('d').app_context():
+            resp = await ours.response_async('errors/500.pt', status_code=503, code=later(7))
+        return html, resp
+
+    html, resp = asyncio.run(main())
+    assert html == '<h1>Hello 1 -!</h1>'
+    assert (resp.status_code, resp.content_type, resp.get_data(as_text=True)) == (
+        503,
+        'text/html',
+        '<h1>Broken 7</h1>',
+    )
+
+
+def _async_copy(f: Callable[..., Any]) -> Callable[..., Any]:
+    @functools.wraps(f)
+    async def view(*args: Any, **kwargs: Any) -> Any:
+        await asyncio.sleep(0)
+        value = f(*args, **kwargs)
+        return await value if asyncio.iscoroutine(value) else value
+
+    return view
+
+
+def as_async(make_view: Callable[[ModuleType], Callable[..., Any]]) -> Callable[[ModuleType], Callable[..., Any]]:
+    """The case with every view the decorator gets made an async view."""
+
+    def make(fc: ModuleType) -> Callable[..., Any]:
+        real = fc.template
+
+        def template(*args: Any, **kwargs: Any) -> Any:
+            if len(args) == 1 and callable(args[0]) and not kwargs:
+                return real(_async_copy(args[0]))
+            decorator = real(*args, **kwargs)
+            return lambda f: decorator(_async_copy(f))
+
+        proxy = types.SimpleNamespace(**{n: getattr(fc, n) for n in dir(fc) if not n.startswith('__')})
+        proxy.template = template
+        return make_view(proxy)  # type: ignore[arg-type]
+
+    return make
+
+
+@pytest.mark.parametrize('make_view', CASES, ids=[c.__name__ for c in CASES])
+def test_async_views_same_as_chameleon_flask(folder: Path, theirs: ModuleType, make_view: Callable[..., Any]) -> None:
+    # Every case as an async view: ours renders with render_async, chameleon-flask renders
+    # synchronously; with no awaitable value the responses are the same.
+    same(as_async(make_view), theirs, '<x>')
+
+
+def test_concurrent_view(folder: Path) -> None:
+    (folder / 'home' / 'cards.pt').write_text(
+        '<ul><tal:x repeat="i items">${render_partial("shared/_p.pt", v=fetch(i))}</tal:x></ul>'
+    )
+    app = flask.Flask('e')
+
+    async def fetch(i: int) -> int:
+        await asyncio.sleep(0.05)
+        return i * 10
+
+    @app.get('/')
+    @ours.template('home/cards.pt', concurrent=True)
+    async def cards() -> Any:
+        return {'items': range(6), 'fetch': fetch}
+
+    import time
+
+    start = time.perf_counter()
+    body = app.test_client().get('/').get_data(as_text=True)
+    assert time.perf_counter() - start < 0.2
+    assert body == '<ul>' + ''.join(f'<i>{i * 10}</i>' for i in range(6)) + '</ul>'
 
 
 def test_quart(folder: Path) -> None:

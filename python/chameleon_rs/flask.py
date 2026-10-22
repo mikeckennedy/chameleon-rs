@@ -58,6 +58,7 @@ import flask
 import werkzeug.sansio.response
 
 from chameleon_rs import _settings
+from chameleon_rs.template import _render_async
 from chameleon_rs.web import ErrorPage, NotFound, TemplateError, model_of
 
 __all__ = [
@@ -238,10 +239,14 @@ def template(
     status_code: int = 200,
     *,
     mimetype: str | None = None,
+    concurrent: bool = False,
 ) -> Callable[..., Any]:
     """Decorates a Flask or Quart view (sync or async) to render a template with what it
     returns: bare (``@template``), ``@template()`` or ``@template('home/index.pt',
-    content_type=..., status_code=...)``. See the module docs."""
+    content_type=..., status_code=...)``. See the module docs.
+
+    ``concurrent=True`` (async views): native partials called with an awaitable argument
+    render concurrently (``PageTemplate``'s ``concurrent`` setting, for this view)."""
     wrapped_function = None
     if callable(template_file):
         wrapped_function = template_file
@@ -280,7 +285,9 @@ def template(
         @wraps(f)
         async def async_view_method(*args: Any, **kwargs: Any) -> flask.Response:
             try:
-                return await _render_response_async(view_template, await f(*args, **kwargs), content_type, status_code)
+                return await _render_response_async(
+                    view_template, await f(*args, **kwargs), content_type, status_code, concurrent
+                )
             except ErrorPage as page:
                 return await _error_response_async(page)
 
@@ -315,11 +322,14 @@ def _render_response(
 
 
 async def _render_response_async(
-    template_file: str, response_val: Any, content_type: str, status_code: int = 200
+    template_file: str, response_val: Any, content_type: str, status_code: int = 200, concurrent: bool = False
 ) -> flask.Response:
     if _is_response(response_val):
         return response_val  # type: ignore[no-any-return]
-    html = await render_async(template_file, **_model(response_val))
+    model = dict(_model(response_val))
+    page = _page(template_file)
+    concurrent = concurrent or page.concurrent
+    html = await _render_async(page, 'utf-8', model, concurrent)
     return flask.Response(response=html, content_type=content_type, status=status_code)
 
 

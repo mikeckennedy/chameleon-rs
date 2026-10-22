@@ -98,6 +98,8 @@ struct World {
     i18n: String,
     /// The serial of each activated frame, in order.
     serials: Vec<u64>,
+    /// Defer suspending values and partial calls where the VM allows it (opt-in concurrency).
+    deferring: bool,
 }
 
 impl World {
@@ -238,6 +240,31 @@ impl Eval for World {
 
     fn is_default(&mut self, value: &V) -> bool {
         *value == V::Default
+    }
+
+    fn wants_defer(&mut self) -> bool {
+        self.deferring
+    }
+
+    fn defer_partial(&mut self) -> Result<Option<Vec<u8>>, String> {
+        let n = self.log.len();
+        self.log.push("defer partial".into());
+        Ok(Some(format!("[[{n}]]").into_bytes()))
+    }
+
+    fn defer_value(
+        &mut self,
+        value: V,
+        esc: Escape,
+        stage: Stage,
+        at: crate::ErrorSite,
+    ) -> Result<Result<Vec<u8>, V>, String> {
+        if !self.deferring {
+            return Ok(Err(value));
+        }
+        let n = self.log.len();
+        self.log.push(format!("defer {value:?} {esc:?} {stage:?} {:?}", at.last.is_some()));
+        Ok(Ok(format!("[[{n}]]").into_bytes()))
     }
 
     fn truthy(&mut self, value: &V) -> Result<bool, String> {
@@ -542,6 +569,7 @@ fn world(templates: &[&str], vars: &[(&str, V)]) -> World {
         fills: Vec::new(),
         i18n: String::new(),
         serials: Vec::new(),
+        deferring: false,
     }
 }
 
@@ -662,6 +690,43 @@ fn infinite_recursion_is_an_error() {
         w.log.iter().filter(|l| l.starts_with("record RecursionError")).count(),
         crate::DEFAULT_FRAME_BUDGET / 4 + 1
     );
+}
+
+#[test]
+fn deferral_only_where_the_output_is_final() {
+    // Opt-in concurrency (D9): a value the render would suspend on in an emitted position, and
+    // a native partial's call, become placeholders, except where the output may still be taken
+    // back (an on-error body, a translation, a boolean attribute) or where the value is not
+    // simply written (a whole attribute, content with a default).
+    let mut w = world(
+        &[
+            "a${wait:'x'}b<p tal:on-error=\"'E'\">${wait:'y'}${call:1}</p><i title=\"${wait:'t'}\">${call:1}</i>\
+             <b tal:content=\"wait:'c'\">d</b><s i18n:translate=\"\">${wait:'i'}</s><u title=\"p${wait:'q'}\">.</u>",
+            "<q>${x}</q>",
+        ],
+        &[],
+    );
+    w.deferring = true;
+    let out = render_world(&mut w);
+    let defers: Vec<_> = w.log.iter().filter(|l| l.starts_with("defer")).cloned().collect();
+    assert_eq!(
+        out,
+        "a[[0]]b<p>y<q>from 1</q></p><i title=\"t\">[[1]]</i><b>c</b><s>tr(i||i|None/None/None)</s><u title=\"p[[2]]\">.</u>"
+    );
+    assert_eq!(defers, ["defer Str(\"x\") Text Part true", "defer partial", "defer Str(\"q\") Attr(Double) Part true"]);
+}
+
+#[test]
+fn placeholders_are_filled_in_one_pass() {
+    let mut out = Output::default();
+    out.push(b"a<P>0001<P>b<P>0002<P>c<P>zzzz<P>d<P>00");
+    out.fill_placeholders(b"<P>", 4, |key| match key {
+        b"0001" => Some((b"ONE".to_vec(), false)),
+        b"0002" => Some((b"\xed\xa0\x80".to_vec(), true)),
+        _ => None,
+    });
+    assert_eq!(out.as_bytes(), b"aONEb\xed\xa0\x80c<P>zzzz<P>d<P>00");
+    assert!(out.has_surrogates());
 }
 
 #[test]
