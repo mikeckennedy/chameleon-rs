@@ -23,6 +23,7 @@ From then on:
 | `chameleon`, `chameleon.zpt.template`, `chameleon.tales`, ... | the chameleon-rs module of the same name |
 | `chameleon_partials` | `chameleon_rs.partials` (built in) |
 | `chameleon_flask` (and `.engine`, `.exceptions`) | `chameleon_rs.flask` (built in) |
+| `fastapi_chameleon` (and `.engine`, `.exceptions`) | `chameleon_rs.fastapi` (built in) |
 
 ```{python}
 import chameleon_rs.compat
@@ -37,7 +38,7 @@ print(PageTemplate('<p>${1 + 1}</p>')())
 ```
 
 Stock Chameleon doesn't need to be installed, and chameleon-rs never imports it. Libraries
-that use Chameleon internally, such as fastapi-chameleon and chameleon-robyn, get
+that use Chameleon internally, such as chameleon-robyn, get
 chameleon-rs the same way. Their own test suites pass on it unmodified.
 
 ::: {.callout-warning}

@@ -50,10 +50,47 @@ Open questions:
 
 ## 2. Built-in framework integrations: Flask/Quart, FastAPI and Robyn
 
-> **Status (2026-10-21):** the Flask/Quart part is built (Phase 9, `chameleon_rs.flask`, per the table
-> below; `render_async`/`response_async` and `render_async` for async views were added in Phase 11). FastAPI and Robyn remain
-> vision items with the same API; `chameleon_rs.web` already holds the shared exceptions and model
-> conversion.
+> **Status (2026-10-22):** Flask/Quart built (Phase 9, `chameleon_rs.flask`, per the table
+> below; `render_async`/`response_async` and `render_async` for async views in Phase 11).
+> FastAPI built ("Integrations: shared core and FastAPI" in plan.md): `chameleon_rs.fastapi`,
+> both modules on a shared private core (`chameleon_rs._views`), and the decorator-order check
+> at startup. Starlette, Robyn and Litestar remain vision items with the same API.
+>
+> Decided by Michael (2026-10-22):
+> - **No extras.** No `pip install chameleon-rs[fastapi]`: each framework module imports its
+>   framework lazily, and the framework already in the app is the one used. (The research
+>   below saw extras as harmless pins of a tested floor; declined.)
+> - **Order:** FastAPI, then Starlette, then Robyn, then Litestar.
+> - **Misordered decorators fail loudly at startup** (`@template` above `@app.get`): built for
+>   FastAPI/Starlette (lifespan, or the first request without one), Flask (first request) and
+>   Quart (`before_serving`), for apps given to `configure(app=...)`.
+> - Per-app settings for FastAPI (`configure(app=...)` storing them in `app.state`) are not
+>   built: the decorator has no request to find the app from. Open: an injected `Request`
+>   parameter in the wrapper's signature, or a middleware setting a context variable.
+
+Research on Starlette and Litestar (2026-10-21, prototypes run against chameleon-rs):
+
+- **Starlette** (1.9.0; FastAPI 0.159 depends on it): `Jinja2Templates.TemplateResponse(request,
+  name, context, status_code, headers, media_type, background)` renders synchronously, injects
+  `request` and a `url_for` global, and sends an `http.response.debug` event so the test client
+  can assert `response.template` / `.context`. A `chameleon_rs.starlette` would have two
+  layers: a `Templates` object with that shape (sync `TemplateResponse` for parity, plus an
+  async variant; a lazily rendering response is possible but leaves `.body` empty until sent),
+  and the same module API as `chameleon_rs.flask` / `.fastapi` on the shared core (plain
+  Starlette endpoints get the request, so `url_for` and per-app settings come free). Small
+  once the core exists.
+- **FastAPI** is fastapi-chameleon plus the core: `functools.wraps` keeps `Depends`,
+  validation and OpenAPI working (verified), sync views keep the thread pool, async views get
+  `render_async`.
+- **Litestar** (2.25; 3.0 announced with `contrib` -> `plugins` moves under way): its
+  `TemplateEngineProtocol` and `Template` response are sync only, so async rendering needs a
+  decorator returning `Response(html, media_type='text/html')` after `await render_async`
+  (prototyped) or a `Template` subclass rendering in its ASGI response (leans on internals).
+  Gotcha: Litestar guesses the media type from the template's suffix and serves `.pt` as
+  `text/plain` unless told otherwise. The third-party `litestar-chameleon` 0.3 already runs
+  unchanged on chameleon-rs through `compat.install()` (sync only).
+- Risks noted: Litestar 3.0 churn, Starlette 1.x moving fast (its test client now asks for
+  `httpx2`), and hidden parameters in FastAPI signatures if per-app settings inject `Request`.
 
 Same idea as partials: what chameleon-flask and fastapi-chameleon provide today becomes part of
 chameleon-rs, with no separate package and less setup. chameleon-robyn has the same shape and

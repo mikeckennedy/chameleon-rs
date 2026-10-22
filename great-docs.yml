@@ -80,6 +80,7 @@ user_guide:
   - section: "Web frameworks"
     contents:
       - flask.qmd
+      - fastapi.qmd
   - section: "Background"
     contents:
       - compatibility.qmd
@@ -98,7 +99,7 @@ sections:
 skill:
   extra_body: skill_extra_body.md
   gotchas:
-    - "chameleon_rs.compat.install() must run before anything imports chameleon, chameleon_partials or chameleon_flask; a module already imported keeps stock Chameleon's objects."
+    - "chameleon_rs.compat.install() must run before anything imports chameleon, chameleon_partials, chameleon_flask or fastapi_chameleon; a module already imported keeps stock Chameleon's objects."
     - "render_partial looks in the configured template folder, then on the calling template's search path and in its folder and each folder above it. chameleon_rs.configure(partial_search='registered') restores chameleon_partials' lookup (configured folder only)."
     - "render_partial is a builtin in every template; you don't need extend_model() or a BeforeRender subscriber (both still work)."
     - "configure() applies on every call (there is no cache_init); the first call must give template_folder."
@@ -109,7 +110,8 @@ skill:
     - "To switch an existing app, add `import chameleon_rs.compat; chameleon_rs.compat.install()` as the first lines of the entry point, and leave the rest of the code unchanged."
     - "Prefer ${render_partial('shared/card.pt', item=item)} as a whole expression: it renders as a native frame of the page, with no Python call."
     - "Build template folder paths with (Path(__file__).parent / 'templates').as_posix()."
-    - "In tests, reset with chameleon_rs.partials.clear() (or chameleon_rs.flask.clear()) between configurations."
+    - "In tests, reset with chameleon_rs.partials.clear() (or chameleon_rs.flask.clear(), chameleon_rs.fastapi.clear()) between configurations."
+    - "Put @template below the route decorator (@app.get, @router.get, @app.route); pass app= to configure() so a misordered view fails at startup with DecoratorOrderError."
   decision_table:
     - need: "Run an existing Chameleon app on chameleon-rs with no code changes"
       use: "chameleon_rs.compat.install() at the top of the entry point"
@@ -123,6 +125,8 @@ skill:
       use: "chameleon_rs.render_partial(path, **model).html_text"
     - need: "Render Chameleon templates from Flask or Quart views"
       use: "chameleon_rs.flask: configure(folder), then @template('page.pt') on the view"
+    - need: "Render Chameleon templates from FastAPI views"
+      use: "chameleon_rs.fastapi: configure(folder, app=app), then @template('page.pt') below @app.get"
 
 # Umami analytics. Needs this site's own website id (the partials site has its own):
 # include_in_header:
@@ -143,7 +147,7 @@ reference:
   desc: >-
     The public API of chameleon-rs. It mirrors Chameleon's (PageTemplate,
     PageTemplateFile, PageTemplateLoader, ...), plus built-in partials, process-wide
-    configuration and the Flask/Quart integration.
+    configuration and the Flask/Quart and FastAPI integrations.
   sections:
     - title: Templates
       desc: "Compile and render templates from strings, files and folders."
@@ -179,6 +183,22 @@ reference:
         - flask.not_found
         - flask.error
         - flask.clear
+        - flask.check_views
+    - title: FastAPI
+      desc: "fastapi-chameleon's API, built in. Imports FastAPI only when imported itself."
+      contents:
+        - fastapi.configure
+        - fastapi.global_init
+        - fastapi.template
+        - fastapi.render
+        - fastapi.render_async
+        - fastapi.response
+        - fastapi.response_async
+        - fastapi.not_found
+        - fastapi.error
+        - fastapi.generic_error
+        - fastapi.clear
+        - fastapi.check_views
     - title: Errors and web helpers
       desc: "Exceptions, and the pieces shared by the framework integrations."
       contents:
@@ -188,6 +208,7 @@ reference:
         - web.TemplateError
         - web.ErrorPage
         - web.NotFound
+        - web.DecoratorOrderError
         - web.model_of
     - title: Compatibility
       desc: "Make `import chameleon` resolve to chameleon-rs, or check both engines side by side."

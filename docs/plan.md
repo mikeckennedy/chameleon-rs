@@ -1681,6 +1681,88 @@ Details: architecture.md, "Phase 12 amendments".
     `tal:attributes` together; 239fd36 does the same).
   - A/B (release, 12 rounds, load 4.5-6.7): against 8c147d9 (12a before the review) listing
     -0.6 ns; against 239fd36 listing +3.9 ns (range +0..+12) and macro -18.9 ns.
+  - ~~The `tal:on-error` + `tal:attributes` compile error found by the async render fuzzer~~:
+    fixed in the integrations phase below (692e749).
+
+## Integrations: shared core and FastAPI
+
+Scope (Michael's decisions, 2026-10-22): a private core shared by the framework modules;
+`chameleon_rs.flask` moved onto it with no change of behaviour; `chameleon_rs.fastapi` with
+fastapi-chameleon's API, its suite passing unmodified on the built-in; misordered decorators
+failing loudly at startup; no extras, no runtime dependencies; ty at zero diagnostics. Order of
+the remaining integrations: Starlette, then Robyn, then Litestar (vision.md section 2, with the
+Starlette/Litestar research). Design: architecture.md, "Integrations amendments".
+
+**Results (2026-10-22), on a worktree branch from c96e950.**
+
+Built:
+- `chameleon_rs._views` (private): `Integration` with the shared view logic (bare-`@template`
+  name lookup, sync wrapper with `render`, async wrapper with `render_async`, error pages,
+  pass-through, model conversion, `global_init`/`clear` on its slot, `check_views`). A framework
+  module subclasses it with `is_response`, `make_response`, `settings`, `routes`, `watch`.
+- `_settings`: generic view slots (`VIEW_SLOTS = ('flask', 'fastapi')`, a dict replaced
+  whole) instead of a `flask` slot; `chameleon_rs.configure()` sets every slot; each library's
+  `global_init` / `cache_init` / `clear` and `register_extensions` only their own, as before;
+  integrations keep their legacy `template_path` through `_settings.listeners`.
+- `chameleon_rs.flask` on the core: the public API and the chameleon-flask differential tests
+  are unchanged; new `check_views(app)` and `global_init(..., app=)`.
+- `chameleon_rs.fastapi`: fastapi-chameleon's names (`global_init`, `template(template_file,
+  mimetype)`, `render`, `response(template_file, mimetype, status_code, **data)`, `not_found`,
+  `generic_error`, `clear`, `engine`/`exceptions`, `FastAPIChameleonException`,
+  `FastAPIChameleonNotFoundException`, `FastAPIChameleonGenericException`), plus `configure`,
+  `error`, `render_async`, `response_async`, `status_code=`/`content_type=`/`concurrent=`/
+  `offload=` on `@template`, `check_views`. `compat.install()` maps `fastapi_chameleon` with
+  `engine` and `exceptions`; `make test-integration` runs fastapi-chameleon's suite on the
+  built-in too.
+- Decorator-order check (`chameleon_rs.web.DecoratorOrderError`), hooked by
+  `configure(app=...)` / `global_init(..., app=...)`: FastAPI/Starlette inside the lifespan
+  startup, else before the first request; Flask before the first request (a one-shot
+  `wsgi_app` guard that removes itself); Quart at `before_serving` and before the first
+  request. Message: `@template must be placed below the route decorator (@app.get,
+  @router.get, @app.api_route, ...) on detail() at app/views.py:12 (route GET /r/detail/{n}):
+  the route was registered with the undecorated view, so its template never renders. Put the
+  route decorator first (outermost) and @template under it.` Not done at decoration time: a
+  view registered raw on purpose and also decorated cannot be told from the mistake until all
+  routes exist.
+- Separate fix (692e749): an `on-error` fallback's filter error is raised after the whole
+  template's expressions compiled, as Chameleon does, so `<p a="1" tal:on-error="string:E"
+  tal:attributes="x; v | 1/z"></p>` raises Chameleon's `ExpressionError` (11 cases in
+  `test_errors.py`).
+- Docs: README (FastAPI usage, the decorator-order rule), a FastAPI page in the user guide and
+  the reference sections (`great-docs.yml`), the Flask page's stale "renders are synchronous"
+  note replaced. The committed `site/` mirror is not rebuilt (`make docs` needs Quarto).
+
+Tests: pytest 3,033 passed, 2 skipped, 7 strict xfails (corpus set); upstream 227 passed and 6
+xpassed on each engine; Rust 102 core + 3 Markdown spec + 9 `chameleon-py`; `make lint` clean
+(ty 0 diagnostics). New: `test_fastapi.py` (62: 22 view cases against fastapi-chameleon on
+stock Chameleon, each also as an async view; a whole app with `Depends`, path/query
+validation, a router, error pages and pass-through compared request by request; the OpenAPI
+schema compared with fastapi-chameleon's and with the undecorated views'; async views render
+on the loop with awaitables awaited, sync views in the thread pool; models, `error()`,
+`render_async`/`response_async`, concurrent partials; the decorator-order check: lifespan,
+first request without lifespan, correct order, raw views, mounted apps and wrapped views;
+`assert_type` checks of the decorated views' types), five Flask/Quart decorator-order tests,
+the no-runtime-dependencies test extended to FastAPI/Starlette/Quart/Pydantic and
+`fastapi_chameleon`. FastAPI versions: 0.159.1 / Starlette 1.9.0 (dev and integration venvs)
+and 0.115.14 / Starlette 0.46.2 (eager `include_router`; the non-differential tests and the
+fastapi-chameleon suite on the built-in pass). Integration (`make test-integration` steps):
+originals on the compat alias fastapi-chameleon 40, chameleon-flask 16, chameleon-robyn 39,
+chameleon_partials 6; built-ins fastapi-chameleon 40, chameleon-flask 16, chameleon_partials 6.
+
+Speed: the sync render path is unchanged (no Rust render code changed; the resolver fix is
+compile-time only). `bench/bench_ab.py c96e950`, release, listing, 8 rounds, two passes at load
+1.7-1.9: -1.2 ns per item (range -7..+9) and -11.4 ns (range -13..-7), within the +5 ns
+tolerance; 6.5-6.7x Chameleon in the same runs. The view wrappers add a Python method call or
+two per request, outside the render.
+
+Open for Michael:
+- Per-app settings for FastAPI (`configure(app=...)` applies settings process-wide today): an
+  injected `Request` parameter in the wrapper's signature, or a middleware with a context
+  variable.
+- `chameleon_rs.fastapi.response()` keeps fastapi-chameleon's signature (`mimetype` second,
+  every other keyword is the model); `content_type=` is accepted by `@template` only, as
+  Flask's `response()` keeps `mimetype` in the model.
+- Only apps given to `configure(app=...)` / `global_init(..., app=...)` are checked.
 
 ## Risks
 

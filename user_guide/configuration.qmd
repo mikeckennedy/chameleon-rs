@@ -38,8 +38,8 @@ How it behaves:
 
 - **An option you leave out keeps its current value.** So
   `configure(partial_search='registered')` changes only the search mode.
-- **Every call applies.** There's no `cache_init` as in chameleon_partials and
-  chameleon-flask, so a second call with a different folder takes effect.
+- **Every call applies.** There's no `cache_init` as in chameleon_partials,
+  chameleon-flask and fastapi-chameleon, so a second call with a different folder takes effect.
 - **It's safe with threads.** Each configuration is an immutable object that's swapped in whole,
   so a render running at the same time never sees half of one. Still, call it at startup,
   not per request.
@@ -66,8 +66,8 @@ settings = chameleon_rs.configure(partial_search='registered')
 print(settings.auto_reload)
 ```
 
-For tests, `chameleon_rs.partials.clear()` and `chameleon_rs.flask.clear()` forget the
-configuration again.
+For tests, `chameleon_rs.partials.clear()`, `chameleon_rs.flask.clear()` and
+`chameleon_rs.fastapi.clear()` forget the configuration again.
 
 `chameleon_rs.flask.configure(..., app=app)` sets a configuration for one Flask or Quart app
 only. See [Flask and Quart](flask.qmd#one-configuration-per-app).

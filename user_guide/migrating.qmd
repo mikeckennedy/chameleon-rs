@@ -16,6 +16,7 @@ code that's no longer needed.
 | `return chameleon_partials.extend_model(model)` in every view | `return model`: `render_partial` is in every template |
 | A Pyramid `BeforeRender` subscriber that adds `render_partial` | Remove it |
 | `import chameleon_flask` | `import chameleon_rs.flask as chameleon_flask` |
+| `import fastapi_chameleon` | `import chameleon_rs.fastapi as fastapi_chameleon` |
 | `chameleon_partials.render_partial(path, **m).html_text` | `chameleon_rs.render_partial(path, **m).html_text` |
 | `except chameleon_partials.PartialsException`, `except chameleon_flask.exceptions.FlaskChameleonException` | Still work. `except chameleon_rs.web.TemplateError` catches both |
 | `has_registered_extensions = False` in test teardown | `chameleon_rs.partials.clear()` |
@@ -84,11 +85,35 @@ Views, `@template`, `render`, `response` and `not_found` stay the same. New in c
 
 See [Flask and Quart](flask.qmd).
 
-## fastapi-chameleon and chameleon-robyn
+## fastapi-chameleon
 
-chameleon-rs doesn't build these in yet. Keep using them, with `chameleon_rs.compat.install()`
-at the top of your entry point: they import `chameleon`, so they render with chameleon-rs.
-Their test suites pass unmodified on it.
+```python
+import fastapi_chameleon
+```
+
+becomes
+
+```python
+import chameleon_rs.fastapi as fastapi_chameleon
+```
+
+or stays as it is with `chameleon_rs.compat.install()`. Every name keeps working
+(`global_init`, `@template`, `render`, `response`, `not_found`, `generic_error`, `clear`, the
+exception classes), and its test suite passes unmodified on the built-in. Differences:
+
+- Async views render with `render_async`: an awaitable model value is awaited where the
+  template uses it.
+- `configure(..., app=app)` (or `global_init(..., app=app)`) checks at startup that every
+  `@template` sits below its route decorator.
+- `error()`, `render_async()`, `response_async()`, and `status_code=` on `@template`.
+
+See [FastAPI](fastapi.qmd).
+
+## chameleon-robyn
+
+chameleon-rs doesn't build it in yet. Keep using it, with `chameleon_rs.compat.install()` at
+the top of your entry point: it imports `chameleon`, so it renders with chameleon-rs. Its test
+suite passes unmodified on it.
 
 ## Pitfalls
 
