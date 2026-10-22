@@ -1,11 +1,14 @@
 """Install a built wheel (or sdist) into a fresh venv and test it (`make check-wheels`, release workflow).
 
-For each artifact: a new venv with the artifact and pytest only (so a missing runtime dependency
-fails), a smoke render, then Chameleon's upstream suite on chameleon_rs (`tests/upstream`,
-`CHAMELEON_ENGINE=rust`) and `tests/python/test_typing.py` (with Flask, FastAPI and Litestar
-installed for it), run against the installed copy (the smoke test fails if the package is
-imported from the source tree). An sdist is built into a wheel
-from scratch first, which proves it is complete. Standard library only.
+For each artifact: a scan for private material (the corpus's folder names and
+``$CHAMELEON_RS_CORPUS``, and outside GitHub Actions the home folder and checkout path, in every
+file: metadata, SBOM, extension), then a new venv with the artifact and pytest only (so a
+missing runtime dependency fails), a smoke render, Chameleon's upstream suite on chameleon_rs
+(`tests/upstream`, `CHAMELEON_ENGINE=rust`) and `tests/python/test_typing.py` (with Flask,
+FastAPI and Litestar installed for it from wheels; skipped, with a log line, where they have
+none), run against the installed copy (the smoke test fails if the package is imported from the
+source tree). An sdist is built into a wheel from scratch first, which proves it is complete.
+Standard library only.
 
     python scripts/check_wheel.py dist/chameleon_rs-0.1.0-cp315-cp315-macosx_11_0_arm64.whl
     python scripts/check_wheel.py --python 3.13 dist/chameleon_rs-0.1.0.tar.gz
@@ -13,19 +16,22 @@ from scratch first, which proves it is complete. Standard library only.
 
 ``--python`` (a path, a command, or a version for ``uv python find``) is needed for an sdist;
 for a wheel, the interpreter is taken from its tag (``cp314t`` -> 3.14t). ``--smoke-only``
-skips the pytest suites.
+skips the pytest suites, ``--suites-only`` the smoke test.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
 import sysconfig
+import tarfile
 import tempfile
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -98,8 +104,46 @@ def env() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if k not in scrub}
 
 
-def check(artifact: Path, python: str, smoke_only: bool) -> None:
+# Never in an artifact: the private template corpus (its folder names) and, outside CI, the
+# builder's home folder or checkout path. CI paths (/home/runner/...) are not private.
+PRIVATE_NAMES = (b'talk_python_to_me', b'talk-python-to-me', b'talk_python_training', b'talk-python-training')
+
+
+def scan(artifact: Path) -> None:
+    """Fail on private material in the wheel's metadata, SBOM and extension, or in the sdist."""
+    ci = os.environ.get('GITHUB_ACTIONS') == 'true'
+    forbidden = list(PRIVATE_NAMES)
+    forbidden += [p.encode() for p in os.environ.get('CHAMELEON_RS_CORPUS', '').split(os.pathsep) if p]
+    home = str(Path.home()).encode()
+    local = [] if ci else [home, str(ROOT).encode()]
+    if artifact.suffix == '.whl':
+        with zipfile.ZipFile(artifact) as z:
+            members = [(i.filename, z.read(i)) for i in z.infolist()]
+    else:
+        with tarfile.open(artifact) as t:
+            members = [(m.name, f.read()) for m in t.getmembers() if m.isfile() and (f := t.extractfile(m))]
+    problems = []
+    for name, data in members:
+        lowered = data.lower()
+        problems += [f'{name}: {bad.decode()!r}' for bad in forbidden if bad.lower() in lowered]
+        for path in local:
+            if path not in data:
+                continue
+            # maturin's SBOM names the checkout (`path+file://...`): a local wheel's names this
+            # machine's. Local wheels are for testing only; the release workflow builds the
+            # uploaded ones.
+            if '/sboms/' in name and home not in data:
+                print(f'check_wheel: note: {name} names the local checkout (never upload local wheels)')
+            else:
+                problems.append(f'{name}: {path.decode()!r}')
+    if problems:
+        sys.exit(f'check_wheel: private material in {artifact.name}:\n  ' + '\n  '.join(problems))
+    print(f'check_wheel: {artifact.name}: no private material', flush=True)
+
+
+def check(artifact: Path, python: str, smoke: bool, suites: bool) -> None:
     print(f'== {artifact.name} on {python}', flush=True)
+    scan(artifact)
     with tempfile.TemporaryDirectory(prefix='chameleon-rs-check-') as tmp:
         venv = Path(tmp) / 'venv'
         run([python, '-m', 'venv', str(venv)], env=env())
@@ -107,15 +151,25 @@ def check(artifact: Path, python: str, smoke_only: bool) -> None:
         # pip builds an sdist into a wheel in an isolated environment (maturin, the Rust
         # toolchain), from the sdist's files only.
         run([py, '-m', 'pip', 'install', '-q', '--no-cache-dir', str(artifact), 'pytest'], env=env())
-        # Out of the source tree, so `import chameleon_rs` cannot pick up python/.
-        run([py, '-c', SMOKE], env=env(), cwd=tmp)
-        if smoke_only:
+        if smoke:
+            # Out of the source tree, so `import chameleon_rs` cannot pick up python/.
+            run([py, '-c', SMOKE], env=env(), cwd=tmp)
+        if not suites:
             return
         common = [py, '-m', 'pytest', '-q', '-p', 'no:cacheprovider']
         run([*common, 'tests/upstream'], env={**env(), 'CHAMELEON_ENGINE': 'rust'}, cwd=ROOT)
         # test_typing imports the framework integrations, hence their frameworks (after the
-        # smoke test: the package itself must not need them). Robyn's tests skip without it.
-        run([py, '-m', 'pip', 'install', '-q', 'flask', 'fastapi', 'litestar'], env=env())
+        # smoke test: the package itself must not need them). Their compiled dependencies as
+        # wheels only (pydantic-core needs Rust to build, msgspec a C toolchain): on an
+        # interpreter they have no wheel for yet, the test is skipped rather than failing the
+        # release. (PyYAML has no 3.15 wheel; it builds without a compiler.) Robyn's tests skip
+        # without it.
+        binary = ['--only-binary', 'pydantic-core', '--only-binary', 'msgspec']
+        frameworks = [py, '-m', 'pip', 'install', '-q', *binary, 'flask', 'fastapi', 'litestar']
+        print('+', ' '.join(frameworks), flush=True)
+        if subprocess.run(frameworks, check=False, env=env()).returncode:
+            print('check_wheel: SKIPPED test_typing: no wheel of a framework dependency here', flush=True)
+            return
         run([*common, 'tests/python/test_typing.py'], env=env(), cwd=ROOT)
 
 
@@ -126,7 +180,8 @@ def runnable(wheel: Path) -> bool:
         return plat.split('_')[-1] in wheel.name and 'macosx' in wheel.name
     if sys.platform == 'win32':
         return plat in wheel.name
-    return 'linux' in wheel.name and os.uname().machine in wheel.name
+    libc = 'manylinux' if platform.libc_ver()[0] == 'glibc' else 'musllinux'
+    return libc in wheel.name and os.uname().machine in wheel.name
 
 
 def main() -> None:
@@ -134,7 +189,9 @@ def main() -> None:
     parser.add_argument('artifacts', nargs='+', type=Path)
     parser.add_argument('--python', help='interpreter (required for an sdist)')
     parser.add_argument('--all', action='store_true', help='the arguments are folders: check their wheels')
-    parser.add_argument('--smoke-only', action='store_true')
+    stage = parser.add_mutually_exclusive_group()
+    stage.add_argument('--smoke-only', action='store_true', help='skip the pytest suites')
+    stage.add_argument('--suites-only', action='store_true', help='skip the smoke test')
     args = parser.parse_args()
     artifacts = (
         sorted(w for d in args.artifacts for w in d.glob('*.whl') if runnable(w)) if args.all else args.artifacts
@@ -148,7 +205,7 @@ def main() -> None:
             python = resolve_python(args.python)
         else:
             sys.exit('check_wheel: an sdist needs --python')
-        check(artifact.resolve(), python, args.smoke_only)
+        check(artifact.resolve(), python, smoke=not args.suites_only, suites=not args.smoke_only)
     print(f'check_wheel: {len(artifacts)} artifact(s) passed')
 
 

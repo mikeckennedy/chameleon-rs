@@ -7,11 +7,25 @@ name: Release
 #
 # Wheels: CPython 3.12-3.15 and free-threaded 3.14t/3.15t, for Linux (manylinux_2_28 and
 # musllinux_1_2, x86_64 and aarch64), macOS (arm64, x86_64) and Windows (x64, arm64), plus the
-# sdist. Every wheel is profile-guided (scripts/pgo_wheel.py, the steps of `make build-pgo`),
-# trained per interpreter on a native runner of its architecture, except Windows arm64 (see
-# its matrix entry). Linux wheels are built in the PyPA manylinux/musllinux images by
-# maturin-action: the training runs in the same container (before-script-linux), and the
-# action's build reads the merged profile through RUSTFLAGS.
+# sdist. Every wheel is built by scripts/pgo_wheel.py, on a native runner of its architecture
+# (Linux: inside the PyPA image, scripts/linux_wheel.sh), profile-guided where the matrix says
+# `pgo: true`: the training runs on that runner, per interpreter. PGO verified locally: macOS
+# arm64. Expected to work, not yet run: manylinux, macOS x86_64, Windows x64. Unverified:
+# musllinux and Windows arm64. Every PGO entry passes `--fallback-plain`: where no profile can
+# be made (no llvm-tools or profiler runtime, a training dependency without a wheel) the wheel
+# is built plain, with a warning; each job's summary says which kind every wheel is. A profile
+# that does not fit the code (stale, or made for other symbol names) still fails the build.
+#
+# Before the first run (the repository is private today):
+# - The arm64 runners (ubuntu-24.04-arm, windows-11-arm) are free for public repositories
+#   only; a private repository needs arm64 larger runners on a paid plan. Make the repository
+#   public first, or drop those matrix entries.
+# - macOS minutes count 10x against a private repository's quota (12 macOS build jobs and 12
+#   macOS test jobs per run).
+# - The PyPI page links (Source, Issues, Changelog) and README images point at GitHub and 404
+#   while the repository is private: make it public before publishing.
+# - Create the `pypi` environment (Settings > Environments, with required reviewers) and the
+#   trusted publisher on PyPI for this repository, `release.yml` and environment `pypi`.
 
 on:
   workflow_dispatch:
@@ -24,48 +38,57 @@ on:
 permissions:
   contents: read
 
+# One release run at a time: two runs must never race to publish.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
   PYTHONUTF8: "1"
 
 jobs:
   linux:
-    name: ${{ matrix.platform.libc }} ${{ matrix.platform.arch }} (${{ matrix.python }})
+    name: ${{ matrix.platform.name }} (${{ matrix.python }})
     runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         platform:
-          - { libc: manylinux, arch: x86_64, runner: ubuntu-24.04, target: x86_64-unknown-linux-gnu, manylinux: "2_28", image: "quay.io/pypa/manylinux_2_28_x86_64" }
-          - { libc: manylinux, arch: aarch64, runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, manylinux: "2_28", image: "quay.io/pypa/manylinux_2_28_aarch64" }
-          - { libc: musllinux, arch: x86_64, runner: ubuntu-24.04, target: x86_64-unknown-linux-musl, manylinux: musllinux_1_2, image: "quay.io/pypa/musllinux_1_2_x86_64" }
-          - { libc: musllinux, arch: aarch64, runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, manylinux: musllinux_1_2, image: "quay.io/pypa/musllinux_1_2_aarch64" }
+          - { name: manylinux-x86_64, runner: ubuntu-24.04, image: "quay.io/pypa/manylinux_2_28_x86_64", target: x86_64-unknown-linux-gnu, compatibility: manylinux_2_28, pgo: true }
+          - { name: manylinux-aarch64, runner: ubuntu-24.04-arm, image: "quay.io/pypa/manylinux_2_28_aarch64", target: aarch64-unknown-linux-gnu, compatibility: manylinux_2_28, pgo: true }
+          - { name: musllinux-x86_64, runner: ubuntu-24.04, image: "quay.io/pypa/musllinux_1_2_x86_64", target: x86_64-unknown-linux-musl, compatibility: musllinux_1_2, pgo: true }
+          - { name: musllinux-aarch64, runner: ubuntu-24.04-arm, image: "quay.io/pypa/musllinux_1_2_aarch64", target: aarch64-unknown-linux-musl, compatibility: musllinux_1_2, pgo: true }
         python: ["3.12", "3.13", "3.14", "3.14t", "3.15", "3.15t"]
     steps:
-      - uses: actions/checkout@v5
-      # The PyPA images run natively on a runner of the same architecture, with every CPython
-      # under /opt/python (maturin-action puts them on PATH), so the instrumented build can be
-      # trained there. The workspace is mounted at the same path in the container.
-      - uses: PyO3/maturin-action@v1
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      # The image runs natively on a runner of its architecture, with every CPython under
+      # /opt/python, so the instrumented build can be trained there; the workspace is mounted
+      # at the same path. Only the variables the script needs go in (no tokens).
+      - name: Build in ${{ matrix.platform.image }}
         env:
-          RUSTFLAGS: -Cprofile-use=${{ github.workspace }}/target/pgo/merged.profdata
+          IMAGE: ${{ matrix.platform.image }}
+          PYTHON_VERSION: ${{ matrix.python }}
+          TARGET: ${{ matrix.platform.target }}
+          COMPATIBILITY: ${{ matrix.platform.compatibility }}
+          PGO: ${{ matrix.platform.pgo }}
+        run: |
+          docker run --rm -e GITHUB_ACTIONS -e GITHUB_STEP_SUMMARY -e CARGO_TERM_COLOR \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -v "$RUNNER_TEMP:$RUNNER_TEMP" -w "$GITHUB_WORKSPACE" \
+            "$IMAGE" scripts/linux_wheel.sh "$PYTHON_VERSION" "$TARGET" "$COMPATIBILITY" "$PGO"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          target: ${{ matrix.platform.target }}
-          manylinux: ${{ matrix.platform.manylinux }}
-          container: ${{ matrix.platform.image }}
-          before-script-linux: >-
-            python${{ matrix.python }} scripts/pgo_wheel.py --python python${{ matrix.python }}
-            --maturin maturin --profile-only --profdata-out target/pgo/merged.profdata
-          args: --release --out dist -i python${{ matrix.python }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wheel-${{ matrix.platform.libc }}-${{ matrix.platform.arch }}-${{ matrix.python }}
+          name: wheel-${{ matrix.platform.name }}-${{ matrix.python }}
           path: dist/*.whl
           if-no-files-found: error
 
   native:
     name: ${{ matrix.platform.name }} (${{ matrix.python }})
     runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -73,27 +96,34 @@ jobs:
           - { name: macos-arm64, runner: macos-15, pgo: true }
           - { name: macos-x86_64, runner: macos-15-intel, pgo: true }
           - { name: windows-x64, runner: windows-2025, pgo: true }
-          # Not profile-guided: rustc's profiler runtime for aarch64-pc-windows-msvc has not
-          # been tried here. Set `pgo: true` once a run shows `-Cprofile-generate` links.
-          - { name: windows-arm64, runner: windows-11-arm, pgo: false }
+          - { name: windows-arm64, runner: windows-11-arm, pgo: true }
         python: ["3.12", "3.13", "3.14", "3.14t", "3.15", "3.15t"]
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
-      - run: uv python install ${{ matrix.python }}
-      - run: uv tool install "maturin>=1.15,<2"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - run: uv python install "$PYTHON_VERSION" 3.13
+        env:
+          PYTHON_VERSION: ${{ matrix.python }}
       # rustup on the runner installs the toolchain pinned in rust-toolchain.toml.
-      - run: rustup show active-toolchain
-      - name: Build (profile-guided)
-        if: matrix.platform.pgo
-        run: uv run --no-project --python ${{ matrix.python }} scripts/pgo_wheel.py --python ${{ matrix.python }} --maturin maturin --out dist
+      - run: rustup toolchain install
+      - name: Release tools (hash-pinned maturin)
+        run: |
+          uv venv target/release-tools --python 3.13
+          uv pip install --python target/release-tools --require-hashes -r scripts/release-requirements.txt
       - name: Build
-        if: ${{ !matrix.platform.pgo }}
-        run: maturin build --release --out dist -i "$(uv python find ${{ matrix.python }})"
-      - uses: actions/upload-artifact@v4
+        env:
+          PYTHON_VERSION: ${{ matrix.python }}
+          PGO: ${{ matrix.platform.pgo }}
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then tools=target/release-tools/Scripts; else tools=target/release-tools/bin; fi
+          if [ "$PGO" = true ]; then mode=--fallback-plain; else mode=--no-pgo; fi
+          "$tools/python" scripts/pgo_wheel.py --python "$PYTHON_VERSION" "$mode" --out dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: wheel-${{ matrix.platform.name }}-${{ matrix.python }}
           path: dist/*.whl
@@ -101,85 +131,101 @@ jobs:
 
   sdist:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
-      - uses: PyO3/maturin-action@v1
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          persist-credentials: false
+      - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          maturin-version: "1.15.0"
           command: sdist
           args: --out dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sdist
           path: dist/*.tar.gz
           if-no-files-found: error
 
   test:
-    # Each wheel in a fresh venv with nothing but pytest: a smoke render (sync, async,
-    # markdown:, the compat alias, every module importable with the standard library only),
-    # Chameleon's upstream suite on chameleon_rs, and test_typing (scripts/check_wheel.py).
+    # Each wheel: a scan for private material, then a fresh venv with nothing but pytest: a
+    # smoke render (sync, async, markdown:, the compat alias, every module importable with the
+    # standard library only), Chameleon's upstream suite on chameleon_rs, and test_typing
+    # (scripts/check_wheel.py).
     name: test ${{ matrix.platform.name }} (${{ matrix.python }})
     needs: [linux, native]
     runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         platform:
-          - { name: manylinux-x86_64, runner: ubuntu-24.04, artifact: manylinux-x86_64 }
-          - { name: manylinux-aarch64, runner: ubuntu-24.04-arm, artifact: manylinux-aarch64 }
-          - { name: musllinux-x86_64, runner: ubuntu-24.04, artifact: musllinux-x86_64, image: "quay.io/pypa/musllinux_1_2_x86_64" }
-          - { name: musllinux-aarch64, runner: ubuntu-24.04-arm, artifact: musllinux-aarch64, image: "quay.io/pypa/musllinux_1_2_aarch64" }
-          - { name: macos-arm64, runner: macos-15, artifact: macos-arm64 }
-          - { name: macos-x86_64, runner: macos-15-intel, artifact: macos-x86_64 }
-          - { name: windows-x64, runner: windows-2025, artifact: windows-x64 }
-          - { name: windows-arm64, runner: windows-11-arm, artifact: windows-arm64 }
+          - { name: manylinux-x86_64, runner: ubuntu-24.04 }
+          - { name: manylinux-aarch64, runner: ubuntu-24.04-arm }
+          - { name: musllinux-x86_64, runner: ubuntu-24.04, image: "quay.io/pypa/musllinux_1_2_x86_64" }
+          - { name: musllinux-aarch64, runner: ubuntu-24.04-arm, image: "quay.io/pypa/musllinux_1_2_aarch64" }
+          - { name: macos-arm64, runner: macos-15 }
+          - { name: macos-x86_64, runner: macos-15-intel }
+          - { name: windows-x64, runner: windows-2025 }
+          - { name: windows-arm64, runner: windows-11-arm }
         python: ["3.12", "3.13", "3.14", "3.14t", "3.15", "3.15t"]
     defaults:
       run:
         shell: bash
+    env:
+      PYTHON_VERSION: ${{ matrix.python }}
     steps:
       # Chameleon's fixtures are compared byte for byte: no CRLF conversion on Windows.
       - run: git config --global core.autocrlf false
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          name: wheel-${{ matrix.platform.artifact }}-${{ matrix.python }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: wheel-${{ matrix.platform.name }}-${{ matrix.python }}
           path: dist
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         if: ${{ !matrix.platform.image }}
-      - run: uv python install ${{ matrix.python }}
+      - run: uv python install "$PYTHON_VERSION"
         if: ${{ !matrix.platform.image }}
-      - name: Test (Windows, smoke only)
-        if: runner.os == 'Windows'
-        run: uv run --no-project --python ${{ matrix.python }} scripts/check_wheel.py --smoke-only dist/*.whl
       - name: Test
         if: ${{ !matrix.platform.image && runner.os != 'Windows' }}
-        run: uv run --no-project --python ${{ matrix.python }} scripts/check_wheel.py dist/*.whl
-      - name: Test (upstream suite, Windows)
+        run: uv run --no-project --python "$PYTHON_VERSION" scripts/check_wheel.py dist/*.whl
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        run: uv run --no-project --python "$PYTHON_VERSION" scripts/check_wheel.py --smoke-only dist/*.whl
+      - name: Upstream suite and test_typing (Windows)
         # Never run on Windows before the first release (CI covers Linux and macOS): reported,
         # not yet blocking. Make it blocking once it is green.
         if: runner.os == 'Windows'
         continue-on-error: true
-        run: uv run --no-project --python ${{ matrix.python }} scripts/check_wheel.py dist/*.whl
+        run: uv run --no-project --python "$PYTHON_VERSION" scripts/check_wheel.py --suites-only dist/*.whl
       - name: Test (musl, in the musllinux image)
         # JavaScript actions cannot run inside Alpine-based containers, so docker is run by
         # hand; the image has every CPython under /opt/python.
         if: ${{ matrix.platform.image }}
+        env:
+          IMAGE: ${{ matrix.platform.image }}
         run: |
-          tag=$(echo "${{ matrix.python }}" | sed -E 's/^3\.([0-9]+)(t?)$/cp3\1-cp3\1\2/')
-          docker run --rm -v "$PWD:$PWD" -w "$PWD" ${{ matrix.platform.image }} \
-            "/opt/python/$tag/bin/python" scripts/check_wheel.py --python "/opt/python/$tag/bin/python" dist/*.whl
+          abi=$(echo "$PYTHON_VERSION" | sed -E 's/^3\.([0-9]+)(t?)$/cp3\1-cp3\1\2/')
+          docker run --rm -e GITHUB_ACTIONS -v "$PWD:$PWD" -w "$PWD" "$IMAGE" \
+            "/opt/python/$abi/bin/python" scripts/check_wheel.py --python "/opt/python/$abi/bin/python" dist/*.whl
 
   test-sdist:
-    # The sdist alone builds a working wheel (no file it needs is left out of it).
+    # The sdist alone builds a working wheel (no file it needs is left out of it), with the
+    # toolchain its rust-toolchain.toml pins.
     needs: [sdist]
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: sdist
           path: dist
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - run: uv python install 3.15
       - run: uv run --no-project --python 3.15 scripts/check_wheel.py --python 3.15 dist/*.tar.gz
 
@@ -188,6 +234,7 @@ jobs:
     needs: [linux, native, sdist, test, test-sdist]
     if: ${{ inputs.publish }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     # Trusted publishing: configure the `pypi` environment (Settings > Environments, ideally
     # with required reviewers) and the trusted publisher on PyPI for this repository and
     # workflow file. No token is stored anywhere.
@@ -197,12 +244,12 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: wheel-*
           path: dist
           merge-multiple: true
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: sdist
           path: dist
@@ -214,6 +261,6 @@ jobs:
           echo "wheels: $wheels, sdists: $sdists"
           # 4 Linux + 4 macOS/Windows platforms, 6 interpreters each, and one sdist.
           test "$wheels" -eq 48 && test "$sdists" -eq 1
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           packages-dir: dist

@@ -65,6 +65,9 @@ manifest-path = "crates/chameleon-py/Cargo.toml"
 python-source = "python"
 module-name = "chameleon_rs._native"
 # The Markdown spec examples are test data (the CommonMark spec is CC BY-SA 4.0): not shipped.
+# The pinned toolchain goes into the sdist, so a build from it uses the compiler the wheels and
+# the tests use (rustup reads it; a plain cargo ignores it and needs Rust 1.90 or later).
+include = [{ path = "rust-toolchain.toml", format = "sdist" }]
 exclude = [
     { path = "crates/chameleon-core/tests/markdown_spec/**/*", format = "sdist" },
     { path = "crates/chameleon-core/tests/markdown_spec.rs", format = "sdist" },

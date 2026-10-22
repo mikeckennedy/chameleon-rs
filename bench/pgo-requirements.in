@@ -1,0 +1,7 @@
+# Training dependencies of bench/pgo_train.py (the benchmark modules import pydantic, stock
+# Chameleon and chameleon_partials). Installed with --require-hashes --only-binary :all: by
+# scripts/pgo_wheel.py in the release builds. Regenerate:
+#   uv pip compile --universal --python-version 3.12 --generate-hashes bench/pgo-requirements.in -o bench/pgo-requirements.txt
+pydantic>=2
+chameleon
+chameleon_partials
