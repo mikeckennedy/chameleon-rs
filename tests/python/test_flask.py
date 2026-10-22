@@ -81,7 +81,10 @@ def result(module: ModuleType, make_view: Callable[[ModuleType], Callable[..., A
             resp = asyncio.run(resp)
     except Exception as e:  # noqa: BLE001 - comparing exceptions across implementations
         return ('raise', type(e).__name__, re.sub(r'0x[0-9a-f]+', '0x?', str(e)))
-    return ('ok', type(resp).__name__, resp.status_code, resp.headers.get('Content-Type'), resp.get_data(as_text=True))
+    # Ours names the charset of a text type (`test_text_responses_name_their_charset`);
+    # chameleon-flask sent the bare type.
+    content_type = (resp.headers.get('Content-Type') or '').removesuffix('; charset=utf-8')
+    return ('ok', type(resp).__name__, resp.status_code, content_type, resp.get_data(as_text=True))
 
 
 def same(make_view: Callable[[ModuleType], Callable[..., Any]], theirs: ModuleType, *args: Any) -> tuple[Any, ...]:
@@ -333,7 +336,7 @@ def test_pydantic_model(folder: Path) -> None:
         return Page(a='p')
 
     resp = call(view)
-    assert (resp.get_data(as_text=True), resp.content_type) == ('<h1>Hello p -!</h1>', 'text/x-test')
+    assert (resp.get_data(as_text=True), resp.content_type) == ('<h1>Hello p -!</h1>', 'text/x-test; charset=utf-8')
 
 
 def test_exceptions_share_a_base() -> None:
@@ -423,9 +426,30 @@ def test_render_async_and_response_async(folder: Path) -> None:
     assert html == '<h1>Hello 1 -!</h1>'
     assert (resp.status_code, resp.content_type, resp.get_data(as_text=True)) == (
         503,
-        'text/html',
+        'text/html; charset=utf-8',
         '<h1>Broken 7</h1>',
     )
+
+
+@pytest.mark.parametrize(
+    ('given', 'sent'),
+    [
+        ('text/html', 'text/html; charset=utf-8'),
+        ('text/plain', 'text/plain; charset=utf-8'),
+        ('text/html; charset=latin-1', 'text/html; charset=latin-1'),
+        ('application/xhtml+xml', 'application/xhtml+xml'),
+    ],
+)
+def test_text_responses_name_their_charset(folder: Path, given: str, sent: str) -> None:
+    # As Flask's own `render_template` responses: browsers never guess the encoding.
+    app = flask.Flask('charset')
+
+    @app.get('/')
+    @ours.template('home/index.pt', content_type=given)
+    def index() -> dict[str, Any]:
+        return {'a': 1}
+
+    assert app.test_client().get('/').content_type == sent
 
 
 def _async_copy(f: Callable[..., Any]) -> Callable[..., Any]:

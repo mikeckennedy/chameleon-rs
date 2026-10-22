@@ -141,7 +141,7 @@ class _Flask(_views.Integration):
         return isinstance(value, werkzeug.sansio.response.Response) or str(type(value)) in response_classes
 
     def make_response(self, html: str, content_type: str, status_code: int) -> flask.Response:
-        return flask.Response(response=html, content_type=content_type, status=status_code)
+        return _response(html, content_type, status_code)
 
     def routes(self, app: Any) -> Iterator[tuple[Any, str]]:
         rules: dict[str, list[str]] = {}
@@ -314,7 +314,7 @@ def response(
     """Renders a template to a ``flask.Response``. (Unlike ``@template``, ``mimetype`` is not a
     keyword here: as in chameleon-flask, every other keyword is the model.)"""
     html = render(template_file, **template_data)
-    return flask.Response(response=html, content_type=content_type, status=status_code)
+    return _response(html, content_type, status_code)
 
 
 async def response_async(
@@ -325,6 +325,15 @@ async def response_async(
 ) -> flask.Response:
     """``response`` as a coroutine, rendering with ``render_async``."""
     html = await render_async(template_file, **template_data)
+    return _response(html, content_type, status_code)
+
+
+def _response(html: str, content_type: str, status_code: int) -> flask.Response:
+    # Flask encodes the `str` as UTF-8: a text type says so, as Flask's own `render_template`
+    # responses do (`text/html; charset=utf-8`), so browsers never have to guess the encoding.
+    # chameleon-flask sent `text/html` alone. A type that names a charset is kept as given.
+    if content_type.startswith('text/') and 'charset' not in content_type.lower():
+        content_type = f'{content_type}; charset=utf-8'
     return flask.Response(response=html, content_type=content_type, status=status_code)
 
 
