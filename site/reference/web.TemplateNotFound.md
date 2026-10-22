@@ -11,4 +11,4 @@ web.TemplateNotFound()
 ```
 
 
-[chameleon_rs.starlette.Templates](starlette.Templates.md#chameleon_rs.starlette.Templates) (the `Jinja2Templates` drop-in), with the message `Template not found: {name}.`; code moving from Jinja catches it where it caught `jinja2.TemplateNotFound`. A `ValueError` (as Chameleon's loader raises) and a `LookupError`. [PageTemplateLoader](PageTemplateLoader.md#chameleon_rs.PageTemplateLoader) and the other integrations raise Chameleon's plain `ValueError`, unchanged.
+[chameleon_rs.starlette.Templates](starlette.Templates.md#chameleon_rs.starlette.Templates) (the `Jinja2Templates` drop-in) and [chameleon_rs.robyn.ChameleonTemplate](robyn.ChameleonTemplate.md#chameleon_rs.robyn.ChameleonTemplate) (the `JinjaTemplate` drop-in), with the message `Template not found: {name}.`; code moving from Jinja catches it where it caught `jinja2.TemplateNotFound`. A `ValueError` (as Chameleon's loader raises) and a `LookupError`. [PageTemplateLoader](PageTemplateLoader.md#chameleon_rs.PageTemplateLoader) and the other integrations raise Chameleon's plain `ValueError`, unchanged.

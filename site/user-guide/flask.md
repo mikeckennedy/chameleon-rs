@@ -81,6 +81,8 @@ Anything else raises `chameleon_rs.flask.FlaskChameleonException`.
 @chameleon_flask.template                                             # no arguments
 ```
 
+A text type without a charset gets `; charset=utf-8` (the default is `text/html; charset=utf-8`), as Flask's own [render_template](../reference/robyn.ChameleonTemplate.md#chameleon_rs.robyn.ChameleonTemplate.render_template) responses do. chameleon-flask sent the bare type.
+
 With no path, it renders `{module}/{function}.html`, where `{module}` is the last part of the view's module name. If there's no `.html` file in the template folder, it uses `{module}/{function}.pt`. It checks once, when the view is decorated.
 
 It works on sync views, Flask's async views and Quart views alike.

@@ -87,7 +87,8 @@ print(page(notes='```python\nprint("hi")\n```'))
 - The text after `markdown:` is an ordinary expression, so a `|` fallback works: `markdown: episode.notes | 'No notes yet.'`. As everywhere in TALES, the fallback is used when the expression raises (a missing attribute, say), not when its value is `None`.
 - `None` and `''` render nothing. Any other non-string value is converted with `str()` first.
 - `default` works as for any expression: `tal:content="markdown: page.notes | default"` keeps the element's own content when `page.notes` is missing.
-- The result is markup, like `structure:`, so it isn't escaped again.
+- The result is markup, like `structure:`, so it isn't escaped again in element content.
+- In an attribute value (`alt="${markdown: x}"`, `tal:attributes`), the result is escaped like any string. Markdown's HTML has quoted attributes of its own (`<a href="...">`), which would otherwise close the surrounding attribute and let the text add new ones, such as an event handler. Use Markdown in element content; `${structure: markdown: x}` writes it raw anyway.
 
 
 ``` python
@@ -169,7 +170,7 @@ A profile name is a prefix, so it uses lowercase letters, digits, `-` and `_`, a
 |----|----|----|
 | `raw_html` | `'escape'` | `'escape'` shows raw HTML as text. `'allow'` passes it through: trusted content only. |
 | `images` | `True` | `False` renders an image as its alt text, so the text can't make the page load a remote image. |
-| `inline` | `False` | Drops the `<p>` around output that's a single paragraph, for titles and one-liners. |
+| `inline` | `False` | Drops the `<p>` around output that's a single paragraph, for titles and one-liners in element content (`<h1>${md-inline: title}</h1>`). |
 | `heading_ids` | `False` | `True` gives headings GitHub-style ids and anchor links. A string adds a prefix to each id, such as `'doc-'` (letters, digits, `-` and `_`). |
 | `classes` | `{}` | A class attribute per element, such as `{'table': 'table is-striped', 'pre': 'code'}`. Elements: `p`, `h1`-`h6`, `blockquote`, `ul`, `ol`, `li`, `pre`, `code`, `table`, `a`, `img`, `hr`. See the notes below. |
 | `extensions` | all on | Switch GFM extensions off: `{'table': False}`. Keys: `table`, `strikethrough`, `tasklist`, `autolink`, `footnotes`. |

@@ -322,6 +322,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/security.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Security</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/performance.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Performance</span></a>
   </div>
@@ -396,8 +402,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <ol type="1">
 <li>The configured template folder.</li>
 <li>The calling template’s search path: the folders of the <a href="../reference/PageTemplateLoader.html#chameleon_rs.PageTemplateLoader" class="gdls-link gdls-code">PageTemplateLoader</a> that loaded it.</li>
-<li>The calling template’s own folder, then each folder above it.</li>
+<li>The calling template’s own folder, then each folder above it, up to the root of its template tree.</li>
 </ol>
+<p>The root is the configured template folder (for partials or for a framework integration, whatever the folder is named) or the loader search path entry that holds the calling template. With nothing configured, it is the nearest folder named <code>templates</code> whose parent is a Python package, as in a Pyramid app (<code>myapp/templates/</code>, next to <code>myapp/__init__.py</code>). With none of these, only the template’s own folder is searched.</p>
+<p>The search never leaves that tree: a path that would end up outside it, through <code>..</code> or because it is absolute, is not found there. The configured folder is held to the same rule, and a <code>package:path</code> spec is refused there too, as chameleon_partials does from 0.2.1. That way a file outside your templates, such as one in a parent folder or a system file, is never compiled as a template.</p>
 <p>If the path isn’t found anywhere, the render raises <code>ValueError('Template not found: &lt;path&gt;.')</code>.</p>
 <p>So a page can use partials that sit next to it, with a short path:</p>
 <pre class="text"><code>templates/
@@ -406,7 +414,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 └── admin/users/
     ├── list.pt      ${render_partial('row.pt', user=user)}
     └── row.pt       ${render_partial('shared/badge.pt', label='admin')}</code></pre>
-<div id="9603dca1" class="cell" data-execution_count="2">
+<div id="263d32a2" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplateLoader</span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -438,7 +446,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="calling-it-from-python" class="level1">
 <h1>Calling it from Python</h1>
 <p><a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">chameleon_rs.render_partial</a> renders a partial from Python code: in a view that returns an HTMX fragment, in an email builder, or in a test. It returns an <a href="../reference/partials.HTML.html#chameleon_rs.partials.HTML" class="gdls-link gdls-code">HTML</a> object. Its <code>html_text</code> attribute is the markup, and its <code>__html__</code> method means a template inserts it without escaping:</p>
-<div id="779f99f9" class="cell" data-execution_count="3">
+<div id="107be1c8" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>fragment <span class="op">=</span> chameleon_rs.render_partial(<span class="st">'shared/badge.pt'</span>, label<span class="op">=</span><span class="st">'new'</span>)</span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="bu">type</span>(fragment).<span class="va">__name__</span>, <span class="bu">repr</span>(fragment.html_text))</span></code></pre></div>
 <div class="cell-output cell-output-stdout">

@@ -30,7 +30,11 @@ By default, [render_partial](../reference/render_partial.md#chameleon_rs.render_
 
 1.  The configured template folder.
 2.  The calling template's search path: the folders of the [PageTemplateLoader](../reference/PageTemplateLoader.md#chameleon_rs.PageTemplateLoader) that loaded it.
-3.  The calling template's own folder, then each folder above it.
+3.  The calling template's own folder, then each folder above it, up to the root of its template tree.
+
+The root is the configured template folder (for partials or for a framework integration, whatever the folder is named) or the loader search path entry that holds the calling template. With nothing configured, it is the nearest folder named `templates` whose parent is a Python package, as in a Pyramid app (`myapp/templates/`, next to `myapp/__init__.py`). With none of these, only the template's own folder is searched.
+
+The search never leaves that tree: a path that would end up outside it, through `..` or because it is absolute, is not found there. The configured folder is held to the same rule, and a `package:path` spec is refused there too, as chameleon_partials does from 0.2.1. That way a file outside your templates, such as one in a parent folder or a system file, is never compiled as a template.
 
 If the path isn't found anywhere, the render raises `ValueError('Template not found: <path>.')`.
 

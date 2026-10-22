@@ -81,7 +81,7 @@ What pyramid_chameleon provides keeps working:
 
 # Partials
 
-[render_partial](../reference/render_partial.md#chameleon_rs.render_partial) is built into every template. A partial path is looked for next to the calling template and in the folders above it, so `shared/video.pt` above is found with no setup.
+[render_partial](../reference/render_partial.md#chameleon_rs.render_partial) is built into every template. A partial path is looked for next to the calling template and in the folders above it, up to your package's `templates` folder, so `shared/video.pt` above is found with no setup. Nothing outside that folder is searched.
 
 To render partials from Python as well (an HTMX view returning one fragment, say), tell chameleon-rs where the templates live once, in `main()`:
 

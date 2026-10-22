@@ -926,13 +926,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <div class="doc-usage-source">
 <p>Usage</p>
-<p><a href="https://github.com/mikeckennedy/chameleon-rust/blob/main/chameleon_rs/web.py#L55-L61" target="_blank" rel="noopener">Source</a></p>
+<p><a href="https://github.com/mikeckennedy/chameleon-rust/blob/main/chameleon_rs/web.py#L55-L62" target="_blank" rel="noopener">Source</a></p>
 </div>
 <div class="doc-signature doc-Kind.CLASS">
 <div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="sig-class">web</span><span class="op">.</span><span class="sig-name">TemplateNotFound</span>()</span></code></pre></div>
 </div>
 <div class="doc-text">
-<p><a href="starlette.Templates.html#chameleon_rs.starlette.Templates" class="gdls-link gdls-code">chameleon_rs.starlette.Templates</a> (the <code>Jinja2Templates</code> drop-in), with the message <code>Template not found: {name}.</code>; code moving from Jinja catches it where it caught <code>jinja2.TemplateNotFound</code>. A <code>ValueError</code> (as Chameleon’s loader raises) and a <code>LookupError</code>. <a href="PageTemplateLoader.html#chameleon_rs.PageTemplateLoader" class="gdls-link gdls-code">PageTemplateLoader</a> and the other integrations raise Chameleon’s plain <code>ValueError</code>, unchanged.</p>
+<p><a href="starlette.Templates.html#chameleon_rs.starlette.Templates" class="gdls-link gdls-code">chameleon_rs.starlette.Templates</a> (the <code>Jinja2Templates</code> drop-in) and <a href="robyn.ChameleonTemplate.html#chameleon_rs.robyn.ChameleonTemplate" class="gdls-link gdls-code">chameleon_rs.robyn.ChameleonTemplate</a> (the <code>JinjaTemplate</code> drop-in), with the message <code>Template not found: {name}.</code>; code moving from Jinja catches it where it caught <code>jinja2.TemplateNotFound</code>. A <code>ValueError</code> (as Chameleon’s loader raises) and a <code>LookupError</code>. <a href="PageTemplateLoader.html#chameleon_rs.PageTemplateLoader" class="gdls-link gdls-code">PageTemplateLoader</a> and the other integrations raise Chameleon’s plain <code>ValueError</code>, unchanged.</p>
 </div>
 
 

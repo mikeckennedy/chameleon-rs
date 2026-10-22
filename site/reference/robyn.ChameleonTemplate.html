@@ -936,7 +936,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <div class="doc-usage-source">
 <p>Usage</p>
-<p><a href="https://github.com/mikeckennedy/chameleon-rust/blob/main/chameleon_rs/robyn.py#L602-L630" target="_blank" rel="noopener">Source</a></p>
+<p><a href="https://github.com/mikeckennedy/chameleon-rust/blob/main/chameleon_rs/robyn.py#L602-L638" target="_blank" rel="noopener">Source</a></p>
 </div>
 <div class="doc-signature doc-Kind.CLASS">
 <div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="sig-class">robyn</span><span class="op">.</span><span class="sig-name">ChameleonTemplate</span>()</span></code></pre></div>
@@ -985,13 +985,13 @@ Renders <code>template_name</code> (relative to the directory) with <code>kwargs
 </div>
 <div class="doc-usage-source">
 <p>Usage</p>
-<p><a href="https://github.com/mikeckennedy/chameleon-rust/blob/main/chameleon_rs/robyn.py#L620-L624" target="_blank" rel="noopener">Source</a></p>
+<p><a href="https://github.com/mikeckennedy/chameleon-rust/blob/main/chameleon_rs/robyn.py#L620-L626" target="_blank" rel="noopener">Source</a></p>
 </div>
 <div class="doc-signature doc-Kind.FUNCTION">
 <div class="sourceCode" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>render_template(template_name, <span class="op">**</span>kwargs)</span></code></pre></div>
 </div>
 <div class="doc-text">
-<p>into a 200 <code>robyn.Response</code> (<code>text/html; charset=utf-8</code>).</p>
+<p>into a 200 <code>robyn.Response</code> (<code>text/html; charset=utf-8</code>). A name that could reach outside the directory raises <a href="web.TemplateNotFound.html#chameleon_rs.web.TemplateNotFound" class="gdls-link gdls-code">TemplateNotFound</a>, as Robyn’s <code>JinjaTemplate</code> refuses one (<code>_views.outside_folder</code>).</p>
 </div>
 </section>
 <hr style="border: none; border-top: 2px dotted #b0b4ba; margin: 1.5rem 0 1rem 0;">
@@ -1002,7 +1002,7 @@ Renders <code>template_name</code> (relative to the directory) with <code>kwargs
 </div>
 <div class="doc-usage-source">
 <p>Usage</p>
-<p><a href="https://github.com/mikeckennedy/chameleon-rust/blob/main/chameleon_rs/robyn.py#L626-L630" target="_blank" rel="noopener">Source</a></p>
+<p><a href="https://github.com/mikeckennedy/chameleon-rust/blob/main/chameleon_rs/robyn.py#L634-L638" target="_blank" rel="noopener">Source</a></p>
 </div>
 <div class="doc-signature doc-Kind.FUNCTION">
 <div class="sourceCode" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>render_template_async(template_name, <span class="op">**</span>kwargs)</span></code></pre></div>

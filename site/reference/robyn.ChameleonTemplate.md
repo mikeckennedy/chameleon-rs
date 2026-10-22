@@ -39,7 +39,7 @@ render_template(template_name, **kwargs)
 ```
 
 
-into a 200 `robyn.Response` (`text/html; charset=utf-8`).
+into a 200 `robyn.Response` (`text/html; charset=utf-8`). A name that could reach outside the directory raises [TemplateNotFound](web.TemplateNotFound.md#chameleon_rs.web.TemplateNotFound), as Robyn's `JinjaTemplate` refuses one (`_views.outside_folder`).
 
 
 ------------------------------------------------------------------------
