@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.47] - not yet released
 
 The first release of chameleon-rs: a Rust implementation of the
 [Chameleon](https://github.com/malthe/chameleon) page template engine, meant as a drop-in
