@@ -46,6 +46,26 @@ impl<'a, 'py> PyRuntime<'a, 'py> {
         Self { py, render, code, scope, frame }
     }
 
+    /// [`Eval::eval`] in an asynchronous render: a final value that is awaitable suspends the
+    /// render (D9). Values computed inside the expression are not awaited (`coro().title`
+    /// is the coroutine's attribute), nor are a native partial's arguments.
+    #[inline(never)]
+    fn eval_async(&self, e: &crate::expr::Expr, emitted: bool) -> PyResult<Step<Py<PyAny>>> {
+        let step = if emitted { eval_emitted(e, &self.cx())? } else { Step::Ready(eval(e, &self.cx())?.unbind()) };
+        match step {
+            Step::Ready(v) if crate::awaitable::is_awaitable(v.bind(self.py))? => Ok(Step::Suspend(v)),
+            step => Ok(step),
+        }
+    }
+
+    /// Records a task started for a placeholder and returns the placeholder.
+    fn register(&self, task: Bound<'py, PyAny>, kind: crate::deferred::DeferKind) -> Vec<u8> {
+        let mut deferred = self.render.deferred.borrow_mut();
+        let id = deferred.len() as u64;
+        deferred.push(crate::deferred::Deferred { id, task: task.unbind(), kind });
+        crate::deferred::placeholder(self.render.nonce, id)
+    }
+
     fn cx(&self) -> Cx<'_, 'py> {
         Cx { scope: &self.scope, render: self.render, frame: &self.frame }
     }
@@ -199,6 +219,9 @@ impl Eval for PyRuntime<'_, '_> {
             self.render.nested.set((0, 0));
         }
         let e = &site.expr;
+        if self.render.awaits {
+            return self.eval_async(e, emitted);
+        }
         if emitted { eval_emitted(e, &self.cx()) } else { Ok(Step::Ready(eval(e, &self.cx())?.unbind())) }
     }
 
@@ -227,6 +250,61 @@ impl Eval for PyRuntime<'_, '_> {
 
     fn partial_returned(&mut self) {
         self.render.partials.left();
+    }
+
+    #[inline]
+    fn wants_defer(&mut self) -> bool {
+        self.render.defer_next.get()
+    }
+
+    /// The pending partial as a render of its own, in a task (`crate::deferred`).
+    fn defer_partial(&mut self) -> PyResult<Option<Vec<u8>>> {
+        self.render.defer_next.set(false);
+        let py = self.py;
+        let Some(event_loop) = crate::deferred::running_loop(py) else { return Ok(None) };
+        let Some(pending) = self.render.partials.take_pending() else { return Ok(None) };
+        let render = crate::awaitable::RenderAwaitable::start(
+            &pending.program,
+            &pending.scope,
+            Some(pending.defaults),
+            Some(pending.builtins),
+            false,
+        )?;
+        let task = crate::deferred::start_task(&event_loop, Bound::new(py, render)?.as_any())?;
+        Ok(Some(self.register(task, crate::deferred::DeferKind::Partial)))
+    }
+
+    /// A `@concurrent` helper's call in the render's own unit, as a task
+    /// (`crate::deferred`).
+    fn defer_value(
+        &mut self,
+        value: Py<PyAny>,
+        esc: Escape,
+        stage: Stage,
+        at: ErrorSite,
+    ) -> PyResult<Result<Vec<u8>, Py<PyAny>>> {
+        let py = self.py;
+        if self.render.partials.top() != 0 || !crate::deferred::is_concurrent_call(value.bind(py))? {
+            return Ok(Err(value));
+        }
+        let Some(event_loop) = crate::deferred::running_loop(py) else { return Ok(Err(value)) };
+        let task = crate::deferred::start_task(&event_loop, value.bind(py))?;
+        let program = self.code.get();
+        let token = program.token_at(at, self.render.nested.get());
+        let site = crate::deferred::ValueSite {
+            esc,
+            stage,
+            scope: self.scope.clone().unbind(),
+            builtins: self.frame.builtins.clone().map(Bound::unbind),
+            marker: self.frame.marker.clone().unbind(),
+            serial: self.frame.serial,
+            domain: self.frame.domain.clone().map(Bound::unbind),
+            context: self.frame.context.clone().map(Bound::unbind),
+            target_language: self.frame.target_language.clone().unbind(),
+            program: self.code.clone().unbind(),
+            token,
+        };
+        Ok(Ok(self.register(task, crate::deferred::DeferKind::Value(Box::new(site)))))
     }
 }
 
@@ -388,8 +466,11 @@ impl Errors for PyRuntime<'_, '_> {
         let _ = record_error(self.py, &rcontext, program, token, error);
     }
 
+    /// In an asynchronous render, cancellation (any non-`Exception`) passes unformatted: the
+    /// formatted error would be a `RenderError`, an `Exception` that `tal:on-error` catches.
     fn partial_failed(&mut self, error: PyErr) -> PyErr {
         match self.render.partials.left() {
+            Some(_) if self.render.awaits && !error.is_instance_of::<PyException>(self.py) => error,
             Some(unit) => crate::partials::partial_error(&unit, error),
             None => error,
         }
@@ -404,8 +485,14 @@ impl Errors for PyRuntime<'_, '_> {
     /// is the template's `render`), less Chameleon's own frames before the first macro
     /// (`BaseTemplate.render`, the render function) and the helpers a macro calls into
     /// (measured: an `on-error` around infinite macro recursion catches at the same depth).
+    ///
+    /// An asynchronous render runs on the event loop's stack, which differs at every resume:
+    /// its budget is the recursion limit less a fixed reserve instead.
     fn frame_budget(&mut self) -> usize {
         let py = self.py;
+        if self.render.awaits {
+            return crate::awaitable::async_frame_budget(py);
+        }
         let measure = || -> PyResult<usize> {
             let sys = py.import(intern!(py, "sys"))?;
             let limit: usize = sys.getattr(intern!(py, "getrecursionlimit"))?.call0()?.extract()?;

@@ -451,6 +451,17 @@ pub(crate) struct RenderCtx<'py> {
     /// The last translation function `convert` checked for being `simple_translate` in
     /// disguise (its address, and the answer); the defaults keep it alive for the render.
     pub(crate) simple_wrapper: Cell<(usize, bool)>,
+    /// An asynchronous render (`render_async`, D9): an expression whose final value is
+    /// awaitable suspends the render until the value is awaited.
+    pub(crate) awaits: bool,
+    /// Native partials called with an awaitable argument render concurrently (opt-in, see
+    /// `crate::deferred`).
+    pub(crate) concurrent: bool,
+    /// The partial just returned as `Step::Call` is to render concurrently.
+    pub(crate) defer_next: Cell<bool>,
+    /// Tasks started for placeholders, in document order, and the placeholders' nonce.
+    pub(crate) deferred: RefCell<Vec<crate::deferred::Deferred>>,
+    pub(crate) nonce: u64,
 }
 
 /// What expressions see of the active frame: its template's builtins (a macro's are those
@@ -501,11 +512,108 @@ impl<'py> RenderCtx<'py> {
             stream: OnceCell::new(),
             scope_exposed: Cell::new(false),
             simple_wrapper: Cell::new((0, false)),
+            awaits: false,
+            concurrent: false,
+            defer_next: Cell::new(false),
+            deferred: RefCell::new(Vec::new()),
+            nonce: 0,
         }
     }
 
     pub(crate) fn rcontext(&self, py: Python<'py>) -> &Bound<'py, PyDict> {
         self.rcontext.get_or_init(|| PyDict::new(py))
+    }
+
+    /// The render-wide state without the GIL lifetime, for a render that suspends (see
+    /// [`SavedRender`]).
+    pub(crate) fn save(self) -> SavedRender {
+        SavedRender {
+            marker: self.marker.unbind(),
+            partials: self.partials.save(),
+            defaults: self.defaults.map(Bound::unbind),
+            builtins: self.builtins.unbind(),
+            rcontext: self.rcontext.into_inner().map(Bound::unbind),
+            nested: self.nested.get(),
+            namespaces: self.namespaces.into_inner().into_iter().map(|(k, ns)| (k, ns.unbind())).collect(),
+            stream: self.stream.into_inner().map(Bound::unbind),
+            scope_exposed: self.scope_exposed.get(),
+            simple_wrapper: self.simple_wrapper.get(),
+            awaits: self.awaits,
+            concurrent: self.concurrent,
+            deferred: self.deferred.into_inner(),
+            nonce: self.nonce,
+        }
+    }
+
+    /// The state [`RenderCtx::save`] kept, bound again.
+    pub(crate) fn restore(saved: SavedRender, py: Python<'py>) -> Self {
+        Self {
+            marker: saved.marker.into_bound(py),
+            partials: crate::partials::Partials::restore(saved.partials, py),
+            defaults: saved.defaults.map(|d| d.into_bound(py)),
+            builtins: saved.builtins.into_bound(py),
+            rcontext: saved.rcontext.map(|r| r.into_bound(py)).map_or_else(OnceCell::new, OnceCell::from),
+            nested: Cell::new(saved.nested),
+            namespaces: RefCell::new(saved.namespaces.into_iter().map(|(k, ns)| (k, ns.into_bound(py))).collect()),
+            stream: saved.stream.map(|s| s.into_bound(py)).map_or_else(OnceCell::new, OnceCell::from),
+            scope_exposed: Cell::new(saved.scope_exposed),
+            simple_wrapper: Cell::new(saved.simple_wrapper),
+            awaits: saved.awaits,
+            concurrent: saved.concurrent,
+            defer_next: Cell::new(false),
+            deferred: RefCell::new(saved.deferred),
+            nonce: saved.nonce,
+        }
+    }
+}
+
+/// [`RenderCtx`] without the GIL lifetime: what a suspended render keeps between the calls that
+/// drive it (each has its own `Python` token). Converting is a move of references, done once
+/// per suspension.
+pub(crate) struct SavedRender {
+    marker: Py<PyAny>,
+    partials: crate::partials::SavedPartials,
+    defaults: Option<Py<PyDict>>,
+    builtins: Py<PyDict>,
+    rcontext: Option<Py<PyDict>>,
+    nested: (u32, u32),
+    namespaces: Vec<(u64, Py<PyDict>)>,
+    stream: Option<Py<PyAny>>,
+    scope_exposed: bool,
+    simple_wrapper: (usize, bool),
+    awaits: bool,
+    concurrent: bool,
+    pub(crate) deferred: Vec<crate::deferred::Deferred>,
+    nonce: u64,
+}
+
+impl SavedRender {
+    /// The placeholders' nonce.
+    pub(crate) fn nonce(&self) -> u64 {
+        self.nonce
+    }
+
+    /// Visits every Python object held (a suspended render's `__traverse__`).
+    pub(crate) fn traverse(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
+        visit.call(&self.marker)?;
+        self.partials.traverse(visit)?;
+        if let Some(d) = &self.defaults {
+            visit.call(d)?;
+        }
+        visit.call(&self.builtins)?;
+        if let Some(r) = &self.rcontext {
+            visit.call(r)?;
+        }
+        for (_, ns) in &self.namespaces {
+            visit.call(ns)?;
+        }
+        if let Some(s) = &self.stream {
+            visit.call(s)?;
+        }
+        for d in &self.deferred {
+            d.traverse(visit)?;
+        }
+        Ok(())
     }
 }
 

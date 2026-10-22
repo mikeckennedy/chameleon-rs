@@ -1016,6 +1016,34 @@ pub trait Eval: Values {
     fn partial_entered(&mut self) {}
     /// A native partial's frame returned.
     fn partial_returned(&mut self) {}
+    /// Whether the native partial just returned as [`Step::Call`] should render on its own,
+    /// concurrently, instead of in a frame (opt-in concurrency, D9). Asked for every partial
+    /// call, so it must be cheap.
+    fn wants_defer(&mut self) -> bool {
+        false
+    }
+    /// Starts the partial [`Eval::wants_defer`] asked for as a render of its own and returns
+    /// the placeholder to write in its place (the embedding replaces it with the partial's
+    /// output when the render ends), or `None` to run it in a frame after all. Called only
+    /// where the output written is final (see [`VmState::can_defer`]).
+    fn defer_partial(&mut self) -> Result<Option<Vec<u8>>, Self::Error> {
+        Ok(None)
+    }
+    /// The render would suspend on `value` in an emitted position where the output written is
+    /// final: the embedding may start awaiting it concurrently instead and return the
+    /// placeholder to write (it converts the result for `esc` and `stage` and fills it in when
+    /// the render ends; `at` is where an error of the value is reported), or give the value
+    /// back to suspend on (opt-in, D9).
+    fn defer_value(
+        &mut self,
+        value: Self::Value,
+        esc: Escape,
+        stage: Stage,
+        at: ErrorSite,
+    ) -> Result<Result<Vec<u8>, Self::Value>, Self::Error> {
+        let _ = (esc, stage, at);
+        Ok(Err(value))
+    }
 }
 
 /// Names: backups, binding, restoring.
@@ -1489,6 +1517,24 @@ impl<V> VmState<V> {
         }
     }
 
+    /// Whether output written now is final: no `tal:on-error` body (which may truncate it),
+    /// translation or `i18n:name` stream, capture or boolean attribute (which take it back
+    /// as text) is open in any frame. A placeholder written then stays in the output, in
+    /// place, until the render ends (slot bodies move text, placeholders with it).
+    #[must_use]
+    pub fn can_defer(&self) -> bool {
+        !self.unwind.iter().any(|e| {
+            matches!(
+                e,
+                Unwind::Try { .. }
+                    | Unwind::Translate { .. }
+                    | Unwind::Name { .. }
+                    | Unwind::Capture(_)
+                    | Unwind::Attr { .. }
+            )
+        })
+    }
+
     /// Entries on the unwind stack (for tests and debugging).
     #[must_use]
     pub fn unwind_depth(&self) -> usize {
@@ -1798,7 +1844,12 @@ pub fn run<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R) -> Result<Done<Val<
             Err(e) => return Err(e),
         };
         match action {
-            Action::Partial(call, return_pc, on_return) => push_partial(st, rt, call, return_pc, on_return)?,
+            Action::Partial(call, return_pc, on_return) => {
+                if rt.wants_defer() && st.can_defer() && defer_partial(st, rt, return_pc, on_return)? {
+                    continue;
+                }
+                push_partial(st, rt, call, return_pc, on_return)?;
+            }
             Action::Push(pushed) => push_frame(st, rt, pushed)?,
             Action::Pop => {
                 let Some(done) = st.frames.last() else { return Err(VmError::Internal("pop without a frame")) };
@@ -1859,6 +1910,36 @@ fn deep<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, depth: usize) -> Resul
         unwind_error(st, rt, error)?;
     }
     Ok(!too_deep)
+}
+
+/// A native partial started as a render of its own (opt-in concurrency): its placeholder
+/// is written where its output goes, and the caller continues. False if the runtime runs it
+/// in a frame after all.
+#[cold]
+fn defer_partial<R: Runtime>(
+    st: &mut VmState<Val<R>>,
+    rt: &mut R,
+    return_pc: u32,
+    on_return: OnReturn,
+) -> Result<bool, VmError<Err<R>>> {
+    let placeholder = match rt.defer_partial() {
+        Ok(Some(p)) => p,
+        Ok(None) => return Ok(false),
+        Err(error) => {
+            unwind_error(st, rt, error)?;
+            return Ok(true);
+        }
+    };
+    let recent = st.recent;
+    let Some(caller) = st.frames.last_mut() else { return Err(VmError::Internal("call without a caller")) };
+    caller.pc = return_pc;
+    caller.recent = recent;
+    st.out.push(&placeholder);
+    if let OnReturn::Text(text) = on_return {
+        let program = Arc::clone(&caller.program);
+        st.out.push(program.text(text).ok_or(VmError::Internal("text out of range"))?);
+    }
+    Ok(true)
 }
 
 /// Pushes a native partial's frame: its main function, no i18n settings, no slots.
@@ -2087,6 +2168,16 @@ fn execute<R: Runtime>(
             Op::Emit { expr, esc, stage } => {
                 let value = match value_of(st, rt, expr, true)? {
                     Step::Ready(v) => v,
+                    Step::Suspend(v) if st.can_defer() => {
+                        match rt.defer_value(v, esc, stage, ErrorSite::unpack(st.recent)).map_err(rt_err)? {
+                            Ok(placeholder) => {
+                                st.out.push(&placeholder);
+                                *pc += 1;
+                                continue;
+                            }
+                            Err(v) => return Ok(Action::Suspend(v, *pc as u32)),
+                        }
+                    }
                     Step::Suspend(v) => return Ok(Action::Suspend(v, *pc as u32)),
                     Step::Call(call) => return Ok(Action::Partial(call, *pc as u32 + 1, OnReturn::Nothing)),
                 };

@@ -4,9 +4,11 @@
 //! compiler (D1, D4) and the runtime (D2) over Python objects and exposes the native
 //! classes. Everything else lives in `chameleon-core`.
 
+mod awaitable;
 mod compiler;
 mod convert;
 mod custom;
+mod deferred;
 mod elements;
 mod errors;
 mod expr;
@@ -29,6 +31,8 @@ mod _native {
     use pyo3::prelude::*;
 
     #[pymodule_export]
+    use super::awaitable::RenderAwaitable;
+    #[pymodule_export]
     use super::custom::SubEval;
     #[pymodule_export]
     use super::elements::{parse_elements, tokenize_ranges};
@@ -37,7 +41,7 @@ mod _native {
     #[pymodule_export]
     use super::macros::{Macro, SlotFill};
     #[pymodule_export]
-    use super::program::{DefaultMarker, Program, render_page};
+    use super::program::{DefaultMarker, Program, render_page, render_page_async};
     #[pymodule_export]
     use super::scope::Scope;
 

@@ -10,6 +10,7 @@ use pyo3::{PyTraverseError, PyVisit, intern};
 
 use chameleon_core::{Done, ErrorSite, Mode, Options, Output, VmError, VmState, run};
 
+use crate::awaitable::RenderAwaitable;
 use crate::compiler::{Config, PyExprCompiler, TokenSpan};
 use crate::errors::{catch_panics, compile_error_mapped, internal_error, vm_error};
 use crate::expr::{RenderCtx, Site};
@@ -294,6 +295,54 @@ pub(crate) fn render_page<'py>(
     encoding: Option<Bound<'py, PyAny>>,
     kw: &Bound<'py, PyDict>,
 ) -> PyResult<Bound<'py, PyAny>> {
+    match page(template, encoding, kw)? {
+        Page::Protocol(result) => Ok(result),
+        Page::Native { program, scope, defaults, builtins } => {
+            Ok(render_in(&program, &scope, Some(defaults), Some(builtins), false)?.into_any())
+        }
+    }
+}
+
+/// `render_page`'s asynchronous counterpart (`PageTemplate.render_async`, D9): the same setup,
+/// then a [`RenderAwaitable`] instead of the render, or, for an instance with a render
+/// function of its own (Chameleon's protocol, synchronous), the rendered `str`.
+/// `concurrent`: native partials called with an awaitable argument render concurrently
+/// (`crate::deferred`).
+#[pyfunction]
+#[pyo3(signature = (template, encoding, kw, concurrent = false))]
+pub(crate) fn render_page_async<'py>(
+    template: &Bound<'py, PyAny>,
+    encoding: Option<Bound<'py, PyAny>>,
+    kw: &Bound<'py, PyDict>,
+    concurrent: bool,
+) -> PyResult<Bound<'py, PyAny>> {
+    match page(template, encoding, kw)? {
+        Page::Protocol(result) => Ok(result),
+        Page::Native { program, scope, defaults, builtins } => {
+            let awaitable = RenderAwaitable::start(&program, &scope, Some(defaults), Some(builtins), concurrent)?;
+            Ok(Bound::new(template.py(), awaitable)?.into_any())
+        }
+    }
+}
+
+/// A page render, set up ([`page`]).
+enum Page<'py> {
+    /// Rendered by `_render_protocol`.
+    Protocol(Bound<'py, PyAny>),
+    Native {
+        program: Bound<'py, Program>,
+        scope: Bound<'py, Scope>,
+        defaults: Bound<'py, PyDict>,
+        builtins: Bound<'py, PyDict>,
+    },
+}
+
+/// The steps of `render_page` before the render itself.
+fn page<'py>(
+    template: &Bound<'py, PyAny>,
+    encoding: Option<Bound<'py, PyAny>>,
+    kw: &Bound<'py, PyDict>,
+) -> PyResult<Page<'py>> {
     let py = template.py();
     let translate = kw.get_item(intern!(py, "translate"))?.filter(|t| !t.is_none());
     let encoding = encoding.filter(|e| !e.is_none());
@@ -326,7 +375,7 @@ pub(crate) fn render_page<'py>(
     template.call_method0(intern!(py, "cook_check"))?;
     if template.getattr(intern!(py, "__dict__"))?.contains(intern!(py, "_render"))? {
         // A render function set on the instance: Chameleon's protocol, in Python.
-        return template.call_method1(intern!(py, "_render_protocol"), (kw, defaults));
+        return Ok(Page::Protocol(template.call_method1(intern!(py, "_render_protocol"), (kw, defaults))?));
     }
     let compiled = template.getattr(intern!(py, "_compiled"))?;
     let (program, builtins): (Bound<'py, Program>, Bound<'py, PyDict>) = compiled.extract()?;
@@ -341,7 +390,7 @@ pub(crate) fn render_page<'py>(
     if !locals.contains(repeat)? {
         locals.set_item(repeat, new_repeat_dict(py)?)?;
     }
-    Ok(render_in(&program, &scope, Some(defaults), Some(builtins), false)?.into_any())
+    Ok(Page::Native { program, scope, defaults, builtins })
 }
 
 /// A render of `program` in `scope` (see [`Program::render`]).
@@ -387,7 +436,7 @@ static RENDER_ERROR: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 /// passes through; otherwise, if the frames recorded where it happened in
 /// `rcontext['__error__']`, Chameleon's formatted `RenderError` subclass of its type is
 /// raised instead (built in Python, `chameleon_rs.exc.render_error`, off the hot path).
-fn render_error(py: Python<'_>, error: PyErr, econtext: &Bound<'_, Scope>, render: &RenderCtx<'_>) -> PyErr {
+pub(crate) fn render_error(py: Python<'_>, error: PyErr, econtext: &Bound<'_, Scope>, render: &RenderCtx<'_>) -> PyErr {
     if error.is_instance_of::<PyRecursionError>(py) {
         return error;
     }

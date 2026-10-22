@@ -85,6 +85,40 @@ impl Output {
         self.buf.splice(at..at, bytes.iter().copied());
     }
 
+    /// Replaces each occurrence of `prefix` followed by `width` bytes and `prefix` again (a
+    /// placeholder) for which `fill` returns text (its key is the `width` bytes) by that text,
+    /// in one pass. Text marked with surrogates sets the flag.
+    pub fn fill_placeholders(
+        &mut self,
+        prefix: &[u8],
+        width: usize,
+        mut fill: impl FnMut(&[u8]) -> Option<(Vec<u8>, bool)>,
+    ) {
+        let size = prefix.len() * 2 + width;
+        let mut out = Vec::with_capacity(self.buf.len());
+        let mut rest = &self.buf[..];
+        while let Some(at) = memchr::memmem::find(rest, prefix) {
+            let (before, from) = rest.split_at(at);
+            out.extend_from_slice(before);
+            let filled = from
+                .get(..size)
+                .filter(|p| p.ends_with(prefix))
+                .and_then(|p| p.get(prefix.len()..prefix.len() + width))
+                .and_then(&mut fill);
+            if let Some((text, surrogates)) = filled {
+                out.extend_from_slice(&text);
+                self.has_surrogates |= surrogates;
+                rest = from.get(size..).unwrap_or_default();
+            } else {
+                let (kept, after) = from.split_at(prefix.len());
+                out.extend_from_slice(kept);
+                rest = after;
+            }
+        }
+        out.extend_from_slice(rest);
+        self.buf = out;
+    }
+
     #[must_use]
     pub fn len(&self) -> usize {
         self.buf.len()
