@@ -90,6 +90,7 @@ user_guide:
   - section: "Background"
     contents:
       - compatibility.qmd
+      - security.qmd
       - performance.qmd
       - migrating.qmd
 
