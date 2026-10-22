@@ -105,18 +105,62 @@ async def detail(number):
     return {'episode': episode}
 ```
 
+- **Litestar:** `chameleon_rs.litestar.ChameleonEngine` is Litestar's own template engine
+  interface (`TemplateConfig(engine=ChameleonEngine, directory='templates')`): templates get
+  Litestar's context (`request`, `csrf_input`) and template callables (`url_for`,
+  `csrf_token`, anything registered with `register_template_callable`), and a missing name, or
+  one reaching outside the folder, raises Litestar's `TemplateNotFoundException`. Return
+  `chameleon_rs.litestar.Template`, not `litestar.response.Template`: Litestar guesses the
+  media type from the file name and serves `.pt` as `text/plain`, this subclass serves it as
+  `text/html` (an explicit `media_type` still wins). Litestar renders these templates
+  synchronously, on the event loop. The same module has the decorator API of the other
+  modules (`configure`, `@template`, `render`, `response`, `not_found`, `error`,
+  `check_views`, ...), where an `async def` handler renders with `render_async`. The
+  third-party [litestar-chameleon](https://github.com/uyar/litestar-chameleon) also runs
+  unchanged on chameleon-rs through `compat.install()`.
+
+```python
+from litestar import Litestar, get
+from litestar.template import TemplateConfig
+import chameleon_rs.litestar as chameleon_litestar
+from chameleon_rs.litestar import ChameleonEngine, Template
+
+@get('/')
+async def index() -> Template:                           # Litestar's templating...
+    return Template('home/index.pt', context={'title': 'Home'})
+
+@get('/episodes/{number:int}')                           # ...or the route decorator first...
+@chameleon_litestar.template('episodes/detail.pt')       # ...then @template
+async def detail(number: int) -> dict:
+    episode = await db.episode(number)
+    if episode is None:
+        chameleon_litestar.not_found()
+    return {'episode': episode}
+
+app = Litestar([index, detail], template_config=TemplateConfig(engine=ChameleonEngine, directory='templates'))
+chameleon_litestar.configure(template_folder='templates', app=app)
+```
+
+A decorated handler keeps its parameters (dependency injection, validation and OpenAPI work
+as without `@template`); its return annotation becomes `litestar.Response`, so Litestar does
+not serialise the model as JSON, and its template also gets `request`, `url_for` and the CSRF
+helpers. With no `status_code=`, the page has the route's status (201 for `@post`).
+
 **Template names come from your code.** Names given to `@template`, `render()`,
 `response()`, the error pages, Robyn's `ChameleonTemplate` and `render_partial()` are looked up
 as chameleon-flask, fastapi-chameleon, chameleon-robyn and chameleon_partials look them up (`..` and absolute paths work): never
-build one from request data. `chameleon_rs.starlette.Templates`, the Jinja drop-in, refuses
-names that reach outside its folder, as Jinja does.
+build one from request data. `chameleon_rs.starlette.Templates`, the Jinja drop-in, and
+`chameleon_rs.litestar.ChameleonEngine` refuse names that reach outside their folder, as Jinja
+does.
 
 **Decorator order.** `@template` goes *below* the route decorator (`@app.get`, `@router.get`,
 `@app.route`, `@blueprint.get`). Written above it, the router registers the bare view, the
 template never renders and the route quietly returns JSON. An app given to `configure(...,
 app=app)` (or `global_init(..., app=app)`) checks this when it starts (FastAPI and Quart: at
-startup; Robyn: in `app.start()` and when its test client is built; Flask, which has no
-startup hook: before its first request) and raises
+startup; Robyn: in `app.start()` and when its test client is built; Litestar: in an
+`on_startup` hook, and `@template` written above `@get` fails at import, since it is handed
+Litestar's route handler; Flask, which has no startup hook: before its first request) and
+raises
 `chameleon_rs.web.DecoratorOrderError` naming the view and the fix; `check_views(app)` runs the
 same check on demand. One pattern looks the same as the mistake: a function routed raw on this
 app whose `@template` wrapper is used elsewhere (called from another view, or routed on another
@@ -150,9 +194,9 @@ html = await page.render_async(episodes=latest_episodes(), user=user)
   fixture and the render fuzzers).
 - Async iterables in `tal:repeat` are not supported (as in a sync render, they are not
   iterable): collect them first, `[x async for x in source]` in an async helper.
-- `chameleon_rs.flask`, `chameleon_rs.fastapi`, `chameleon_rs.starlette` and
-  `chameleon_rs.robyn`: async views (Flask's async views, Quart, FastAPI, Starlette, Robyn)
-  render with `render_async`; `render_async()`
+- `chameleon_rs.flask`, `chameleon_rs.fastapi`, `chameleon_rs.starlette`,
+  `chameleon_rs.robyn` and `chameleon_rs.litestar`: async views (Flask's async views, Quart,
+  FastAPI, Starlette, Robyn, Litestar) render with `render_async`; `render_async()`
   and `response_async()` are the coroutine versions of `render()` and `response()`, and
   Starlette's `Templates.TemplateResponse_async()` of `TemplateResponse()`. This also applies through `compat.install()`, and it is a
   difference from chameleon-flask: a model value that is awaitable (a coroutine, task or
@@ -165,7 +209,7 @@ Opt-in concurrency (it changes the order in which helpers run):
 
 - `@chameleon_rs.concurrent` on an async helper: its calls written as `${...}` are awaited
   concurrently with the rest of the page, each result filled in at the end.
-- `PageTemplate(..., concurrent=True)` (or `@template(..., concurrent=True)` in Flask, FastAPI, Starlette and Robyn):
+- `PageTemplate(..., concurrent=True)` (or `@template(..., concurrent=True)` in Flask, FastAPI, Starlette, Robyn and Litestar):
   `render_partial(...)` calls of the page whose arguments are awaitable render concurrently.
 
 Experimental: `render_async(..., offload=True)` (or `@template(..., offload=True)`) renders in a

@@ -48,7 +48,7 @@ Open questions:
 - Do settings apply per loader or process-wide? chameleon_partials is process-wide and
   unlocked, which isn't a good fit for free-threaded Python.
 
-## 2. Built-in framework integrations: Flask/Quart, FastAPI and Robyn
+## 2. Built-in framework integrations: Flask/Quart, FastAPI, Starlette, Robyn and Litestar
 
 > **Status (2026-10-22):** Flask/Quart built (Phase 9, `chameleon_rs.flask`, per the table
 > below; `render_async`/`response_async` and `render_async` for async views in Phase 11).
@@ -59,7 +59,10 @@ Open questions:
 > module API, sharing its Starlette pieces with `chameleon_rs.fastapi`. Robyn built
 > ("Integrations: Robyn" in plan.md): `chameleon_rs.robyn` with chameleon-robyn's API, its
 > suite passing on the built-in, the decorator-order check in `app.start()` and Robyn's test
-> client. Litestar remains a vision item with the same API.
+> client. Litestar built ("Integrations: Litestar" in plan.md): `chameleon_rs.litestar` with
+> `ChameleonEngine` (Litestar's `TemplateEngineProtocol`), a `Template` response serving `.pt`
+> as text/html, and the same module API; litestar-chameleon's suite runs on the compat alias.
+> **The planned integrations are complete** (Flask/Quart, FastAPI, Starlette, Robyn, Litestar).
 >
 > Decided by Michael (2026-10-22):
 > - **No extras.** No `pip install chameleon-rs[fastapi]`: each framework module imports its

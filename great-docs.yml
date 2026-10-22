@@ -83,6 +83,7 @@ user_guide:
       - fastapi.qmd
       - starlette.qmd
       - robyn.qmd
+      - litestar.qmd
   - section: "Background"
     contents:
       - compatibility.qmd
@@ -112,8 +113,9 @@ skill:
     - "To switch an existing app, add `import chameleon_rs.compat; chameleon_rs.compat.install()` as the first lines of the entry point, and leave the rest of the code unchanged."
     - "Prefer ${render_partial('shared/card.pt', item=item)} as a whole expression: it renders as a native frame of the page, with no Python call."
     - "Build template folder paths with (Path(__file__).parent / 'templates').as_posix()."
-    - "In tests, reset with chameleon_rs.partials.clear() (or chameleon_rs.flask.clear(), chameleon_rs.fastapi.clear(), chameleon_rs.starlette.clear(), chameleon_rs.robyn.clear()) between configurations."
-    - "Put @template below the route decorator (@app.get, @router.get, @app.route); pass app= to configure() so a misordered view fails at startup with DecoratorOrderError."
+    - "In tests, reset with chameleon_rs.partials.clear() (or chameleon_rs.flask.clear(), chameleon_rs.fastapi.clear(), chameleon_rs.starlette.clear(), chameleon_rs.robyn.clear(), chameleon_rs.litestar.clear()) between configurations."
+    - "Put @template below the route decorator (@app.get, @router.get, @app.route, Litestar's @get); pass app= to configure() so a misordered view fails at startup with DecoratorOrderError."
+    - "With Litestar, return chameleon_rs.litestar.Template (not litestar.response.Template) for .pt templates: Litestar guesses the media type from the suffix and serves .pt as text/plain."
   decision_table:
     - need: "Run an existing Chameleon app on chameleon-rs with no code changes"
       use: "chameleon_rs.compat.install() at the top of the entry point"
@@ -133,6 +135,10 @@ skill:
       use: "chameleon_rs.starlette.Templates(directory=folder); await templates.TemplateResponse_async(request, 'page.pt', context) in async endpoints"
     - need: "Render Chameleon templates from Robyn handlers"
       use: "chameleon_rs.robyn: configure(folder, app=app), then @template('page.pt') below @app.get (Robyn has wheels for Python 3.10-3.14)"
+    - need: "Use Chameleon templates as Litestar's template engine"
+      use: "TemplateConfig(engine=chameleon_rs.litestar.ChameleonEngine, directory=folder); return chameleon_rs.litestar.Template('page.pt', context=...) (served as text/html; renders synchronously)"
+    - need: "Render Chameleon templates from async Litestar handlers without blocking the loop"
+      use: "chameleon_rs.litestar: configure(folder, app=app), then @template('page.pt') below @get"
 
 # Umami analytics. Needs this site's own website id (the partials site has its own):
 # include_in_header:
@@ -153,7 +159,7 @@ reference:
   desc: >-
     The public API of chameleon-rs. It mirrors Chameleon's (PageTemplate,
     PageTemplateFile, PageTemplateLoader, ...), plus built-in partials, process-wide
-    configuration and the Flask/Quart, FastAPI, Starlette and Robyn integrations.
+    configuration and the Flask/Quart, FastAPI, Starlette, Robyn and Litestar integrations.
   sections:
     - title: Templates
       desc: "Compile and render templates from strings, files and folders."
@@ -237,6 +243,24 @@ reference:
         - robyn.clear
         - robyn.check_views
         - robyn.ChameleonTemplate
+    - title: Litestar
+      desc: "Litestar's template engine interface for chameleon-rs, and the decorator API. Imports Litestar only when imported itself."
+      contents:
+        - litestar.ChameleonEngine
+        - litestar.ChameleonTemplate
+        - litestar.Template
+        - litestar.configure
+        - litestar.global_init
+        - litestar.template
+        - litestar.render
+        - litestar.render_async
+        - litestar.response
+        - litestar.response_async
+        - litestar.not_found
+        - litestar.error
+        - litestar.generic_error
+        - litestar.clear
+        - litestar.check_views
     - title: Errors and web helpers
       desc: "Exceptions, and the pieces shared by the framework integrations."
       contents:
