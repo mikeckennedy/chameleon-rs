@@ -331,7 +331,9 @@ pub(crate) fn partial_step(
     };
     *cx.render.partials.pending.borrow_mut() =
         Some(Unit { serial: 0, target, scope, initial, added, rcontext: OnceCell::new() });
-    cx.render.defer_next.set(awaits);
+    if awaits {
+        cx.render.defer_next.set(true);
+    }
     Ok(Step::Call(call))
 }
 

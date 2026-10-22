@@ -142,3 +142,62 @@ def test_many_threads_render_nested_partials(tmp_path: Path, configured: Path) -
         results = list(pool.map(render, range(3000)))
     for n, out in results:
         assert out == expected(n), n
+
+
+def test_many_threads_render_async_on_their_own_loops(tmp_path: Path, configured: Path) -> None:
+    # Phase 11 (D9): threads each running an event loop with many concurrent `render_async`
+    # calls of the same templates (macros, slots, translations, native partials suspending,
+    # errors caught after a suspension, opt-in partial fan-out and @concurrent values), while
+    # other threads render the same templates synchronously. On a free-threaded build this is
+    # the stress suite (run it with `-W error::RuntimeWarning`).
+    import asyncio
+
+    (tmp_path / 'card.pt').write_text('<div tal:define="d data">${d}:${aw(n)}${1 // (n % 7)}</div>')
+    layout = chameleon_rs.PageTemplate(LAYOUT + ITEMS)
+    body = (
+        PAGE.replace('Page ${n}', 'Page ${aw(n)}')
+        .replace('${i}</b>', '${aw(i)}</b>')
+        .replace(
+            '</div></html>',
+            '<p tal:on-error="string:E">${render_partial("card.pt", n=n, data=aw(n), aw=aw)}</p>'
+            '${late(n)}</div></html>',
+        )
+    )
+    page = chameleon_rs.PageTemplate(body)
+    fanned = chameleon_rs.PageTemplate(body, concurrent=True)
+
+    def translate(msgid: str, **kw: object) -> str:
+        return f'<{msgid}|{kw.get("domain")}>'
+
+    def sync_aw(v: object) -> object:
+        return v
+
+    expected = {n: page(layout=layout, n=n, translate=translate, aw=sync_aw, late=sync_aw) for n in range(8)}
+    assert '<p>E</p>' in expected[0] and '[<b>2</b>]' in expected[3]
+
+    async def aw(v: object) -> object:
+        await asyncio.sleep(0)
+        return v
+
+    late = chameleon_rs.concurrent(aw)
+
+    async def many(start: int) -> list[tuple[int, str]]:
+        async def one(n: int) -> tuple[int, str]:
+            template = fanned if n % 2 else page
+            return n, await template.render_async(layout=layout, n=n % 8, translate=translate, aw=aw, late=late)
+
+        return await asyncio.gather(*(one(n) for n in range(start, start + 50)))
+
+    def in_thread(start: int) -> list[tuple[int, str]]:
+        if start % 3 == 0:
+            return [
+                (n, page(layout=layout, n=n % 8, translate=translate, aw=sync_aw, late=sync_aw))
+                for n in range(start, start + 50)
+            ]
+        return asyncio.run(many(start))
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        results = [r for chunk in pool.map(in_thread, range(0, 50 * 96, 50)) for r in chunk]
+    assert len(results) == 50 * 96
+    for n, out in results:
+        assert out == expected[n % 8], n

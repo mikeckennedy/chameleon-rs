@@ -413,7 +413,7 @@ impl Running {
         let program = self.program.bind(py).clone();
         let scope = self.scope.bind(py).clone();
         let result = catch_panics(py, || {
-            let mut rt = PyRuntime::new(&render, program.clone(), scope.clone());
+            let mut rt = PyRuntime::<true>::new(&render, program.clone(), scope.clone());
             let done = match error {
                 Some(e) => throw(&mut self.st, &mut rt, e),
                 None => run(&mut self.st, &mut rt),
@@ -441,10 +441,11 @@ impl Running {
 }
 
 impl Drop for Running {
-    /// A render dropped before it ended leaves no task running.
+    /// A render dropped before it ended leaves no task running (not attempted while the
+    /// interpreter shuts down).
     fn drop(&mut self) {
         if self.has_deferred() {
-            Python::attach(|py| self.cancel_deferred(py));
+            Python::try_attach(|py| self.cancel_deferred(py));
         }
     }
 }

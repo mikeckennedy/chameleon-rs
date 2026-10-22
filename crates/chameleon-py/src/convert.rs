@@ -386,11 +386,30 @@ fn write_raw(s: &Bound<'_, PyString>, out: &mut Output) -> PyResult<()> {
     write_str(s, Escape::Structure, out)
 }
 
+/// Strings at least this long (bytes of UTF-8) are escaped or copied with the thread detached
+/// from the interpreter (the GIL released on a GIL build). Below it, detaching and attaching
+/// again costs more than the copy.
+const DETACH_AT: usize = 64 * 1024;
+
+/// A long stretch of pure-Rust work (Phase 11's offload experiment): escaped with the thread
+/// detached, so other threads (the event loop, other renders) run meanwhile. The `str` is
+/// immutable and the render holds a reference, so its UTF-8 buffer stays valid. Out of line:
+/// the usual path stays as it was.
+#[cold]
+#[inline(never)]
+fn escape_detached(py: Python<'_>, text: &str, esc: Escape, out: &mut Output) {
+    py.detach(|| escape_into(text.as_bytes(), esc, out));
+}
+
 /// Writes a `str` through its UTF-8 view; a string with lone surrogates (which has none) is
 /// encoded with `surrogatepass` and the output flagged (D6).
 pub(crate) fn write_str(s: &Bound<'_, PyString>, esc: Escape, out: &mut Output) -> PyResult<()> {
     if let Ok(text) = s.to_str() {
-        escape_into(text.as_bytes(), esc, out);
+        if text.len() >= DETACH_AT {
+            escape_detached(s.py(), text, esc, out);
+        } else {
+            escape_into(text.as_bytes(), esc, out);
+        }
         return Ok(());
     }
     let py = s.py();

@@ -1912,10 +1912,35 @@ fn deep<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, depth: usize) -> Resul
     Ok(!too_deep)
 }
 
+/// An emitted value the render would suspend on: written as a placeholder if the output is
+/// final and the runtime defers it (opt-in concurrency; `None`), else given back to suspend on.
+/// Out of line, so the instruction loop stays as it was.
+#[cold]
+#[inline(never)]
+fn defer_emitted<R: Runtime>(
+    st: &mut VmState<Val<R>>,
+    rt: &mut R,
+    value: Val<R>,
+    esc: Escape,
+    stage: Stage,
+) -> Result<Option<Val<R>>, VmError<Err<R>>> {
+    if !st.can_defer() {
+        return Ok(Some(value));
+    }
+    match rt.defer_value(value, esc, stage, ErrorSite::unpack(st.recent)).map_err(VmError::Runtime)? {
+        Ok(placeholder) => {
+            st.out.push(&placeholder);
+            Ok(None)
+        }
+        Err(value) => Ok(Some(value)),
+    }
+}
+
 /// A native partial started as a render of its own (opt-in concurrency): its placeholder
 /// is written where its output goes, and the caller continues. False if the runtime runs it
 /// in a frame after all.
 #[cold]
+#[inline(never)]
 fn defer_partial<R: Runtime>(
     st: &mut VmState<Val<R>>,
     rt: &mut R,
@@ -2168,17 +2193,13 @@ fn execute<R: Runtime>(
             Op::Emit { expr, esc, stage } => {
                 let value = match value_of(st, rt, expr, true)? {
                     Step::Ready(v) => v,
-                    Step::Suspend(v) if st.can_defer() => {
-                        match rt.defer_value(v, esc, stage, ErrorSite::unpack(st.recent)).map_err(rt_err)? {
-                            Ok(placeholder) => {
-                                st.out.push(&placeholder);
-                                *pc += 1;
-                                continue;
-                            }
-                            Err(v) => return Ok(Action::Suspend(v, *pc as u32)),
+                    Step::Suspend(v) => match defer_emitted(st, rt, v, esc, stage)? {
+                        None => {
+                            *pc += 1;
+                            continue;
                         }
-                    }
-                    Step::Suspend(v) => return Ok(Action::Suspend(v, *pc as u32)),
+                        Some(v) => return Ok(Action::Suspend(v, *pc as u32)),
+                    },
                     Step::Call(call) => return Ok(Action::Partial(call, *pc as u32 + 1, OnReturn::Nothing)),
                 };
                 rt.emit(value, esc, stage, &mut st.out).map_err(rt_err)?;

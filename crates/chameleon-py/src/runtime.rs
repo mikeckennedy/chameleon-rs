@@ -29,9 +29,10 @@ use crate::scope::Scope;
 static ERROR_INFO: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static DEQUE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-/// Rebuilt for every render (and, once async lands, every resume): it holds `Bound`
-/// references, the VM state holds only `Py`.
-pub(crate) struct PyRuntime<'a, 'py> {
+/// Rebuilt for every render (and every resume of an asynchronous one): it holds `Bound`
+/// references, the VM state holds only `Py`. `ASYNC`: an asynchronous render (`render_async`,
+/// D9), a separate instantiation of the VM, so the synchronous one has no async code at all.
+pub(crate) struct PyRuntime<'a, 'py, const ASYNC: bool = false> {
     py: Python<'py>,
     render: &'a RenderCtx<'py>,
     code: Bound<'py, Program>,
@@ -39,7 +40,7 @@ pub(crate) struct PyRuntime<'a, 'py> {
     frame: FrameCx<'py>,
 }
 
-impl<'a, 'py> PyRuntime<'a, 'py> {
+impl<'a, 'py, const ASYNC: bool> PyRuntime<'a, 'py, ASYNC> {
     pub(crate) fn new(render: &'a RenderCtx<'py>, code: Bound<'py, Program>, scope: Bound<'py, Scope>) -> Self {
         let py = code.py();
         let frame = FrameCx::new(None, 0, py.None().into_bound(py), render.marker.clone());
@@ -154,7 +155,7 @@ impl<'a, 'py> PyRuntime<'a, 'py> {
     }
 }
 
-impl Values for PyRuntime<'_, '_> {
+impl<const ASYNC: bool> Values for PyRuntime<'_, '_, ASYNC> {
     type Value = Py<PyAny>;
     type Error = PyErr;
 
@@ -163,7 +164,7 @@ impl Values for PyRuntime<'_, '_> {
     }
 }
 
-impl Eval for PyRuntime<'_, '_> {
+impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
     /// A frame's code is its `Program`, or for a macro of another template the `Macro`
     /// (which carries that template's builtins).
     #[inline]
@@ -219,7 +220,7 @@ impl Eval for PyRuntime<'_, '_> {
             self.render.nested.set((0, 0));
         }
         let e = &site.expr;
-        if self.render.awaits {
+        if ASYNC {
             return self.eval_async(e, emitted);
         }
         if emitted { eval_emitted(e, &self.cx()) } else { Ok(Step::Ready(eval(e, &self.cx())?.unbind())) }
@@ -254,12 +255,11 @@ impl Eval for PyRuntime<'_, '_> {
 
     #[inline]
     fn wants_defer(&mut self) -> bool {
-        self.render.defer_next.get()
+        ASYNC && self.render.defer_next.replace(false)
     }
 
     /// The pending partial as a render of its own, in a task (`crate::deferred`).
     fn defer_partial(&mut self) -> PyResult<Option<Vec<u8>>> {
-        self.render.defer_next.set(false);
         let py = self.py;
         let Some(event_loop) = crate::deferred::running_loop(py) else { return Ok(None) };
         let Some(pending) = self.render.partials.take_pending() else { return Ok(None) };
@@ -308,7 +308,7 @@ impl Eval for PyRuntime<'_, '_> {
     }
 }
 
-impl Names for PyRuntime<'_, '_> {
+impl<const ASYNC: bool> Names for PyRuntime<'_, '_, ASYNC> {
     fn lookup(&mut self, name: NameId) -> PyResult<Option<Py<PyAny>>> {
         let key = self.name(name)?.bind(self.py);
         Ok(Scope::lookup(&self.scope, key.as_any())?.map(Bound::unbind))
@@ -356,7 +356,7 @@ impl Names for PyRuntime<'_, '_> {
     }
 }
 
-impl Loops for PyRuntime<'_, '_> {
+impl<const ASYNC: bool> Loops for PyRuntime<'_, '_, ASYNC> {
     /// `__iterator, INDEX = getname('repeat')(key, iterable)`: whatever `repeat` is bound to,
     /// called with the name (or a tuple of names), its result unpacked like a Python
     /// assignment. The loop iterates `iter(__iterator)` (any iterable works, as in a `for`);
@@ -429,7 +429,7 @@ impl Loops for PyRuntime<'_, '_> {
     }
 }
 
-impl Errors for PyRuntime<'_, '_> {
+impl<const ASYNC: bool> Errors for PyRuntime<'_, '_, ASYNC> {
     fn is_catchable(&mut self, error: &PyErr) -> bool {
         error.is_instance_of::<PyException>(self.py)
     }
@@ -470,7 +470,7 @@ impl Errors for PyRuntime<'_, '_> {
     /// formatted error would be a `RenderError`, an `Exception` that `tal:on-error` catches.
     fn partial_failed(&mut self, error: PyErr) -> PyErr {
         match self.render.partials.left() {
-            Some(_) if self.render.awaits && !error.is_instance_of::<PyException>(self.py) => error,
+            Some(_) if ASYNC && !error.is_instance_of::<PyException>(self.py) => error,
             Some(unit) => crate::partials::partial_error(&unit, error),
             None => error,
         }
@@ -490,7 +490,7 @@ impl Errors for PyRuntime<'_, '_> {
     /// its budget is the recursion limit less a fixed reserve instead.
     fn frame_budget(&mut self) -> usize {
         let py = self.py;
-        if self.render.awaits {
+        if ASYNC {
             return crate::awaitable::async_frame_budget(py);
         }
         let measure = || -> PyResult<usize> {
@@ -508,7 +508,7 @@ impl Errors for PyRuntime<'_, '_> {
     }
 }
 
-impl Attrs for PyRuntime<'_, '_> {
+impl<const ASYNC: bool> Attrs for PyRuntime<'_, '_, ASYNC> {
     /// `name in __chain(dict)`: iterate and compare with `==`, as `in` on an iterator does.
     fn yields_name(&mut self, container: &Py<PyAny>, name: &str) -> PyResult<bool> {
         let py = self.py;
@@ -581,7 +581,7 @@ impl Attrs for PyRuntime<'_, '_> {
     }
 }
 
-impl PyRuntime<'_, '_> {
+impl<const ASYNC: bool> PyRuntime<'_, '_, ASYNC> {
     /// `target[a], target[b] = item` (or `target[a] = item`).
     fn assign_into(&self, names: &[NameId], item: &Bound<'_, PyAny>, target: &Bound<'_, PyAny>) -> PyResult<()> {
         let py = self.py;
@@ -676,7 +676,7 @@ fn unpack<'py>(item: &Bound<'py, PyAny>, n: usize) -> PyResult<Vec<Bound<'py, Py
     Ok(values)
 }
 
-impl Macros for PyRuntime<'_, '_> {
+impl<const ASYNC: bool> Macros for PyRuntime<'_, '_, ASYNC> {
     /// `__m = __macro.include; __m(__stream, econtext.copy(), rcontext, __i18n_domain,
     /// __i18n_context, target_language)`: a `Macro` of ours runs as a frame; anything else is
     /// called with a fresh stream.
@@ -771,7 +771,7 @@ impl Macros for PyRuntime<'_, '_> {
     }
 }
 
-impl Translate for PyRuntime<'_, '_> {
+impl<const ASYNC: bool> Translate for PyRuntime<'_, '_, ASYNC> {
     fn i18n_changed(&mut self, i18n: &I18n<Py<PyAny>>) -> PyResult<()> {
         self.set_i18n(i18n)
     }

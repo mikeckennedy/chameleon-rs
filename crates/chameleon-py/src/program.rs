@@ -418,7 +418,7 @@ fn render_in<'py>(
             scope.clone().into_any().unbind(),
             target_language,
         );
-        let mut rt = PyRuntime::new(&render, slf.clone(), scope.clone());
+        let mut rt = PyRuntime::<false>::new(&render, slf.clone(), scope.clone());
         match run(&mut st, &mut rt) {
             Ok(Done::Finished) => {}
             Ok(Done::Suspended(_)) => return Err(internal_error(py, "a synchronous render suspended")),

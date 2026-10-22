@@ -492,6 +492,37 @@ def test_await_returning_a_non_iterator_is_a_type_error() -> None:
     assert run(page.render_async(bad=Bad())) == "<p>__await__() returned non-iterator of type 'int'</p>"
 
 
+def test_async_iterables_in_repeat_are_not_supported() -> None:
+    # Decided in Phase 11: as in a sync render, an async iterable is not iterable (collect it
+    # in an async helper first); an awaitable that returns a list is fine.
+    async def numbers() -> Any:
+        for i in range(3):
+            yield i
+
+    async def collect(source: Any) -> list[Any]:
+        return [x async for x in source]
+
+    page = PageTemplate('<p tal:on-error="error.type.__name__"><i tal:repeat="x xs">${x}</i></p>')
+    assert run(page.render_async(xs=numbers())) == '<p>TypeError</p>'
+    assert run(page.render_async(xs=collect(numbers()))) == '<p><i>0</i>\n<i>1</i>\n<i>2</i></p>'
+
+
+def test_infinite_macro_recursion_is_a_recursion_error() -> None:
+    page = PageTemplate('<p metal:define-macro="m">${aw(1)}<i metal:use-macro="macros[\'m\']"/></p>')
+    with pytest.raises(RecursionError):
+        run(page.render_async(aw=aw))
+
+
+def test_code_blocks_and_globals_across_suspensions() -> None:
+    body = (
+        '<?python a = 1 ?>${aw(a)}<?python b = a + 1 ?>${b}'
+        '<div metal:define-macro="m" tal:define="global g aw(\'G\')">${aw(g)}</div>'
+        "<p metal:use-macro=\"macros['m']\"/>${g}${aw(econtext.get('g'))}"
+    )
+    want = chameleon.PageTemplate(body)(aw=_sync_aw)
+    assert run(PageTemplate(body).render_async(aw=aw)) == want
+
+
 # -- The coroutine protocol --------------------------------------------------------------
 
 
