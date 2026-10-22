@@ -1010,6 +1010,12 @@ pub trait Eval: Values {
     fn truthy(&mut self, value: &Self::Value) -> Result<bool, Self::Error>;
     /// Whether a value is the runtime's `False` object (identity, not truth).
     fn is_false(&mut self, value: &Self::Value) -> bool;
+    /// The frame of a [`Step::Call`] was pushed: a native partial's render starts (its own
+    /// `rcontext`, builtins and defaults, until [`Eval::partial_returned`] or
+    /// [`Errors::partial_failed`]). Not called when the call failed to nest (too deep).
+    fn partial_entered(&mut self) {}
+    /// A native partial's frame returned.
+    fn partial_returned(&mut self) {}
 }
 
 /// Names: backups, binding, restoring.
@@ -1069,6 +1075,12 @@ pub trait Errors: Values {
     /// Not called for a slot's frame, whose function has no such handler.
     fn record_error(&mut self, error: &Self::Error, at: ErrorSite) {
         let _ = (error, at);
+    }
+    /// A native partial's frame ends with `error` (already recorded): its render's handler
+    /// (Chameleon's `BaseTemplate.render` formats the error it raises) returns the error its
+    /// caller sees.
+    fn partial_failed(&mut self, error: Self::Error) -> Self::Error {
+        error
     }
     /// The error for too many nested frames (`RecursionError`).
     fn recursion_error(&mut self) -> Self::Error;
@@ -1196,9 +1208,12 @@ const fn entry_main() -> u32 {
 /// What kind of function a frame runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Kind {
-    /// The main render function, a macro, or a native partial: Chameleon wraps each in a
-    /// handler that records errors in `rcontext['__error__']`.
+    /// The main render function or a macro: Chameleon wraps each in a handler that records
+    /// errors in `rcontext['__error__']`.
     Render,
+    /// A native partial's render function: recorded like [`Kind::Render`], and the end of a
+    /// render of its own (see [`Eval::partial_entered`]).
+    Partial,
     /// A slot body: a closure without such a handler.
     Fill,
 }
@@ -1788,10 +1803,14 @@ pub fn run<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R) -> Result<Done<Val<
             Action::Pop => {
                 let Some(done) = st.frames.last() else { return Err(VmError::Internal("pop without a frame")) };
                 let on_return = done.on_return;
+                let partial = done.kind == Kind::Partial;
                 let fill =
                     if done.kind == Kind::Fill { done.extra.as_ref().map(|e| (e.stream, e.start)) } else { None };
                 st.pop_frame();
                 st.restart_fill();
+                if partial {
+                    rt.partial_returned();
+                }
                 match on_return {
                     OnReturn::Nothing => {}
                     OnReturn::Text(text) => {
@@ -1864,7 +1883,7 @@ fn push_partial<R: Runtime>(
         pc: 0,
         code: call.code,
         scope: call.scope,
-        kind: Kind::Render,
+        kind: Kind::Partial,
         on_return,
         unwind_base: st.unwind.len(),
         recent: 0,
@@ -1874,6 +1893,7 @@ fn push_partial<R: Runtime>(
         depth,
         extra: None,
     });
+    rt.partial_entered();
     Ok(())
 }
 
@@ -2015,10 +2035,14 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
                 }
             }
         }
-        if frame.kind == Kind::Render {
+        let kind = frame.kind;
+        if kind != Kind::Fill {
             rt.record_error(&error, ErrorSite::unpack(st.recent));
         }
         st.pop_frame();
+        if kind == Kind::Partial {
+            error = rt.partial_failed(error);
+        }
         // A call from a slot body failed: as when it returns (see `flush_fill`).
         st.restart_fill();
         let Some(caller) = st.frames.last_mut() else { return Err(VmError::Runtime(error)) };

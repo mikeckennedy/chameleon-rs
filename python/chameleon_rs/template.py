@@ -42,6 +42,7 @@ from chameleon_rs.config import AUTO_RELOAD, CACHE_DIRECTORY, DEBUG_MODE, EAGER_
 from chameleon_rs.exc import ExceptionFormatter, RenderError, TemplateError, UnsupportedError
 from chameleon_rs.i18n import simple_translate
 from chameleon_rs.loader import MemoryLoader, ModuleLoader, TemplateLoader, import_package_resource
+from chameleon_rs.partials import PartialRenderer
 from chameleon_rs.tal import RepeatDict
 from chameleon_rs.tales import (
     ExistsExpr,
@@ -505,10 +506,9 @@ class PageTemplate(BaseTemplate):
 
     Output is of type ``str``. See the module docs for the configuration keywords.
 
-    ``partials`` is a temporary prototype of the built-in ``render_partial`` (D10): a mapping
-    from names to other ``PageTemplate`` objects, which ``render_partial(name, **kwargs)``
-    renders as native frames when no ``render_partial`` is passed to ``render``. Phase 9
-    replaces it with path resolution.
+    Every template has the builtin ``render_partial(path, **kwargs)`` (D10, see
+    ``chameleon_rs.partials``), which a render keyword or ``extra_builtins`` entry of the same
+    name overrides.
     """
 
     expression_types: ClassVar[dict[str, Any]] = {
@@ -549,13 +549,12 @@ class PageTemplate(BaseTemplate):
 
     default_marker: Any = Symbol(DEFAULT_MARKER)
 
-    _partials: Mapping[str, PageTemplate] | None = None
     _defaults_key: tuple[Any, ...] | None = None
     _encoded: tuple[tuple[Any, ...], dict[str, Any]] | None = None
 
-    def __init__(self, body: Any, *, partials: Mapping[str, PageTemplate] | None = None, **config: Any) -> None:
+    def __init__(self, body: Any, **config: Any) -> None:
         self.macros = Macros(self)
-        self._partials = partials
+        self._partial_renderer = PartialRenderer(self)
         super().__init__(body, **config)
 
     def __getitem__(self, name: str) -> Macro:
@@ -568,7 +567,7 @@ class PageTemplate(BaseTemplate):
         return self._builtins()
 
     def _builtins(self) -> dict[str, Any]:
-        return {'template': self, 'macros': self.macros, 'nothing': None}
+        return {'template': self, 'macros': self.macros, 'nothing': None, 'render_partial': self._partial_renderer}
 
     def parse(self, body: str) -> Any:
         raise NotImplementedError('chameleon-rs compiles templates natively; there is no program tree in Python.')
@@ -627,15 +626,6 @@ class PageTemplate(BaseTemplate):
         # context=None, target_language=None)`.
         self.include(*args, **kwargs)
 
-    def _partial_programs(self) -> dict[str, Program] | None:
-        if self._partials is None:
-            return None
-        programs = {}
-        for name, template in self._partials.items():
-            template.cook_check()
-            programs[name] = template._compiled[0]
-        return programs
-
     def _render_defaults(self, encoding: str | None, translate: Callable[..., Any] | None) -> dict[str, Any]:
         if translate is None:
             translate = self.translate
@@ -656,6 +646,12 @@ class PageTemplate(BaseTemplate):
                 if isinstance(msgid, bytes):
                     msgid = bytes.decode(msgid, encoding)
                 return txl(msgid, **kwargs)  # type: ignore[no-any-return]
+
+            if txl is simple_translate:
+                # For a value that is not bytes this is `simple_translate` itself: the native
+                # conversion takes its fast path (chameleon_partials and the integrations
+                # render with `encoding='utf-8'`).
+                translate.__chameleon_rs_simple__ = True  # type: ignore[attr-defined]
 
             def decode(inst: bytes, encoding: str = encoding) -> str:
                 return bytes.decode(inst, encoding, 'ignore')
@@ -810,7 +806,10 @@ class PageTemplateFile(PageTemplate, BaseTemplateFile):
         else:
             paths = list(search_path)
 
-        partials = config.pop('partials', None)
+        # For `render_partial`: partials are looked for on this search path (and siblings are
+        # built with these settings), before this template's own folder.
+        self._partial_paths = list(paths)
+        self._partial_config = dict(config)
 
         def post_init() -> None:
             # If the flag is set (this is the default), prepend the path relative to the
@@ -833,7 +832,6 @@ class PageTemplateFile(PageTemplate, BaseTemplateFile):
 
         super().__init__(
             filename,
-            partials=partials,
             package_name=package_name,
             post_init_hook=post_init,
             **config,

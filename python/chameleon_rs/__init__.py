@@ -4,14 +4,21 @@ chameleon-rs: a Rust implementation of the Chameleon page template engine.
 The public API mirrors `chameleon` (PageTemplate, PageTemplateFile, PageTemplateLoader, ...).
 `chameleon_rs.compat.install()` makes `import chameleon` resolve to this package, so code
 written for Chameleon runs unchanged.
+
+Every template can call `render_partial(path, **kwargs)` (built-in partials, see
+`chameleon_rs.partials`); `chameleon_rs.configure(template_folder=...)` says where templates
+loaded by name live, for partials and for the framework integrations (`chameleon_rs.flask`).
 """
 
 from typing import Any
 
 from chameleon_rs._native import core_version
+from chameleon_rs._settings import configure
 from chameleon_rs.exc import TemplateError
 from chameleon_rs.template import PageTemplate, PageTemplateFile, PageTextTemplate, PageTextTemplateFile
 from chameleon_rs.zpt.loader import TemplateLoader as PageTemplateLoader
+
+from chameleon_rs.partials import render_partial  # isort: skip - after the template classes
 
 
 def __getattr__(name: str) -> Any:
@@ -37,5 +44,7 @@ __all__ = [
     'PageTextTemplateFile',
     'TemplateError',
     '__version__',
+    'configure',
     'core_version',
+    'render_partial',
 ]

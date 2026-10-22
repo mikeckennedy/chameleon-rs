@@ -16,28 +16,24 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'bench'))
 
 from bench_macros import CARDS, TRANSLATED
-from bench_page import CARD, TEMPLATES, make_model
+from bench_page import TEMPLATES, make_model
 from bench_render import make_videos
-from bench_skeleton import LISTING, PARTIAL_LISTING, PARTIALS
+from bench_skeleton import LISTING, PARTIAL_LISTING
 
 ROUNDS = 40
 
 
 def main() -> None:
     videos = make_videos(200)
-    registry: dict[str, chameleon_rs.PageTemplate] = {}
-    for name in PARTIALS:
-        registry[name] = chameleon_rs.PageTemplate((TEMPLATES / name).read_text(), partials=registry)
-    cards: dict[str, chameleon_rs.PageTemplate] = {}
-    cards[CARD] = chameleon_rs.PageTemplate((TEMPLATES / CARD).read_text(), partials=cards)
+    chameleon_rs.configure(template_folder=str(TEMPLATES))
     model = make_model(50)
     renders = [
         (chameleon_rs.PageTemplate(LISTING), {'videos': videos}),
-        (chameleon_rs.PageTemplate(PARTIAL_LISTING, partials=registry), {'videos': videos}),
+        (chameleon_rs.PageTemplate(PARTIAL_LISTING), {'videos': videos}),
         (chameleon_rs.PageTemplate(CARDS), {'videos': videos}),
         (chameleon_rs.PageTemplate(TRANSLATED), {'videos': videos}),
         (chameleon_rs.PageTemplateFile(str(TEMPLATES / 'app' / 'episodes_inline.pt')), model),
-        (chameleon_rs.PageTemplateFile(str(TEMPLATES / 'app' / 'episodes_partials.pt'), partials=cards), model),
+        (chameleon_rs.PageTemplateFile(str(TEMPLATES / 'app' / 'episodes_partials.pt')), model),
         (chameleon_rs.PageTemplateFile(str(TEMPLATES / 'home' / 'listing_inline.pt')), {'videos': videos[:50]}),
     ]
     tiny = chameleon_rs.PageTemplate('<p class="${c}">${x}</p>')

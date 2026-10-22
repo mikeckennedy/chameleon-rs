@@ -42,7 +42,7 @@ pub(crate) struct PyRuntime<'a, 'py> {
 impl<'a, 'py> PyRuntime<'a, 'py> {
     pub(crate) fn new(render: &'a RenderCtx<'py>, code: Bound<'py, Program>, scope: Bound<'py, Scope>) -> Self {
         let py = code.py();
-        let frame = FrameCx::new(None, 0, py.None().into_bound(py));
+        let frame = FrameCx::new(None, 0, py.None().into_bound(py), render.marker.clone());
         Self { py, render, code, scope, frame }
     }
 
@@ -150,6 +150,16 @@ impl Eval for PyRuntime<'_, '_> {
     fn activate(&mut self, frame: Active<'_, Py<PyAny>>) -> PyResult<()> {
         let py = self.py;
         let code = frame.code.bind(py);
+        // The frames of a native partial's render use its unit (builtins, defaults,
+        // `rcontext`); there are none on the stack in most renders.
+        if let Some((unit, target)) = self.render.partials.changed(self.frame.unit) {
+            self.frame.marker = match &target {
+                Some(t) => t.program.get().marker.bind(py).clone(),
+                None => self.render.marker.clone(),
+            };
+            self.frame.unit = unit;
+            self.frame.target = target;
+        }
         if let Ok(program) = code.cast::<Program>() {
             self.code = program.clone();
             if self.frame.builtins.is_some() {
@@ -200,7 +210,7 @@ impl Eval for PyRuntime<'_, '_> {
     }
 
     fn is_default(&mut self, value: &Py<PyAny>) -> bool {
-        value.bind(self.py).is(&self.render.marker)
+        value.bind(self.py).is(self.cx().marker())
     }
 
     fn truthy(&mut self, value: &Py<PyAny>) -> PyResult<bool> {
@@ -209,6 +219,14 @@ impl Eval for PyRuntime<'_, '_> {
 
     fn is_false(&mut self, value: &Py<PyAny>) -> bool {
         value.bind(self.py).is(PyBool::new(self.py, false))
+    }
+
+    fn partial_entered(&mut self) {
+        self.render.partials.entered();
+    }
+
+    fn partial_returned(&mut self) {
+        self.render.partials.left();
     }
 }
 
@@ -228,7 +246,7 @@ impl Names for PyRuntime<'_, '_> {
     fn define(&mut self, names: &[NameId], value: Py<PyAny>, visibility: Visibility) -> PyResult<()> {
         let py = self.py;
         if visibility == Visibility::Global {
-            let rcontext = self.render.rcontext(py);
+            let rcontext = self.cx().rcontext();
             for name in names {
                 rcontext.set_item(self.name(*name)?.bind(py), value.bind(py))?;
             }
@@ -312,7 +330,7 @@ impl Loops for PyRuntime<'_, '_> {
         if visibility == Visibility::Global {
             let item = item.bind(py);
             self.assign_into(names, item, self.scope.as_super().as_any())?;
-            return self.assign_into(names, item, self.render.rcontext(py).as_any());
+            return self.assign_into(names, item, self.cx().rcontext().as_any());
         }
         if let [one] = names {
             return self.scope.as_super().set_item(self.name(*one)?.bind(py), item);
@@ -363,11 +381,18 @@ impl Errors for PyRuntime<'_, '_> {
     }
 
     fn record_error(&mut self, error: &PyErr, at: ErrorSite) {
-        let rcontext = self.render.rcontext(self.py);
+        let rcontext = self.cx().rcontext();
         let program = self.code.get();
         let token = program.token_at(at, self.render.nested.get());
         // A failure to record (an odd `rcontext['__error__']`) must not replace the error.
-        let _ = record_error(self.py, rcontext, program, token, error);
+        let _ = record_error(self.py, &rcontext, program, token, error);
+    }
+
+    fn partial_failed(&mut self, error: PyErr) -> PyErr {
+        match self.render.partials.left() {
+            Some(unit) => crate::partials::partial_error(&unit, error),
+            None => error,
+        }
     }
 
     fn recursion_error(&mut self) -> PyErr {
@@ -463,7 +488,7 @@ impl Attrs for PyRuntime<'_, '_> {
         let py = self.py;
         let other = match switch {
             Some(s) => s.bind(py).clone(),
-            None => self.render.marker.clone(),
+            None => self.cx().marker().clone(),
         };
         Ok(value.bind(py).rich_compare(other, CompareOp::Eq)?.unbind())
     }
@@ -597,7 +622,7 @@ impl Macros for PyRuntime<'_, '_> {
         }
         let (domain, context, target_language) = self.i18n_args();
         let scope = Scope::copy(&self.scope)?.into_any();
-        let rcontext = self.render.rcontext(py).clone().into_any();
+        let rcontext = self.cx().rcontext().clone().into_any();
         self.call_with_stream(&include, vec![scope, rcontext, domain, context, target_language], out)?;
         Ok(MacroStep::Done)
     }
@@ -614,7 +639,7 @@ impl Macros for PyRuntime<'_, '_> {
     /// defined so far, and `__error__` once an error was recorded).
     fn after_macro(&mut self) -> PyResult<()> {
         // Nothing to copy while `rcontext` is empty (or not even made yet).
-        let Some(rcontext) = self.render.rcontext.get() else { return Ok(()) };
+        let Some(rcontext) = self.cx().rcontext_made() else { return Ok(()) };
         if rcontext.is_empty() {
             return Ok(());
         }
@@ -653,7 +678,7 @@ impl Macros for PyRuntime<'_, '_> {
             return Ok(Some(fill.get().fill(py)));
         }
         let scope = Scope::copy(&self.scope)?.into_any();
-        let rcontext = self.render.rcontext(py).clone().into_any();
+        let rcontext = self.cx().rcontext().clone().into_any();
         self.call_with_stream(slot, vec![scope, rcontext], out)?;
         Ok(None)
     }

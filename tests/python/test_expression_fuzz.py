@@ -110,8 +110,17 @@ FUNCTION = re.compile(r'<(function|generator object|coroutine object|bound metho
 def outcome(engine: Any, expression: str, shadow: bool) -> tuple[str, ...]:
     scope = {**SCOPE, **(SHADOWS if shadow else {})}
     result = evaluate(engine, expression, scope)
-    # Functions defined by an expression are named after the enclosing generated code.
-    return tuple(FUNCTION.sub(r'<\1>', part) for part in result)
+    # Functions defined by an expression are named after the enclosing generated code. A repr
+    # iterated character by character (`[q for q in f"{repeat}"]`) is joined back first, so
+    # its address and module name are normalized like any other.
+    return tuple(FUNCTION.sub(r'<\1>', normal(part)) for part in result)
+
+
+def normal(part: str) -> str:
+    if "', '" not in part:
+        return part
+    joined = part.replace("', '", '')
+    return re.sub(r'0x[0-9a-fA-F]+', '0x?', joined).replace('chameleon_rs.', 'chameleon.')
 
 
 @pytest.mark.filterwarnings('ignore::SyntaxWarning')  # `x is 1.5` and the like, from both engines

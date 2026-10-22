@@ -28,7 +28,7 @@ Repository = "https://github.com/mikeckennedy/chameleon-rust"
 [dependency-groups]
 # What the compatibility, differential and benchmark code needs. The reference Chameleon and
 # chameleon_partials are installed editable from pinned clones in temp/ by `make dev`.
-dev = ["maturin>=1.15,<2", "pytest>=9", "hypothesis>=6", "pydantic>=2", "setuptools", "ruff"]
+dev = ["maturin>=1.15,<2", "pytest>=9", "hypothesis>=6", "pydantic>=2", "setuptools", "ruff", "flask[async]>=3", "quart>=0.20"]
 
 [tool.maturin]
 manifest-path = "crates/chameleon-py/Cargo.toml"

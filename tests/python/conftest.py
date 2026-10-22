@@ -7,3 +7,18 @@ import os
 
 for _name in ('CHAMELEON_EAGER', 'CHAMELEON_DEBUG', 'CHAMELEON_CACHE', 'CHAMELEON_RELOAD'):
     os.environ.pop(_name, None)
+
+
+import pytest
+
+
+@pytest.fixture
+def configured(tmp_path):
+    """`tmp_path` as the template folder for `render_partial` (built-in partials resolve against
+    the configured folder, as chameleon_partials does); cleared afterwards."""
+    import chameleon_rs
+    import chameleon_rs._settings
+
+    chameleon_rs.configure(template_folder=str(tmp_path))
+    yield tmp_path
+    chameleon_rs._settings.clear()

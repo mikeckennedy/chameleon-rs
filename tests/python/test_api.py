@@ -742,25 +742,47 @@ def test_compat_install_replaces_stock_chameleon() -> None:
 
 def test_no_runtime_dependencies() -> None:
     # chameleon_rs imports the standard library only (zope.i18n is optional, as in
-    # Chameleon). Every module of the package imports with third-party packages blocked.
+    # Chameleon). Every module of the package imports with third-party packages blocked,
+    # except the framework integrations, which import their framework; and neither
+    # `import chameleon_rs` nor `compat.install()` imports them.
     result = run_python("""
         import importlib, importlib.abc, pkgutil, sys, sysconfig
         stdlib = sysconfig.get_paths()['stdlib']
+        FRAMEWORKS = {'chameleon_rs.flask'}
 
         class Block(importlib.abc.MetaPathFinder):
+            on = True
             def find_spec(self, name, path=None, target=None):
                 top = name.split('.')[0]
-                if top in sys.stdlib_module_names or top == 'chameleon_rs':
+                if not self.on or top in sys.stdlib_module_names or top == 'chameleon_rs':
                     return None
                 raise ImportError(f'not the standard library: {name}')
 
-        sys.meta_path.insert(0, Block())
+        block = Block()
+        sys.meta_path.insert(0, block)
         import chameleon_rs
+        import chameleon_rs.compat
+        chameleon_rs.compat.install()
+        import chameleon_partials
+        assert chameleon_partials is chameleon_rs.partials
         for info in pkgutil.walk_packages(chameleon_rs.__path__, 'chameleon_rs.'):
-            importlib.import_module(info.name)
+            if info.name not in FRAMEWORKS:
+                importlib.import_module(info.name)
+        assert not any(name in sys.modules for name in ('flask', 'werkzeug', 'chameleon_rs.flask')), 'framework imported'
+        try:
+            import chameleon_flask
+        except ImportError as e:
+            print('blocked:', e)
+        sys.modules.pop('chameleon_rs.flask', None)
+        block.on = False
+        for module in FRAMEWORKS:
+            importlib.import_module(module)
+        import chameleon_flask, chameleon_flask.engine
+        from chameleon_flask.exceptions import FlaskChameleonException
+        assert chameleon_flask.engine is chameleon_flask is chameleon_rs.flask
         print('ok')
     """)
-    assert result.stdout == 'ok\n', result.stderr
+    assert result.stdout == 'blocked: not the standard library: flask\nok\n', result.stderr
 
 
 # --- custom types subclassing TalesExpr (z3c.pt's pattern) ----------------------------------

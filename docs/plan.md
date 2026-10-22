@@ -1039,6 +1039,120 @@ Exit gate:
 - The owner's real-app crawl and locust runs are repeated on the built-ins: identical HTML, with
   numbers recorded.
 
+**Results (2026-10-21), on a worktree branch from 435599f; the owner's real-app runs are still
+to do.** Design and exactness arguments: architecture.md, "Phase 9 amendments".
+
+Built:
+- `render_partial` in every template (a template builtin), as a native frame with a *unit* of
+  its own (the partial template's builtins, its `encoding='utf-8'` defaults, a fresh
+  `rcontext`), so globals, error records and formatted error messages are chameleon_partials'
+  (a nested `render`); the full chameleon_partials scope only for partials that can observe it.
+  The core marks partial frames `Kind::Partial` and tells the runtime when they start and end.
+  The `partials=` prototype registry is gone.
+- Resolution: the configured folder, then the caller's search path, then its folder and each one
+  above it; cached per caller; per render, each call site and template is resolved and prepared
+  once (`auto_reload` checks a partial's file once per render). chameleon_partials' own
+  `render_partial` passed in a model also runs natively (through its module state).
+- `chameleon_rs.configure()` (process-wide, immutable settings swapped whole); aliases
+  `register_extensions` and `global_init` with `cache_init`.
+- `chameleon_rs.flask` (Flask and Quart): chameleon-flask's API plus `configure(app=...)`,
+  `error`/`generic_error`, data for `not_found`, `content_type`/`mimetype`, any `Mapping`,
+  dataclass or `model_dump()` model; `chameleon_rs.web` exceptions with the old names as
+  subclasses; Flask imported only by `chameleon_rs.flask`.
+- `compat.install()` maps `chameleon_partials` and (lazily) `chameleon_flask` with its
+  `engine`/`exceptions` submodules; `install(integrations=False)` maps only `chameleon`.
+- Phase 10 carried item: `PageTemplate`'s `encoding` wrapper around `simple_translate` now takes
+  the native conversion fast path (it was a Python call per converted non-string in every
+  chameleon_partials partial and every chameleon-flask page).
+
+Tests: 2,624 pytest passed, 7 skipped, 3 strict xfails; upstream 227 on each engine; 93 + 6
+Rust tests; `make lint` green. New: `test_partials.py` (a 21-case grid against Chameleon +
+chameleon_partials comparing output or whole messages: nested partials, partials in loops,
+attributes, macros, slots, i18n, kwargs shadowing builtins and defaults, `econtext`, globals,
+bytes, errors in partials, nested and caught, missing files; plus resolution order, Markup round
+trip, the compat API, `auto_reload` once per render, recursion, native-frame proof, and the
+original chameleon_partials function routed natively), `test_flask.py` (15 views through
+chameleon-flask and `chameleon_rs.flask` compared: body, status, headers or exception; Flask app,
+async view, Quart, per-app settings, models), a thread stress of nested partials (also run on
+free-threaded 3.14t with the GIL disabled: threads, partials and Flask tests, 65 passed), and the
+no-runtime-dependencies test (Flask is imported by neither `import chameleon_rs` nor
+`compat.install()`). Integration (`make test-integration`, now two passes): originals on the
+compat alias 40/16/39/6; chameleon-flask 16 and chameleon_partials 6 on the built-ins. The
+expression fuzzer's normalization now joins character-split reprs (a found example compared
+an address split into characters).
+
+Speed (release builds; `bench_ab.py 435599f`, 8 interleaved rounds per scenario, three passes,
+load average 5-20 during the passes, ~6 for the skeleton run; Chameleon from the same runs):
+
+| Scenario | 435599f | Phase 9 | Chameleon | Ratio |
+|---|---|---|---|---|
+| Listing, ns per item | 467 | 467 (+1.2, +2.9, -1.1 medians) | 3,061 | 6.6x |
+| Partial listing, ns per item (`bench_skeleton.py`) | 640 (prototype) | 686-692 | 7,205-7,226 | 10.4-10.5x |
+| Macro call filling a slot, ns per item | 740 | 752 (-0.1, -13.8, +11.3) | 5,051 | 6.7x |
+| App page, inline cards, us | 72.7 | 72.7 (+1.1, +0.6, -0.2) | 311 | 4.3x |
+| App report page (1,000-row partial), ms | 1.61 | 1.48 | 4.94 | 3.3x |
+
+- The partial listing is 10.4-10.5x Chameleon + chameleon_partials (gate: 10x); the A/B against
+  the Phase 2 prototype measures **+57 ns per item** (+28 ns per partial call; +49, +59, +57
+  medians), the cost of the real semantics the prototype skipped (the unit, the resolution
+  lookups, the builtin lookup of `render_partial`). The "+12 ns" note from Phase 7 is
+  superseded: the prototype path no longer exists, and this is the new partial path's measured
+  cost. Profiling (`sample`) shows no single hot spot; experiments removing the unit switching
+  and the unit stack recovered 0 and ~5 ns per call.
+- The macro scenario's medians straddle the tolerance (-14 to +11 ns at load 5-20; +5 and +10 in
+  a quieter earlier pass): the frames now check the unit on activation. Re-measure on a quiet
+  machine.
+- The report page is 0.13 ms faster than 435599f: its partial converts numbers, which the
+  `encoding` wrapper sent through Python before.
+
+Owner's app: with `chameleon_rs.compat.install()` called before anything imports Chameleon,
+chameleon_partials or chameleon_flask, nothing else should need to change (`register_extensions`,
+`extend_model`/a model's `render_partial`, `chameleon_flask.global_init`, `@template`,
+`chameleon_flask.engine.render(...)` all map to the built-ins). Optional afterwards: drop
+`render_partial` from models (the builtin is always there) and replace the two setup calls by one
+`chameleon_rs.configure(template_folder=...)`. To keep the original packages instead, use
+`install(integrations=False)`. Still to do: the real-app crawl and locust runs on the built-ins.
+
+Review fixes (2026-10-21, after the Rust Architect's review; each reproduced against the
+originals first, with the review's probes):
+- **Blocker:** the setup calls shared one settings slot, so `register_extensions` made a later
+  `global_init` a no-op (Alpine.js templates with `restricted_namespace=False` failed), a
+  `global_init` swallowed a later `register_extensions`, and `chameleon_flask.render` worked
+  after only `register_extensions`. Each consumer has its own slot again (`partials`, `flask`),
+  each alias sets only its own with its own `cache_init`; `configure()` sets both. Tests for
+  each ordering.
+- `translate=`/`encoding=` keywords now take the Python call (they change chameleon_partials'
+  render; the native frame ignored them). A renderer resolves relative to its own template, so
+  the global `render_partial` passed in a model (`extend_model`) raises `PartialsException` when
+  nothing is registered, as the original.
+- Resolution (owner's decision): the caller-folder search stays the default
+  (`partial_search='caller'`) as a deliberate difference that only turns chameleon_partials'
+  "not found" errors into renders; `configure(partial_search='registered')` gives the original
+  lookup exactly. Tests for both.
+- A partial uses its own `default_marker` (kept in the frame context, set when the unit
+  changes); `HTML` has no `repr` of its own; `PartialRenderer`'s type prints as `function` in
+  error argument lists; siblings with unhashable settings are not cached; `response()` keeps a
+  `mimetype` keyword in the model, as chameleon-flask.
+- The render fuzzer also renders each generated body as a partial (once, and in a loop) against
+  chameleon_partials: 20,000 examples, no differences. The Makefile uses pinned sources fetched as
+  tarballs (no `.git`) as they are.
+
+After the fixes: 2,633 pytest passed, 7 skipped, 3 strict xfails; upstream 227 on each engine;
+`make lint` green; integration 40/16/39/6 on the originals, 16/6 on the built-ins. A/B against
+435599f, release, 8 rounds, each scenario started below load 6: listing -1.6, +4.3, -0.5 ns;
+partial listing +58, +48, +61 ns per item (10.3-10.5x Chameleon + chameleon_partials in the same
+runs; `bench_skeleton.py` 687-689 ns against 7,348-7,377, 10.7x); macro +13.0, +9.9, +5.4 ns,
+over the +5 ns tolerance (it straddled it before the fixes too: -14 to +11): carried.
+
+Carried forward:
+- **Phase 11:** `render_async` for `@template` on async views (they render synchronously now).
+  The partial unit stack lives in the `RenderCtx` as `Bound` references: fine for a synchronous
+  render and for releasing the GIL around one; a render that suspends needs the units in the
+  `VmState` as `Py<...>`.
+- The macro scenario's +5-13 ns against 435599f (frame-context work on activation): find it or
+  accept it.
+- The owner's real-app crawl and locust runs on the built-ins (exit gate item).
+
 ## Phase 10: Performance pass
 
 Profile with `make build-profiling` under py-spy / Instruments. Candidates: interned key

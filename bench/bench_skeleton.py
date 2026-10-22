@@ -5,9 +5,9 @@ and by chameleon_rs, inline and through partials, per item.
 Build first:  make build-release
 Run:          venv/bin/python bench/bench_skeleton.py [--runs 3]
 
-The partial figure is a prototype (no path resolution, loader cache, Markup round trip, or
-`__translate`/`render_partial` in the partial's scope): its ratio to chameleon_partials is a
-lower bound on the real feature's speedup; the gate is the absolute 0.8 µs-per-item budget.
+The partial figure is the built-in `render_partial` (Phase 9: path resolution from the
+configured folder, native frames); the gate is 10x Chameleon + chameleon_partials, timed in
+the same run.
 
 Each figure is the per-item time of one full render of N videos; a run reports the min and
 median of seven timeit repeats, and the script does `--runs` runs. Outputs are asserted
@@ -63,10 +63,8 @@ def main() -> None:
 
     chameleon_partials.register_extensions(str(TEMPLATES), auto_reload=False, cache_init=False)
     ref_partials = chameleon.PageTemplate(PARTIAL_LISTING)
-    registry: dict[str, chameleon_rs.PageTemplate] = {}
-    for name in PARTIALS:
-        registry[name] = chameleon_rs.PageTemplate((TEMPLATES / name).read_text(), partials=registry)
-    rs_partials = chameleon_rs.PageTemplate(PARTIAL_LISTING, partials=registry)
+    chameleon_rs.configure(template_folder=str(TEMPLATES))
+    rs_partials = chameleon_rs.PageTemplate(PARTIAL_LISTING)
 
     def ref_partial_render() -> str:
         return ref_partials(videos=videos, render_partial=chameleon_partials.render_partial)
@@ -77,7 +75,7 @@ def main() -> None:
         ('listing, Chameleon', lambda: ref_listing(videos=videos)),
         ('listing, chameleon_rs', lambda: rs_listing(videos=videos)),
         ('partial listing, Chameleon + chameleon_partials', ref_partial_render),
-        ('partial listing, chameleon_rs native frames (prototype)', lambda: rs_partials(videos=videos)),
+        ('partial listing, chameleon_rs built-in render_partial', lambda: rs_partials(videos=videos)),
     ]
     print(f'Python {sys.version.split()[0]}, n={N}, ns per item (min / median of 7 repeats)')
     for run in range(1, args.runs + 1):

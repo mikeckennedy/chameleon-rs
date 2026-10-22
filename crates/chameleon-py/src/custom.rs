@@ -70,21 +70,20 @@ impl Custom {
 
     pub(crate) fn eval<'py>(&self, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
         let py = cx.scope.py();
-        let rcontext = cx.render.rcontext(py);
+        let rcontext = cx.rcontext();
         let sub = SubEval {
             subs: Arc::clone(&self.subs),
             scope: cx.scope.clone().unbind(),
             rcontext: rcontext.clone().unbind(),
-            marker: cx.render.marker.clone().unbind(),
-            partials: cx.render.partials.as_ref().map(|p| p.clone().unbind()),
-            defaults: cx.render.defaults.as_ref().map(|d| d.clone().unbind()),
+            marker: cx.marker().clone().unbind(),
+            defaults: cx.defaults().map(|d| d.clone().unbind()),
             builtins: cx.builtins().clone().unbind(),
             serial: cx.frame.serial,
             domain: cx.frame.domain.as_ref().map(|d| d.clone().unbind()),
             context: cx.frame.context.as_ref().map(|c| c.clone().unbind()),
             target_language: cx.frame.target_language.clone().unbind(),
         };
-        self.func.bind(py).call1((cx.scope, rcontext, &cx.render.marker, cx.builtins(), sub))
+        self.func.bind(py).call1((cx.scope, rcontext, cx.marker(), cx.builtins(), sub))
     }
 }
 
@@ -95,7 +94,6 @@ pub(crate) struct SubEval {
     scope: Py<Scope>,
     rcontext: Py<PyDict>,
     marker: Py<PyAny>,
-    partials: Option<Py<PyDict>>,
     defaults: Option<Py<PyDict>>,
     builtins: Py<PyDict>,
     serial: u64,
@@ -110,7 +108,6 @@ impl SubEval {
         let sub = self.subs.get(index).ok_or_else(|| PyIndexError::new_err("sub-expression index"))?;
         let render = RenderCtx::new(
             self.marker.bind(py).clone(),
-            self.partials.as_ref().map(|p| p.bind(py).clone()),
             self.defaults.as_ref().map(|d| d.bind(py).clone()),
             self.builtins.bind(py).clone(),
         );
@@ -118,6 +115,9 @@ impl SubEval {
         let scope = self.scope.bind(py);
         let frame = FrameCx {
             builtins: Some(self.builtins.bind(py).clone()),
+            unit: 0,
+            target: None,
+            marker: render.marker.clone(),
             serial: self.serial,
             domain: self.domain.as_ref().map(|d| d.bind(py).clone()),
             context: self.context.as_ref().map(|c| c.bind(py).clone()),
@@ -149,9 +149,6 @@ impl SubEval {
         }
         if let Some(c) = &self.context {
             visit.call(c)?;
-        }
-        if let Some(p) = &self.partials {
-            visit.call(p)?;
         }
         if let Some(d) = &self.defaults {
             visit.call(d)?;
