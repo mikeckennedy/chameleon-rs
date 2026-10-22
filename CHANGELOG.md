@@ -7,6 +7,61 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.1.48] - not yet released
 
+Fixes from a security review of the whole codebase. Each one has a regression test.
+
+### Security
+
+- **`render_partial` could load files outside the template folder.** The search through the
+  calling template's folders went up to the filesystem root, so a name with no `..` (such as
+  `etc/hosts`) could render a system file, and a file planted in any parent folder could be
+  compiled and run as a template. The search now stops at the root of the caller's template
+  tree: the configured folder (for partials or any framework integration), a loader search
+  path, or with nothing configured, a Python package's `templates` folder. Names that leave
+  the configured folder (an absolute path, a `..` out of it, a `package:path` spec) are not
+  found, as in chameleon_partials 0.2.1, which makes the same change.
+- **`markdown:` in an attribute value allowed script injection.** Markdown's own quoted
+  `href="..."` closed the surrounding attribute, so a link in user text could add an event
+  handler. In an attribute value the result is now escaped like any string; element content
+  is unchanged.
+- **Wide Markdown tables took quadratic time**: a 64 KB table of 16,000 columns took 10 s to
+  convert, blocking an event loop for that long. Table cells now render in linear time
+  (0.06 s), with the same output.
+- **Deeply nested templates crashed the process** (a native stack overflow, SIGSEGV) where
+  Chameleon raises `RecursionError`. Compiling now raises `RecursionError` past a 1 MiB stack
+  budget: at least as deep as Chameleon goes at the default recursion limit, and safe on a
+  2 MiB thread.
+- **Render data could replace Python builtins inside `<?python ?>` blocks** (passing
+  `len=...`). Code blocks now call builtins directly, as Chameleon's generated code does.
+- **`chameleon_rs.robyn.ChameleonTemplate` had no path check.** It now refuses names outside
+  its folder, as Robyn's `JinjaTemplate` and the Starlette and Litestar drop-ins do.
+- **One template could fill the template cache many times over**: each spelling of a name
+  (`./big.pt`, `.//big.pt`) compiled and kept its own copy. Every spelling is now one cached
+  template, in partials and in the Jinja-style `get_template` APIs.
+- The Markdown cache counted HTML by its UTF-8 length; a Python `str` with one emoji takes 4
+  bytes a character, so the cache could hold 4 times its byte limit. It now counts the
+  string's real size.
+- Filling the placeholders of `@concurrent` calls was quadratic in their number (160,000
+  calls: 2.2 s). It is now linear (0.3 s).
+
+### Fixed
+
+- An object whose `__html__` attribute is `None` raised `TypeError`; it now falls back to
+  `str()`, as in Chameleon.
+- An unclosed comment with `${...}` ending in multi-byte text raised `InternalError`; comments
+  are sliced by code point, as Chameleon does.
+- In `render_async`, `${structure: coro()}` and `markdown:` of an awaitable wrote the
+  coroutine's `repr` and never ran it. The value is now awaited, then converted.
+
+### Changed
+
+- Flask text responses name their charset (`text/html; charset=utf-8`), as Flask's own
+  `render_template` responses and the other integrations do. chameleon-flask sent the bare
+  type.
+- The user guide has a **Security** page: where escaping stops (attribute names from data,
+  unquoted attributes, CDATA, `<script>`, URLs) and which lookups accept names from requests.
+
+## [0.1.47] - 2026-10-22
+
 The first release of chameleon-rs: a Rust implementation of the
 [Chameleon](https://github.com/malthe/chameleon) page template engine, meant as a drop-in
 replacement. Documentation: <https://mkennedy.codes/docs/chameleon-rs/>.
@@ -24,13 +79,6 @@ replacement. Documentation: <https://mkennedy.codes/docs/chameleon-rs/>.
   renders a sample of production traffic with both engines and reports any difference.
 - **Built-in partials.** `${render_partial('shared/card.pt', item=item)}` works in every
   template and renders natively inside the page; chameleon_partials' API keeps working.
-  Paths not in the configured folder are also looked for next to the calling template and in
-  the folders above it, but never outside its template tree (the configured folder, a loader
-  search path, or a package's `templates` folder). A name that would leave the folder (an
-  absolute path, a `..` out of it, a `package:path` spec) is not found, as in
-  chameleon_partials 0.2.1. `chameleon_rs.robyn.ChameleonTemplate` refuses such names as
-  Robyn's `JinjaTemplate` does. Every spelling of a name (`./a//b.pt`) is one cached template,
-  in partials and in the Jinja-style `get_template` APIs.
 - **`chameleon_rs.configure()`**: one process-wide call for the template folder,
   `auto_reload`, partial lookup (`partial_search`) and Markdown settings, applied on every
   call and thread-safe.
@@ -40,8 +88,7 @@ replacement. Documentation: <https://mkennedy.codes/docs/chameleon-rs/>.
   Opt-in: `@chameleon_rs.concurrent` helpers and `concurrent=True` partial fan-out run
   concurrently; `render_async(..., offload=True)` renders in a worker thread (experimental).
 - **`markdown:` expressions** (opt-in, `configure(markdown=True)`): CommonMark plus the GitHub
-  extensions, converted in Rust, with no Markdown package to install. Raw HTML and unsafe
-  links are escaped by default, and in an attribute value the result is escaped like a string.
+  extensions, converted in Rust, with no Markdown package to install.
 - **Framework integrations**, each importing its framework only when imported itself, with no
   extras to install:
   - `chameleon_rs.flask` (Flask and Quart): chameleon-flask's API.
@@ -74,10 +121,6 @@ replacement. Documentation: <https://mkennedy.codes/docs/chameleon-rs/>.
   macro that a template's new source no longer defines (a reload) still renders its last
   version, which pyramid_chameleon's macro renderer relies on.
 - Every page of two production Flask/Quart sites renders byte-identical HTML.
-- A template nested too deeply to compile (elements, expression prefixes, `string:`, long
-  Python expressions) raises `RecursionError`, as in Chameleon, instead of overflowing the
-  native stack. The limit is a 1 MiB stack budget: at least as deep as Chameleon goes at the
-  default recursion limit, and safe on a 2 MiB thread.
 
 ### Performance
 
