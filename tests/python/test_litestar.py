@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import inspect
+import os
 import sys
 import threading
 import time
@@ -115,6 +116,18 @@ def jinja_folder(tmp_path_factory: pytest.TempPathFactory) -> Path:
     for name, (body, _) in PAGES.items():
         (folder / name).write_text(body)
     return folder
+
+
+def require_litestar_chameleon() -> Any:
+    """litestar-chameleon (installed by `make dev`), or a skip; under `make test`
+    (`CHAMELEON_RS_REQUIRE_LITESTAR_CHAMELEON=1`) its absence fails the test instead."""
+    try:
+        import litestar_chameleon
+    except ImportError:
+        if os.environ.get('CHAMELEON_RS_REQUIRE_LITESTAR_CHAMELEON') == '1':
+            pytest.fail('litestar-chameleon is not installed in this environment: run `make dev`')
+        pytest.skip('litestar-chameleon is not installed')
+    return litestar_chameleon
 
 
 def greet(context: Any, name: str) -> str:
@@ -228,7 +241,7 @@ def test_csrf_token_and_input(folder: Path, jinja_folder: Path) -> None:
 
 
 def test_engine_html_matches_litestar_chameleon_on_stock_chameleon(folder: Path) -> None:
-    litestar_chameleon = pytest.importorskip('litestar_chameleon')
+    litestar_chameleon = require_litestar_chameleon()
     import chameleon
 
     assert not getattr(chameleon, '__name__', '').startswith('chameleon_rs')
@@ -249,7 +262,7 @@ def test_engine_html_matches_litestar_chameleon_on_stock_chameleon(folder: Path)
 
 
 def test_litestar_chameleon_runs_on_chameleon_rs_through_compat(folder: Path) -> None:
-    pytest.importorskip('litestar_chameleon')
+    require_litestar_chameleon()
     result = run_python(f"""
         import sys
         import chameleon_rs, chameleon_rs.compat
@@ -315,8 +328,37 @@ def test_jinja_engine_refuses_parent_names_too(jinja_folder: Path) -> None:
 
 def test_names_inside_the_folder_still_load(folder: Path) -> None:
     engine = ours.ChameleonEngine(folder)
-    for name in ('home/index.pt', './home/index.pt', 'home/./index.pt', ' home/index.pt'):
+    for name in ('home/index.pt', './home/index.pt', 'home/./index.pt'):
         assert engine.get_template(name).render(a=1) == '<h1>Hello 1 -!</h1>'
+
+
+@pytest.mark.parametrize('name', [' home/index.pt', 'home/index.pt ', '\thome/index.pt'])
+def test_names_with_surrounding_whitespace_are_not_found_as_in_jinja(
+    folder: Path, jinja_folder: Path, name: str
+) -> None:
+    # Chameleon's loader strips names; Jinja looks for that exact file, as the engine does.
+    (jinja_folder / 'home').mkdir(exist_ok=True)
+    (jinja_folder / 'home' / 'index.pt').write_text('<h1>{{ a }}</h1>')
+    assert JinjaTemplateEngine(jinja_folder).get_template('home/index.pt')
+    for engine in (JinjaTemplateEngine(jinja_folder), ours.ChameleonEngine(folder)):
+        with pytest.raises(TemplateNotFoundException):
+            engine.get_template(name)
+
+
+def test_the_loaders_own_lookup_decides(folder: Path) -> None:
+    # A loader with a default extension: `home/index` is `home/index.pt`.
+    engine = ours.ChameleonEngine(engine_instance=chameleon_rs.PageTemplateLoader(str(folder), default_extension='.pt'))
+    assert engine.get_template('home/index').render(a=1) == '<h1>Hello 1 -!</h1>'
+    with pytest.raises(TemplateNotFoundException) as info:
+        engine.get_template('home/nope')
+    assert info.value.detail == 'Template home/nope not found.'
+    # Only the lookup's "not found" becomes TemplateNotFoundException: a template that fails to
+    # compile (when it first renders) raises its own error.
+    (folder / 'broken.pt').write_text('<p tal:content="1 +">x</p>')
+    with pytest.raises(Exception) as broken:
+        ours.ChameleonEngine(folder).get_template('broken.pt').render()
+    assert not isinstance(broken.value, TemplateNotFoundException)
+    assert 'Template not found' not in str(broken.value)
 
 
 def test_engine_construction(folder: Path, tmp_path_factory: pytest.TempPathFactory) -> None:
@@ -384,11 +426,46 @@ def test_render_string_caches_and_uses_loader_options(folder: Path) -> None:
         '<p x-on:click="go" @click="go">1</p>'
     )
     engine.render_string('<i>${a}</i>', {'a': 1})
-    first = engine._strings['<i>${a}</i>']
+    first = engine._strings[engine.loader, '<i>${a}</i>']
     engine.render_string('<i>${a}</i>', {'a': 2})
-    assert engine._strings['<i>${a}</i>'] is first
+    assert engine._strings[engine.loader, '<i>${a}</i>'] is first
     for n in range(200):
         engine.render_string(f'<i>{n}</i>', {})
+    assert len(engine._strings) == 128
+
+
+def test_render_string_compiles_with_the_loaders_options(folder: Path) -> None:
+    # Every template option of the loader (here `translate`), as `get_template`'s templates.
+    (folder / 'tr.pt').write_text('<p i18n:translate="">hello</p>')
+    loader = chameleon_rs.PageTemplateLoader(str(folder), translate=lambda msgid, **kw: 'BONJOUR')
+    engine = ours.ChameleonEngine.from_loader(loader)
+    assert engine.get_template('tr.pt').render() == '<p>BONJOUR</p>'
+    assert engine.render_string('<p i18n:translate="">hello</p>', {}) == '<p>BONJOUR</p>'
+
+
+def test_render_string_cache_follows_the_configuration(folder: Path, tmp_path_factory: pytest.TempPathFactory) -> None:
+    engine = ours.ChameleonEngine()
+    assert engine.render_string('<p>${a}</p>', {'a': 1}) == '<p>1</p>'
+    first = engine._strings[engine.loader, '<p>${a}</p>']
+    # A later configure() makes a new loader: the string is compiled again, with its options.
+    chameleon_rs.configure(template_folder=str(tmp_path_factory.mktemp('other')), restricted_namespace=False)
+    assert engine.render_string('<p>${a}</p>', {'a': 2}) == '<p>2</p>'
+    second = engine._strings[engine.loader, '<p>${a}</p>']
+    assert second is not first
+    assert len(engine._strings) == 2
+
+
+def test_render_string_is_thread_safe(folder: Path) -> None:
+    import concurrent.futures
+
+    engine = ours.ChameleonEngine(folder)
+
+    def work(offset: int) -> list[str]:
+        return [engine.render_string(f'<i>${{a}} {n % 150}</i>', {'a': offset}) for n in range(300)]
+
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        results = list(pool.map(work, range(8)))
+    assert results[3][7] == '<i>3 7</i>'
     assert len(engine._strings) == 128
 
 

@@ -233,7 +233,9 @@ class ChameleonEngine(TemplateEngineProtocol[ChameleonTemplate, TemplateContext]
             self._loader = TemplateLoader(search_path, **options)
         # Replaced whole when a callable is registered (templates already handed out keep theirs).
         self.template_callables: Mapping[str, Callable[..., Any]] = dict(_DEFAULT_CALLABLES)
-        self._strings: dict[str, PageTemplate] = {}
+        # Compiled `render_string` templates by (loader, string), guarded by the lock (sync
+        # handlers render in worker threads; free-threaded builds).
+        self._strings: dict[tuple[TemplateLoader | None, str], PageTemplate] = {}
         self._strings_lock = threading.Lock()
 
     @classmethod
@@ -262,29 +264,36 @@ class ChameleonEngine(TemplateEngineProtocol[ChameleonTemplate, TemplateContext]
         package spec), as Litestar's Jinja engine refuses such names."""
         if _views.outside_folder(template_name):
             raise TemplateNotFoundException(template_name=template_name)
-        loader = self.loader
-        spec = template_name.strip()
-        if not any(os.path.isfile(os.path.join(folder, spec)) for folder in loader.search_path):
-            raise TemplateNotFoundException(template_name=template_name)
-        return ChameleonTemplate(loader[spec], self.template_callables)
+        try:
+            page = self.loader[template_name]
+        except ValueError as exc:
+            # Only the loader's own lookup failure (its `default_extension` and search path
+            # applied); other errors pass through.
+            if not _views.is_not_found(exc):
+                raise
+            raise TemplateNotFoundException(template_name=template_name) from None
+        return ChameleonTemplate(page, self.template_callables)
 
     def render_string(self, template_string: str, context: Mapping[str, Any]) -> str:
         """Renders a template given as a string (``Template(template_str=...)``) with
-        ``context`` and the template callables. Compiled templates are kept for reuse (up to
-        128 strings, the oldest dropped first)."""
-        page = self._strings.get(template_string)
-        if page is None:
-            # The loader's `restricted_namespace`, as Jinja's `from_string` uses its environment.
+        ``context`` and the template callables, compiled with the loader's template options
+        (``translate``, ``restricted_namespace``, ...), as Jinja's ``from_string`` uses its
+        environment. Compiled templates are kept for reuse (up to 128, the oldest dropped first),
+        per loader: a later ``configure()`` (a new loader) compiles them afresh."""
+        if self._loader is not None:
+            loader: TemplateLoader | None = self._loader
+        else:
             settings = _settings.views['litestar']
-            loader = self._loader or (settings.loader if settings is not None else None)
-            options = {}
-            if loader is not None and 'restricted_namespace' in loader.kwargs:
-                options['restricted_namespace'] = loader.kwargs['restricted_namespace']
-            page = PageTemplate(template_string, **options)
+            loader = settings.loader if settings is not None else None
+        key = (loader, template_string)
+        with self._strings_lock:
+            page = self._strings.get(key)
+        if page is None:
+            page = PageTemplate(template_string, **(loader.kwargs if loader is not None else {}))
             with self._strings_lock:
-                if len(self._strings) >= 128:
-                    self._strings.pop(next(iter(self._strings)), None)
-                self._strings[template_string] = page
+                while len(self._strings) >= 128:
+                    self._strings.pop(next(iter(self._strings)))
+                self._strings[key] = page
         return page.render(encoding='utf-8', **_variables(context, self.template_callables))
 
     def register_template_callable[**P, T](

@@ -266,10 +266,12 @@ def outside_folder(name: object) -> bool:
     path, a ``..`` segment, a backslash, a drive letter or a package spec (``:``), a NUL. The
     guard of the Jinja-shaped APIs (``chameleon_rs.starlette.Templates``,
     ``chameleon_rs.litestar.ChameleonEngine``); the decorator APIs keep the original
-    libraries' lookup (template names come from code)."""
-    spec = name.strip() if isinstance(name, str) else ''
+    libraries' lookup (template names come from code). Not stripped: a name with surrounding
+    whitespace is refused (Jinja looks for that exact file; Chameleon's loader would strip it)."""
+    spec = name if isinstance(name, str) else ''
     return (
         not spec
+        or spec != spec.strip()
         or spec.startswith('/')
         or os.path.isabs(spec)
         or '\\' in spec
@@ -277,6 +279,12 @@ def outside_folder(name: object) -> bool:
         or '\0' in spec
         or any(piece == '..' for piece in spec.split('/'))
     )
+
+
+def is_not_found(exc: ValueError) -> bool:
+    """Whether ``exc`` is the loader's "no such template" (``chameleon_rs.loader``'s
+    ``Template not found: {spec}.``), not an error from compiling the template."""
+    return type(exc) is ValueError and str(exc).startswith('Template not found: ')
 
 
 def _error_model(page: ErrorPage, extra: Mapping[str, Any] | None) -> Mapping[str, Any]:

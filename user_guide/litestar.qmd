@@ -81,10 +81,13 @@ and MiniJinja engines do:
   `fn(context, ...)` and called `${fn(...)}`. A context key of the same name wins, as over
   Jinja's globals.
 - `Template(template_str='<p>${x}</p>', context=...)` works too (`render_string`); compiled
-  strings are cached.
-- A missing template raises Litestar's `TemplateNotFoundException` (a 500), as for Jinja. So
-  does a name that could reach outside the folder (absolute, a `..` segment, a backslash, a
-  drive letter or a `package:` spec), as Litestar's Jinja engine refuses it.
+  strings are cached. They compile with the loader's template options (`translate`,
+  `restricted_namespace`, ...), as `get_template`'s templates do.
+- A missing template raises Litestar's `TemplateNotFoundException` (a 500), as for Jinja; the
+  loader's own lookup decides (its `default_extension` applies). So does a name that could
+  reach outside the folder (absolute, a `..` segment, a backslash, a drive letter or a
+  `package:` spec) or that has surrounding whitespace (Chameleon's loader would strip it; Jinja
+  looks for that exact file), as Litestar's Jinja engine refuses it.
 - `engine.get_template(name)` returns a `ChameleonTemplate`; its `render(**context)` is what
   Litestar calls, and `await render_async(**context)` is there for code rendering a template
   itself.
@@ -123,6 +126,10 @@ on the `Template` or on the route (`@get(..., media_type=...)`), wins. Litestar'
 `HTMXTemplate` and other `Template` subclasses need `media_type='text/html'` for `.pt` names.
 (Registering the type globally, `mimetypes.add_type('text/html', '.pt')` at startup, also
 works, for every library in the process.)
+
+The response class matters, not only the template: a handler annotated `-> Any` or `-> dict`
+that returns a `Template` is served with `Content-Type: application/json` (the route's media
+type wins; the same with stock Litestar): annotate it `-> Template`.
 
 ### Synchronous rendering
 
@@ -177,14 +184,20 @@ It is the API of the other framework modules:
   auto_reload, cache_init)` configures the handlers only.
 - `@template`, `@template()`, `@template('page.pt', content_type=..., status_code=...)`
   (`mimetype=` works too). Bare, it renders `{module}/{function}.html`, or `.pt`. The handler
-  returns a dict, a mapping, a dataclass or a Pydantic model; a Litestar response (a
-  `Redirect`, a `Template`, ...) passes through. Without `status_code`, the page has the
-  route's status code, as any Litestar response without one: 200, 201 for `@post`, or
-  `@get(..., status_code=...)`.
+  returns a dict, a mapping, a dataclass or a Pydantic model; a `litestar.Response` (a
+  `Redirect`, a `Template`, ...) passes through (an `ASGIResponse` or another ASGI app does
+  not: it is an invalid return). Without `status_code`, the page has the route's status code,
+  as any Litestar response without one: 200, 201 for `@post`, or `@get(..., status_code=...)`.
+  So a `@post` handler that re-renders a form with errors answers 201 unless you say otherwise:
+  give it `@template('form.pt', status_code=200)` (or 400). A `@delete` route defaults to 204,
+  which has no body, and Litestar refuses to start with a handler that returns one: use
+  `@delete(..., status_code=200)`.
 - The template gets what a Litestar template gets: `request`, `csrf_input`, `url_for`,
   `csrf_token` and `url_for_static_asset` (the callables of the app's `ChameleonEngine` if it
-  has one, bound to `request` and `csrf_input`). The model's own keys win. Error pages get them
-  too.
+  has one). Error pages get them too. Two small differences from Litestar's own `Template`
+  response: the model's keys override `request` and `csrf_input` (a `Template` response sets
+  those over its context), and the callables are bound to `{request, csrf_input}`, not to the
+  whole model.
 - Functions and `Controller` methods, sync or async. An `async def` handler renders with
   `render_async` on the event loop: awaitable values are awaited where the template uses them.
   A sync handler renders with `render()` where Litestar runs it: in a worker thread with
@@ -243,7 +256,9 @@ routers and controllers) when it starts, in an `on_startup` hook (Uvicorn and Gr
 failed startup), or before its first request when no lifespan runs, and raises
 `DecoratorOrderError` naming the function, its file and line, and its route. `check_views(app)`
 (an app or a `Router`) runs the check on demand. `check_order=False` and `check_views(app,
-ignore=[...])` are the escape hatch, as for [FastAPI](fastapi.qmd#decorator-order).
+ignore=[...])` are the escape hatch, as for [FastAPI](fastapi.qmd#decorator-order). The check
+runs first among the startup hooks, so routes your own `on_startup` hook registers
+(`app.register(...)`) are not checked: call `check_views(app)` after registering them.
 
 ## litestar-chameleon
 

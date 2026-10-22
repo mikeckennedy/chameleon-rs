@@ -22,10 +22,9 @@ ROBYN_REPO := https://github.com/mikeckennedy/chameleon-robyn
 ROBYN_COMMIT := ab4f6e83f50cf1b6d808645b34ff966a4483c048
 # H. Turgut Uyar's Litestar engine for Chameleon (third party, no built-in replacement): its
 # suite runs on the compat alias only (src/ layout, put on the path: installing it would pull in
-# stock Chameleon).
+# stock Chameleon). The same pinned clone is what `make dev` installs into venv (one pin).
 LITESTAR_CHAMELEON_REPO := https://github.com/uyar/litestar-chameleon
 LITESTAR_CHAMELEON_COMMIT := da0652d3b3b32f42af5ae806242779e8df21ba09
-LITESTAR_CHAMELEON_VERSION := 0.3
 INTEGRATION_PYTHON ?= 3.14
 INTEGRATION_VENV := $(CURDIR)/temp/venv-integration
 INTEGRATION_SUITES := fastapi-chameleon chameleon-flask chameleon-robyn chameleon_partials litestar-chameleon
@@ -46,12 +45,14 @@ ROBYN_VENV := $(CURDIR)/temp/venv-robyn
 .PHONY: dev reference build build-release build-profiling build-pgo test test-rust test-python \
 	test-upstream test-upstream-rust test-robyn integration test-integration lint fmt bench docs docs-serve
 
-dev: reference
+dev: reference temp/litestar-chameleon
 	uv pip install --python $(PY) --group dev --group docs -e temp/chameleon -e temp/chameleon_partials
-	@# litestar-chameleon (test_litestar compares with it) depends on stock Chameleon, which venv
-	@# has (editable, above). Not in the dev group: `maturin develop` installs that group into the
+	@# litestar-chameleon (test_litestar compares with it; `test-python` fails without it) depends
+	@# on stock Chameleon, which venv has (editable, above). From the pinned clone, with
+	@# --no-deps; not in the dev group: `maturin develop` installs that group into the
 	@# integration venv, which must not have stock Chameleon.
-	uv pip install -q --python $(PY) --no-deps litestar-chameleon==$(LITESTAR_CHAMELEON_VERSION)
+	$(call checkout,temp/litestar-chameleon,$(LITESTAR_CHAMELEON_COMMIT))
+	uv pip install -q --python $(PY) --no-deps ./temp/litestar-chameleon
 	uv pip install -q --python $(PY) --only-binary robyn robyn==$(ROBYN_VERSION) \
 		|| echo "robyn has no wheel for this Python: test-robyn runs its tests on $(INTEGRATION_PYTHON)"
 	$(MAKE) temp/robyn-typing build
@@ -128,8 +129,10 @@ test: test-rust test-python test-upstream test-upstream-rust test-robyn
 test-rust:
 	cargo test --workspace
 
+# The litestar-chameleon comparisons skip where it is not installed (a scratch venv), but
+# not here: a venv rebuilt without `make dev` would otherwise skip them silently.
 test-python: build
-	$(PYTEST)
+	CHAMELEON_RS_REQUIRE_LITESTAR_CHAMELEON=1 $(PYTEST)
 
 test-upstream:
 	CHAMELEON_ENGINE=python $(PYTEST) tests/upstream

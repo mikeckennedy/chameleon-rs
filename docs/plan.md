@@ -2154,6 +2154,31 @@ Open for Michael:
 - litestar-chameleon is not mapped by `compat.install()` (third party, different API); its
   users can switch to `ChameleonEngine` with two import changes (migrating guide).
 
+Review fixes (2026-10-22, after the Rust Architect's review: no blockers; the reviewer's probes
+reproduced first):
+- `render_string` compiles with all of the loader's template options (a loader's `translate`
+  was ignored), caches by (loader, string) so a later `configure()` recompiles, and guards the
+  cache with a lock (eight threads x 300 renders in a test).
+- `get_template` lets the loader's lookup decide (a loader with `default_extension='.pt'`
+  found `home/index` but the engine said not found): the guard, then only the loader's
+  "Template not found" `ValueError` becomes `TemplateNotFoundException` (compile errors pass
+  through), with no separate stat.
+- Names with surrounding whitespace are refused by `ChameleonEngine` and Starlette's
+  `Templates`, as Jinja reports them not found (the shared guard stripped them).
+- litestar-chameleon installs into venv from the pinned clone (`--no-deps`; one pin with the
+  integration suite), and `make test-python` sets `CHAMELEON_RS_REQUIRE_LITESTAR_CHAMELEON=1`:
+  its two comparisons fail rather than skip when it is missing (checked in a venv without it).
+- Guide: `@delete` needs `status_code=200` with `@template` (204 has no body); a `@post` form
+  re-render answers 201 unless `status_code=` says otherwise; the decorator path's context
+  precedence vs Litestar's `Template`; a `-> Any` handler returning a `Template` is served as
+  `application/json`; only `litestar.Response` passes through; routes registered inside an
+  `on_startup` hook after the check are not checked.
+- Tests: `test_litestar.py` 51 (+7), `test_starlette.py` +3. Verification: pytest 3,141 passed,
+  5 skipped, 7 xfailed (corpus set); `make test-robyn` 116; upstream 227 + 6 xpassed per engine;
+  Rust 102 + 3 + 9; `make lint` clean (ty 0); integration 40/16/39/6/2 on the originals,
+  40/16/39/6 on the built-ins. A/B against 2d1646e (release, listing, 8 rounds, load 2.1):
+  -1.4 ns (range -47..+2), 6.49x Chameleon.
+
 ## Risks
 
 | Risk | Impact | Mitigation |

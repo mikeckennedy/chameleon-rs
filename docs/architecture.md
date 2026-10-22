@@ -1578,6 +1578,18 @@ Release blockers. Each behaviour checked against Chameleon's generated code firs
   not get stock Chameleon.
 - **Litestar in the dev group** (`litestar>=2.25,<3`, pure Python; msgspec has 3.15 wheels), so
   ty types the module on every Python; no pin file needed.
+- **Review fixes** (Rust Architect review, no blockers): `render_string` compiles with the
+  loader's template options (`loader.kwargs`: `translate`, `restricted_namespace`, ...), its
+  cache is keyed by (loader, string), so a later `configure()` (a new loader) never serves a
+  string compiled under the old options, and reads and writes it under a lock. `get_template`
+  lets the loader's own lookup decide (its `default_extension`, search path): after the
+  `outside_folder` guard it catches only the lookup's `ValueError` (`_views.is_not_found`: exactly
+  `ValueError`, message `Template not found: `), no separate `isfile`. `outside_folder` no longer
+  strips: a name with surrounding whitespace is refused (Jinja looks for that exact file,
+  Chameleon's loader strips), for Starlette's `Templates` too (`isfile` on the unstripped name).
+  litestar-chameleon is installed into venv from the same pinned clone as its suite (`--no-deps`),
+  and `make test-python` sets `CHAMELEON_RS_REQUIRE_LITESTAR_CHAMELEON=1` so its comparisons fail
+  instead of skipping when it is missing.
 
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
