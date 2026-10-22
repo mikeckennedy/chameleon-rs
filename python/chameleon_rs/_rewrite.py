@@ -46,6 +46,12 @@ def _ours(name: str) -> bool:
     return name.startswith('__rs_') or name == '__lookup_attr'
 
 
+def rebound(name: str) -> str:
+    """The template scope's entry for a builtin a code block assigned (``len = 5``): never a
+    Python name (`=`), so it doesn't make ``len`` a plain scope name, as a ``def`` does."""
+    return f'{name}='
+
+
 def _econtext() -> ast.Name:
     return ast.Name(id='econtext', ctx=ast.Load())
 
@@ -123,11 +129,6 @@ class Rewriter(ast.NodeTransformer):
         if node.id in self.scopes[-1]:
             if len(self.scopes) == 1:
                 self.uses_locals = True
-                if not self.code_block and node.id in BUILTINS and isinstance(node.ctx, ast.Load):
-                    # A builtin a code block rebound: still `get(name, name)`, its fallback
-                    # now that render-local value, as in Chameleon.
-                    get = ast.Attribute(value=_econtext(), attr='get', ctx=ast.Load())
-                    return ast.Call(func=get, args=[ast.Constant(node.id), node], keywords=[])
             return node
         return self.transform(node)
 
@@ -150,10 +151,11 @@ class Rewriter(ast.NodeTransformer):
             self.reads.add(DEFAULTS[name])
             return node
         if self.code_block and name in BUILTINS:
-            # Loaded or bound as a plain name, a local of Chameleon's render function; bound,
-            # it is one for the rest of the template.
+            # Loaded or bound as a plain name, a local of Chameleon's render function. Bound,
+            # it is marked for the expressions after it (see `rebound`): not a scope name,
+            # which a `def`, a parameter or an import makes (those stay plain names).
             if isinstance(node.ctx, ast.Store):
-                self.scopes[-1].add(name)
+                self.scopes[-1].add(rebound(name))
             return node
         if isinstance(node.ctx, ast.Store):
             self.writes.add(name)
@@ -169,6 +171,12 @@ class Rewriter(ast.NodeTransformer):
         get = ast.Attribute(value=_econtext(), attr='get', ctx=ast.Load())
         if name in self.template_builtins:
             return ast.Call(func=get, args=[ast.Constant(name), _tpl(name)], keywords=[])
+        if name in BUILTINS and rebound(name) in self.scopes[0]:
+            # A builtin a code block assigned: still `get(name, name)`, its fallback that
+            # render-local value (the expression runs in the code blocks' namespace).
+            self.uses_locals = True
+            get = ast.Attribute(value=_econtext(), attr='get', ctx=ast.Load())
+            return ast.Call(func=get, args=[ast.Constant(name), node], keywords=[])
         if name in BUILTINS:
             return ast.Call(func=get, args=[ast.Constant(name), ast.Name(id=name, ctx=ast.Load())], keywords=[])
         get_name = ast.Attribute(value=_econtext(), attr='get_name', ctx=ast.Load())

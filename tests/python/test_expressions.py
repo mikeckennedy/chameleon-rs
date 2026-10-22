@@ -726,6 +726,14 @@ CODE_BLOCK_BUILTINS = [
     ('<?python len = 5 ?>${len}', {}),
     ('<?python len = 5 ?>${len is not None}', {'len': _hijack}),
     ('<?python len = 5 ?><p tal:content="python: len + 1"/>', {}),
+    # A `def`, a parameter or an import named like a builtin stays the template's own: data
+    # named `filter` once replaced the template's `filter()`.
+    ('<?python\ndef filter(seq):\n    return [i for i in seq if i]\n?>${filter([0, 1])}', {'filter': 'x'}),
+    ('<?python def id(x): return "T" ?>${id(1)}', {'id': _hijack}),
+    ('<div metal:define-macro="m"><?python def id(x): return "T" ?>${id(1)}</div>', {'id': _hijack}),
+    ('<?python def f(max): return 1 ?>${max(1, 2)}', {'max': _hijack}),
+    ('<?python import os as len ?>${len is not None}', {'len': _hijack}),
+    ('<?python len = 5 ?><?python def len(x): return "D" ?>${len(1)}', {'len': _hijack}),
 ]
 
 
