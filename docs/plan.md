@@ -1151,7 +1151,12 @@ Carried forward:
   `VmState` as `Py<...>`.
 - The macro scenario's +5-13 ns against 435599f (frame-context work on activation): find it or
   accept it.
-- The owner's real-app crawl and locust runs on the built-ins (exit gate item).
+- ~~The owner's real-app crawl and locust runs on the built-ins (exit gate item).~~ Done
+  (2026-10-21, 69388cd, PGO wheel, app on `chameleon_rs.configure()` + `chameleon_rs.flask` +
+  `chameleon_rs.partials`, the original packages uninstalled for the independence check): HTML
+  identical on every crawled page; render 2.19x (per-page median 2.95x), whole requests 1.32x;
+  locust 108/114 -> 150/152 req/s (+36% on medians), p50 170-180 -> 130 ms, p99 250-300 ->
+  200 ms, no failures. Same as the compat route within noise.
 
 ## Phase 10: Performance pass
 
