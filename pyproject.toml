@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "chameleon-rs"
-description = "A Rust implementation of the Chameleon page template engine, compatible with Chameleon's syntax and API."
+description = "Chameleon templates, modernized: a Rust engine that runs Chameleon templates unchanged, several times faster, with async rendering and built-in framework integrations."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.12"
 # Chameleon's license (BSD-like, the Repoze license, with ZPL, BSD and PSF portions): no SPDX id
