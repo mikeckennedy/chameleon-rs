@@ -1312,8 +1312,21 @@ Real-app re-test: after this phase, repeat the owner's real-app crawl and the ow
 simultaneous requests against a single-threaded asyncio Granian worker): throughput, p50/p95/p99 latency
 and event-loop lag, chameleon-rs sync vs async vs stock Chameleon.
 
-**Results (2026-10-21), on a worktree branch from 69388cd; the owner's real-app re-test is still to
-do.** Design: architecture.md, "Phase 11 amendments".
+**Results (2026-10-21), on a worktree branch from 69388cd.** Design: architecture.md, "Phase 11
+amendments".
+
+Owner's real-app re-test (2026-10-21, merged 0da524f, PGO wheel; aggregates only): the default async
+path changes nothing measurable for that app, which passes no awaitables to templates and renders
+most of its pages with a synchronous `engine.render(...)` inside the view. Crawl: HTML identical on
+every page; render 2.20x (per-page median 2.96x), requests 1.33x. Locust 112/113 -> 154/152 req/s
+(+36%), p99 260 -> 190-200 ms: the same as Phase 9. A cheap probe endpoint under load (queueing on
+the single-threaded loop): p50 about 255 ms stock, 190 ms chameleon-rs; the gain comes from shorter
+renders, not from async. Offload on the GIL build: probe latency lower, throughput 2-4% lower,
+small-page p50 worse under a heavy/light mix: a net loss for short, attribute-heavy renders. On
+3.14t (roughly non-PGO): offload +3-6% throughput. Offload stays experimental and opt-in.
+Found: replacing `PageTemplate.render` (a monkeypatch, e.g. timing instrumentation) counts as a
+subclass override, so `render_async` honours it by rendering synchronously; document this in the
+Phase 12 docs.
 
 Built:
 - `render_async(encoding=None, **kw)` on `PageTemplate`, `PageTemplateFile`, the text templates
