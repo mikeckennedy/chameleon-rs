@@ -13,6 +13,7 @@
 //! tasks are awaited in document order (they have been running meanwhile); an error ends the
 //! render, and the other tasks are cancelled.
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use pyo3::intern;
@@ -188,6 +189,10 @@ pub(crate) fn text_bytes(value: &Bound<'_, PyAny>) -> PyResult<(Vec<u8>, bool)> 
 /// internal error rather than text put in the wrong place.
 pub(crate) fn fill(out: &mut Output, nonce: u128, filled: &mut Vec<(u64, Vec<u8>, bool)>) -> Result<(), &'static str> {
     let mine = format!("{nonce:032x}");
+    // By id: one lookup per placeholder (a search of the list made a page of many concurrent
+    // calls, a `@concurrent` helper in a long `repeat`, quadratic).
+    let mut texts: HashMap<u64, (Vec<u8>, bool)> =
+        filled.drain(..).map(|(id, text, surrogates)| (id, (text, surrogates))).collect();
     let mut duplicate = false;
     out.fill_placeholders(PREFIX, KEY_WIDTH, |key| {
         let key = std::str::from_utf8(key).ok()?;
@@ -195,17 +200,16 @@ pub(crate) fn fill(out: &mut Output, nonce: u128, filled: &mut Vec<(u64, Vec<u8>
             return None;
         }
         let id = u64::from_str_radix(key.get(32..)?, 16).ok()?;
-        let Some(at) = filled.iter().position(|(i, _, _)| *i == id) else {
+        let Some(text) = texts.remove(&id) else {
             duplicate = true;
             return None;
         };
-        let (_, text, surrogates) = filled.swap_remove(at);
-        Some((text, surrogates))
+        Some(text)
     });
     if duplicate {
         return Err("a placeholder occurs more than once in the output");
     }
-    if !filled.is_empty() {
+    if !texts.is_empty() {
         return Err("a placeholder is missing from the output");
     }
     Ok(())
@@ -243,6 +247,22 @@ mod tests {
         let mut out = output(&[b"nothing"]);
         let mut filled = vec![(0, b"X".to_vec(), false)];
         assert!(fill(&mut out, nonce, &mut filled).is_err());
+    }
+
+    #[test]
+    fn many_placeholders_fill_in_linear_time() {
+        // Once quadratic: each placeholder searched the list of filled texts.
+        let nonce = 7_u128;
+        let count = 100_000_u64;
+        let mut out = Output::default();
+        for id in 0..count {
+            out.push(&placeholder(nonce, id));
+        }
+        let mut filled: Vec<_> = (0..count).rev().map(|id| (id, b"x".to_vec(), false)).collect();
+        let start = std::time::Instant::now();
+        assert_eq!(fill(&mut out, nonce, &mut filled), Ok(()));
+        assert!(start.elapsed() < std::time::Duration::from_secs(10), "{:?}", start.elapsed());
+        assert_eq!(out.as_bytes().len(), 100_000);
     }
 
     #[test]
