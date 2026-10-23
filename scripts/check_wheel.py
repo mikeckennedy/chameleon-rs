@@ -10,8 +10,8 @@ none), run against the installed copy (the smoke test fails if the package is im
 source tree). An sdist is built into a wheel from scratch first, which proves it is complete.
 Standard library only.
 
-    python scripts/check_wheel.py dist/chameleon_rs-0.1.49-cp315-cp315-macosx_11_0_arm64.whl
-    python scripts/check_wheel.py --python 3.13 dist/chameleon_rs-0.1.49.tar.gz
+    python scripts/check_wheel.py dist/chameleon_rs-0.1.50-cp315-cp315-macosx_11_0_arm64.whl
+    python scripts/check_wheel.py --python 3.13 dist/chameleon_rs-0.1.50.tar.gz
     python scripts/check_wheel.py --all dist         # every wheel in dist/ that this machine can run
 
 ``--python`` (a path, a command, or a version for ``uv python find``) is needed for an sdist;
