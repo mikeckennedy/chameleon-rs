@@ -10,6 +10,8 @@ Chameleon reads them:
   modules there; chameleon-rs validates it and uses it for the templates' ``loader``, but
   compiled programs are not written to disk (docs/architecture.md, D11).
 - ``CHAMELEON_RELOAD``: file templates reload when their file changes (``auto_reload``).
+- ``CHAMELEON_STRICT_TAGS`` (chameleon-rs only): the default of ``strict_tags``, which makes an
+  unclosed element carrying TAL, METAL or i18n attributes a ``ParseError`` at its start tag.
 
 Values ``y``, ``yes``, ``t``, ``true``, ``on`` and ``1`` (any case) are true. Unknown
 ``CHAMELEON_*`` variables are logged as warnings.
@@ -46,6 +48,9 @@ else:
 
 # When auto-reload is enabled, templates are reloaded on file change.
 AUTO_RELOAD = environment.pop('reload', 'false').lower() in TRUE
+
+# chameleon-rs: unclosed elements carrying TAL attributes are errors (``strict_tags``).
+STRICT_TAGS = environment.pop('strict_tags', 'false').lower() in TRUE
 
 for key in environment:
     log.warning('unknown environment variable set: "CHAMELEON_%s".', key.upper())

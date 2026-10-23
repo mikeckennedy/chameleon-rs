@@ -16,6 +16,8 @@ class attributes on a subclass, as in Chameleon: ``auto_reload``, ``encoding``,
 ``default_marker``, ``value_repr``, ``tokenizer``, ``debug``, ``keep_source``, ``keep_body``,
 ``extra_builtins``, ``expression_types``, ``default_expression``; for file templates also
 ``search_path``, ``package_name``, ``loader_class`` and ``prepend_relative_search_path``.
+chameleon-rs adds ``strict_tags`` (opt-in): an unclosed element carrying TAL, METAL or i18n
+attributes is a ``ParseError`` at its start tag.
 """
 
 from __future__ import annotations
@@ -47,7 +49,7 @@ from chameleon_rs._native import (
 )
 from chameleon_rs.astutil import Symbol
 from chameleon_rs.codegen import reverse_builtin_map
-from chameleon_rs.config import AUTO_RELOAD, CACHE_DIRECTORY, DEBUG_MODE, EAGER_PARSING
+from chameleon_rs.config import AUTO_RELOAD, CACHE_DIRECTORY, DEBUG_MODE, EAGER_PARSING, STRICT_TAGS
 from chameleon_rs.exc import ExceptionFormatter, RenderError, TemplateError, UnsupportedError
 from chameleon_rs.i18n import simple_translate
 from chameleon_rs.loader import MemoryLoader, ModuleLoader, TemplateLoader, import_package_resource
@@ -101,6 +103,7 @@ PROGRAM_OPTIONS = (
     'enable_comment_interpolation',
     'restricted_namespace',
     'strict',
+    'strict_tags',
 )
 
 
@@ -590,6 +593,11 @@ class PageTemplate(BaseTemplate):
 
     restricted_namespace = True
 
+    # chameleon-rs (opt-in): a start tag carrying TAL, METAL or i18n attributes that is never
+    # closed raises ``ParseError`` at that tag, instead of compiling to an empty element whose
+    # attributes miss the content after it. Default: ``CHAMELEON_STRICT_TAGS``.
+    strict_tags = STRICT_TAGS
+
     tokenizer: Callable[..., Iterable[str]] | None = None
 
     default_marker: Any = Symbol(DEFAULT_MARKER)
@@ -784,6 +792,9 @@ class PageTemplate(BaseTemplate):
         for attr in ('trim_attribute_space', 'implicit_i18n_translate', 'strict'):
             v = getattr(self, attr)
             digest.update((f';{attr}={v}').encode('ascii'))
+        if self.strict_tags:
+            # Only when set, so the default digest stays Chameleon's.
+            digest.update(b';strict_tags=True')
 
         return digest.hexdigest()[:32]
 

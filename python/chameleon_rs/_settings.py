@@ -53,23 +53,29 @@ a mapping of profiles, prefix -> ``True`` (the defaults) or options."""
 class Settings:
     """A configuration: the template folder, its loader, and the loader's options."""
 
-    __slots__ = ('auto_reload', 'loader', 'restricted_namespace', 'template_folder')
+    __slots__ = ('auto_reload', 'loader', 'restricted_namespace', 'strict_tags', 'template_folder')
 
-    def __init__(self, template_folder: str, auto_reload: bool, restricted_namespace: bool) -> None:
+    def __init__(
+        self, template_folder: str, auto_reload: bool, restricted_namespace: bool, strict_tags: bool | None = None
+    ) -> None:
+        from chameleon_rs.config import STRICT_TAGS
         from chameleon_rs.zpt.loader import TemplateLoader
 
         self.template_folder = template_folder
         self.auto_reload = auto_reload
         self.restricted_namespace = restricted_namespace
+        self.strict_tags = STRICT_TAGS if strict_tags is None else strict_tags
         kwargs: dict[str, Any] = {'auto_reload': auto_reload}
         if not restricted_namespace:
             kwargs['restricted_namespace'] = False
+        if self.strict_tags:
+            kwargs['strict_tags'] = True
         self.loader = TemplateLoader(template_folder, **kwargs)
 
     def __repr__(self) -> str:
         return (
             f'Settings(template_folder={self.template_folder!r}, auto_reload={self.auto_reload!r}, '
-            f'restricted_namespace={self.restricted_namespace!r})'
+            f'restricted_namespace={self.restricted_namespace!r}' + (', strict_tags=True)' if self.strict_tags else ')')
         )
 
 
@@ -210,6 +216,7 @@ def build(
     auto_reload: bool | None = None,
     restricted_namespace: bool | None = None,
     *,
+    strict_tags: bool | None = None,
     base: Settings | None = None,
     error: type[Exception] = TemplateError,
 ) -> Settings:
@@ -220,7 +227,9 @@ def build(
         auto_reload = base.auto_reload if base else False
     if restricted_namespace is None:
         restricted_namespace = base.restricted_namespace if base else True
-    return Settings(str(folder), bool(auto_reload), bool(restricted_namespace))
+    if strict_tags is None and base:
+        strict_tags = base.strict_tags
+    return Settings(str(folder), bool(auto_reload), bool(restricted_namespace), strict_tags)
 
 
 _KEEP: Any = object()
@@ -265,6 +274,7 @@ def configure(
     *,
     auto_reload: bool | None = None,
     restricted_namespace: bool | None = None,
+    strict_tags: bool | None = None,
     partial_search: str | None = None,
     markdown: MarkdownSetting | None = None,
     markdown_cache: int | None = None,
@@ -277,6 +287,8 @@ def configure(
     ``template_folder``: an existing directory. ``auto_reload``: recompile a template when its
     file changes (checked at most once per file per render for partials). ``restricted_namespace``:
     ``False`` allows attributes such as Alpine.js's ``@click`` (chameleon-flask's option).
+    ``strict_tags``: ``True`` makes an unclosed element carrying TAL, METAL or i18n attributes a
+    ``ParseError`` at its start tag (default: ``CHAMELEON_STRICT_TAGS``, else off).
     ``partial_search``: ``'caller'`` (the default: partials are looked for in the template
     folder, then on the calling template's search path, then in its folder and each folder above
     it, never outside its template tree) or ``'registered'`` (chameleon_partials' lookup: the template folder only, a path not
@@ -305,9 +317,16 @@ def configure(
             msg = f'markdown_cache must be a number of entries (0 or more), not {markdown_cache!r}'
             raise ValueError(msg)
     profiles = markdown_settings(markdown) if markdown is not None else None
-    folder_given = template_folder is not None or auto_reload is not None or restricted_namespace is not None
+    folder_given = (
+        template_folder is not None
+        or auto_reload is not None
+        or restricted_namespace is not None
+        or strict_tags is not None
+    )
     if folder_given:
-        settings = build(template_folder, auto_reload, restricted_namespace, base=first_configured())
+        settings = build(
+            template_folder, auto_reload, restricted_namespace, strict_tags=strict_tags, base=first_configured()
+        )
     if profiles is not None or markdown_cache is not None:
         size = markdown_cache_size if markdown_cache is None else markdown_cache
         # First, so a failure leaves the settings as they were. It also empties the cache:

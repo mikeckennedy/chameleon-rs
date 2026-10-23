@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`strict_tags`: template errors reported where the mistake is.** Chameleon treats an
+  unclosed start tag as an empty element, so a `tal:condition` missing its `</div>` hides
+  nothing, and a `tal:repeat` missing its `</ul>` fails with a `NameError` on a later line.
+  With `strict_tags=True` (on a template or loader, in `chameleon_rs.configure()`, or through
+  `CHAMELEON_STRICT_TAGS=1`), an unclosed element carrying `tal:`, `metal:` or `i18n:`
+  attributes, or a `<tal:...>`/`<metal:...>` element, is a `ParseError` pointing at its start
+  tag. HTML void elements (`<input>`, `<img>`, ...) are allowed. Off by default, as in
+  Chameleon; every template of two production sites compiles with it on.
+
 ## [0.1.49] - 2026-10-22
 
 Fixes from a second, independent review of the 0.1.48 changes.

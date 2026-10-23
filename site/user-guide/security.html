@@ -252,6 +252,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/strict-tags.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Catching unclosed tags</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/configuration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Configuration</span></a>
   </div>
@@ -387,7 +393,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <ul>
 <li><strong>Text</strong>: <code>${x}</code>, <code>tal:content="x"</code> and <code>tal:replace="x"</code> escape <code>&amp;</code>, <code>&lt;</code> and <code>&gt;</code>.</li>
 <li><strong>Attribute values</strong>: <code>title="${x}"</code> and <code>tal:attributes="title x"</code> also escape the attribute’s own quote character (<code>"</code> as <code>&amp;quot;</code>, <code>'</code> as <code>&amp;#39;</code>).</li>
-<li><strong><code>markdown:</code></strong>: in element content, raw HTML in the text is escaped and <code>javascript:</code>, <code>vbscript:</code>, <code>file:</code> and <code>data:</code> links are removed, unless a profile sets <code>raw_html='allow'</code>. In an attribute value the result is escaped like any string. See <a href="../user-guide/markdown.html">Markdown</a>.</li>
+<li><strong><code>markdown:</code></strong>: in element content, raw HTML in the text is escaped and <code>javascript:</code>, <code>vbscript:</code>, <code>file:</code> and <code>data:</code> links are removed, unless a profile sets <code>raw_html='allow'</code>. In an attribute value the result is escaped like any string. For text from users, give a <code>heading_ids</code> profile a prefix, so headings can’t take ids your page’s scripts rely on. See <a href="../user-guide/markdown.html">Markdown</a>.</li>
 </ul>
 <p>Nothing is escaped for <code>structure</code>, <code>structure:</code>, or an object with an <code>__html__</code> method (such as <code>Markup</code>). Use them only for markup you made or have already sanitized.</p>
 </section>
@@ -409,7 +415,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h1>Template names from requests</h1>
 <p>A name that comes from a request must never reach a lookup that accepts any path.</p>
 <ul>
-<li><strong>Safe with request data</strong>: <a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a>, <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates" class="gdls-link gdls-code">chameleon_rs.starlette.Templates</a>, <a href="../reference/litestar.ChameleonEngine.html#chameleon_rs.litestar.ChameleonEngine" class="gdls-link gdls-code">chameleon_rs.litestar.ChameleonEngine</a> and <a href="../reference/robyn.ChameleonTemplate.html#chameleon_rs.robyn.ChameleonTemplate" class="gdls-link gdls-code">chameleon_rs.robyn.ChameleonTemplate</a>. They refuse names that leave their folder: absolute paths, <code>..</code> out of it, <code>package:path</code> specs, backslashes on the Jinja-style APIs. A refused name is “not found”, like a missing file.</li>
+<li><strong>Safe with request data</strong>: <a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a>, <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates" class="gdls-link gdls-code">chameleon_rs.starlette.Templates</a>, <a href="../reference/litestar.ChameleonEngine.html#chameleon_rs.litestar.ChameleonEngine" class="gdls-link gdls-code">chameleon_rs.litestar.ChameleonEngine</a> and <a href="../reference/robyn.ChameleonTemplate.html#chameleon_rs.robyn.ChameleonTemplate" class="gdls-link gdls-code">chameleon_rs.robyn.ChameleonTemplate</a>. They refuse names that leave their folder: absolute paths, <code>..</code> out of it, <code>package:path</code> specs, backslashes on the Jinja-style APIs. A refused name is “not found”, like a missing file. The check is on the name, so a symlink that you put inside the folder is still followed, wherever it points (Jinja’s <code>FileSystemLoader</code> does the same).</li>
 <li><strong>Names from code only</strong>: the decorator APIs (<code>@template</code>, <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render</a>, <a href="../reference/flask.response.html#chameleon_rs.flask.response" class="gdls-link gdls-code">response</a> in each integration), <a href="../reference/PageTemplateLoader.html#chameleon_rs.PageTemplateLoader" class="gdls-link gdls-code">PageTemplateLoader</a> and <code>load:</code> expressions. They accept <code>../</code> and absolute paths, as the original libraries and Chameleon do.</li>
 </ul>
 <p>If a page is chosen by the request, map the request value to a name you wrote:</p>

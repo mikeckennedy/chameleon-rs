@@ -48,6 +48,7 @@ class PageTemplateConfig(TypedDict, total=False):
     strict: bool
     trim_attribute_space: bool
     restricted_namespace: bool
+    strict_tags: bool
     tokenizer: Tokenizer
     value_repr: Callable[[object], str]
     default_marker: Any

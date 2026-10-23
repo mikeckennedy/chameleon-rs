@@ -781,6 +781,33 @@ fn compile_errors() {
 }
 
 #[test]
+fn strict_tags_rejects_unclosed_tal_elements() {
+    let strict = Options { strict_tags: true, ..options() };
+    let err = |src: &str| compile(src, &mut Toy::default(), &strict).err().map(|e| e.to_string());
+    let msg = |name: &str, attr: &str| {
+        Some(format!(
+            "Unclosed element <{name}>: its {attr} applies to the start tag only, not to the content after \
+             it. Add the missing </{name}>, or end the tag with \"/>\" if it is meant to be empty."
+        ))
+    };
+    assert_eq!(err("<s><div tal:condition=\"x\"><p>hidden</p></s>"), msg("div", "tal:condition"));
+    assert_eq!(err("<ul tal:repeat=\"i xs\"><li>${i}</li>"), msg("ul", "tal:repeat"));
+    assert_eq!(err("<div><tal:block define=\"x 1\">${x}</div>"), msg("tal:block", "tal:define"));
+    assert_eq!(err("<div><p i18n:translate=\"\">x</div>"), msg("p", "i18n:translate"));
+    // Allowed: closed, self-closed, void elements, and unclosed elements without TAL.
+    for ok in [
+        "<div tal:condition=\"x\">y</div>",
+        "<div tal:condition=\"x\" />",
+        "<form><input tal:attributes=\"value x\"><IMG tal:attributes=\"src x\"><br></form>",
+        "<div><p>a<p class=\"${x}\">b</div>",
+    ] {
+        assert_eq!(err(ok), None, "{ok}");
+    }
+    // Off by default, as in Chameleon.
+    assert!(compile("<ul tal:repeat=\"i xs\"><li>${i}</li>", &mut Toy::default(), &options()).is_ok());
+}
+
+#[test]
 fn compile_with_given_tokens() {
     let src = "<p>${x}</p><b>t</b>";
     let spans = |cuts: &[usize]| cuts.windows(2).map(|w| crate::Span::new(w[0], w[1])).collect::<Vec<_>>();

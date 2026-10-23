@@ -208,6 +208,8 @@ Notes on `classes`:
 
 Each conversion numbers its heading ids on its own, so two `markdown:` blocks with `heading_ids` on one page can repeat an id. Give each block a profile with its own prefix.
 
+For text from users, always give `heading_ids` a prefix (`'user-content-'`, as GitHub does). Without one, a heading such as `# csrf_token` gets `id="csrf_token"`, and an element id can shadow a JavaScript global of the same name or answer `getElementById` before your own element does.
+
 A bad setting raises `ValueError` (or `TypeError` for a value of the wrong type) when you call [configure()](../reference/configure.md#chameleon_rs.configure), and changes nothing.
 
 
@@ -226,4 +228,4 @@ Changing the Markdown settings empties the cache.
 
 # Async renders
 
-[render_async](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async) works with `markdown:`, with one rule shared by every expression type: only an expression's final value is awaited, not a value inside it. Load the Markdown text in your view before rendering, rather than passing a coroutine for `markdown:` to convert.
+[render_async](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async) works with `markdown:`. If the value is awaitable (`${markdown: load_body()}` with an `async def load_body()`), it is awaited and then converted, and a `@concurrent` helper still runs alongside the page's other concurrent calls. As for every expression type, only the expression's value is awaited, not values inside it: `${markdown: body().text}` reads `.text` of the coroutine. A synchronous [render](../reference/flask.render.md#chameleon_rs.flask.render) converts what it gets, so load the text in your view there.

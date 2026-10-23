@@ -252,6 +252,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/strict-tags.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Catching unclosed tags</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/configuration.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Configuration</span></a>
   </div>
@@ -387,7 +393,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p><code>import chameleon_rs</code> doesn’t import FastAPI. Only <code>import chameleon_rs.fastapi</code> does. There is nothing extra to install: it uses the FastAPI your app already has.</p>
 <section id="a-first-view" class="level1">
 <h1>A first view</h1>
-<div id="9c684298" class="cell" data-execution_count="2">
+<div id="729d3f9d" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> fastapi</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> fastapi.testclient <span class="im">import</span> TestClient</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -404,7 +410,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'message'</span>: <span class="st">'Hello'</span>, <span class="st">'videos'</span>: videos[:limit]}</span></code></pre></div>
 </div>
 <p>The view returns the template’s model, and <code>@template</code> renders it into a <code>fastapi.Response</code> (<code>text/html</code>):</p>
-<div id="d1c45047" class="cell" data-execution_count="3">
+<div id="71d71633" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> TestClient(app) <span class="im">as</span> client:</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(client.get(<span class="st">'/?limit=1'</span>).text)</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(client.get(<span class="st">'/?limit=lots'</span>).status_code)   <span class="co"># FastAPI's own validation</span></span></code></pre></div>
@@ -420,7 +426,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="decorator-order" class="level1">
 <h1>Decorator order</h1>
 <p><code>@template</code> goes below the route decorator. Written above it, FastAPI registers the bare view, the template never renders and the route quietly returns the view’s dict as JSON. An app given to <code>configure(..., app=app)</code> checks this when it starts:</p>
-<div id="87205acd" class="cell" data-execution_count="4">
+<div id="faa7657f" class="cell" data-execution_count="4">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>bad <span class="op">=</span> fastapi.FastAPI()</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>fastapi_chameleon.configure(app<span class="op">=</span>bad)</span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>router <span class="op">=</span> fastapi.APIRouter()</span>
@@ -476,7 +482,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="error-pages" class="level1">
 <h1>Error pages</h1>
 <p>Inside a decorated view, <a href="../reference/flask.not_found.html#chameleon_rs.flask.not_found" class="gdls-link gdls-code">not_found()</a> and <a href="../reference/flask.error.html#chameleon_rs.flask.error" class="gdls-link gdls-code">error()</a> stop the view and render an error page:</p>
-<div id="68b26896" class="cell" data-execution_count="5">
+<div id="17039309" class="cell" data-execution_count="5">
 <div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> fastapi.FastAPI()</span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a></span>

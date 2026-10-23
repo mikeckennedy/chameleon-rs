@@ -1599,6 +1599,28 @@ Release blockers. Each behaviour checked against Chameleon's generated code firs
   and `make test-python` sets `CHAMELEON_RS_REQUIRE_LITESTAR_CHAMELEON=1` so its comparisons fail
   instead of skipping when it is missing.
 
+## Error-reporting amendments: `strict_tags` (2026-10-22)
+
+- **The problem.** Chameleon's `ElementParser` leaves a start tag with no end tag as a
+  `start_tag` item, which the program builder visits as an element with no children. TAL on it
+  covers nothing after it, so the template compiles and the mistake surfaces elsewhere: a
+  `tal:condition` that hides nothing, or a `NameError` for a `tal:repeat` variable lines
+  further down. This is most of "Chameleon reports errors far from the cause".
+- **The option.** `Options::strict_tags` (default false, so the default stays Chameleon's): in
+  `zpt.rs`, an `Item::StartTag` whose element is in a TAL/METAL/i18n/meta namespace, or whose
+  resolved attributes (after `data-tal-*` conversion) include one, is a `ParseError` before
+  the element is visited. HTML void elements outside those namespaces are exempt
+  (case-insensitive). Unclosed elements without template attributes stay allowed: they render
+  the same either way. The error's token is the tag name, not the whole tag, because
+  `TemplateError.__str__` prints the source line only for a nonzero column and an unindented
+  tag starts at column 0.
+- **Plumbing.** A template attribute (`PROGRAM_OPTIONS`, so loaders and keyword arguments
+  pass it), defaulting to `CHAMELEON_STRICT_TAGS` (`config.STRICT_TAGS`), and a `Settings`
+  field set by `chameleon_rs.configure(strict_tags=...)` and inherited by `build()`, so the
+  framework integrations' own `configure()` functions keep their original libraries'
+  signatures. The cache digest includes it only when it is on.
+- **Checked against the corpus:** all 229 Talk Python templates compile with it on.
+
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
 ```

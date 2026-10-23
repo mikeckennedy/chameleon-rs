@@ -108,7 +108,7 @@ digest(self, body: 'str', names: 'Collection[str]') -> 'str'
 Process-wide settings for templates loaded by name, partials and Markdown.
 
 
-configure(template_folder: 'str | os.PathLike[str] | None' = None, *, auto_reload: 'bool | None' = None, restricted_namespace: 'bool | None' = None, partial_search: 'str | None' = None, markdown: 'MarkdownSetting | None' = None, markdown_cache: 'int | None' = None) -> 'Settings | None'
+configure(template_folder: 'str | os.PathLike[str] | None' = None, *, auto_reload: 'bool | None' = None, restricted_namespace: 'bool | None' = None, strict_tags: 'bool | None' = None, partial_search: 'str | None' = None, markdown: 'MarkdownSetting | None' = None, markdown_cache: 'int | None' = None) -> 'Settings | None'
 
 Configures chameleon-rs for the whole process: where templates loaded by name live, for
 ``render_partial`` and the framework integrations (``chameleon_rs.flask``,
@@ -118,6 +118,8 @@ Configures chameleon-rs for the whole process: where templates loaded by name li
 ``template_folder``: an existing directory. ``auto_reload``: recompile a template when its
 file changes (checked at most once per file per render for partials). ``restricted_namespace``:
 ``False`` allows attributes such as Alpine.js's ``@click`` (chameleon-flask's option).
+``strict_tags``: ``True`` makes an unclosed element carrying TAL, METAL or i18n attributes a
+``ParseError`` at its start tag (default: ``CHAMELEON_STRICT_TAGS``, else off).
 ``partial_search``: ``'caller'`` (the default: partials are looked for in the template
 folder, then on the calling template's search path, then in its folder and each folder above
 it, never outside its template tree) or ``'registered'`` (chameleon_partials' lookup: the template folder only, a path not
@@ -1002,6 +1004,11 @@ Notes on `classes`:
 Each conversion numbers its heading ids on its own, so two `markdown:` blocks with
 `heading_ids` on one page can repeat an id. Give each block a profile with its own prefix.
 
+For text from users, always give `heading_ids` a prefix (`'user-content-'`, as GitHub does).
+Without one, a heading such as `# csrf_token` gets `id="csrf_token"`, and an element id can
+shadow a JavaScript global of the same name or answer `getElementById` before your own
+element does.
+
 A bad setting raises `ValueError` (or `TypeError` for a value of the wrong type) when you call
 `configure()`, and changes nothing.
 
@@ -1023,9 +1030,12 @@ Changing the Markdown settings empties the cache.
 
 ## Async renders
 
-`render_async` works with `markdown:`, with one rule shared by every expression type: only an
-expression's final value is awaited, not a value inside it. Load the Markdown text in your
-view before rendering, rather than passing a coroutine for `markdown:` to convert.
+`render_async` works with `markdown:`. If the value is awaitable (`${markdown: load_body()}`
+with an `async def load_body()`), it is awaited and then converted, and a `@concurrent` helper
+still runs alongside the page's other concurrent calls. As for every expression type, only the
+expression's value is awaited, not values inside it: `${markdown: body().text}` reads `.text`
+of the coroutine. A synchronous `render` converts what it gets, so load the text in your view
+there.
 
 
 ### Async rendering
@@ -1268,6 +1278,111 @@ built-ins await it. That includes test doubles such as `AsyncMock()` in a model.
   as in Chameleon.
 
 
+### Catching unclosed tags
+
+A common complaint about Chameleon is that a template mistake gets reported far from where
+it is. The usual cause is an unclosed tag, and chameleon-rs can catch it where it happens
+with one setting: `strict_tags`.
+
+## The problem
+
+When Chameleon finds a start tag with no matching end tag, it treats the tag as an empty
+element and carries on. Any `tal:`, `metal:` or `i18n:` attribute on that tag then applies to
+the tag alone, not to the content you meant it to cover. The template compiles without
+complaint, and one of two things happens.
+
+**It renders the wrong thing, with no error.** Here the missing `</div>` means
+`tal:condition` hides an empty `<div>`, and the "secret" paragraph shows anyway:
+
+```{python}
+from chameleon_rs import PageTemplate
+
+page = PageTemplate("""
+<section>
+  <div tal:condition="user.is_admin">
+    <p>Admin tools</p>
+</section>
+""")
+
+class User:
+    is_admin = False
+
+print(page(user=User()))
+```
+
+**Or it fails somewhere else.** Here the missing `</ul>` is on line 3, but the error names a
+variable on line 4. In a real page the symptom can be dozens of lines from the cause.
+
+```{python}
+page = PageTemplate("""
+<main>
+  <ul tal:repeat="episode episodes">
+    <li>${episode}</li>
+</main>
+""")
+
+try:
+    page(episodes=['Rust', 'Python'])
+except NameError as e:
+    print('NameError:', '\n'.join(str(e).splitlines()[:4]))
+```
+
+## The fix: `strict_tags`
+
+With `strict_tags=True`, the unclosed tag is a `ParseError` when the template compiles. The
+error points at the tag that's missing its end tag, and says what to add:
+
+```{python}
+from chameleon_rs.exc import ParseError
+
+source = """
+<main>
+  <ul tal:repeat="episode episodes">
+    <li>${episode}</li>
+</main>
+"""
+
+try:
+    PageTemplate(source, strict_tags=True)
+except ParseError as e:
+    print(e)
+```
+
+## Turning it on
+
+It's off by default, because Chameleon accepts these templates and chameleon-rs matches
+Chameleon unless you ask otherwise. Turn it on in whichever way suits you:
+
+- **For the whole process:** `chameleon_rs.configure(template_folder='templates', strict_tags=True)`.
+  That covers `render_partial` and every framework integration, including the frameworks'
+  own `configure()` calls made afterwards.
+- **Without changing code:** set the environment variable `CHAMELEON_STRICT_TAGS=1`. This is
+  handy in development and in tests. Together with `CHAMELEON_EAGER=1`, a test that loads
+  every template catches these mistakes before they ship.
+- **Per template or loader:** `PageTemplate(source, strict_tags=True)`,
+  `PageTemplateFile(path, strict_tags=True)` or `PageTemplateLoader(folder, strict_tags=True)`.
+
+It's also safe to leave on in production. It only adds a check at compile time, so rendering
+speed doesn't change. All 229 templates of two production sites compile with it on.
+
+## What it checks
+
+An element is reported when it has no end tag, isn't self-closed with `/>`, and either:
+
+- carries a `tal:`, `metal:` or `i18n:` attribute (or a `data-tal-*` one with
+  `enable_data_attributes`), or
+- is itself in one of those namespaces, such as `<tal:block>`.
+
+These are still allowed:
+
+- HTML's void elements, which never have an end tag: `<input tal:attributes="...">`,
+  `<img>`, `<br>`, `<meta>`, `<link>` and the rest.
+- Unclosed elements without template attributes, such as HTML's optional `</p>` and `</li>`.
+  They render the same either way.
+- `${...}` in an unclosed element's attributes. An interpolation affects only its own
+  attribute, so nothing is lost.
+
+
 ### Configuration
 
 chameleon-rs has three layers of configuration:
@@ -1287,6 +1402,7 @@ chameleon_rs.configure(
     template_folder='templates',
     auto_reload=False,
     restricted_namespace=True,
+    strict_tags=True,
     partial_search='caller',
     markdown=True,
     markdown_cache=1024,
@@ -1298,6 +1414,7 @@ chameleon_rs.configure(
 | `template_folder` | none, required on the first call | An existing directory. Partials and the framework integrations load templates by name from it. |
 | `auto_reload` | `False` | Recompile a template when its file changes. For partials, each file is checked at most once per render. Use it in development only. |
 | `restricted_namespace` | `True` | `False` allows attributes with other namespaces or prefixes, such as Alpine.js's `@click` or Vue's `v-on:click`. |
+| `strict_tags` | `False` (or `CHAMELEON_STRICT_TAGS`) | `True` makes an unclosed element carrying template attributes a `ParseError` that points at it. Recommended. See [Catching unclosed tags](strict-tags.qmd). |
 | `partial_search` | `'caller'` | Where `render_partial` looks: `'caller'` searches the template folder, then the calling template's search path and folders. `'registered'` searches the template folder only, as chameleon_partials does. See [Partials](partials.qmd#how-a-path-is-found). |
 | `markdown` | none | The `markdown:` expression: `True` for the defaults, or a dict of profiles (prefix → options). `False` removes it. See [Markdown](markdown.qmd). |
 | `markdown_cache` | `1024` | How many Markdown conversions to keep. `0` turns the cache off. |
@@ -1365,6 +1482,7 @@ The common ones:
 | `boolean_attributes` | the HTML set, in HTML mode | Attributes rendered as `name="name"` for a true value and dropped for a false one. |
 | `strict` | `True` | Compile every expression up front. `False` only requires an expression to be valid when it's evaluated. |
 | `restricted_namespace` | `True` | `False` passes unknown namespaces and prefixes through, for Alpine.js or Vue. |
+| `strict_tags` | `False` (or `CHAMELEON_STRICT_TAGS`) | chameleon-rs only. An unclosed element carrying `tal:`, `metal:` or `i18n:` attributes is a `ParseError` at its start tag, instead of an error far away or none at all. See [Catching unclosed tags](strict-tags.qmd). |
 | `trim_attribute_space` | `False` | Strip extra whitespace between attributes. |
 | `implicit_i18n_translate` | `False` | Mark the text in every element for translation. |
 | `implicit_i18n_attributes` | empty | Attribute names (lowercase) to mark for translation. |
@@ -1397,6 +1515,7 @@ These are read once, when chameleon-rs is imported, as Chameleon reads them. The
 | `CHAMELEON_RELOAD` | The default for `auto_reload`: file templates reload when their file changes. |
 | `CHAMELEON_EAGER` | File templates compile when they're created, not on first use. Handy in a test that checks every template in a project compiles. |
 | `CHAMELEON_DEBUG` | Templates keep their body and a dump of their compiled program, and use a module loader in a temporary directory. |
+| `CHAMELEON_STRICT_TAGS` | chameleon-rs only. The default for `strict_tags`, for `configure()` and every template: unclosed elements carrying template attributes are errors. See [Catching unclosed tags](strict-tags.qmd). |
 | `CHAMELEON_CACHE` | A directory, which must exist. Chameleon writes the generated Python modules there. chameleon-rs checks the directory but doesn't write compiled programs to disk: compiling is fast enough not to need it. |
 
 Unknown `CHAMELEON_*` variables are logged as warnings, as in Chameleon.
@@ -3005,8 +3124,9 @@ and what to do there. Everything here behaves exactly as in Chameleon unless it 
   attribute's own quote character (`"` as `&quot;`, `'` as `&#39;`).
 - **`markdown:`**: in element content, raw HTML in the text is escaped and `javascript:`,
   `vbscript:`, `file:` and `data:` links are removed, unless a profile sets
-  `raw_html='allow'`. In an attribute value the result is escaped like any string.
-  See [Markdown](markdown.qmd).
+  `raw_html='allow'`. In an attribute value the result is escaped like any string. For text
+  from users, give a `heading_ids` profile a prefix, so headings can't take ids your page's
+  scripts rely on. See [Markdown](markdown.qmd).
 
 Nothing is escaped for `structure`, `structure:`, or an object with an `__html__` method
 (such as `Markup`). Use them only for markup you made or have already sanitized.
@@ -3043,7 +3163,8 @@ A name that comes from a request must never reach a lookup that accepts any path
   `chameleon_rs.litestar.ChameleonEngine` and `chameleon_rs.robyn.ChameleonTemplate`. They
   refuse names that leave their folder: absolute paths, `..` out of it, `package:path`
   specs, backslashes on the Jinja-style APIs. A refused name is "not found", like a missing
-  file.
+  file. The check is on the name, so a symlink that you put inside the folder is still
+  followed, wherever it points (Jinja's `FileSystemLoader` does the same).
 - **Names from code only**: the decorator APIs (`@template`, `render`, `response` in each
   integration), `PageTemplateLoader` and `load:` expressions. They accept `../` and absolute
   paths, as the original libraries and Chameleon do.

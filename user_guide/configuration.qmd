@@ -19,6 +19,7 @@ chameleon_rs.configure(
     template_folder='templates',
     auto_reload=False,
     restricted_namespace=True,
+    strict_tags=True,
     partial_search='caller',
     markdown=True,
     markdown_cache=1024,
@@ -30,6 +31,7 @@ chameleon_rs.configure(
 | `template_folder` | none, required on the first call | An existing directory. Partials and the framework integrations load templates by name from it. |
 | `auto_reload` | `False` | Recompile a template when its file changes. For partials, each file is checked at most once per render. Use it in development only. |
 | `restricted_namespace` | `True` | `False` allows attributes with other namespaces or prefixes, such as Alpine.js's `@click` or Vue's `v-on:click`. |
+| `strict_tags` | `False` (or `CHAMELEON_STRICT_TAGS`) | `True` makes an unclosed element carrying template attributes a `ParseError` that points at it. Recommended. See [Catching unclosed tags](strict-tags.qmd). |
 | `partial_search` | `'caller'` | Where `render_partial` looks: `'caller'` searches the template folder, then the calling template's search path and folders. `'registered'` searches the template folder only, as chameleon_partials does. See [Partials](partials.qmd#how-a-path-is-found). |
 | `markdown` | none | The `markdown:` expression: `True` for the defaults, or a dict of profiles (prefix → options). `False` removes it. See [Markdown](markdown.qmd). |
 | `markdown_cache` | `1024` | How many Markdown conversions to keep. `0` turns the cache off. |
@@ -97,6 +99,7 @@ The common ones:
 | `boolean_attributes` | the HTML set, in HTML mode | Attributes rendered as `name="name"` for a true value and dropped for a false one. |
 | `strict` | `True` | Compile every expression up front. `False` only requires an expression to be valid when it's evaluated. |
 | `restricted_namespace` | `True` | `False` passes unknown namespaces and prefixes through, for Alpine.js or Vue. |
+| `strict_tags` | `False` (or `CHAMELEON_STRICT_TAGS`) | chameleon-rs only. An unclosed element carrying `tal:`, `metal:` or `i18n:` attributes is a `ParseError` at its start tag, instead of an error far away or none at all. See [Catching unclosed tags](strict-tags.qmd). |
 | `trim_attribute_space` | `False` | Strip extra whitespace between attributes. |
 | `implicit_i18n_translate` | `False` | Mark the text in every element for translation. |
 | `implicit_i18n_attributes` | empty | Attribute names (lowercase) to mark for translation. |
@@ -129,6 +132,7 @@ These are read once, when chameleon-rs is imported, as Chameleon reads them. The
 | `CHAMELEON_RELOAD` | The default for `auto_reload`: file templates reload when their file changes. |
 | `CHAMELEON_EAGER` | File templates compile when they're created, not on first use. Handy in a test that checks every template in a project compiles. |
 | `CHAMELEON_DEBUG` | Templates keep their body and a dump of their compiled program, and use a module loader in a temporary directory. |
+| `CHAMELEON_STRICT_TAGS` | chameleon-rs only. The default for `strict_tags`, for `configure()` and every template: unclosed elements carrying template attributes are errors. See [Catching unclosed tags](strict-tags.qmd). |
 | `CHAMELEON_CACHE` | A directory, which must exist. Chameleon writes the generated Python modules there. chameleon-rs checks the directory but doesn't write compiled programs to disk: compiling is fast enough not to need it. |
 
 Unknown `CHAMELEON_*` variables are logged as warnings, as in Chameleon.

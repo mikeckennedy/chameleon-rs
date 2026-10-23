@@ -481,7 +481,7 @@ pub(crate) fn record_error(
 /// `Options` from keyword arguments: `mode` (`"xml"` or `"text"`), `escape` (default: true in
 /// XML mode), `boolean_attributes`, `implicit_i18n_translate`, `implicit_i18n_attributes`,
 /// `trim_attribute_space`, `enable_data_attributes`, `enable_comment_interpolation`,
-/// `restricted_namespace`, `strict`. `None` values mean the default, like Chameleon's
+/// `restricted_namespace`, `strict`, `strict_tags`. `None` values mean the default, like Chameleon's
 /// `_pop_defaults`.
 pub(crate) fn options(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Options> {
     let mut o = Options::default();
@@ -509,6 +509,7 @@ pub(crate) fn options(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Options> {
             "enable_comment_interpolation" => o.enable_comment_interpolation = value.is_truthy()?,
             "restricted_namespace" => o.restricted_namespace = value.is_truthy()?,
             "strict" => o.strict = value.is_truthy()?,
+            "strict_tags" => o.strict_tags = value.is_truthy()?,
             other => return Err(PyTypeError::new_err(format!("unexpected template option {other:?}"))),
         }
     }

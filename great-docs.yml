@@ -77,6 +77,7 @@ user_guide:
       - partials.qmd
       - markdown.qmd
       - async.qmd
+      - strict-tags.qmd
       - configuration.qmd
   - section: "Web frameworks"
     contents:

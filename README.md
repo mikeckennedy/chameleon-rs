@@ -86,6 +86,13 @@ OpenAPI docs work as without `@template`.
 
 ## What's new compared with Chameleon
 
+- **Errors where the mistake is.** Forget the `</div>` after a `tal:condition` and Chameleon
+  quietly renders what the condition should have hidden. Forget the `</ul>` after a
+  `tal:repeat` and you get a `NameError` lines away from the real cause. With
+  `strict_tags=True` (or `CHAMELEON_STRICT_TAGS=1`) an unclosed element carrying `tal:`,
+  `metal:` or `i18n:` attributes is a `ParseError` that points at that tag and names the
+  missing end tag. Opt-in, so the default stays Chameleon's.
+  [Catching unclosed tags](https://mkennedy.codes/docs/chameleon-rs/user-guide/strict-tags.html).
 - **Async rendering.** `await template.render_async(**model)` awaits awaitable model values
   where the template uses them, without blocking the event loop. Macros, slots, partials and
   `tal:on-error` work across the wait, and with no awaitables the output is exactly

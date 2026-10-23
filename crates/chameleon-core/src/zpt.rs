@@ -34,6 +34,9 @@ use crate::tok::Tok;
 
 /// Namespaces whose elements lose their tags and whose attributes are not output.
 const DROP_NS: [&str; 4] = [TAL_NS, METAL_NS, I18N_NS, META_NS];
+/// HTML's void elements, which never have an end tag (`strict_tags`).
+const VOID_ELEMENTS: [&str; 13] =
+    ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"];
 
 /// Errors the builder raises; it never calls the expression compiler.
 pub(crate) type BuildError = CompileError<Infallible>;
@@ -163,12 +166,51 @@ impl Builder<'_> {
                     self.visit_text(Tok::plain(format!("<?{name}{}?>", text.text(self.src))))
                 }
             }
-            Item::StartTag(tag) => self.visit_element(tag, None, &[])?,
+            Item::StartTag(tag) => {
+                if self.options.strict_tags {
+                    self.check_closed(tag)?;
+                }
+                self.visit_element(tag, None, &[])?
+            }
             Item::Element(e) => {
                 let ParsedElement { start, end, children } = &**e;
                 self.visit_element(start, end.as_ref(), children)?
             }
         }))
+    }
+
+    /// `strict_tags` (chameleon-rs, opt-in): a start tag with no end tag is an empty element,
+    /// so its TAL, METAL and i18n attributes cover none of the content after it. Chameleon
+    /// accepts that silently, and the mistake surfaces far away (a `NameError` for a
+    /// `tal:repeat` variable, content a `tal:condition` should have hidden). HTML void
+    /// elements (`<input tal:attributes="...">`) have no content and stay allowed.
+    fn check_closed(&self, tag: &Tag) -> Result<()> {
+        let name = tag.name.text(self.src);
+        let in_drop_ns = DROP_NS.contains(&&*tag.namespace.uri);
+        if !in_drop_ns && VOID_ELEMENTS.iter().any(|v| v.eq_ignore_ascii_case(name)) {
+            return Ok(());
+        }
+        let (ns, _) = self.attributes(tag)?;
+        let what = if let Some(entry) = ns.iter().find(|e| DROP_NS.contains(&&*e.ns)) {
+            let prefix = match &*entry.ns {
+                TAL_NS => "tal",
+                METAL_NS => "metal",
+                I18N_NS => "i18n",
+                _ => "meta",
+            };
+            format!("its {prefix}:{} applies", entry.name.text)
+        } else if in_drop_ns {
+            "it applies".to_owned()
+        } else {
+            return Ok(());
+        };
+        let message = format!(
+            "Unclosed element <{name}>: {what} to the start tag only, not to the content after it. \
+             Add the missing </{name}>, or end the tag with \"/>\" if it is meant to be empty."
+        );
+        // The name, not the whole tag: a tag at column 0 would lose the formatted source line
+        // (Chameleon's `TemplateError.__str__` shows it only for a nonzero column).
+        Err(CompileError::new(ErrorKind::Parse, message, tag.name))
     }
 
     fn interpolating(&self) -> bool {

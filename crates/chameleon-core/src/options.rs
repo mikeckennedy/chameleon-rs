@@ -42,6 +42,10 @@ pub struct Options {
     /// Expression syntax errors raise at compile time (`strict`); otherwise they raise when
     /// the expression is reached at render time.
     pub strict: bool,
+    /// chameleon-rs, opt-in: a start tag that is never closed is a `ParseError` when it
+    /// carries TAL, METAL or i18n attributes or is in one of their namespaces (HTML void
+    /// elements excepted). Chameleon builds an empty element and goes on.
+    pub strict_tags: bool,
     /// The private-use block the source's lone surrogates were mapped to
     /// ([`crate::surrogates`]); a character reference to a lone surrogate decodes into it.
     /// `None`: such a reference is refused.
@@ -61,6 +65,7 @@ impl Default for Options {
             enable_comment_interpolation: true,
             restricted_namespace: true,
             strict: true,
+            strict_tags: false,
             surrogate_base: None,
         }
     }

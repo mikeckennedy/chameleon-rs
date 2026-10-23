@@ -7,7 +7,7 @@ Templates are code: like Python source, they run with your application's rights,
 
 - **Text**: `${x}`, `tal:content="x"` and `tal:replace="x"` escape `&`, `<` and `>`.
 - **Attribute values**: `title="${x}"` and `tal:attributes="title x"` also escape the attribute's own quote character (`"` as `"`, `'` as `'`).
-- **`markdown:`**: in element content, raw HTML in the text is escaped and `javascript:`, `vbscript:`, `file:` and `data:` links are removed, unless a profile sets `raw_html='allow'`. In an attribute value the result is escaped like any string. See [Markdown](markdown.md).
+- **`markdown:`**: in element content, raw HTML in the text is escaped and `javascript:`, `vbscript:`, `file:` and `data:` links are removed, unless a profile sets `raw_html='allow'`. In an attribute value the result is escaped like any string. For text from users, give a `heading_ids` profile a prefix, so headings can't take ids your page's scripts rely on. See [Markdown](markdown.md).
 
 Nothing is escaped for `structure`, `structure:`, or an object with an `__html__` method (such as `Markup`). Use them only for markup you made or have already sanitized.
 
@@ -39,7 +39,7 @@ These are the HTML contexts where escaping `&`, `<`, `>` and the quote doesn't m
 
 A name that comes from a request must never reach a lookup that accepts any path.
 
-- **Safe with request data**: [render_partial](../reference/render_partial.md#chameleon_rs.render_partial), [chameleon_rs.starlette.Templates](../reference/starlette.Templates.md#chameleon_rs.starlette.Templates), [chameleon_rs.litestar.ChameleonEngine](../reference/litestar.ChameleonEngine.md#chameleon_rs.litestar.ChameleonEngine) and [chameleon_rs.robyn.ChameleonTemplate](../reference/robyn.ChameleonTemplate.md#chameleon_rs.robyn.ChameleonTemplate). They refuse names that leave their folder: absolute paths, `..` out of it, `package:path` specs, backslashes on the Jinja-style APIs. A refused name is "not found", like a missing file.
+- **Safe with request data**: [render_partial](../reference/render_partial.md#chameleon_rs.render_partial), [chameleon_rs.starlette.Templates](../reference/starlette.Templates.md#chameleon_rs.starlette.Templates), [chameleon_rs.litestar.ChameleonEngine](../reference/litestar.ChameleonEngine.md#chameleon_rs.litestar.ChameleonEngine) and [chameleon_rs.robyn.ChameleonTemplate](../reference/robyn.ChameleonTemplate.md#chameleon_rs.robyn.ChameleonTemplate). They refuse names that leave their folder: absolute paths, `..` out of it, `package:path` specs, backslashes on the Jinja-style APIs. A refused name is "not found", like a missing file. The check is on the name, so a symlink that you put inside the folder is still followed, wherever it points (Jinja's `FileSystemLoader` does the same).
 - **Names from code only**: the decorator APIs (`@template`, [render](../reference/flask.render.md#chameleon_rs.flask.render), [response](../reference/flask.response.md#chameleon_rs.flask.response) in each integration), [PageTemplateLoader](../reference/PageTemplateLoader.md#chameleon_rs.PageTemplateLoader) and `load:` expressions. They accept `../` and absolute paths, as the original libraries and Chameleon do.
 
 If a page is chosen by the request, map the request value to a name you wrote:
