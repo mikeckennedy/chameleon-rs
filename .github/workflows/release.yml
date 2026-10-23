@@ -16,15 +16,8 @@ name: Release
 # is built plain, with a warning; each job's summary says which kind every wheel is. A profile
 # that does not fit the code (stale, or made for other symbol names) still fails the build.
 #
-# Before the first run (the repository is private today):
-# - The arm64 runners (ubuntu-24.04-arm, windows-11-arm) are free for public repositories
-#   only; a private repository needs arm64 larger runners on a paid plan. Make the repository
-#   public first, or drop those matrix entries.
-# - macOS minutes count 10x against a private repository's quota (12 macOS build jobs and 12
-#   macOS test jobs per run).
-# - The PyPI page links (Source, Issues, Changelog) point at GitHub and 404 while the
-#   repository is private: make it public before publishing. (The README image is hosted
-#   outside GitHub.)
+# Before the first run (the repository is public since 2026-10-22, so the arm64 runners are
+# free and macOS minutes count at the normal rate):
 # - Create the `pypi` environment (Settings > Environments, with required reviewers) and the
 #   trusted publisher on PyPI for this repository, `release.yml` and environment `pypi`.
 

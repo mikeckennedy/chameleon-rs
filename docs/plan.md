@@ -1815,6 +1815,9 @@ workflow's header):
 - PyPI's project links (Source, Issues, Changelog) and the README's images and links point at
   GitHub and 404 while the repository is private: make it public before publishing.
 
+*(2026-10-22: the repository is public, so the points above are settled: the arm64 runners are
+free, macOS minutes count normally, and the PyPI and README links resolve.)*
+
 What remains for the owner:
 - Choose the version (Cargo.toml `[workspace.package] version`), move the CHANGELOG section
   under it with the date, and decide the Development Status and free-threading classifiers.

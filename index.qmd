@@ -12,6 +12,10 @@ rendering that never blocks the event loop, built-in integrations for Flask/Quar
 Starlette, Robyn and Litestar, partials, Markdown, and support for free-threaded Python. No
 runtime dependencies.
 
+**Source on GitHub: <https://github.com/mikeckennedy/chameleon-rust>** ·
+[Changelog](https://github.com/mikeckennedy/chameleon-rust/blob/main/CHANGELOG.md) ·
+[Issues](https://github.com/mikeckennedy/chameleon-rust/issues)
+
 ```python
 from chameleon_rs import PageTemplate
 
@@ -84,6 +88,10 @@ async def detail(number: int):
 
 ## What's new compared with Chameleon
 
+- **[Errors where the mistake is](user-guide/strict-tags.qmd).** An unclosed tag carrying
+  `tal:` attributes makes Chameleon render what a condition should hide, or fail lines away
+  with an unrelated `NameError`. With `strict_tags=True` it's a `ParseError` pointing at that
+  tag and naming the missing end tag. Opt-in.
 - **[Async rendering](user-guide/async.qmd).** `await template.render_async(**model)` awaits
   awaitable model values where the template uses them, without blocking the event loop. Opt-in
   settings run helpers and partials concurrently.

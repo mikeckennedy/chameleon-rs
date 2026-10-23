@@ -253,6 +253,7 @@ section.level2:first-of-type > h2:first-child,
 </section>
 </div></div><p><strong>Chameleon templates, modernized. Several times faster.</strong></p>
 <p>chameleon-rs is <a href="https://github.com/malthe/chameleon">Chameleon</a>’s template language on a new engine written in Rust. Your existing templates and code run unchanged, with byte-identical output, several times faster. It also adds what a modern Python web app expects: async rendering that never blocks the event loop, built-in integrations for Flask/Quart, FastAPI, Starlette, Robyn and Litestar, partials, Markdown, and support for free-threaded Python. No runtime dependencies.</p>
+<p><strong>Source on GitHub: <a href="https://github.com/mikeckennedy/chameleon-rust" class="uri">https://github.com/mikeckennedy/chameleon-rust</a></strong> · <a href="https://github.com/mikeckennedy/chameleon-rust/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/mikeckennedy/chameleon-rust/issues">Issues</a></p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplate</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>page <span class="op">=</span> PageTemplate(<span class="st">'&lt;p tal:repeat="name names"&gt;Hello, $</span><span class="sc">{name}</span><span class="st">!&lt;/p&gt;'</span>)</span>
@@ -299,6 +300,7 @@ section.level2:first-of-type > h2:first-child,
 <section id="whats-new-compared-with-chameleon" class="level2">
 <h2 class="anchored" data-anchor-id="whats-new-compared-with-chameleon">What’s new compared with Chameleon</h2>
 <ul>
+<li><strong><a href="./user-guide/strict-tags.html">Errors where the mistake is</a>.</strong> An unclosed tag carrying <code>tal:</code> attributes makes Chameleon render what a condition should hide, or fail lines away with an unrelated <code>NameError</code>. With <code>strict_tags=True</code> it’s a <code>ParseError</code> pointing at that tag and naming the missing end tag. Opt-in.</li>
 <li><strong><a href="./user-guide/async.html">Async rendering</a>.</strong> <code>await template.render_async(**model)</code> awaits awaitable model values where the template uses them, without blocking the event loop. Opt-in settings run helpers and partials concurrently.</li>
 <li><strong><a href="./user-guide/frameworks.html">Web frameworks</a>.</strong> Flask and Quart, FastAPI, Starlette (a drop-in for <code>Jinja2Templates</code>), Robyn and Litestar (a template engine for <code>TemplateConfig</code>) are built in; Pyramid’s pyramid_chameleon runs unchanged.</li>
 <li><strong><a href="./user-guide/partials.html">Partials</a>.</strong> <code>${render_partial('shared/card.pt', item=item)}</code> works in every template and renders natively, about 10x faster than Chameleon with chameleon_partials.</li>
