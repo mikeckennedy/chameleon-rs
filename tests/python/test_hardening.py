@@ -604,6 +604,37 @@ def test_sibling_partials_of_discarded_templates_are_freed(tmp_path: Path) -> No
     assert not any(str(tmp_path) in str(template.filename) for template in partials._SIBLINGS.values())
 
 
+def test_sibling_partials_of_discarded_template_classes_are_freed(tmp_path: Path) -> None:
+    # The key held the class, and a class attribute referring back to its caller kept the
+    # class, the caller, its partial cache and the sibling alive.
+    import weakref
+
+    (tmp_path / 'page.pt').write_text('${render_partial("card.pt")}')
+    (tmp_path / 'card.pt').write_text('card')
+    refs = []
+    for _ in range(20):
+        translator = _Translator()
+        cls = type('Page', (PageTemplateFile,), {'translator': translator})
+        page = cls(tmp_path / 'page.pt')
+        translator.page = page
+        refs.append(weakref.ref(cls))
+        assert page() == 'card'
+    del translator, cls, page
+    gc.collect()
+    assert [ref for ref in refs if ref() is not None] == []
+
+
+def test_a_changed_mutable_setting_is_not_compiled_into_a_shared_sibling(tmp_path: Path) -> None:
+    # Keyed by `id`, one dict shared a sibling compiled with its old contents: the caller saw
+    # the new value and its partial the old one.
+    (tmp_path / 'page.pt').write_text('${greeting}:${render_partial("card.pt")}')
+    (tmp_path / 'card.pt').write_text('${greeting}')
+    builtins = {'greeting': 'first'}
+    assert PageTemplateFile(tmp_path / 'page.pt', extra_builtins=builtins)() == 'first:first'
+    builtins['greeting'] = 'second'
+    assert PageTemplateFile(tmp_path / 'page.pt', extra_builtins=builtins)() == 'second:second'
+
+
 def test_sibling_partials_are_still_shared(tmp_path: Path) -> None:
     (tmp_path / 'page.pt').write_text('${render_partial("card.pt")}')
     (tmp_path / 'card.pt').write_text('card')

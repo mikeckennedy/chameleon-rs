@@ -102,7 +102,9 @@ a web worker, then for the memory, time and cache lifetimes a small input could 
   process,** with the settings in their cache key (a `translate` function per template, say),
   and one more for each file a deployment replaced. They now live as long as a template that
   uses them, and the cache holds settings by value only when they are plain data (strings,
-  numbers), so a setting that refers back to its template doesn't keep it either.
+  numbers), so a setting or a template subclass that refers back to its template doesn't
+  keep it either. A setting that can't be hashed (a dict such as `extra_builtins`) still
+  isn't shared, so a sibling never keeps contents the dict has since changed.
 - **A `@concurrent` call's own cancellation waited for every other call.** A helper raising
   `CancelledError` (or awaiting a cancelled future) ended the render only once the others
   finished, never if one hung. It now ends it at once, as a failure does.

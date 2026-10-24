@@ -205,10 +205,12 @@ _GLOBAL_CACHE: dict[str, tuple[tuple[int, bool, bool], Any, tuple[str, tuple[int
 # Templates found on a caller's search path or folders (`partial_search='caller'`), shared by
 # every caller that finds the same file with the same template class and (hashable) settings.
 # Weak: a sibling lives as long as a caller's `_partial_cache` holds it. Its key holds plain
-# settings by value and others by `id` (`_setting_key`), never the objects themselves: a
-# strong map kept every template ever configured (its `translate` function, say), a sibling for
-# each file a deployment replaced, and, through a setting referring back to its caller, the
-# caller too, for the life of the process.
+# settings by value and the class and other settings by `id` (`_setting_key`), never the
+# objects themselves: a strong map kept every template ever configured (its `translate`
+# function, say), a sibling for each file a deployment replaced, and, through a setting or a
+# class attribute referring back to its caller, the caller too, for the life of the process.
+# An unhashable setting (a dict, which can change after a sibling compiled with it) is not
+# shared.
 _SIBLINGS: weakref.WeakValueDictionary[Any, Any] = weakref.WeakValueDictionary()
 
 # Settings a sibling's key holds by value; any other is held by `id`.
@@ -375,10 +377,11 @@ def _sibling(caller: Any, path: str, identity: tuple[int, int]) -> Any:
     paths = getattr(caller, '_partial_paths', [])
     try:
         # By the file, not the path's spelling: the first spelling seen builds the template.
-        key: Any = (identity, cls, tuple(paths), tuple(sorted((k, _setting_key(v)) for k, v in config.items())))
-        hash(key)
+        settings = tuple(sorted((k, _setting_key(v)) for k, v in config.items()))
+        key: Any = (identity, (_BY_ID, id(cls)), tuple(_setting_key(p) for p in paths), settings)
     except TypeError:
-        # Unhashable search path entries: not shared (the caller's own cache keeps it).
+        # Unhashable settings or search path entries: not shared (the caller's own cache keeps
+        # it).
         return cls(path, search_path=list(paths), **config)
     template = _SIBLINGS.get(key)
     # One built by a hard link that has since been replaced (the file `identity` is gone from
@@ -387,9 +390,9 @@ def _sibling(caller: Any, path: str, identity: tuple[int, int]) -> Any:
         return template
     template = cls(path, search_path=list(paths), **config)
     try:
-        # The settings the key holds by `id`, alive while the entry is: no other object can
-        # take an `id` the key still has.
-        template.__dict__['_rs_settings'] = tuple(config.values())
+        # What the key holds by `id`, alive while the entry is (the class is the template's
+        # own): no other object can take an `id` the key still has.
+        template.__dict__['_rs_settings'] = (tuple(paths), tuple(config.values()))
         _SIBLINGS[key] = template
     except (AttributeError, TypeError):
         # A template class without a `__dict__` or weak references: not shared.
@@ -398,7 +401,13 @@ def _sibling(caller: Any, path: str, identity: tuple[int, int]) -> Any:
 
 
 def _setting_key(value: Any) -> Any:
-    return value if type(value) in _PLAIN else (_BY_ID, id(value))
+    if type(value) in _PLAIN:
+        return value
+    if type(value) is tuple:
+        return tuple(_setting_key(v) for v in value)
+    # Raises `TypeError` for an unhashable value, as keying by the value itself did.
+    hash(value)
+    return (_BY_ID, id(value))
 
 
 # --- Native frames (called by the extension, once per call site or template per render) ---
