@@ -187,10 +187,11 @@ fn find_replaced(s: &[u8], from: usize, table: &[u8; 256], extra: Option<u8>) ->
 
 /// Copies `s` from `from` on, replacing the bytes `table` classifies (`extra` is the one
 /// beyond `&<>` it replaces, if any), finding them eight bytes at a time. Each entity is
-/// written as a constant-length copy and the buffer is reserved once.
+/// written as a constant-length copy and the buffer is reserved once (the caller wrote the
+/// part before `from`).
 fn replace(s: &[u8], from: usize, table: &[u8; 256], extra: Option<u8>, out: &mut Output) {
     // Most escaped strings hold a few entities; `push` still grows the buffer if needed.
-    out.reserve(s.len() + 24);
+    out.reserve(s.len() - from + 24);
     let mut last = from;
     while let Some(i) = find_replaced(s, last, table, extra) {
         if last < i {

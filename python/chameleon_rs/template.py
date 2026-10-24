@@ -36,6 +36,7 @@ import threading
 import types
 from collections.abc import Callable, Collection, Iterable, Mapping
 from functools import partial
+from operator import is_
 from typing import Any, ClassVar
 
 from chameleon_rs._native import (
@@ -770,7 +771,7 @@ class PageTemplate(BaseTemplate):
         key = (encoding, translate, self.translate, self.encoding, self.on_error_handler)
         cached = self._encoded
         # By identity: equal but distinct translators (one per language) are different.
-        if cached is not None and len(cached[0]) == len(key) and all(a is b for a, b in zip(cached[0], key)):
+        if cached is not None and len(cached[0]) == len(key) and all(map(is_, cached[0], key)):
             return cached[1]
         defaults = self._render_defaults(encoding, translate)
         self._encoded = (key, defaults)

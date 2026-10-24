@@ -195,7 +195,8 @@ def _same_file(template: Any, path: str, identity: tuple[int, int] | None) -> bo
     return (
         identity is not None
         and _file_id(path) == identity
-        and (not isinstance(filename, str) or _file_id(filename) == identity)
+        # One `stat` when they are the same name, the usual case.
+        and (not isinstance(filename, str) or filename == path or _file_id(filename) == identity)
     )
 
 

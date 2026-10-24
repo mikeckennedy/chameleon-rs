@@ -565,16 +565,17 @@ fn parse_tag(
     let mut tag = match_tag(src, span)?;
     for attr in &tag.attrs {
         let name = attr.name.text(src);
-        let value = NsValue {
+        // Built only for a declaration: most attributes aren't one.
+        let value = || NsValue {
             uri: Arc::from(attr.value.text(src)),
             span: (attr.kind != AttrKind::Valueless).then_some(attr.value),
         };
         if name == "xmlns" {
             let below = scope.get(None).map(|(key, span, _)| (key.clone(), *span));
-            namespaces.set_over(None, None, value, below);
+            namespaces.set_over(None, None, value(), below);
         } else if let Some(prefix) = name.strip_prefix("xmlns:") {
             let below = scope.get(Some(prefix)).map(|(key, span, _)| (key.clone(), *span));
-            namespaces.set_over(Some(prefix), Some(attr.name.sub(6, attr.name.len())), value, below);
+            namespaces.set_over(Some(prefix), Some(attr.name.sub(6, attr.name.len())), value(), below);
         }
     }
     let tag_name = tag.name.text(src);
