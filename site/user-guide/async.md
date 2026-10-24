@@ -53,7 +53,7 @@ With no awaitable values, [render_async()](../reference/robyn.render_async.md#ch
 >     return {'episode': episode, 'related': related}
 > ```
 >
-> [render_async](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async) still matters then: a big page renders without blocking the loop (see [Offloading](#offloading-a-render-to-a-thread)), and the integrations need no change in your views. Passing awaitables to the template is useful when a value is only sometimes used (a sidebar behind a `tal:condition`), so it is never loaded when the page doesn't show it.
+> [render_async](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async) still matters then: the integrations need no change in your views, and a big page can render in a thread (see [Offloading](#offloading-a-render-to-a-thread)). Without that, the render itself runs on the loop: an async render yields only where a value suspends, so a page that is all CPU work (a 500,000-row table) holds the loop until it is done, as a synchronous render would. Passing awaitables to the template is useful when a value is only sometimes used (a sidebar behind a `tal:condition`), so it is never loaded when the page doesn't show it.
 
 
 # What gets awaited
@@ -156,7 +156,9 @@ print(f'{time.perf_counter() - start:.1f}s, not 0.6s')
 
 A call runs concurrently only where its output can simply be written later: a whole `${...}` in text, or one inside an attribute value. Anywhere its value decides what the template does (a condition, a `tal:define`, `tal:content` / `tal:replace`, which may choose the default content) or where the output might be taken back (inside `tal:on-error` or a translation), it is awaited in place, like any awaitable.
 
-If a concurrent call raises, the error is raised when the render reaches the end, in document order, and the other tasks are cancelled. In a sync [render()](../reference/flask.render.md#chameleon_rs.flask.render) the decorator has no effect.
+If a concurrent call raises, the render waits for nothing else: the error is raised as soon as the render has reached its end and that call has failed, even if calls before it in the page are still running. The other tasks are cancelled and their `finally` blocks run before the error is raised, as in a `TaskGroup`. If the request is cancelled meanwhile, the `CancelledError` (or `asyncio.timeout`'s `TimeoutError`) wins over the template error. In a sync [render()](../reference/flask.render.md#chameleon_rs.flask.render) the decorator has no effect.
+
+One render starts at most 64 tasks for concurrent calls and partials (set `CHAMELEON_CONCURRENT_LIMIT` to change it). Past that, each further call is awaited where it stands, so a `tal:repeat` over request-sized data can't start an unbounded number of queries at once.
 
 
 ## Partials in parallel: `concurrent=True`
@@ -203,6 +205,7 @@ Experimental. `render_async(..., offload=True)` (or `@template(..., offload=True
 
 - **On free-threaded Python (3.14t, 3.15t)** renders then run in parallel with the event loop and with each other. chameleon-rs ships free-threaded wheels and doesn't turn the GIL back on.
 - **On a regular (GIL) build** it helps only pages dominated by long text, whose escaping releases the GIL. For most pages, a thread hop costs more than it saves.
+- **Cancellation**: a render still waiting for a thread is dropped when its request is cancelled (a client disconnect), but one already running in a thread can't be interrupted: it finishes and its result is discarded.
 
 
 # In the web frameworks

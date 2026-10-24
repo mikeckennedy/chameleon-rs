@@ -122,6 +122,8 @@ For content you trust, such as your own articles, allow raw HTML in a separate p
 
 "Safe" here is about markup and requests, not CPU time. Some inputs are slow to convert: a table with thousands of columns can take seconds. If anyone can post the text, limit its length when you accept it, and consider turning tables off for that profile (`'extensions': {'table': False}`).
 
+Tables have a memory budget. Every row of a table gets as many cells as its header, so a short text can ask for millions of empty ones (a header of 700 columns over 700 one-cell rows, a few times over). Text whose tables would make more than 100,000 cells, or more cells than it has bytes, converts with tables off: their rows show as plain paragraphs.
+
 
 # Profiles: one prefix per kind of content
 

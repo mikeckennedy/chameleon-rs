@@ -108,7 +108,7 @@ digest(self, body: 'str', names: 'Collection[str]') -> 'str'
 Process-wide settings for templates loaded by name, partials and Markdown.
 
 
-configure(template_folder: 'str | os.PathLike[str] | None' = None, *, auto_reload: 'bool | None' = None, restricted_namespace: 'bool | None' = None, strict_tags: 'bool | None' = None, partial_search: 'str | None' = None, markdown: 'MarkdownSetting | None' = None, markdown_cache: 'int | None' = None) -> 'Settings | None'
+configure(template_folder: 'str | os.PathLike[str] | None' = None, *, auto_reload: 'bool | None' = None, restricted_namespace: 'bool | None' = None, strict_tags: 'bool | None' = None, strict_names: 'bool | None' = None, partial_search: 'str | None' = None, markdown: 'MarkdownSetting | None' = None, markdown_cache: 'int | None' = None) -> 'Settings | None'
 
 Configures chameleon-rs for the whole process: where templates loaded by name live, for
 ``render_partial`` and the framework integrations (``chameleon_rs.flask``,
@@ -120,6 +120,12 @@ file changes (checked at most once per file per render for partials). ``restrict
 ``False`` allows attributes such as Alpine.js's ``@click`` (chameleon-flask's option).
 ``strict_tags``: ``True`` makes an unclosed element carrying TAL, METAL or i18n attributes a
 ``ParseError`` at its start tag (default: ``CHAMELEON_STRICT_TAGS``, else off).
+``strict_names``: ``True`` makes the integrations' decorator and module APIs (``@template``,
+``render``, ``response``, ``ErrorPage.template_file``) refuse a template name that could
+reach outside the template folder (absolute, ``..``, a backslash, a drive letter or package
+spec, a NUL, surrounding whitespace) with the loader's ``ValueError('Template not found:
+...')``, as for a missing file (default: ``CHAMELEON_STRICT_NAMES``, else off: they accept
+such names, as the original libraries do).
 ``partial_search``: ``'caller'`` (the default: partials are looked for in the template
 folder, then on the calling template's search path, then in its folder and each folder above
 it, never outside its template tree) or ``'registered'`` (chameleon_partials' lookup: the template folder only, a path not
@@ -942,6 +948,11 @@ table with thousands of columns can take seconds. If anyone can post the text, l
 length when you accept it, and consider turning tables off for that profile
 (`'extensions': {'table': False}`).
 
+Tables have a memory budget. Every row of a table gets as many cells as its header, so a
+short text can ask for millions of empty ones (a header of 700 columns over 700 one-cell
+rows, a few times over). Text whose tables would make more than 100,000 cells, or more cells
+than it has bytes, converts with tables off: their rows show as plain paragraphs.
+
 ## Profiles: one prefix per kind of content
 
 Different content needs different settings: your own articles may allow HTML, while comments
@@ -1096,9 +1107,11 @@ async def episode_page(number: int):
     return {'episode': episode, 'related': related}
 ```
 
-`render_async` still matters then: a big page renders without blocking the loop (see
-[Offloading](#offloading-a-render-to-a-thread)), and the integrations need no change in your
-views. Passing awaitables to the template is useful when a value is only sometimes used (a
+`render_async` still matters then: the integrations need no change in your views, and a big
+page can render in a thread (see [Offloading](#offloading-a-render-to-a-thread)). Without
+that, the render itself runs on the loop: an async render yields only where a value
+suspends, so a page that is all CPU work (a 500,000-row table) holds the loop until it is
+done, as a synchronous render would. Passing awaitables to the template is useful when a value is only sometimes used (a
 sidebar behind a `tal:condition`), so it is never loaded when the page doesn't show it.
 :::
 
@@ -1194,8 +1207,17 @@ in text, or one inside an attribute value. Anywhere its value decides what the t
 content) or where the output might be taken back (inside `tal:on-error` or a translation), it is
 awaited in place, like any awaitable.
 
-If a concurrent call raises, the error is raised when the render reaches the end, in document
-order, and the other tasks are cancelled. In a sync `render()` the decorator has no effect.
+If a concurrent call raises, the render waits for nothing else: the error is raised as soon as
+the render has reached its end and that call has failed, even if calls before it in the page are
+still running. The other tasks are cancelled and their `finally` blocks run before the error is
+raised, as in a `TaskGroup`. If the request is cancelled meanwhile, the `CancelledError` (or
+`asyncio.timeout`'s `TimeoutError`) wins over the template error. In a sync `render()` the
+decorator has no effect.
+
+One render starts at most 64 tasks for concurrent calls and partials (set
+`CHAMELEON_CONCURRENT_LIMIT` to change it). Past that, each further call is awaited where it
+stands, so a `tal:repeat` over request-sized data can't start an unbounded number of queries at
+once.
 
 ### Partials in parallel: `concurrent=True`
 
@@ -1240,6 +1262,9 @@ synchronous there, so awaitable values aren't awaited: load the data first.
   on.
 - **On a regular (GIL) build** it helps only pages dominated by long text, whose escaping
   releases the GIL. For most pages, a thread hop costs more than it saves.
+- **Cancellation**: a render still waiting for a thread is dropped when its request is cancelled
+  (a client disconnect), but one already running in a thread can't be interrupted: it finishes
+  and its result is discarded.
 
 ## In the web frameworks
 
@@ -1403,6 +1428,7 @@ chameleon_rs.configure(
     auto_reload=False,
     restricted_namespace=True,
     strict_tags=True,
+    strict_names=True,
     partial_search='caller',
     markdown=True,
     markdown_cache=1024,
@@ -1415,6 +1441,7 @@ chameleon_rs.configure(
 | `auto_reload` | `False` | Recompile a template when its file changes. For partials, each file is checked at most once per render. Use it in development only. |
 | `restricted_namespace` | `True` | `False` allows attributes with other namespaces or prefixes, such as Alpine.js's `@click` or Vue's `v-on:click`. |
 | `strict_tags` | `False` (or `CHAMELEON_STRICT_TAGS`) | `True` makes an unclosed element carrying template attributes a `ParseError` that points at it. Recommended. See [Catching unclosed tags](strict-tags.qmd). |
+| `strict_names` | `False` (or `CHAMELEON_STRICT_NAMES`) | `True` makes the decorator APIs (`@template`, `render`, `response`, `ErrorPage`'s template) refuse names that could leave the template folder, with the same `ValueError` as a missing template. For apps that build template names from request data. See [Security](security.qmd#template-names-from-requests). |
 | `partial_search` | `'caller'` | Where `render_partial` looks: `'caller'` searches the template folder, then the calling template's search path and folders. `'registered'` searches the template folder only, as chameleon_partials does. See [Partials](partials.qmd#how-a-path-is-found). |
 | `markdown` | none | The `markdown:` expression: `True` for the defaults, or a dict of profiles (prefix → options). `False` removes it. See [Markdown](markdown.qmd). |
 | `markdown_cache` | `1024` | How many Markdown conversions to keep. `0` turns the cache off. |
@@ -1516,6 +1543,7 @@ These are read once, when chameleon-rs is imported, as Chameleon reads them. The
 | `CHAMELEON_EAGER` | File templates compile when they're created, not on first use. Handy in a test that checks every template in a project compiles. |
 | `CHAMELEON_DEBUG` | Templates keep their body and a dump of their compiled program, and use a module loader in a temporary directory. |
 | `CHAMELEON_STRICT_TAGS` | chameleon-rs only. The default for `strict_tags`, for `configure()` and every template: unclosed elements carrying template attributes are errors. See [Catching unclosed tags](strict-tags.qmd). |
+| `CHAMELEON_STRICT_NAMES` | chameleon-rs only. The default for `strict_names`: the decorator APIs refuse template names that could leave the template folder. See [Security](security.qmd#template-names-from-requests). |
 | `CHAMELEON_CACHE` | A directory, which must exist. Chameleon writes the generated Python modules there. chameleon-rs checks the directory but doesn't write compiled programs to disk: compiling is fast enough not to need it. |
 
 Unknown `CHAMELEON_*` variables are logged as warnings, as in Chameleon.
@@ -3168,6 +3196,19 @@ A name that comes from a request must never reach a lookup that accepts any path
 - **Names from code only**: the decorator APIs (`@template`, `render`, `response` in each
   integration), `PageTemplateLoader` and `load:` expressions. They accept `../` and absolute
   paths, as the original libraries and Chameleon do.
+- **Opt in for the decorator APIs**: with `chameleon_rs.configure(strict_names=True)` (or
+  `CHAMELEON_STRICT_NAMES=1`), the decorator APIs refuse the same names: absolute paths, `..`
+  segments, backslashes, drive letters and `package:path` specs, a NUL, and surrounding
+  whitespace. A refused name raises the `ValueError` a missing template raises
+  (`Template not found: ...`), so existing `except` clauses still apply. It's off by default,
+  as in the original libraries. chameleon-rs only.
+
+The decorator APIs always keep one compiled template per file, however a name spells it
+(`./pages/a.pt`, `pages//a.pt`, an absolute path), and the names they remember for that are
+bounded, so `response(f'pages/{slug}.pt')` can't grow the template cache past one template
+per file. Without `strict_names`, the loader still caches an absolute path to a file that
+doesn't exist, as Chameleon's does (it fails when rendered), so turn it on if any part of a
+name comes from a request.
 
 If a page is chosen by the request, map the request value to a name you wrote:
 
