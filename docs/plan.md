@@ -1787,7 +1787,8 @@ build path described above (maturin-action building after a `--profile-only` tra
 - **`check_wheel.py`**: scans every artifact (metadata, SBOM, extension, sdist files) for the
   corpus folder names and `$CHAMELEON_RS_CORPUS`, and outside GitHub Actions for the home folder
   and checkout path, failing on a hit; a local wheel's SBOM naming the checkout is reported as
-  a note (local wheels are never uploaded; CI's name the runner's path). Framework installs for
+  a note (published local wheels are built from a clone at a neutral path, `make
+  release-local`; CI's name the runner's path). Framework installs for
   test_typing take pydantic-core and msgspec as wheels only and skip the test with a log line
   if one is missing (`--only-binary :all:` was too strict: PyYAML has no 3.15 wheel). `--all`
   no longer picks musllinux wheels on a glibc host or the reverse. Windows runs the smoke

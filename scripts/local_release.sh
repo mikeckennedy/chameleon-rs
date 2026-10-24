@@ -8,20 +8,27 @@
 # checkout: maturin writes the checkout's path into every wheel's SBOM. The clone's target/ is
 # kept between runs. Uncommitted changes are not built, so the tree must be clean.
 #
-#   scripts/local_release.sh            PYTHONS="3.14 3.14t" scripts/local_release.sh
+# Each wheel is its own job (a pgo_wheel.py process, or a container per Linux wheel), JOBS at
+# a time: a wheel's build ends in a single-threaded fat-LTO link and its training is single-
+# threaded, so one at a time leaves most cores idle. Jobs share nothing but the clone: each
+# builds in its own target/pgo/wheels/<interpreter tag>. Logs: target/release-logs/<job>.log.
+#
+#   scripts/local_release.sh      PYTHONS="3.14 3.14t" JOBS=4 OUT=/elsewhere scripts/local_release.sh
 set -euo pipefail
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
 clone=${CLONE:-/tmp/chameleon-rs}
+out=${OUT:-$repo/dist}
 pythons=${PYTHONS:-3.12 3.13 3.14 3.14t 3.15 3.15t}
+jobs=${JOBS:-8}
 
 if [ -n "$(git -C "$repo" status --porcelain)" ]; then
     echo "local_release: uncommitted changes; commit them first (the build is of HEAD)" >&2
     exit 1
 fi
 
-rm -rf "$repo/dist"
-mkdir "$repo/dist"
+rm -rf "$out"
+mkdir -p "$out"
 
 if [ -d "$clone/.git" ]; then
     git -C "$clone" fetch -q "$repo" HEAD
@@ -30,27 +37,46 @@ if [ -d "$clone/.git" ]; then
 else
     git clone -q "$repo" "$clone"
 fi
-echo "local_release: building $(git -C "$clone" log --oneline -1) in $clone"
+echo "local_release: building $(git -C "$clone" log --oneline -1) in $clone, $jobs jobs at a time"
 cd "$clone"
+logs=target/release-logs
+rm -rf "$logs"
+mkdir -p "$logs" dist
 
-# macOS: maturin from the hash-pinned requirements, as the release workflow installs it.
+# maturin from the hash-pinned requirements, as the release workflow installs it.
 tools=target/release-tools
 uv venv -q --allow-existing --python 3.13 "$tools"
 uv pip install -q --python "$tools" --require-hashes -r scripts/release-requirements.txt
-python_args=()
-for p in $pythons; do python_args+=(--python "$p"); done
-"$tools/bin/python" scripts/pgo_wheel.py "${python_args[@]}" --maturin "$tools/bin/maturin" --out dist
-"$tools/bin/maturin" sdist --out dist
+"$tools/bin/maturin" sdist --out dist > "$logs/sdist.log" 2>&1
 
-# Linux: one container per architecture (x86_64 under emulation on Apple silicon), the clone
-# mounted at /build. One at a time: the builds share target/pgo.
-for arch in aarch64 x86_64; do
-    if [ "$arch" = x86_64 ]; then platform=linux/amd64; else platform=linux/arm64; fi
-    docker run --rm --platform "$platform" -v "$clone:/build" -w /build \
-        -e PYTHONS="$pythons" "quay.io/pypa/manylinux_2_28_$arch" bash -c \
-        "for p in \$PYTHONS; do scripts/linux_wheel.sh \"\$p\" $arch-unknown-linux-gnu manylinux_2_28 true; done"
-done
+# One job: `macos <python>` or `<linux arch> <python>`, its output in its log.
+build_one() {
+    local kind=$1 python=$2 log="$logs/$1-$2.log"
+    if [ "$kind" = macos ]; then
+        "$tools/bin/python" scripts/pgo_wheel.py --python "$python" --maturin "$tools/bin/maturin" \
+            --out dist > "$log" 2>&1
+    else
+        local platform=linux/arm64
+        if [ "$kind" = x86_64 ]; then platform=linux/amd64; fi
+        docker run --rm --platform "$platform" -v "$clone:/build" -w /build \
+            "quay.io/pypa/manylinux_2_28_$kind" \
+            scripts/linux_wheel.sh "$python" "$kind-unknown-linux-gnu" manylinux_2_28 true > "$log" 2>&1
+    fi
+    local status=$?
+    if [ $status -eq 0 ]; then echo "local_release: done   $kind $python"; else echo "local_release: FAILED $kind $python ($log)"; fi
+    return $status
+}
+export -f build_one
+export logs tools clone
 
-cp dist/* "$repo/dist/"
-echo "local_release: $(ls "$repo/dist" | wc -l | tr -d ' ') files in $repo/dist"
-ls -1 "$repo/dist"
+# x86_64 first: emulated, its builds are the longest.
+for kind in x86_64 aarch64 macos; do
+    for p in $pythons; do echo "$kind $p"; done
+done | xargs -P "$jobs" -L 1 bash -c 'build_one "$@"' _ || {
+    echo "local_release: a build failed; dist/ is left empty" >&2
+    exit 1
+}
+
+cp dist/* "$out/"
+echo "local_release: $(ls "$out" | wc -l | tr -d ' ') files in $out"
+ls -1 "$out"
