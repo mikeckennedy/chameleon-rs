@@ -574,6 +574,8 @@ def test_a_cancelled_concurrent_call_ends_the_render_at_once() -> None:
 
 
 class _Translator:
+    page: Any = None
+
     def __call__(self, msgid: Any, **kwargs: Any) -> str:
         return str(msgid)
 
@@ -590,9 +592,13 @@ def test_sibling_partials_of_discarded_templates_are_freed(tmp_path: Path) -> No
     refs = []
     for _ in range(20):
         translator = _Translator()
+        page = PageTemplateFile(tmp_path / 'page.pt', translate=translator)
+        # A setting referring back to its caller: the cache key held the translator, and so
+        # the caller, its partial cache and the sibling, which the weak value never freed.
+        translator.page = page
         refs.append(weakref.ref(translator))
-        assert PageTemplateFile(tmp_path / 'page.pt', translate=translator)() == 'card'
-    del translator
+        assert page() == 'card'
+    del translator, page
     gc.collect()
     assert [ref for ref in refs if ref() is not None] == []
     assert not any(str(tmp_path) in str(template.filename) for template in partials._SIBLINGS.values())
@@ -623,17 +629,75 @@ def test_a_replaced_hard_link_no_longer_loads_for_the_other_name(tmp_path: Path)
     assert engine.get_template('a.pt')() == 'replacement'
 
 
-def test_a_replaced_hard_link_in_the_partials_folder(tmp_path: Path, configured: Path) -> None:
+@pytest.mark.parametrize('replaced', ['a', 'b'])
+@pytest.mark.parametrize('folder', ['registered', 'caller'])
+def test_a_replaced_hard_link_parts_from_the_other_partial(tmp_path: Path, folder: str, replaced: str) -> None:
+    # Either name of the link replaced, found in the partials folder or next to the caller: each
+    # name renders its own file. A cache hit checked only the template's file, and a shared
+    # sibling was reused by the old file's identity.
     import os
 
+    from chameleon_rs import _settings
     from chameleon_rs.partials import render_partial
 
-    chameleon_rs.configure(template_folder=str(tmp_path), auto_reload=True)
     (tmp_path / 'a.pt').write_text('first')
     os.link(tmp_path / 'a.pt', tmp_path / 'b.pt')
-    page = PageTemplate('${render_partial("b.pt")}')
-    assert render_partial('a.pt').html_text == render_partial('b.pt').html_text == page() == 'first'
+    if folder == 'registered':
+        chameleon_rs.configure(template_folder=str(tmp_path), auto_reload=True)
+
+        def render(name: str) -> str:
+            return render_partial(name).html_text
+
+    else:
+        (tmp_path / 'page.pt').write_text('${render_partial(name)}')
+        page = PageTemplateFile(tmp_path / 'page.pt', auto_reload=True)
+
+        def render(name: str) -> str:
+            return page(name=name)
+
+    try:
+        assert render('a.pt') == render('b.pt') == 'first'
+        (tmp_path / 'next.pt').write_text('replacement')
+        os.replace(tmp_path / 'next.pt', tmp_path / f'{replaced}.pt')
+        want = {name: (tmp_path / name).read_text() for name in ('a.pt', 'b.pt')}
+        assert {name: render(name) for name in want} == want
+    finally:
+        _settings.clear()
+
+
+def test_a_template_subclass_that_reloads_is_not_name_cached(tmp_path: Path) -> None:
+    # `get_template` remembers names only when templates don't reload: the loader's template
+    # class decides (a subclass's own `auto_reload`), not the base class default.
+    import os
+
+    from chameleon_rs import PageTemplateLoader
+    from chameleon_rs.litestar import ChameleonEngine
+
+    class Reloading(PageTemplateFile):
+        auto_reload = True
+
+    (tmp_path / 'a.pt').write_text('first')
+    os.link(tmp_path / 'a.pt', tmp_path / 'b.pt')
+    engine = ChameleonEngine.from_loader(PageTemplateLoader(str(tmp_path), formats={'xml': Reloading}))
+    assert engine.get_template('a.pt').render() == engine.get_template('b.pt').render() == 'first'
     (tmp_path / 'next.pt').write_text('replacement')
     os.replace(tmp_path / 'next.pt', tmp_path / 'a.pt')
-    assert render_partial('a.pt').html_text == 'replacement'
-    assert render_partial('b.pt').html_text == page() == 'first'
+    assert engine.get_template('b.pt').render() == 'first'
+
+
+def test_more_files_than_the_name_caches_hold_compile_once_per_file(tmp_path: Path) -> None:
+    # Past 1,024 files the map of file identities was cleared, while the loader kept every
+    # template: each new spelling of a file (case, on a case-insensitive filesystem) compiled it
+    # again. Identities of files that still exist are kept.
+    from chameleon_rs.starlette import Templates
+
+    count = 1030
+    for i in range(count):
+        (tmp_path / f'file{i:04d}.pt').write_text('x')
+    if not (tmp_path / 'FILE0000.PT').exists():
+        pytest.skip('a case-sensitive filesystem: each spelling is another file')
+    engine = Templates(str(tmp_path), auto_reload=False)
+    for pattern in ('file{:04d}.pt', 'FILE{:04d}.PT', 'File{:04d}.pt'):
+        for i in range(count):
+            assert engine.get_template(pattern.format(i))() == 'x'
+        assert len(engine.loader.registry) == count

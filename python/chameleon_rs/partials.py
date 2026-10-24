@@ -174,30 +174,46 @@ def resolve(caller: Any, template_file: str) -> Any:
         cache = _GLOBAL_CACHE if caller is None else caller.__dict__.setdefault('_partial_cache', {})
     key = _spelling(template_file)
     hit = cache.get(key)
-    # A template that reloads is checked against its file too: a name that loaded another
-    # name's template (a hard link to it) must part from it once a deployment replaces that file.
-    if hit is not None and hit[0] == generation and (hit[2] is None or _file_id(hit[1].filename) == hit[2]):
+    if hit is not None and hit[0] == generation and (hit[2] is None or _same_file(hit[1], *hit[2])):
         return hit[1]
-    template = _find(caller, template_file)
+    template, path = _find(caller, template_file)
     if len(cache) >= _CACHE_LIMIT:
         # Spellings that reach one file (`A.pt`, `a.PT` on a case-insensitive filesystem) share
         # its template, but each would keep an entry here: bounded, for names from requests.
         cache.clear()
-    filename = getattr(template, 'filename', None)
-    reloads = getattr(template, 'auto_reload', False) and isinstance(filename, str)
-    cache[key] = (generation, template, _file_id(filename) if reloads else None)
+    # A template that reloads is checked against the files on each hit (`_same_file`).
+    cache[key] = (generation, template, (path, _file_id(path)) if getattr(template, 'auto_reload', False) else None)
     return template
 
 
+def _same_file(template: Any, path: str, identity: tuple[int, int] | None) -> bool:
+    """Whether ``path`` (the file a name was found as) and ``template``'s own file are still the
+    file ``identity`` they were. Hard links part when a deployment replaces one of them (a new
+    file renamed over it): the name must not keep another name's template, nor the template
+    read the other file."""
+    filename = getattr(template, 'filename', None)
+    return (
+        identity is not None
+        and _file_id(path) == identity
+        and (not isinstance(filename, str) or _file_id(filename) == identity)
+    )
+
+
 _CACHE_LIMIT = 1024
-_GLOBAL_CACHE: dict[str, tuple[tuple[int, bool, bool], Any, tuple[int, int] | None]] = {}
+_GLOBAL_CACHE: dict[str, tuple[tuple[int, bool, bool], Any, tuple[str, tuple[int, int] | None] | None]] = {}
 
 # Templates found on a caller's search path or folders (`partial_search='caller'`), shared by
 # every caller that finds the same file with the same template class and (hashable) settings.
-# Weak: a sibling lives as long as a caller's `_partial_cache` holds it. Its key holds the
-# settings (a `translate` function, say), so a strong map kept every template ever configured,
-# and a sibling for each file a deployment replaced (a new inode), for the life of the process.
+# Weak: a sibling lives as long as a caller's `_partial_cache` holds it. Its key holds plain
+# settings by value and others by `id` (`_setting_key`), never the objects themselves: a
+# strong map kept every template ever configured (its `translate` function, say), a sibling for
+# each file a deployment replaced, and, through a setting referring back to its caller, the
+# caller too, for the life of the process.
 _SIBLINGS: weakref.WeakValueDictionary[Any, Any] = weakref.WeakValueDictionary()
+
+# Settings a sibling's key holds by value; any other is held by `id`.
+_PLAIN = (str, int, float, bool, bytes, type(None))
+_BY_ID = object()
 
 
 def _spelling(template_file: str) -> str:
@@ -208,7 +224,8 @@ def _spelling(template_file: str) -> str:
     return posixpath.normpath(spec) if spec else spec
 
 
-def _find(caller: Any, template_file: str) -> Any:
+def _find(caller: Any, template_file: str) -> tuple[Any, str]:
+    """The template for ``template_file``, and the path it was found as."""
     spec = template_file.strip()
     name = _spelling(spec)
     settings = _settings.partials if has_registered_extensions else None
@@ -223,7 +240,7 @@ def _find(caller: Any, template_file: str) -> Any:
             # One template per file, whatever the spelling: the first one seen loads it.
             folder = os.path.abspath(settings.template_folder)
             first = remembered_spelling(settings.loader, identity, name, lambda f: _file_id(os.path.join(folder, f)))
-            return settings.loader.load(first)
+            return settings.loader.load(first), os.path.join(folder, name)
         except ValueError:
             if not search:
                 raise
@@ -233,7 +250,7 @@ def _find(caller: Any, template_file: str) -> Any:
         if _inside(path, root):
             identity = _file_id(path)
             if identity is not None:
-                return _sibling(caller, path, identity)
+                return _sibling(caller, path, identity), path
     raise _not_found(spec)
 
 
@@ -252,15 +269,20 @@ def remembered_spelling(owner: Any, identity: tuple[int, int], name: str, curren
     still names that file (``current(first)``); otherwise ``name``, remembered from now on. Two
     names of one file (hard links, or spellings on a case-insensitive filesystem) part when a
     deployment replaces one of them (a new file, atomically renamed over it): the other would
-    otherwise keep loading the replacement. Bounded by ``_CACHE_LIMIT``, as each replaced file
-    leaves its old identity behind."""
+    otherwise keep loading the replacement. Each replaced file leaves its old identity behind:
+    past ``_CACHE_LIMIT`` entries (or twice those left last time) the ones no file has any more
+    are dropped. The others stay, as the templates the loader keeps for them do: forgetting them
+    made each new spelling of a file compile it again."""
     spellings = owner.__dict__.setdefault('_rs_spellings', {})
     first = spellings.get(identity)
     if first == name:
         return name
     if first is None or current(first) != identity:
-        if len(spellings) >= _CACHE_LIMIT:
-            spellings.clear()
+        if len(spellings) >= owner.__dict__.get('_rs_spellings_limit', _CACHE_LIMIT):
+            for key, spelled in list(spellings.items()):
+                if current(spelled) != key:
+                    spellings.pop(key, None)
+            owner.__dict__['_rs_spellings_limit'] = max(_CACHE_LIMIT, 2 * len(spellings))
         spellings[identity] = first = name
     return first  # type: ignore[no-any-return]
 
@@ -353,20 +375,30 @@ def _sibling(caller: Any, path: str, identity: tuple[int, int]) -> Any:
     paths = getattr(caller, '_partial_paths', [])
     try:
         # By the file, not the path's spelling: the first spelling seen builds the template.
-        key: Any = (identity, cls, tuple(paths), tuple(sorted(config.items())))
+        key: Any = (identity, cls, tuple(paths), tuple(sorted((k, _setting_key(v)) for k, v in config.items())))
         hash(key)
     except TypeError:
-        # Unhashable settings: not shared (the caller's own cache keeps it).
+        # Unhashable search path entries: not shared (the caller's own cache keeps it).
         return cls(path, search_path=list(paths), **config)
     template = _SIBLINGS.get(key)
-    if template is None:
-        template = cls(path, search_path=list(paths), **config)
-        try:
-            template = _SIBLINGS.setdefault(key, template)
-        except TypeError:
-            # A template class without weak references: not shared.
-            pass
+    # One built by a hard link that has since been replaced (the file `identity` is gone from
+    # its path) is not this file's any more.
+    if template is not None and _file_id(getattr(template, 'filename', path)) == identity:
+        return template
+    template = cls(path, search_path=list(paths), **config)
+    try:
+        # The settings the key holds by `id`, alive while the entry is: no other object can
+        # take an `id` the key still has.
+        template.__dict__['_rs_settings'] = tuple(config.values())
+        _SIBLINGS[key] = template
+    except (AttributeError, TypeError):
+        # A template class without a `__dict__` or weak references: not shared.
+        pass
     return template
+
+
+def _setting_key(value: Any) -> Any:
+    return value if type(value) in _PLAIN else (_BY_ID, id(value))
 
 
 # --- Native frames (called by the extension, once per call site or template per render) ---

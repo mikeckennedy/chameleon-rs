@@ -11,6 +11,7 @@
 //! are marked by [`AttrKind`] so tests can tell them apart.
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::sync::{Arc, LazyLock};
 
 use crate::pychars::{is_digit, is_space};
@@ -350,11 +351,17 @@ impl Namespaces {
             map = m.parent.as_deref();
         }
         let mut out: Vec<(Option<&str>, Option<Span>, &NsValue)> = Vec::new();
+        // Each prefix's place in `out`: a search of `out` per entry made materializing a map of
+        // `n` nested declarations quadratic, and every tag's map (`ElementParser`) cubic.
+        let mut index: HashMap<Option<&str>, usize> = HashMap::new();
         for m in chain.into_iter().rev() {
             for (p, s, v) in &m.own {
-                match out.iter_mut().find(|(q, _, _)| *q == p.as_deref()) {
-                    Some(entry) => entry.2 = v,
-                    None => out.push((p.as_deref(), *s, v)),
+                match index.entry(p.as_deref()) {
+                    Entry::Occupied(at) => out[*at.get()].2 = v,
+                    Entry::Vacant(at) => {
+                        at.insert(out.len());
+                        out.push((p.as_deref(), *s, v));
+                    }
                 }
             }
         }
@@ -942,6 +949,9 @@ mod tests {
         assert_eq!(ns.get(Some("n0")).map(|v| &*v.uri), Some("u0"));
         assert_eq!(ns.get(Some(&format!("n{}", n - 1))).map(|v| &*v.uri), Some(&*format!("u{}", n - 1)));
         assert_eq!(ns.get(Some("tal")).map(|v| &*v.uri), Some(TAL_NS));
+        // Materialized in linear time (a search per entry made it quadratic, and the
+        // compatibility parser, which materializes every tag's map, cubic).
+        assert_eq!(ns.iter_spans().count(), n + 6);
         // Dropped iteratively (the chain is as long as the nesting), within the test's stack.
         drop(element);
         drop(items);

@@ -101,7 +101,8 @@ a web worker, then for the memory, time and cache lifetimes a small input could 
 - **Templates found next to a caller (sibling partials) were kept for the life of the
   process,** with the settings in their cache key (a `translate` function per template, say),
   and one more for each file a deployment replaced. They now live as long as a template that
-  uses them.
+  uses them, and the cache holds settings by value only when they are plain data (strings,
+  numbers), so a setting that refers back to its template doesn't keep it either.
 - **A `@concurrent` call's own cancellation waited for every other call.** A helper raising
   `CancelledError` (or awaiting a cancelled future) ended the render only once the others
   finished, never if one hung. It now ends it at once, as a failure does.

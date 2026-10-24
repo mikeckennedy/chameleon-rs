@@ -31,7 +31,7 @@ from typing import Any
 
 from chameleon_rs import _settings
 from chameleon_rs.partials import remembered_spelling
-from chameleon_rs.template import PageTemplateFile, _render_async
+from chameleon_rs.template import _render_async
 from chameleon_rs.web import DecoratorOrderError, ErrorPage, TemplateError, model_of
 
 
@@ -364,11 +364,17 @@ def known_spelling(loader: Any, name: str) -> str | None:
 
 
 def _reloads(loader: Any) -> bool:
-    """Whether ``loader``'s templates reload: its ``auto_reload`` option, else the template
-    class default (``CHAMELEON_RELOAD``). Anything else counts as reloading."""
+    """Whether ``loader``'s templates may reload: its ``auto_reload`` option, else the defaults
+    of the template classes it loads with (``formats``: a subclass may set its own). A loader
+    that shows neither counts as reloading."""
     kwargs = getattr(loader, 'kwargs', None)
-    value = kwargs.get('auto_reload') if isinstance(kwargs, dict) else True
-    return bool(PageTemplateFile.auto_reload if value is None else value)
+    formats = getattr(loader, 'formats', None)
+    if not isinstance(kwargs, dict) or not isinstance(formats, dict) or not formats:
+        return True
+    value = kwargs.get('auto_reload')
+    if value is not None:
+        return bool(value)
+    return any(getattr(cls, 'auto_reload', True) for cls in formats.values())
 
 
 def view_spelling(loader: Any, name: Any) -> Any:
