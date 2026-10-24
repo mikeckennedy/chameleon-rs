@@ -47,7 +47,7 @@ checkout = if [ -d $(1)/.git ]; then git -C $(1) checkout -q $(2); else echo "$(
 ROBYN_VERSION := 0.88.0
 ROBYN_VENV := $(CURDIR)/temp/venv-robyn
 
-.PHONY: dev reference build build-release build-profiling build-pgo wheels sdist check-wheels test test-rust test-python \
+.PHONY: dev reference build build-release build-profiling build-pgo wheels sdist release-local check-wheels test test-rust test-python \
 	test-upstream test-upstream-rust test-robyn integration test-integration lint fmt bench docs docs-serve
 
 dev: reference temp/litestar-chameleon
@@ -143,6 +143,11 @@ wheels: reference
 
 sdist:
 	$(MATURIN) sdist --out dist
+
+# A local release (no CI): dist/ emptied, then macOS and manylinux wheels and the sdist built
+# from a clone of HEAD at /tmp/chameleon-rs (scripts/local_release.sh), ready for `uv publish`.
+release-local:
+	scripts/local_release.sh
 
 # Each wheel in dist/ this machine can run, in a fresh venv with nothing else installed: a
 # smoke render, the upstream suite on chameleon_rs and test_typing (scripts/check_wheel.py).
