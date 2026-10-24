@@ -382,10 +382,6 @@ def use_macro(draw: Any, depth: int) -> str:
     """A macro call with fill-slots (some of which define slots again)."""
     attr = draw(st.sampled_from(['metal:use-macro', 'metal:use-macro', 'metal:extend-macro']))
     expr = draw(st.one_of(MACRO_EXPR, st.sampled_from(["macros['mt1']", "macros['mt2']"])))
-    # In a slot body whose slot is defined inside a translation, no handler: Chameleon appends a
-    # text node and its expressions at once, so a failing expression drops the text before it
-    # (a known difference: test_macros.test_handler_in_a_slot_body_drops_the_failing_text_node).
-    translated = 'mt' in expr
     # No `i18n:domain` on the call itself: a fill the macro does not take is left over, and a
     # later call outside that domain takes it, where Chameleon's conversion helpers see the
     # settings at that call (a known difference: test_i18n.
@@ -397,7 +393,7 @@ def use_macro(draw: Any, depth: int) -> str:
     for _ in range(draw(st.integers(0, 2))):
         slot = draw(st.sampled_from(['s1', 's2']))
         again = draw(st.sampled_from(['', ' metal:define-slot="s2"', ' i18n:translate=""', ' tal:define="x 7"']))
-        inner = draw(i18n_node(depth - 1, 'translate' in again or translated)) if depth > 0 else '${x}'
+        inner = draw(i18n_node(depth - 1, 'translate' in again)) if depth > 0 else '${x}'
         # A slot defined inside the fill body, or a macro called from it (Phase 8).
         inner += draw(
             st.sampled_from(['', '<e metal:define-slot="s1">d</e>', f'<z metal:use-macro="{draw(MACRO_EXPR)}"/>'])

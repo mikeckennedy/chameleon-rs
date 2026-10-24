@@ -432,6 +432,12 @@ pub enum Op {
     TrValue {
         info: u32,
     },
+    /// In a slot body: a text node or attribute value of several parts starts (until
+    /// [`Op::PartsEnd`]). Chameleon writes such a value whole, once every part is evaluated;
+    /// the VM writes each part as it goes, so where a handler keeps the body's output
+    /// ([`VmState::fill_catch`]) the parts written before the one that failed are taken back.
+    PartsBegin,
+    PartsEnd,
     /// Capture what the instructions until [`Op::CaptureEnd`] write.
     CaptureBegin,
     /// Push the captured text as a value; for a boolean attribute (`boolean`), a non-empty
@@ -566,6 +572,8 @@ impl Program {
             | Op::TranslateEnd { .. }
             | Op::NameBegin { .. }
             | Op::NameEnd { .. }
+            | Op::PartsBegin
+            | Op::PartsEnd
             | Op::CaptureBegin
             | Op::CaptureEnd { .. }
             | Op::AttrTranslate { .. }
@@ -787,6 +795,8 @@ impl Program {
                     None => "name_end ?".to_owned(),
                 },
                 Op::TrValue { info } => format!("tr_value {:?}", self.tables.tr_values.get(*info as usize)),
+                Op::PartsBegin => "parts_begin".to_owned(),
+                Op::PartsEnd => "parts_end".to_owned(),
                 Op::CaptureBegin => "capture_begin".to_owned(),
                 Op::CaptureEnd { boolean } => format!("capture_end boolean={:?}", boolean.map(|b| self.text_str(b))),
                 Op::AttrTranslate { info, .. } => match self.tables.attr_translates.get(*info as usize) {
@@ -1452,6 +1462,9 @@ pub struct VmState<V> {
     helpers_any: bool,
     /// No i18n settings (what a frame without `extra` has).
     none: I18n<V>,
+    /// The slot body frame (its serial) writing a value of several parts, and where the
+    /// value starts in the output (see [`Op::PartsBegin`]).
+    parts: Option<(u64, Mark)>,
     /// Boxes of popped frames' `extra`, for reuse (an allocation and a free per macro call
     /// cost more than the rest of the call on macOS's allocator).
     spare: Vec<Box<Extra<V>>>,
@@ -1502,6 +1515,7 @@ impl<V> VmState<V> {
             helpers_on: false,
             helpers_any: false,
             none: I18n { domain: None, context: None, target_language: None },
+            parts: None,
             spare: Vec::new(),
             out,
         }
@@ -1790,11 +1804,14 @@ impl<V> VmState<V> {
     /// handler's body held is dropped (`abandoned`), the body's own output is kept (moved to its
     /// stream), and then the define-slot site's stream is cut at the fallback. Returns whether
     /// it did that; otherwise the caller cuts as for any function.
-    fn fill_catch(&mut self, abandoned: Option<Mark>) -> bool {
+    /// `parts`: the value of several parts the body was writing when the error was raised (in
+    /// this frame), whose parts written so far Chameleon would not have written.
+    fn fill_catch(&mut self, abandoned: Option<Mark>, parts: Option<(u64, Mark)>) -> bool {
         let Some(frame) = self.frames.last() else { return false };
         if frame.kind != Kind::Fill {
             return false;
         }
+        let parts = parts.filter(|&(serial, _)| serial == frame.serial).map(|(_, mark)| mark);
         let Some(stream) = frame.extra.as_ref().map(|e| e.stream) else { return false };
         let own = self.unwind.get(frame.unwind_base..).unwrap_or_default();
         if own.iter().any(|e| matches!(e, Unwind::Translate { .. } | Unwind::Name { .. } | Unwind::Capture(_))) {
@@ -1804,6 +1821,9 @@ impl<V> VmState<V> {
             return false;
         }
         if let Some(mark) = abandoned {
+            self.out.truncate(mark);
+        }
+        if let Some(mark) = parts {
             self.out.truncate(mark);
         }
         self.flush_fill();
@@ -2294,6 +2314,8 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
                 _ => None,
             });
             st.unwind.truncate(at);
+            // Whatever value of several parts was being written ends here.
+            let parts = st.parts.take();
             if let Some(frame) = st.frames.last_mut() {
                 frame.pc = handler;
             }
@@ -2301,7 +2323,7 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
                 i18n_changed(st, rt).map_err(VmError::Runtime)?;
             }
             match rt.catch(&error, name, ErrorSite::unpack(st.recent)) {
-                Ok(()) if st.fill_catch(abandoned) => {
+                Ok(()) if st.fill_catch(abandoned, parts) => {
                     if let Some(frame) = st.frames.last_mut() {
                         frame.recent = st.recent;
                     }
@@ -2713,6 +2735,8 @@ fn execute<R: Runtime>(
             | Op::NameBegin { .. }
             | Op::NameEnd { .. }
             | Op::TrValue { .. }
+            | Op::PartsBegin
+            | Op::PartsEnd
             | Op::CaptureBegin
             | Op::CaptureEnd { .. }
             | Op::AttrTranslate { .. }
@@ -3072,6 +3096,11 @@ fn execute_rare<R: Runtime>(
             };
             st.unwind.push(Unwind::Value(value));
         }
+        Op::PartsBegin => {
+            let serial = st.frames.last().map_or(0, |f| f.serial);
+            st.parts = Some((serial, st.out.mark()));
+        }
+        Op::PartsEnd => st.parts = None,
         Op::CaptureBegin => st.unwind.push(Unwind::Capture(st.out.mark())),
         Op::CaptureEnd { boolean } => {
             let Some(Unwind::Capture(mark)) = st.unwind.pop() else {

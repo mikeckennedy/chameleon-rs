@@ -826,8 +826,8 @@ Real-site verification. Every behaviour below was checked against the reference.
   stream (as Chameleon; the body's own output is kept, what streams opened in the handler's
   body held is dropped: `fill_catch`), but Chameleon appends a text node and the expressions in
   it as one string, so when such an expression fails the text before it was never appended;
-  chameleon-rs writes it first (`test_handler_in_a_slot_body_drops_the_failing_text_node`; the
-  fuzzer keeps handlers out of slot bodies whose slot is inside a translation). And Chameleon's
+  chameleon-rs wrote it first (`test_handler_in_a_slot_body_drops_the_failing_text_node`, fixed
+  2026-10-23: see the Phase 12 amendments). And Chameleon's
   conversion helpers (`__convert`, which calls `translate` for a value that is not a string,
   a number or `__html__`) are closures of the render function, so in a slot body they use the
   defining function's i18n domain and context, not ones set inside the body; chameleon-rs uses
@@ -1307,18 +1307,19 @@ Release blockers. Each behaviour checked against Chameleon's generated code firs
   xfails for each of those variants). A first version tracked the function's frame (an id per render and frame)
   to read its live settings; it cost 15 to 40 ns per slot call in the macro A/B, for a case
   that needs a fill no macro consumed.
-- **Still a known difference:** `test_handler_in_a_slot_body_drops_the_failing_text_node`. In
-  a slot body whose output goes to another stream than the define-slot site's (the slot sits
-  in a translation or name), a handler in the body keeps what the body wrote before the
-  failing expression, as Chameleon does, but Chameleon writes in larger pieces: a text node and
-  its expressions, an interpolated attribute, a comment are each one `__append`, so the failing
+- **Fixed (2026-10-23):** `test_handler_in_a_slot_body_drops_the_failing_text_node`. In a
+  slot body whose output goes to another stream than the define-slot site's (the slot sits in
+  a translation or name), a handler in the body keeps what the body wrote before the failing
+  expression, as Chameleon does, but Chameleon writes in larger pieces: a text node and its
+  expressions, an interpolated attribute, a comment are each one `__append`, so the failing
   piece's text before the expression was never written (`<q>` against our `<q>Q`; ` title="a`
-  and `<!-- c ` likewise). chameleon-rs joins static text at compile time across those
-  boundaries and writes a piece's text before evaluating its expressions. Matching it would
-  need a second lowering for code under a handler inside a fill body (text split at
-  Chameleon's append boundaries, an instruction marking each piece's start) for a case that
-  needs a handler inside a slot body inside a translation: not done; the fuzzer keeps handlers
-  out of such bodies.
+  likewise). Slot bodies are now lowered with `Op::PartsBegin`/`Op::PartsEnd` around each text
+  node or plain attribute value of several parts: `PartsBegin` records the output mark (with
+  the frame's serial), and `fill_catch` cuts back to it before keeping the body's output, so
+  the failing piece is dropped as in Chameleon. Only slot bodies get the two instructions (the
+  only frames whose handler keeps their output); other code is unchanged. A lone `${x}` needs
+  no mark (nothing of it is written before it fails), and comments match already (`<!--` is
+  its own append in Chameleon too). The render fuzzer now puts handlers in such slot bodies.
 - **Known difference of the same family** (pre-existing, found in review, a strict xfail:
   `test_i18n.test_handler_on_a_name_maps_it_to_its_appends`): a `tal:on-error` on an
   `i18n:name` element maps the name, in Chameleon, to its stream, the list of its appends

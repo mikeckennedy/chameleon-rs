@@ -574,17 +574,30 @@ def test_slot_body_macro_streams_like_chameleon(use: str) -> None:
     same(SLOT_STREAM_MACROS + use, translate=lambda msgid, **kw: f'<{msgid}|{kw.get("mapping")}>')
 
 
-@pytest.mark.xfail(strict=True, reason='known difference: Chameleon appends a text node and its expressions at once')
-def test_handler_in_a_slot_body_drops_the_failing_text_node() -> None:
-    """Chameleon appends static text and the expressions in it as one string, so when the
-    expression fails the text before it was never appended; chameleon-rs writes the text
-    first. Only visible in a slot body whose output belongs to another stream than the
+@pytest.mark.parametrize(
+    'body',
+    [
+        'Q${1/0}',
+        'Q${x}R${1/0}S',
+        '<u>Q${1/0}</u>',
+        '<u title="a${x}b${1/0}c">t</u>',
+        'Q${x}R <u tal:content="1/0"/>',
+        '<!-- a${x}b${1/0} -->',
+        'x <!-- c --> a${1/0}',
+    ],
+)
+def test_handler_in_a_slot_body_drops_the_failing_text_node(body: str) -> None:
+    """Chameleon appends static text and the expressions in it (a text node, an interpolated
+    attribute value) as one string, so when an expression fails the text before it was never
+    appended. Only visible in a slot body whose output belongs to another stream than the
     define-slot site's, where the handler does not cut the body's own output (architecture.md,
-    Phase 8 amendments)."""
+    Phase 8 amendments): chameleon-rs wrote that text first, until values of several parts in
+    slot bodies were marked (`Op::PartsBegin`) and taken back there."""
     same(
         SLOT_STREAM_MACROS
-        + """<x metal:use-macro="macros['m']"><y metal:fill-slot="s">T <q tal:on-error="string:E">Q${1/0}</q>"""
+        + f"""<x metal:use-macro="macros['m']"><y metal:fill-slot="s">T <q tal:on-error="string:E">{body}</q>"""
         + """ U</y></x>""",
+        x='X',
         translate=lambda msgid, **kw: f'<{msgid}|{kw.get("mapping")}>',
     )
 

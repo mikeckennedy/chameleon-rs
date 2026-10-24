@@ -138,6 +138,7 @@ pub(crate) fn lower(tree: &Tree, table: &Table) -> LResult<Program> {
         fills: VecDeque::new(),
         calls: Vec::new(),
         generator: false,
+        in_fill: false,
     };
     l.function(&tree.body)?;
     let mut macros = Vec::with_capacity(tree.macros.len());
@@ -238,6 +239,9 @@ struct Lower<'a> {
     /// The function being lowered has an expression with a `yield` (see
     /// [`ExprCompiler::is_generator`]).
     generator: bool,
+    /// The function being lowered is a slot body: its values of several parts are marked
+    /// ([`Op::PartsBegin`]).
+    in_fill: bool,
 }
 
 fn unsupported(what: &str) -> CompileError<Infallible> {
@@ -267,6 +271,7 @@ impl<'a> Lower<'a> {
         self.slots = slots;
         self.translations.clear();
         self.generator = false;
+        let in_fill = std::mem::replace(&mut self.in_fill, false);
         self.node(node)?;
         self.op(Op::End)?;
         self.generator_check(entry)?;
@@ -278,10 +283,13 @@ impl<'a> Lower<'a> {
             self.slots = fill.slots;
             self.translations = fill.translations;
             self.generator = false;
+            self.in_fill = true;
             self.node(fill.body)?;
+            self.in_fill = false;
             self.op(Op::End)?;
             self.generator_check(at)?;
         }
+        self.in_fill = in_fill;
         Ok(entry)
     }
 
@@ -357,7 +365,9 @@ impl<'a> Lower<'a> {
                 if let [Part::Expr(expr)] = parts {
                     self.op(Op::Emit { expr: *expr, esc: i.escape, stage: Stage::Lone })?;
                 } else {
+                    self.parts_begin()?;
                     self.emit_parts(parts, i.escape, false)?;
+                    self.parts_end()?;
                 }
             }
             Node::Sequence(nodes) => {
@@ -685,9 +695,11 @@ impl<'a> Lower<'a> {
                         let suffix = self.intern(suffix.as_bytes())?;
                         self.op(Op::Attr { expr: *expr, esc: interp.escape, prefix, suffix })?;
                     } else {
+                        self.parts_begin()?;
                         self.pending.extend_from_slice(prefix.as_bytes());
                         self.emit_parts(parts, interp.escape, false)?;
                         self.pending.extend_from_slice(suffix.as_bytes());
+                        self.parts_end()?;
                     }
                     return Ok(());
                 }
@@ -791,6 +803,21 @@ impl<'a> Lower<'a> {
                     })?;
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// In a slot body, marks where a value of several parts starts ([`Op::PartsBegin`]).
+    fn parts_begin(&mut self) -> LResult<()> {
+        if self.in_fill {
+            self.op(Op::PartsBegin)?;
+        }
+        Ok(())
+    }
+
+    fn parts_end(&mut self) -> LResult<()> {
+        if self.in_fill {
+            self.op(Op::PartsEnd)?;
         }
         Ok(())
     }

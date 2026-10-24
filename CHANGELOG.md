@@ -40,6 +40,12 @@ web worker.
 
 ### Fixed
 
+- **A `tal:on-error` inside a `metal:fill-slot` kept text Chameleon drops**, when the
+  macro's slot sits inside an `i18n:translate` or `i18n:name`. Chameleon writes a text node
+  with its `${...}` expressions (and an interpolated attribute value) as one string, so when
+  an expression fails, the text before it in that node was never written. chameleon-rs wrote
+  it first: `<i>a<i>E</i>` where Chameleon gives `<i><i>E</i>`. The last of the slot-body
+  known differences of this kind; the render fuzzer now generates handlers in such bodies.
 - **A cancellation during an async render's cleanup was swallowed.** When a `@concurrent` call
   failed, the render cancelled the others and waited for their `finally` blocks; a
   `CancelledError` arriving then (a client disconnect, `asyncio.timeout`, `wait_for`) was
