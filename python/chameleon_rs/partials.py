@@ -39,6 +39,7 @@ import posixpath
 import stat
 import types
 import weakref
+from collections.abc import Callable
 from typing import Any
 
 from chameleon_rs import _settings
@@ -173,23 +174,30 @@ def resolve(caller: Any, template_file: str) -> Any:
         cache = _GLOBAL_CACHE if caller is None else caller.__dict__.setdefault('_partial_cache', {})
     key = _spelling(template_file)
     hit = cache.get(key)
-    if hit is not None and hit[0] == generation:
+    # A template that reloads is checked against its file too: a name that loaded another
+    # name's template (a hard link to it) must part from it once a deployment replaces that file.
+    if hit is not None and hit[0] == generation and (hit[2] is None or _file_id(hit[1].filename) == hit[2]):
         return hit[1]
     template = _find(caller, template_file)
     if len(cache) >= _CACHE_LIMIT:
         # Spellings that reach one file (`A.pt`, `a.PT` on a case-insensitive filesystem) share
         # its template, but each would keep an entry here: bounded, for names from requests.
         cache.clear()
-    cache[key] = (generation, template)
+    filename = getattr(template, 'filename', None)
+    reloads = getattr(template, 'auto_reload', False) and isinstance(filename, str)
+    cache[key] = (generation, template, _file_id(filename) if reloads else None)
     return template
 
 
 _CACHE_LIMIT = 1024
-_GLOBAL_CACHE: dict[str, tuple[tuple[int, bool, bool], Any]] = {}
+_GLOBAL_CACHE: dict[str, tuple[tuple[int, bool, bool], Any, tuple[int, int] | None]] = {}
 
 # Templates found on a caller's search path or folders (`partial_search='caller'`), shared by
 # every caller that finds the same file with the same template class and (hashable) settings.
-_SIBLINGS: dict[Any, Any] = {}
+# Weak: a sibling lives as long as a caller's `_partial_cache` holds it. Its key holds the
+# settings (a `translate` function, say), so a strong map kept every template ever configured,
+# and a sibling for each file a deployment replaced (a new inode), for the life of the process.
+_SIBLINGS: weakref.WeakValueDictionary[Any, Any] = weakref.WeakValueDictionary()
 
 
 def _spelling(template_file: str) -> str:
@@ -213,8 +221,9 @@ def _find(caller: Any, template_file: str) -> Any:
             if identity is None:
                 raise _not_found(spec)
             # One template per file, whatever the spelling: the first one seen loads it.
-            spellings = settings.loader.__dict__.setdefault('_rs_spellings', {})
-            return settings.loader.load(spellings.setdefault(identity, name))
+            folder = os.path.abspath(settings.template_folder)
+            first = remembered_spelling(settings.loader, identity, name, lambda f: _file_id(os.path.join(folder, f)))
+            return settings.loader.load(first)
         except ValueError:
             if not search:
                 raise
@@ -236,6 +245,24 @@ def _file_id(path: str) -> tuple[int, int] | None:
     except (OSError, ValueError):
         return None
     return (info.st_dev, info.st_ino) if stat.S_ISREG(info.st_mode) else None
+
+
+def remembered_spelling(owner: Any, identity: tuple[int, int], name: str, current: Callable[[str], Any]) -> str:
+    """The first spelling seen of the file ``identity`` (``_rs_spellings`` on ``owner``), if it
+    still names that file (``current(first)``); otherwise ``name``, remembered from now on. Two
+    names of one file (hard links, or spellings on a case-insensitive filesystem) part when a
+    deployment replaces one of them (a new file, atomically renamed over it): the other would
+    otherwise keep loading the replacement. Bounded by ``_CACHE_LIMIT``, as each replaced file
+    leaves its old identity behind."""
+    spellings = owner.__dict__.setdefault('_rs_spellings', {})
+    first = spellings.get(identity)
+    if first == name:
+        return name
+    if first is None or current(first) != identity:
+        if len(spellings) >= _CACHE_LIMIT:
+            spellings.clear()
+        spellings[identity] = first = name
+    return first  # type: ignore[no-any-return]
 
 
 def _not_found(spec: str) -> ValueError:
@@ -333,7 +360,12 @@ def _sibling(caller: Any, path: str, identity: tuple[int, int]) -> Any:
         return cls(path, search_path=list(paths), **config)
     template = _SIBLINGS.get(key)
     if template is None:
-        template = _SIBLINGS.setdefault(key, cls(path, search_path=list(paths), **config))
+        template = cls(path, search_path=list(paths), **config)
+        try:
+            template = _SIBLINGS.setdefault(key, template)
+        except TypeError:
+            # A template class without weak references: not shared.
+            pass
     return template
 
 

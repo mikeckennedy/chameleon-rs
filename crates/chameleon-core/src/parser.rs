@@ -188,9 +188,78 @@ impl Drop for Element {
 }
 
 /// Prefix (`None` for `xmlns="..."`) to namespace URI, in insertion order like the dict
-/// Chameleon copies for every start tag.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Namespaces(Vec<(Option<Arc<str>>, Option<Span>, NsValue)>);
+/// Chameleon copies for every start tag. Stored as what a tag adds to its parent's map: a tag
+/// that declares nothing shares its parent's ([`Namespaces::into_shared`]), and one that does
+/// keeps only its own declarations. A copy per tag made `n` nested declarations take `n²/2`
+/// entries before the compile could reject the depth (2,000 levels, 45 KB, took 330 MB).
+#[derive(Debug, Clone, Default)]
+pub struct Namespaces {
+    /// The map this one extends: the enclosing tag's.
+    parent: Option<Arc<Namespaces>>,
+    /// What is set here: new prefixes in order, and prefixes of `parent` given a new value
+    /// (with the span of their first declaration, the key object a dict keeps).
+    own: Vec<NsEntry>,
+}
+
+/// A prefix (its key object), where it was first declared, and its value.
+type NsEntry = (Option<Arc<str>>, Option<Span>, NsValue);
+
+/// The prefixes in effect while [`parse`] runs, by prefix, so a lookup takes the same time at
+/// any depth: a walk up the maps' chain takes a step per enclosing declaration, and `n` nested
+/// declarations made parsing quadratic. Kept level for level with the parser's namespace stack.
+#[derive(Default)]
+struct Scope {
+    /// Each prefix's entries, innermost last (`xmlns="..."`'s in `default`).
+    default: Vec<NsEntry>,
+    named: HashMap<Arc<str>, Vec<NsEntry>>,
+    /// Per level of the stack, the prefixes it set.
+    levels: Vec<Vec<Option<Arc<str>>>>,
+}
+
+impl Scope {
+    fn get(&self, prefix: Option<&str>) -> Option<&NsEntry> {
+        match prefix {
+            None => self.default.last(),
+            Some(p) => self.named.get(p).and_then(|entries| entries.last()),
+        }
+    }
+
+    /// A level for a map whose entries in `own` are set over the current ones.
+    fn push(&mut self, own: &[NsEntry]) {
+        let mut level = Vec::with_capacity(own.len());
+        for entry in own {
+            match &entry.0 {
+                None => self.default.push(entry.clone()),
+                Some(p) => self.named.entry(Arc::clone(p)).or_default().push(entry.clone()),
+            }
+            level.push(entry.0.clone());
+        }
+        self.levels.push(level);
+    }
+
+    fn pop(&mut self) {
+        for prefix in self.levels.pop().unwrap_or_default() {
+            match prefix {
+                None => {
+                    self.default.pop();
+                }
+                Some(p) => {
+                    if let Some(entries) = self.named.get_mut(&p) {
+                        entries.pop();
+                        if entries.is_empty() {
+                            self.named.remove(&p);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `namespaces[prefix]` for a tag being parsed: what it set itself, or what is in effect.
+fn lookup<'m>(ns: &'m Namespaces, scope: &'m Scope, prefix: Option<&str>) -> Option<&'m NsValue> {
+    ns.own.iter().find(|(p, _, _)| p.as_deref() == prefix).or_else(|| scope.get(prefix)).map(|(_, _, v)| v)
+}
 
 impl Namespaces {
     pub fn new<'a>(entries: impl IntoIterator<Item = (Option<&'a str>, &'a str)>) -> Self {
@@ -214,27 +283,114 @@ impl Namespaces {
         ])
     }
 
+    /// An empty map on top of `parent` (a copy of it, as far as anything reading it can tell).
+    fn child(parent: &Arc<Self>) -> Self {
+        Self { parent: Some(Arc::clone(parent)), own: Vec::new() }
+    }
+
+    /// This map, shared: its parent's own when nothing was set here.
+    fn into_shared(mut self) -> Arc<Self> {
+        match self.parent.take() {
+            Some(parent) if self.own.is_empty() => parent,
+            parent => {
+                self.parent = parent;
+                Arc::new(self)
+            }
+        }
+    }
+
     #[must_use]
     pub fn get(&self, prefix: Option<&str>) -> Option<&NsValue> {
-        self.0.iter().find(|(p, _, _)| p.as_deref() == prefix).map(|(_, _, ns)| ns)
+        self.entry(prefix).map(|(_, _, ns)| ns)
+    }
+
+    fn entry(&self, prefix: Option<&str>) -> Option<&NsEntry> {
+        let mut map = self;
+        loop {
+            if let Some(entry) = map.own.iter().find(|(p, _, _)| p.as_deref() == prefix) {
+                return Some(entry);
+            }
+            map = map.parent.as_deref()?;
+        }
     }
 
     /// `namespace[prefix] = value`: an existing key keeps its place (and the key object that
     /// was first used: `span`, the prefix's position in its `xmlns:` attribute).
     fn set(&mut self, prefix: Option<&str>, span: Option<Span>, value: NsValue) {
-        match self.0.iter_mut().find(|(p, _, _)| p.as_deref() == prefix) {
-            Some((_, _, v)) => *v = value,
-            None => self.0.push((prefix.map(Arc::from), span, value)),
+        let below = self.parent.as_deref().and_then(|parent| parent.entry(prefix));
+        let below = below.map(|(key, span, _)| (key.clone(), *span));
+        self.set_over(prefix, span, value, below);
+    }
+
+    /// [`Namespaces::set`], given the parent's entry for `prefix` (its key and span), if any.
+    fn set_over(
+        &mut self,
+        prefix: Option<&str>,
+        span: Option<Span>,
+        value: NsValue,
+        below: Option<(Option<Arc<str>>, Option<Span>)>,
+    ) {
+        if let Some((_, _, v)) = self.own.iter_mut().find(|(p, _, _)| p.as_deref() == prefix) {
+            *v = value;
+            return;
         }
+        let (key, span) = match below {
+            Some(first) => first,
+            None => (prefix.map(Arc::from), span),
+        };
+        self.own.push((key, span, value));
+    }
+
+    /// The entries in order: the outermost map's first, each later value in its key's place.
+    fn entries(&self) -> Vec<(Option<&str>, Option<Span>, &NsValue)> {
+        let mut chain = Vec::new();
+        let mut map = Some(self);
+        while let Some(m) = map {
+            chain.push(m);
+            map = m.parent.as_deref();
+        }
+        let mut out: Vec<(Option<&str>, Option<Span>, &NsValue)> = Vec::new();
+        for m in chain.into_iter().rev() {
+            for (p, s, v) in &m.own {
+                match out.iter_mut().find(|(q, _, _)| *q == p.as_deref()) {
+                    Some(entry) => entry.2 = v,
+                    None => out.push((p.as_deref(), *s, v)),
+                }
+            }
+        }
+        out
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (Option<&str>, &NsValue)> {
-        self.0.iter().map(|(p, _, v)| (p.as_deref(), v))
+        self.entries().into_iter().map(|(p, _, v)| (p, v))
     }
 
     /// Each prefix with where it was declared (`None`: a default namespace), and its value.
     pub fn iter_spans(&self) -> impl Iterator<Item = (Option<&str>, Option<Span>, &NsValue)> {
-        self.0.iter().map(|(p, s, v)| (p.as_deref(), *s, v))
+        self.entries().into_iter()
+    }
+}
+
+/// As maps: the same entries in the same order, however they are stored.
+impl PartialEq for Namespaces {
+    fn eq(&self, other: &Self) -> bool {
+        self.entries() == other.entries()
+    }
+}
+
+impl Eq for Namespaces {}
+
+/// Iterative, like [`Element`]'s: a chain of maps as long as the nesting would otherwise drop
+/// one level per recursive call.
+impl Drop for Namespaces {
+    fn drop(&mut self) {
+        let mut parent = self.parent.take();
+        while let Some(map) = parent {
+            parent = match Arc::try_unwrap(map) {
+                Ok(mut map) => map.parent.take(),
+                Err(_) => None,
+            };
+        }
     }
 }
 
@@ -323,8 +479,12 @@ pub fn parse(src: &str, tokens: &[Span], options: &ParseOptions) -> Result<Vec<I
     let mut queue: Vec<Item> = Vec::new();
     let mut index: Vec<(Span, usize)> = Vec::new();
     let mut namespaces: Vec<Arc<Namespaces>> = vec![Arc::new(options.namespaces.clone())];
+    let mut scope = Scope::default();
+    let root: Vec<NsEntry> =
+        options.namespaces.iter_spans().map(|(p, s, v)| (p.map(Arc::from), s, v.clone())).collect();
+    scope.push(&root);
     let restricted = options.restricted_namespace;
-    let top = |namespaces: &[Arc<Namespaces>]| namespaces.last().map(|ns| (**ns).clone()).unwrap_or_default();
+    let top = |namespaces: &[Arc<Namespaces>]| namespaces.last().map(Namespaces::child).unwrap_or_default();
     for &span in tokens {
         let item = match identify(src, span)? {
             Kind::Text => Item::Text(span),
@@ -335,14 +495,17 @@ pub fn parse(src: &str, tokens: &[Span], options: &ParseOptions) -> Result<Vec<I
             Kind::StartTag => {
                 // Chameleon pushes the copy before parsing; a failure aborts either way.
                 let mut ns = top(&namespaces);
-                let tag = parse_tag(src, span, &mut ns, restricted)?;
+                let tag = parse_tag(src, span, &mut ns, &scope, restricted)?;
+                // A map of its own (not its parent's, shared) sets its entries over the others.
+                let shared = namespaces.last().is_some_and(|parent| Arc::ptr_eq(parent, &tag.ns_map));
+                scope.push(if shared { &[] } else { &tag.ns_map.own });
                 namespaces.push(Arc::clone(&tag.ns_map));
                 index.push((tag.name, queue.len()));
                 Item::StartTag(Box::new(tag))
             }
             Kind::EmptyTag | Kind::XmlDeclaration => {
                 let mut ns = top(&namespaces);
-                let tag = parse_tag(src, span, &mut ns, restricted)?;
+                let tag = parse_tag(src, span, &mut ns, &scope, restricted)?;
                 Item::Element(Box::new(Element { start: tag, end: None, children: Vec::new() }))
             }
             Kind::EndTag => {
@@ -350,7 +513,9 @@ pub fn parse(src: &str, tokens: &[Span], options: &ParseOptions) -> Result<Vec<I
                 // several unclosed start tags, exactly as Chameleon's does.
                 let popped = namespaces.pop().ok_or_else(|| ParseError::syntax("Unexpected end tag.", span))?;
                 let mut ns = Arc::unwrap_or_clone(popped);
-                let end = parse_tag(src, span, &mut ns, restricted)?;
+                // Its own entries are in effect in `scope` already; those below it come next.
+                let end = parse_tag(src, span, &mut ns, &scope, restricted)?;
+                scope.pop();
                 let name = end.name.text(src);
                 let mut element = None;
                 while let Some((start_name, pos)) = index.pop() {
@@ -383,7 +548,13 @@ fn processing_instruction(src: &str, span: Span) -> Item {
 
 /// `parse_tag`: `match_tag`, then `update_namespace` and `unpack_attributes`. `namespaces` is
 /// updated in place and becomes the tag's `ns_map`.
-fn parse_tag(src: &str, span: Span, namespaces: &mut Namespaces, restricted: bool) -> Result<Tag, ParseError> {
+fn parse_tag(
+    src: &str,
+    span: Span,
+    namespaces: &mut Namespaces,
+    scope: &Scope,
+    restricted: bool,
+) -> Result<Tag, ParseError> {
     let mut tag = match_tag(src, span)?;
     for attr in &tag.attrs {
         let name = attr.name.text(src);
@@ -392,20 +563,22 @@ fn parse_tag(src: &str, span: Span, namespaces: &mut Namespaces, restricted: boo
             span: (attr.kind != AttrKind::Valueless).then_some(attr.value),
         };
         if name == "xmlns" {
-            namespaces.set(None, None, value);
+            let below = scope.get(None).map(|(key, span, _)| (key.clone(), *span));
+            namespaces.set_over(None, None, value, below);
         } else if let Some(prefix) = name.strip_prefix("xmlns:") {
-            namespaces.set(Some(prefix), Some(attr.name.sub(6, attr.name.len())), value);
+            let below = scope.get(Some(prefix)).map(|(key, span, _)| (key.clone(), *span));
+            namespaces.set_over(Some(prefix), Some(attr.name.sub(6, attr.name.len())), value, below);
         }
     }
     let tag_name = tag.name.text(src);
     let prefix = tag_name.split_once(':').map(|(p, _)| p);
-    let default = namespaces.get(prefix).cloned().unwrap_or_else(|| NsValue::plain(XML_NS));
+    let default = lookup(namespaces, scope, prefix).cloned().unwrap_or_else(|| NsValue::plain(XML_NS));
     let mut ns_attrs: Vec<NsAttr> = Vec::with_capacity(tag.attrs.len());
     let mut index: HashMap<(Arc<str>, String), usize> = HashMap::new();
     for attr in &tag.attrs {
         let name = attr.name.text(src);
         let (ns, local, local_start) = match name.split_once(':') {
-            Some((prefix, local)) => match namespaces.get(Some(prefix)) {
+            Some((prefix, local)) => match lookup(namespaces, scope, Some(prefix)) {
                 Some(ns) => (ns.clone(), local, prefix.len() + 1),
                 None if restricted => {
                     return Err(ParseError {
@@ -449,7 +622,7 @@ fn parse_tag(src: &str, span: Span, namespaces: &mut Namespaces, restricted: boo
     }
     tag.namespace = default;
     tag.ns_attrs = ns_attrs;
-    tag.ns_map = Arc::new(std::mem::take(namespaces));
+    tag.ns_map = std::mem::take(namespaces).into_shared();
     Ok(tag)
 }
 
@@ -531,7 +704,11 @@ fn single_attributes(s: &str) -> Vec<AttrMatch> {
             pos = m.end;
             out.push(m);
         } else {
-            pos += s[pos..].chars().next().map_or(1, char::len_utf8);
+            // A failed match from inside a run of whitespace fails from every later start in
+            // that run too (it tries the same name positions, fewer of them), so the search
+            // goes on after the run: one step at a time made trailing whitespace quadratic.
+            let step = crate::pychars::run_len(&s[pos..], is_space);
+            pos += if step > 0 { step } else { s[pos..].chars().next().map_or(1, char::len_utf8) };
         }
     }
     out
@@ -740,6 +917,168 @@ mod tests {
         assert!(spans.contains(&(None, None, "d")));
         let attr = &b.start.ns_attrs[0];
         assert_eq!((&*attr.ns, attr.ns_span.map(|s| s.text(src))), ("u2", Some("u2")));
+    }
+
+    #[test]
+    fn nested_declarations_take_linear_memory_and_time() {
+        // A security review's DoS: each start tag copied its whole map, so 2,000 nested tags
+        // declaring a prefix each (45 KB) took 330 MB before the compile rejected the depth.
+        let n = 100_000;
+        let mut src = String::new();
+        for i in 0..n {
+            let _ = std::fmt::Write::write_fmt(&mut src, format_args!("<p xmlns:n{i}=\"u{i}\">"));
+        }
+        src.push_str(&"</p>".repeat(n));
+        let start = std::time::Instant::now();
+        let mut items = tree(&src);
+        let mut element = match items.pop() {
+            Some(Item::Element(e)) => e,
+            other => panic!("{other:?}"),
+        };
+        while let Some(Item::Element(child)) = element.children.pop() {
+            element = child;
+        }
+        let ns = &element.start.ns_map;
+        assert_eq!(ns.get(Some("n0")).map(|v| &*v.uri), Some("u0"));
+        assert_eq!(ns.get(Some(&format!("n{}", n - 1))).map(|v| &*v.uri), Some(&*format!("u{}", n - 1)));
+        assert_eq!(ns.get(Some("tal")).map(|v| &*v.uri), Some(TAL_NS));
+        // Dropped iteratively (the chain is as long as the nesting), within the test's stack.
+        drop(element);
+        drop(items);
+        assert!(start.elapsed() < std::time::Duration::from_secs(20), "{:?}", start.elapsed());
+    }
+
+    /// A prefix map as [`reference_namespaces`] keeps it: prefix, declaration offset, URI.
+    type Map = Vec<(Option<String>, Option<usize>, String)>;
+    /// A tag's offset, prefix map, namespace and attribute namespaces.
+    type RefTag = (usize, Map, String, Vec<String>);
+
+    /// Each tag's prefix map, namespace and attribute namespaces as Chameleon computes them: a
+    /// copy of the map on top of the stack for every tag, popped once per end tag.
+    fn reference_namespaces(src: &str) -> Option<Vec<RefTag>> {
+        let root: Map = Namespaces::zpt()
+            .iter_spans()
+            .map(|(p, s, v)| (p.map(str::to_owned), s.map(|s| s.start as usize), v.uri.to_string()))
+            .collect();
+        let mut stack: Vec<Map> = vec![root];
+        let mut out = Vec::new();
+        for span in tokenize(src) {
+            let kind = identify(src, span).ok()?;
+            if !matches!(kind, Kind::StartTag | Kind::EmptyTag | Kind::XmlDeclaration | Kind::EndTag) {
+                continue;
+            }
+            let mut map = if kind == Kind::EndTag { stack.pop()? } else { stack.last().cloned().unwrap_or_default() };
+            let tag = match_tag(src, span).ok()?;
+            for attr in &tag.attrs {
+                let name = attr.name.text(src);
+                let (prefix, at) = if name == "xmlns" {
+                    (None, None)
+                } else if let Some(p) = name.strip_prefix("xmlns:") {
+                    (Some(p.to_owned()), Some(attr.name.start as usize + 6))
+                } else {
+                    continue;
+                };
+                let value = attr.value.text(src).to_owned();
+                match map.iter_mut().find(|(q, _, _)| *q == prefix) {
+                    Some(entry) => entry.2 = value,
+                    None => map.push((prefix, at, value)),
+                }
+            }
+            let get = |p: Option<&str>| map.iter().find(|(q, _, _)| q.as_deref() == p).map(|(_, _, v)| v.clone());
+            let name = tag.name.text(src);
+            let namespace = get(name.split_once(':').map(|(p, _)| p)).unwrap_or_else(|| XML_NS.to_owned());
+            let mut attrs = Vec::new();
+            for attr in &tag.attrs {
+                attrs.push(match attr.name.text(src).split_once(':') {
+                    // Lenient: an undefined prefix is in the tag's namespace.
+                    Some((p, _)) => get(Some(p)).unwrap_or_else(|| namespace.clone()),
+                    None => namespace.clone(),
+                });
+            }
+            out.push((span.start as usize, map.clone(), namespace, attrs));
+            if kind == Kind::StartTag {
+                stack.push(map);
+            }
+        }
+        Some(out)
+    }
+
+    fn tags_of(items: &[Item], out: &mut Vec<Tag>) {
+        for item in items {
+            match item {
+                Item::StartTag(tag) => out.push((**tag).clone()),
+                Item::Element(e) => {
+                    out.push(e.start.clone());
+                    tags_of(&e.children, out);
+                    out.extend(e.end.clone());
+                }
+                _ => {}
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn namespace_maps_match_a_copy_per_tag(
+            pieces in proptest::collection::vec(
+                prop_oneof![
+                    3 => r#"<a( xmlns(:x|:y)?="(u|v|w)"| x:k="1"| k="2"){0,3}>"#,
+                    1 => r#"<(a|x:b)( xmlns(:x|:y)?="(u|v)"| y:k="1"){0,2}/>"#,
+                    2 => Just("</a>".to_owned()),
+                    1 => Just("t".to_owned()),
+                ],
+                0..24,
+            )
+        ) {
+            // An end tag only where a start tag is open: random ones mostly fail to parse.
+            let mut open = 0usize;
+            let src: String = pieces
+                .into_iter()
+                .filter(|piece| {
+                    if piece == "</a>" {
+                        let close = open > 0;
+                        open = open.saturating_sub(1);
+                        close
+                    } else {
+                        open += usize::from(piece.starts_with('<') && !piece.ends_with("/>"));
+                        true
+                    }
+                })
+                .collect();
+            let lenient = ParseOptions { restricted_namespace: false, ..ParseOptions::default() };
+            let items = parse(&src, &tokenize(&src), &lenient);
+            let expected = reference_namespaces(&src);
+            prop_assert!(items.is_ok() && expected.is_some(), "{}", src);
+            let (Ok(items), Some(expected)) = (items, expected) else { return Ok(()) };
+            let mut tags = Vec::new();
+            tags_of(&items, &mut tags);
+            tags.sort_by_key(|t| t.name.start);
+            prop_assert_eq!(tags.len(), expected.len(), "{}", src);
+            for (tag, (_, map, namespace, attrs)) in tags.iter().zip(&expected) {
+                let got: Vec<_> = tag.ns_map.iter_spans().map(|(p, s, v)| (p.map(str::to_owned), s.map(|s| s.start as usize), v.uri.to_string())).collect();
+                prop_assert_eq!(&got, map, "{}", src);
+                prop_assert_eq!(&*tag.namespace.uri, namespace.as_str(), "{}", src);
+                let got_attrs: Vec<_> = tag.ns_attrs.iter().map(|a| a.ns.to_string()).collect();
+                // `ns_attrs` merges repeats; compare when there are none.
+                if got_attrs.len() == attrs.len() {
+                    prop_assert_eq!(&got_attrs, attrs, "{}", src);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn trailing_attribute_whitespace_parses_in_linear_time() {
+        // A security review's DoS: 64K spaces after an attribute took 8 s, the search stepping
+        // one space at a time and rescanning the rest of the run from each.
+        for n in [16_000, 64_000] {
+            let src = format!("<p a=\"x\"{}/>", " ".repeat(n));
+            let start = std::time::Instant::now();
+            let tag = first_tag(&src);
+            eprintln!("{n}: {:?}", start.elapsed());
+            assert_eq!(tag.attrs.len(), 1);
+            assert!(start.elapsed() < std::time::Duration::from_secs(2), "{n}: {:?}", start.elapsed());
+        }
     }
 
     #[test]

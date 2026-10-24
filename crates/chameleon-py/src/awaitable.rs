@@ -156,8 +156,8 @@ enum Phase {
     /// The value the VM suspended on.
     Vm,
     /// The VM finished; the tasks started for placeholders (`crate::deferred`) are awaited
-    /// until each is done or one fails (`asyncio.wait(..., return_when=FIRST_EXCEPTION)`, so a
-    /// failure ends the render at once, not once the tasks before it in the document are
+    /// until each is done or one fails or is cancelled (`crate::deferred::wait_first_failure`,
+    /// so a failure ends the render at once, not once the tasks before it in the document are
     /// done). `filled` holds the text of each entry done.
     Fill { entries: Vec<Deferred>, filled: Vec<Option<(Vec<u8>, bool)>> },
     /// The render failed (or was cancelled) with `error` while tasks it started were running:
@@ -399,7 +399,7 @@ impl Running {
 
     /// Takes the text of each task done, in document order (the first failed one's error ends
     /// the render), then returns what to await for the rest: the one task left, or
-    /// `asyncio.wait(rest, return_when=FIRST_EXCEPTION)`. Once all are done, the result.
+    /// `wait_first_failure(rest)`. Once all are done, the result.
     fn fill_done(&mut self, py: Python<'_>) -> Result<Py<PyAny>, Outcome> {
         let count = match &self.phase {
             Phase::Fill { entries, .. } => entries.len(),
@@ -437,7 +437,7 @@ impl Running {
             0 => {}
             1 => return Ok(pending.swap_remove(0).unbind()),
             _ => {
-                return crate::deferred::wait_first_exception(py, pending).map(Bound::unbind).map_err(Outcome::Raise);
+                return crate::deferred::wait_first_failure(py, pending).map(Bound::unbind).map_err(Outcome::Raise);
             }
         }
         let Phase::Fill { entries, filled } = &mut self.phase else {

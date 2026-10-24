@@ -629,7 +629,7 @@ class ChameleonTemplate(_EngineBase):
         if _views.outside_folder(template_name):
             msg = f'Template not found: {template_name}.'
             raise TemplateNotFound(msg)
-        spec = _views.spelling(self.loader, template_name)
+        spec = _views.known_spelling(self.loader, template_name)
         if spec is None:
             # A missing file is `TemplateNotFound` too, as Robyn's `JinjaTemplate` raises.
             msg = f'Template not found: {template_name}.'

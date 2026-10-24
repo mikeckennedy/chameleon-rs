@@ -167,8 +167,48 @@ impl Default for Settings {
 pub struct Profile {
     settings: Settings,
     options: Options<'static>,
+    /// `options` with tables off, for text whose tables would be too large ([`table_cells`]);
+    /// `None` when tables are off already.
+    no_tables: Option<Options<'static>>,
     /// `classes`, with each value as ` class="..."` (escaped).
     class_attrs: Vec<(Element, String)>,
+}
+
+/// The table cells one conversion may create: this many, or one per byte of text if that is
+/// more. comrak gives every row of a table as many cells as its header, so a short text can
+/// ask for millions (four sparse 700-column tables in 22 KB take about 500 MB); its own limit
+/// is per table.
+const TABLE_CELLS_MIN: usize = 100_000;
+
+/// At least the number of table cells comrak would create for `text`: per run of lines between
+/// blank ones (a table ends at a blank line), the widest delimiter row there times the run's
+/// lines. A delimiter row (`|:--|--:|`) has one run of `-` per cell; the `-` runs at the end
+/// of any line, among only `|`, `-`, `:` and spaces, count as one, wherever it is (in a quote,
+/// a list, a code block, after text).
+/// Lines end at `\n`, `\r\n` or `\r`, as comrak's do.
+fn table_cells(text: &str) -> usize {
+    let (mut total, mut columns, mut lines) = (0usize, 0usize, 0usize);
+    let mut rest = text;
+    while !rest.is_empty() {
+        let end = rest.find(['\n', '\r']).unwrap_or(rest.len());
+        let line = &rest[..end];
+        let next = if rest[end..].starts_with("\r\n") { end + 2 } else { (end + 1).min(rest.len()) };
+        rest = &rest[next..];
+        if line.bytes().all(|b| b == b' ' || b == b'\t') {
+            total = total.saturating_add(columns.saturating_mul(lines));
+            (columns, lines) = (0, 0);
+            continue;
+        }
+        lines += 1;
+        // A delimiter row ends its line, after whatever container markers start it (`> `, `- `).
+        let bytes = line.as_bytes();
+        let from = bytes.iter().rposition(|b| !matches!(b, b'|' | b'-' | b':' | b' ' | b'\t' | 0x0b | 0x0c));
+        let row = &bytes[from.map_or(0, |i| i + 1)..];
+        let cells = row.iter().zip(row.iter().skip(1)).filter(|&(&a, &b)| a != b'-' && b == b'-').count()
+            + usize::from(row.first() == Some(&b'-'));
+        columns = columns.max(cells);
+    }
+    total.saturating_add(columns.saturating_mul(lines))
 }
 
 impl Profile {
@@ -199,7 +239,12 @@ impl Profile {
                 (*element, attr)
             })
             .collect();
-        Self { settings, options, class_attrs }
+        let no_tables = options.extension.table.then(|| {
+            let mut no_tables = options.clone();
+            no_tables.extension.table = false;
+            no_tables
+        });
+        Self { settings, options, no_tables, class_attrs }
     }
 
     #[must_use]
@@ -207,18 +252,24 @@ impl Profile {
         &self.settings
     }
 
-    /// The HTML for `text`.
+    /// The HTML for `text`. Text whose tables would take more than [`TABLE_CELLS_MIN`] cells
+    /// (or one per byte) converts with tables off: their rows show as paragraph text, as rows
+    /// past comrak's own per-table limit do.
     #[must_use]
     pub fn to_html(&self, text: &str) -> String {
+        let options = match &self.no_tables {
+            Some(no_tables) if table_cells(text) > TABLE_CELLS_MIN.max(text.len()) => no_tables,
+            _ => &self.options,
+        };
         let arena = Arena::new();
-        let root = parse_document(&arena, text, &self.options);
+        let root = parse_document(&arena, text, options);
         let pending = Rc::new(Cell::new(None));
         let mut out =
             ClassWriter { out: String::with_capacity(text.len() + text.len() / 4 + 16), pending: Rc::clone(&pending) };
         let state = State { profile: self, pending, column: 0 };
         let plugins = Plugins::default();
         // Writing to a `String` cannot fail, and the formatter only fails when the writer does.
-        let _ = format_document_with_formatter(root, &self.options, &mut out, &plugins, formatter, state);
+        let _ = format_document_with_formatter(root, options, &mut out, &plugins, formatter, state);
         out.out
     }
 }
@@ -480,10 +531,72 @@ mod tests {
     fn wide_tables_render_in_linear_time() {
         // A security review's DoS: 16,000 columns took 10 s in comrak's own cell rendering.
         let columns = 40_000;
-        let text = format!("{}\n{}\n{}", "|a".repeat(columns), "|-".repeat(columns), "|b\n".repeat(8));
+        // Full rows: one-cell rows would make comrak fill in 320,000 cells, which `table_cells`
+        // refuses for this length of text.
+        let text = format!(
+            "{}\n{}\n{}",
+            "|a".repeat(columns),
+            "|-".repeat(columns),
+            format!("{}\n", "|b".repeat(columns)).repeat(8)
+        );
         let start = std::time::Instant::now();
         let out = html(Settings::default(), &text);
         assert_eq!(out.matches("<td>").count(), 8 * columns);
         assert!(start.elapsed() < std::time::Duration::from_secs(10), "{:?}", start.elapsed());
+    }
+
+    /// The cells comrak creates for `text`.
+    fn comrak_cells(text: &str, options: &Options<'_>) -> usize {
+        let arena = Arena::new();
+        let root = parse_document(&arena, text, options);
+        root.descendants().filter(|node| matches!(node.data().value, NodeValue::TableCell)).count()
+    }
+
+    #[test]
+    fn sparse_tables_past_the_budget_convert_without_tables() {
+        // A security review's memory DoS: four sparse tables of 700 columns and 700 one-cell rows,
+        // 22 KB of text, made comrak create two million cells (about 500 MB). Each table is
+        // under comrak's own per-table limit.
+        let one = format!("|{}\n|{}\n{}", "a|".repeat(700), "-|".repeat(700), "|x|\n".repeat(700));
+        let text = [one.as_str(); 4].join("\n\n");
+        let profile = Profile::new(Settings::default());
+        assert!(comrak_cells(&text, &profile.options) > 1_900_000);
+        assert!(table_cells(&text) > TABLE_CELLS_MIN.max(text.len()));
+        let out = profile.to_html(&text);
+        assert!(!out.contains("<table") && out.len() < 4 * text.len(), "{}", out.len());
+        // One such table is within the budget, and still a table.
+        let small = format!("|{}\n|{}\n{}", "a|".repeat(100), "-|".repeat(100), "|x|\n".repeat(100));
+        assert!(profile.to_html(&small).contains("<table>"));
+    }
+
+    #[test]
+    fn table_cells_counts_line_endings_as_comrak_does() {
+        let profile = Profile::new(Settings::default());
+        for text in ["|a|b|\r|-|-|\r|x|\r|y|", "|a|b|\r\n|-|-|\r\n|x|\r\n\r\n|y|", "> |a|b|\n> |-|-|\n> |x|\n>\n> |y|"]
+        {
+            let cells = comrak_cells(text, &profile.options);
+            assert!(cells > 0 && table_cells(text) >= cells, "{text:?}: {} < {cells}", table_cells(text));
+        }
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(2000))]
+        /// `table_cells` never counts fewer cells than comrak creates, whatever the text's
+        /// containers, line endings and indentation.
+        #[test]
+        fn table_cells_is_an_upper_bound(text in "([|:x> \t-]{0,12}(\n|\r\n|\r)){0,14}") {
+            let profile = Profile::new(Settings::default());
+            let cells = comrak_cells(&text, &profile.options);
+            proptest::prop_assert!(table_cells(&text) >= cells, "{:?}: {} < {}", text, table_cells(&text), cells);
+        }
+
+        #[test]
+        fn table_cells_bounds_list_and_quote_tables(
+            text in "((- |  |> |1\\. |    )?(\\|[ax]?){1,5}(\\|[:-]{1,3}){0,4}\\|?(\n|\r\n| \n)){0,12}"
+        ) {
+            let profile = Profile::new(Settings::default());
+            let cells = comrak_cells(&text, &profile.options);
+            proptest::prop_assert!(table_cells(&text) >= cells, "{:?}: {} < {}", text, table_cells(&text), cells);
+        }
     }
 }

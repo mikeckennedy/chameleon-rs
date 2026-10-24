@@ -98,3 +98,14 @@ PIECES = [
 @given(st.lists(st.sampled_from(PIECES) | st.binary(max_size=3), max_size=14).map(b''.join))
 def test_generated(body: bytes) -> None:
     same(body)
+
+
+META_PIECES = [' ', '\t', '\n', '\u3000', '<meta ', '<META', 'http-equiv=', '"Content-Type" ', 'content=']
+META_PIECES += ['"text/html; ', 'charset=utf-8"', '>', '/', 'x']
+
+
+@given(st.lists(st.sampled_from(META_PIECES), max_size=24).map(''.join))
+@settings(max_examples=2000)
+def test_meta_charset_with_whitespace_around_it(text: str) -> None:
+    # `RE_META` without Chameleon's leading `\s*` (quadratic on a long run of whitespace).
+    assert utils.detect_encoding(text, 'utf-8') == chameleon.utils.detect_encoding(text, 'utf-8')

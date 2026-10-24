@@ -9,9 +9,9 @@
 chameleon-rs is [Chameleon](https://github.com/malthe/chameleon)'s template language on a new
 engine written in Rust. Your existing templates and code run unchanged, with byte-identical
 output, several times faster. It also adds what a modern Python web app expects: async
-rendering that never blocks the event loop, built-in integrations for Flask/Quart, FastAPI,
-Starlette, Robyn and Litestar, partials, Markdown, and support for free-threaded Python. No
-runtime dependencies.
+rendering that never blocks the event loop on I/O, built-in integrations for Flask/Quart,
+FastAPI, Starlette, Robyn and Litestar, partials, Markdown, and support for free-threaded
+Python. No runtime dependencies.
 
 **Documentation: <https://mkennedy.codes/docs/chameleon-rs/>** ·
 **Source: <https://github.com/mikeckennedy/chameleon-rust>** ·

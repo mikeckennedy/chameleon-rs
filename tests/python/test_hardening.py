@@ -6,6 +6,10 @@ wedge a request, or keep memory.
   with a small stack; so does a compile cloning a deep fill-slot body.
 - A macro with a code block called in a long `tal:repeat` renders in linear time.
 - `str()` of a render error whose template file can't be decoded still shows the message.
+- Second review: sparse Markdown tables, nested namespace declarations and long runs of
+  whitespace take memory and time linear in the text; sibling partials of discarded templates
+  are freed; a `@concurrent` call's own cancellation ends the render at once; a replaced hard
+  link stops loading for the other name.
 - Asynchronous renders: a cancellation during the join of cancelled tasks is not swallowed; a
   failed `@concurrent` call ends the render without waiting for slower calls before it; the
   fan-out is bounded; a `StopIteration` raised by the template is a `RuntimeError` (PEP 479),
@@ -489,3 +493,147 @@ def test_bare_names_and_paths_compile_as_python_does() -> None:
     for bad in ('${o.if}', '${o..x}', '${o.}', '${if}'):
         with pytest.raises(chameleon_rs.exc.TemplateError):
             PageTemplate(bad).render(o=O())
+
+
+# -- Second review: memory and time a small input can take, cache lifetimes -------------------
+
+
+def _peak_rss(code: str) -> tuple[str, int]:
+    """Runs ``code`` in a fresh interpreter: what it prints, and its peak resident memory."""
+    script = textwrap.dedent(code) + textwrap.dedent("""
+        import resource, sys
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        print(peak if sys.platform == 'darwin' else peak * 1024)
+    """)
+    done = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, timeout=120, check=True)
+    *out, peak = done.stdout.split()
+    return ' '.join(out), int(peak)
+
+
+def test_sparse_markdown_tables_take_bounded_memory() -> None:
+    # Four tables of 700 columns and 700 one-cell rows, 22 KB: comrak filled in two million
+    # cells, about 500 MB and 20 MB of HTML. Past the budget, the text converts without tables.
+    out, peak = _peak_rss("""
+        import chameleon_rs
+        from chameleon_rs import PageTemplate
+        chameleon_rs.configure(markdown=True, markdown_cache=0)
+        one = '|' + 'a|' * 700 + '\\n|' + '-|' * 700 + '\\n' + '|x|\\n' * 700
+        text = '\\n\\n'.join([one] * 4)
+        html = PageTemplate('${markdown: text}').render(text=text)
+        print(len(text), len(html), '<table' in html)
+        small = '| a | b |\\n|---|---|\\n| 1 |\\n'
+        print('<table>' in PageTemplate('${markdown: text}').render(text=small))
+    """)
+    size, html, has_table, small_table = out.split()
+    assert has_table == 'False' and small_table == 'True'
+    assert int(html) < 4 * int(size)
+    assert peak < 200 * 1024 * 1024, peak
+
+
+def test_nested_namespace_declarations_take_linear_memory() -> None:
+    # Each start tag copied its parent's prefix map: 2,000 nested declarations (45 KB) took
+    # 330 MB, 8,000 about 5 GB, before the compile rejected the depth.
+    out, peak = _peak_rss("""
+        from chameleon_rs import PageTemplate
+        n = 20_000
+        body = ''.join(f'<p xmlns:n{i}="x">' for i in range(n)) + '</p>' * n
+        try:
+            PageTemplate(body).render()
+        except RecursionError:
+            print('RecursionError')
+    """)
+    assert out == 'RecursionError'
+    assert peak < 300 * 1024 * 1024, peak
+
+
+def test_trailing_attribute_whitespace_compiles_in_linear_time() -> None:
+    # 64K spaces after an attribute took 8 s: the attribute search, and the `<meta>` charset
+    # search (any run of whitespace), each stepped one space at a time, rescanning the rest of
+    # the run from each.
+    body = '<p a="x"' + ' ' * 64_000 + '/>'
+    start = time.perf_counter()
+    assert PageTemplate(body).render() == body
+    assert time.perf_counter() - start < 1
+
+
+def test_a_cancelled_concurrent_call_ends_the_render_at_once() -> None:
+    @concurrent
+    async def cancelled() -> str:
+        raise asyncio.CancelledError
+
+    @concurrent
+    async def slow() -> str:
+        await asyncio.sleep(10)
+        return 'never'
+
+    page = PageTemplate('${cancelled()}${slow()}')
+    start = time.perf_counter()
+    with pytest.raises(asyncio.CancelledError):
+        run(page.render_async(cancelled=cancelled, slow=slow))
+    assert time.perf_counter() - start < 2
+
+
+class _Translator:
+    def __call__(self, msgid: Any, **kwargs: Any) -> str:
+        return str(msgid)
+
+
+def test_sibling_partials_of_discarded_templates_are_freed(tmp_path: Path) -> None:
+    # The shared map of templates found next to a caller kept each one, and the settings in
+    # its key (a `translate` function per template, here), for the life of the process.
+    import weakref
+
+    from chameleon_rs import partials
+
+    (tmp_path / 'page.pt').write_text('${render_partial("card.pt")}')
+    (tmp_path / 'card.pt').write_text('card')
+    refs = []
+    for _ in range(20):
+        translator = _Translator()
+        refs.append(weakref.ref(translator))
+        assert PageTemplateFile(tmp_path / 'page.pt', translate=translator)() == 'card'
+    del translator
+    gc.collect()
+    assert [ref for ref in refs if ref() is not None] == []
+    assert not any(str(tmp_path) in str(template.filename) for template in partials._SIBLINGS.values())
+
+
+def test_sibling_partials_are_still_shared(tmp_path: Path) -> None:
+    (tmp_path / 'page.pt').write_text('${render_partial("card.pt")}')
+    (tmp_path / 'card.pt').write_text('card')
+    one, two = PageTemplateFile(tmp_path / 'page.pt'), PageTemplateFile(tmp_path / 'page.pt')
+    assert one() == two() == 'card'
+    assert one.__dict__['_partial_cache']['card.pt'][1] is two.__dict__['_partial_cache']['card.pt'][1]
+
+
+def test_a_replaced_hard_link_no_longer_loads_for_the_other_name(tmp_path: Path) -> None:
+    # `b.pt` loaded by the first spelling seen of its file, `a.pt`, even after a deployment
+    # replaced `a.pt` (a new file renamed over it) and `b.pt` kept the old content.
+    import os
+
+    from chameleon_rs.starlette import Templates
+
+    (tmp_path / 'a.pt').write_text('first')
+    os.link(tmp_path / 'a.pt', tmp_path / 'b.pt')
+    engine = Templates(str(tmp_path), auto_reload=True)
+    assert engine.get_template('a.pt')() == engine.get_template('b.pt')() == 'first'
+    (tmp_path / 'next.pt').write_text('replacement')
+    os.replace(tmp_path / 'next.pt', tmp_path / 'a.pt')
+    assert engine.get_template('b.pt')() == 'first'
+    assert engine.get_template('a.pt')() == 'replacement'
+
+
+def test_a_replaced_hard_link_in_the_partials_folder(tmp_path: Path, configured: Path) -> None:
+    import os
+
+    from chameleon_rs.partials import render_partial
+
+    chameleon_rs.configure(template_folder=str(tmp_path), auto_reload=True)
+    (tmp_path / 'a.pt').write_text('first')
+    os.link(tmp_path / 'a.pt', tmp_path / 'b.pt')
+    page = PageTemplate('${render_partial("b.pt")}')
+    assert render_partial('a.pt').html_text == render_partial('b.pt').html_text == page() == 'first'
+    (tmp_path / 'next.pt').write_text('replacement')
+    os.replace(tmp_path / 'next.pt', tmp_path / 'a.pt')
+    assert render_partial('a.pt').html_text == 'replacement'
+    assert render_partial('b.pt').html_text == page() == 'first'

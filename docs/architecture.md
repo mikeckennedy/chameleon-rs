@@ -169,9 +169,16 @@ and the places where the port pins down or changes a Phase 2 detail.
   keeps in frozen pyclasses) and `Program` are `Send + Sync`, asserted at compile time.
 - **Namespaces.** The stack reproduces Chameleon's quirk of popping once per end tag even
   when the end tag closes several unclosed start tags, so prefixes declared on an unclosed
-  element stay visible after its parent closes. Each tag keeps an `Rc` snapshot of its prefix
-  map (`ns_map`); Chameleon shares the dict, which differs only if an end tag carried
-  `xmlns` attributes, which `iter_xml` never produces. A namespace URI remembers whether it
+  element stay visible after its parent closes. Each tag keeps its prefix map (`ns_map`) as
+  an `Arc` of what it adds to its parent's: a tag that declares nothing shares its parent's
+  map, and one that does stores only its own declarations, so maps take memory linear in the
+  declarations. A copy per tag (Chameleon's dict copy) made `n` nested declarations take
+  `n²/2` entries before the compile could reject the depth (a 2026-10-23 review: 2,000
+  levels, 45 KB, 330 MB). While parsing, lookups go through a scope with a stack of values
+  per prefix, kept level for level with the namespace stack, so a lookup costs the same at
+  any depth; a proptest checks every tag's map against a copy per tag. Chameleon shares the
+  dict, which differs only if an end tag carried `xmlns` attributes, which `iter_xml` never
+  produces. A namespace URI remembers whether it
   came from the defaults (a plain string) or an attribute (a token, with its position); so do
   the empty strings Chameleon substitutes for an unquoted or valueless attribute
   (`AttrKind`).
@@ -1233,6 +1240,15 @@ changes while it isn't configured.
   `tests/markdown_spec.rs` checks it with a unique class on every element over every spec
   example, four option combinations. `heading_ids` sets `header_id_prefix` and `header_id_prefix_in_href` (the anchor
   link points at the prefixed id).
+- **A table cell budget.** comrak gives every row of a table as many cells as its header, and
+  its own limit (`MAX_AUTOCOMPLETED_CELLS`, 500,000) is per table: four sparse 700-column
+  tables in 22 KB made two million cells, about 500 MB (a 2026-10-23 review). Before parsing,
+  `table_cells` bounds the cells comrak could create, per run of lines between blank ones
+  (a table ends at a blank line): the most `-` runs at the end of any line there (a
+  delimiter row has one per cell, after whatever container markers start its line) times
+  the run's lines. Past 100,000 cells, or one per byte of text if that is more, the text
+  converts with tables off. Proptests check the bound is never below comrak's count. A limit
+  on the output would come too late: the cells are allocated while parsing.
 - **The cache.** A process-wide map behind a `std::sync::Mutex` (locked with
   `lock_py_attached`, recovered if poisoned: no update stops halfway), key (profile id,
   `FxHash` of the UTF-8), entry (text, `Markup`, size, last use). A hit compares the text, so a

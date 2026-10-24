@@ -200,21 +200,16 @@ pub(crate) fn join<'py>(py: Python<'py>, entries: &[Deferred]) -> PyResult<Bound
     gather.bind(py).call(tasks, Some(&kwargs))
 }
 
-static WAIT: PyOnceLock<(Py<PyAny>, Py<PyAny>)> = PyOnceLock::new();
+static WAIT: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-/// `asyncio.wait(tasks, return_when=FIRST_EXCEPTION)`: what wakes the render when every task
-/// is done or one fails.
-pub(crate) fn wait_first_exception<'py>(py: Python<'py>, tasks: Vec<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
-    let (wait, first_exception) = WAIT.get_or_try_init(py, || {
-        let asyncio = py.import(intern!(py, "asyncio"))?;
-        Ok::<_, PyErr>((
-            asyncio.getattr(intern!(py, "wait"))?.unbind(),
-            asyncio.getattr(intern!(py, "FIRST_EXCEPTION"))?.unbind(),
-        ))
+/// `chameleon_rs._async._wait_failed(tasks)`: what wakes the render when every task is done,
+/// or one failed or was cancelled (`asyncio.wait`'s `FIRST_EXCEPTION` waits on past a
+/// cancelled one).
+pub(crate) fn wait_first_failure<'py>(py: Python<'py>, tasks: Vec<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+    let wait = WAIT.get_or_try_init(py, || {
+        Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs._async"))?.getattr(intern!(py, "_wait_failed"))?.unbind())
     })?;
-    let kwargs = PyDict::new(py);
-    kwargs.set_item(intern!(py, "return_when"), first_exception.bind(py))?;
-    wait.bind(py).call((pyo3::types::PyList::new(py, tasks)?,), Some(&kwargs))
+    wait.bind(py).call1((pyo3::types::PyList::new(py, tasks)?,))
 }
 
 /// A partial render's output (a `str`) as UTF-8 bytes, and whether they hold lone surrogates.

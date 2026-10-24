@@ -25,6 +25,7 @@ without the decorator.
 
 from __future__ import annotations
 
+import asyncio
 import functools
 from collections.abc import Awaitable, Callable, Generator
 from typing import Any
@@ -69,6 +70,28 @@ def _then(awaitable: Awaitable[Any], convert: Callable[[Any], Any]) -> Awaitable
 
 async def _convert(awaitable: Awaitable[Any], convert: Callable[[Any], Any]) -> Any:
     return convert(await awaitable)
+
+
+async def _wait_failed(tasks: list[asyncio.Future[Any]]) -> None:
+    # What a render with `@concurrent` placeholders awaits for its tasks: until every one is
+    # done, or one failed or was cancelled. `asyncio.wait(..., FIRST_EXCEPTION)` doesn't count a
+    # cancelled task as failed, so a helper's own cancellation waited for all the others.
+    waiter = asyncio.get_running_loop().create_future()
+    left = len(tasks)
+
+    def done(task: asyncio.Future[Any]) -> None:
+        nonlocal left
+        left -= 1
+        if not waiter.done() and (left == 0 or task.cancelled() or task.exception() is not None):
+            waiter.set_result(None)
+
+    for task in tasks:
+        task.add_done_callback(done)
+    try:
+        await waiter
+    finally:
+        for task in tasks:
+            task.remove_done_callback(done)
 
 
 async def _await[T](awaitable: Awaitable[T]) -> T:

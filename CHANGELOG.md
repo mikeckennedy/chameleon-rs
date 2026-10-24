@@ -7,8 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.1.51] - 2026-10-23
 
-Fixes from a review for memory leaks, GC problems and anything that could crash or wedge a
-web worker.
+Fixes from two reviews: for memory leaks, GC problems and anything that could crash or wedge
+a web worker, then for the memory, time and cache lifetimes a small input could take.
 
 ### Security
 
@@ -25,6 +25,20 @@ web worker.
   the cache grew without bound. They now load one template per file. The names remembered for
   that are bounded (1024 per loader), names of missing files are never remembered, and a name
   seen before costs no `stat`.
+- **A small Markdown value could make a conversion take hundreds of megabytes.** Every row of a
+  table gets as many cells as its header, and comrak's own limit is per table: four sparse
+  tables of 700 columns and 700 one-cell rows, 22 KB of text, made two million cells (500 MB
+  peak, 20 MB of HTML). Text whose tables would make more than 100,000 cells, or more cells
+  than it has bytes, now converts with tables off (their rows show as paragraphs), checked
+  before parsing.
+- **Nested namespace declarations took memory quadratic in the depth.** Every start tag
+  copied its parent's prefix map: 2,000 nested `xmlns:` declarations (45 KB of template)
+  took 330 MB before the compile rejected the depth. A tag now shares its parent's map, or
+  stores only what it adds, and lookups while parsing cost the same at any depth.
+- **A long run of whitespace made compiling quadratic.** 64K spaces after an attribute took
+  8 s: the attribute search, and the `<meta>` charset sniffing (which Chameleon shares, for a
+  run anywhere in the template), each rescanned the rest of the run from every space. Both
+  are linear now: 256K spaces compile in 2 ms.
 
 ### Added
 
@@ -84,6 +98,26 @@ web worker.
 - A render's saved error is visible to the garbage collector while its cancelled tasks are
   joined; a second awaiter of a suspended render gets `RuntimeError("coroutine is being
   awaited already")`; an error looking up a delegate's `throw` is raised, as in CPython.
+- **Templates found next to a caller (sibling partials) were kept for the life of the
+  process,** with the settings in their cache key (a `translate` function per template, say),
+  and one more for each file a deployment replaced. They now live as long as a template that
+  uses them.
+- **A `@concurrent` call's own cancellation waited for every other call.** A helper raising
+  `CancelledError` (or awaiting a cancelled future) ended the render only once the others
+  finished, never if one hung. It now ends it at once, as a failure does.
+- **Two names of one file (a hard link) stayed together after a deployment replaced one.**
+  `b.pt` loaded as `a.pt`, the first name seen of its file, and rendered `a.pt`'s new content
+  after `a.pt` was replaced. A remembered name is now checked to still name that file, in
+  the integrations, the Jinja-shaped engines and the partials folder (with `auto_reload`).
+- The README said async rendering never blocks the event loop; it never blocks it on I/O. A
+  page that is all CPU work holds the loop while it renders (see "Offloading a render to a
+  thread").
+
+### Changed
+
+- The Jinja-shaped engines' `get_template()` (Starlette, Litestar, Robyn) remembers the
+  names it found when templates don't reload, as the decorator API does: a name seen before
+  costs no `stat` (0.5 µs, from 2.3 µs).
 
 ## [0.1.50] - 2026-10-22
 

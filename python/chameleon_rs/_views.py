@@ -30,7 +30,8 @@ from functools import wraps
 from typing import Any
 
 from chameleon_rs import _settings
-from chameleon_rs.template import _render_async
+from chameleon_rs.partials import remembered_spelling
+from chameleon_rs.template import PageTemplateFile, _render_async
 from chameleon_rs.web import DecoratorOrderError, ErrorPage, TemplateError, model_of
 
 
@@ -108,7 +109,9 @@ class Integration:
         # Only names that passed the `strict_names` check are remembered, and each loader
         # belongs to one `Settings`, so a hit needs no check.
         names = loader.__dict__.get('_rs_names')
-        if names is not None and type(template_file) is str:
+        # A loader that reloads looks again (`spelling` checks a remembered spelling still
+        # names the file): the one stat its template's own reload check makes anyway.
+        if names is not None and type(template_file) is str and not settings.auto_reload:
             spec = names.get(template_file)
             if spec is not None:
                 return loader[spec]
@@ -312,9 +315,18 @@ def spelling(loader: Any, name: str) -> str | None:
     loader finds it: its ``default_extension`` added to a name without a dot, its folders in
     order, an absolute path as it is (``..`` segments are kept: the filesystem resolves them).
     A package spec (``pkg:path``) is the caller's to leave to the loader."""
-    absolute = os.path.isabs(name)
-    if not absolute:
+    if not os.path.isabs(name):
         name = canonical(name)
+    identity = _identity(loader, name)
+    if identity is None:
+        return None
+    return remembered_spelling(loader, identity, name, lambda first: _identity(loader, first))
+
+
+def _identity(loader: Any, name: str) -> tuple[int, int] | None:
+    """The file ``loader`` would load for ``name`` (device and inode), or ``None`` if it finds
+    no regular file (``spelling``'s search)."""
+    absolute = os.path.isabs(name)
     extension = getattr(loader, 'default_extension', None)
     filename = name + extension if extension is not None and '.' not in name else name
     for folder in [''] if absolute else loader.search_path:
@@ -322,16 +334,41 @@ def spelling(loader: Any, name: str) -> str | None:
             info = os.stat(os.path.join(folder, filename) if folder else filename)
         except (OSError, ValueError):
             continue
-        if not stat.S_ISREG(info.st_mode):
-            return None
-        spellings = loader.__dict__.setdefault('_rs_spellings', {})
-        return spellings.setdefault((info.st_dev, info.st_ino), name)  # type: ignore[no-any-return]
+        return (info.st_dev, info.st_ino) if stat.S_ISREG(info.st_mode) else None
     return None
 
 
 # At most this many names are remembered per loader by `view_spelling` (then they start over):
 # names built from request data must not grow it without bound. As `partials._CACHE_LIMIT`.
 _NAMES_LIMIT = 1024
+
+
+def known_spelling(loader: Any, name: str) -> str | None:
+    """``spelling``, remembered per name (``_rs_known`` on ``loader``, bounded by
+    ``_NAMES_LIMIT``) while the loader's templates don't reload: the Jinja-shaped engines'
+    ``get_template`` then costs no ``stat`` for a name seen before, as ``Integration.page``'s
+    hot path doesn't. A loader that reloads checks every time, so a name parts from another
+    name's file (a hard link) once a deployment replaces that file. Missing files aren't
+    remembered."""
+    if _reloads(loader):
+        return spelling(loader, name)
+    names = loader.__dict__.setdefault('_rs_known', {})
+    found = names.get(name)
+    if found is None:
+        found = spelling(loader, name)
+        if found is not None:
+            if len(names) >= _NAMES_LIMIT:
+                names.clear()
+            names[name] = found
+    return found  # type: ignore[no-any-return]
+
+
+def _reloads(loader: Any) -> bool:
+    """Whether ``loader``'s templates reload: its ``auto_reload`` option, else the template
+    class default (``CHAMELEON_RELOAD``). Anything else counts as reloading."""
+    kwargs = getattr(loader, 'kwargs', None)
+    value = kwargs.get('auto_reload') if isinstance(kwargs, dict) else True
+    return bool(PageTemplateFile.auto_reload if value is None else value)
 
 
 def view_spelling(loader: Any, name: Any) -> Any:

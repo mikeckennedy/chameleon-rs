@@ -394,7 +394,7 @@ class Templates:
         here: ``PageTemplateLoader`` and the decorator API raise Chameleon's ``ValueError``.)"""
         _check_name(name)
         loader = self.loader
-        spec = _views.spelling(loader, name)
+        spec = _views.known_spelling(loader, name)
         if spec is None:
             msg = f'Template not found: {name}.'
             raise TemplateNotFound(msg)

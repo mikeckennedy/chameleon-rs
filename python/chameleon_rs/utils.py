@@ -60,8 +60,11 @@ _xml_prefixes = tuple(
 
 _xml_decl = encode_string('<?xml')
 
+# Chameleon's, without its leading `\s*`: `search` retried it from each character of a run of
+# whitespace, consuming the rest of the run every time (64K spaces in a template took 2 s to
+# compile). Whether it matches, and what its groups capture, is the same.
 RE_META = re.compile(
-    r'\s*<meta\s+http-equiv=["\']?Content-Type["\']?'
+    r'<meta\s+http-equiv=["\']?Content-Type["\']?'
     r'\s+content=["\']?([^;]+);\s*charset=([^"\']+)["\']?\s*/?\s*>\s*',
     re.IGNORECASE,
 )

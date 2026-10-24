@@ -58,9 +58,11 @@ async def episode_page(number: int):
     return {'episode': episode, 'related': related}
 ```
 
-`render_async` still matters then: a big page renders without blocking the loop (see
-[Offloading](#offloading-a-render-to-a-thread)), and the integrations need no change in your
-views. Passing awaitables to the template is useful when a value is only sometimes used (a
+`render_async` still matters then: the integrations need no change in your views, and a big
+page can render in a thread (see [Offloading](#offloading-a-render-to-a-thread)). Without
+that, the render itself runs on the loop: an async render yields only where a value
+suspends, so a page that is all CPU work (a 500,000-row table) holds the loop until it is
+done, as a synchronous render would. Passing awaitables to the template is useful when a value is only sometimes used (a
 sidebar behind a `tal:condition`), so it is never loaded when the page doesn't show it.
 :::
 
