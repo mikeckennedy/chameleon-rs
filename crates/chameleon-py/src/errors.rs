@@ -31,6 +31,13 @@ pub(crate) fn too_deep(e: chameleon_core::stack::TooDeep) -> PyErr {
     PyRecursionError::new_err(e.to_string())
 }
 
+/// `RecursionError` if a render can't safely start on what is left of this thread's stack
+/// ([`chameleon_core::stack::render_room`]): a render nested through Python too deeply.
+pub(crate) fn render_room() -> PyResult<()> {
+    chameleon_core::stack::render_room()
+        .map_err(|_| PyRecursionError::new_err("maximum recursion depth exceeded while rendering the template"))
+}
+
 pub(crate) fn compile_error(py: Python<'_>, err: CompileError<PyErr>, src: &str, filename: &str) -> PyErr {
     compile_error_mapped(py, err, src, filename, None)
 }

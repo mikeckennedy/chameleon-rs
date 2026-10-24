@@ -155,11 +155,15 @@ _DEFAULT_CALLABLES: dict[str, Callable[..., Any]] = {
 def _variables(context: Mapping[str, Any], callables: Mapping[str, Callable[..., Any]]) -> dict[str, Any]:
     """A template's variables: the context, with each template callable bound to it (called as
     ``url_for('name', ...)``, it receives the context first, as Litestar's callables expect). The
-    context's own keys win, as over Jinja's globals."""
-    variables = dict(context)
+    context's own keys win, as over Jinja's globals. The callables get a copy of the context,
+    as Litestar's Mako engine binds them: bound to ``variables`` itself, each render made a
+    reference cycle (the dict holding partials holding the dict), so the request and the model
+    lived until the next garbage collection."""
+    bound = dict(context)
+    variables = dict(bound)
     for key, template_callable in callables.items():
         if key not in variables:
-            variables[key] = partial(template_callable, variables)
+            variables[key] = partial(template_callable, bound)
     return variables
 
 

@@ -103,7 +103,22 @@ class Integration:
         if settings is None:
             msg = 'You must call global_init() before rendering templates.'
             raise self.error(msg)
-        return settings.loader[template_file]
+        loader = settings.loader
+        # The hot path: a name seen before costs two dict lookups and the loader's own, no stat.
+        # Only names that passed the `strict_names` check are remembered, and each loader
+        # belongs to one `Settings`, so a hit needs no check.
+        names = loader.__dict__.get('_rs_names')
+        if names is not None and type(template_file) is str:
+            spec = names.get(template_file)
+            if spec is not None:
+                return loader[spec]
+        if settings.strict_names and outside_folder(template_file):
+            # The loader's own "not found" (a plain `ValueError`, as for a missing file), so
+            # code that catches that keeps working.
+            name = template_file.strip() if isinstance(template_file, str) else template_file
+            msg = f'Template not found: {name}.'
+            raise ValueError(msg)
+        return loader[view_spelling(loader, template_file)]
 
     def render(self, template_file: str, template_data: Mapping[str, Any]) -> str:
         return self.page(template_file).render(encoding='utf-8', **template_data)  # type: ignore[no-any-return]
@@ -267,8 +282,8 @@ def outside_folder(name: object) -> bool:
     path, a ``..`` segment, a backslash, a drive letter or a package spec (``:``), a NUL. The
     guard of the Jinja-shaped APIs (``chameleon_rs.starlette.Templates``,
     ``chameleon_rs.litestar.ChameleonEngine``); the decorator APIs keep the original
-    libraries' lookup (template names come from code). Not stripped: a name with surrounding
-    whitespace is refused (Jinja looks for that exact file; Chameleon's loader would strip it)."""
+    libraries' lookup (template names come from code) unless ``strict_names`` is on. Not
+    stripped: a name with surrounding whitespace is refused (Jinja looks for that exact file; Chameleon's loader would strip it)."""
     spec = name if isinstance(name, str) else ''
     return (
         not spec
@@ -290,18 +305,21 @@ def canonical(name: str) -> str:
 
 
 def spelling(loader: Any, name: str) -> str | None:
-    """The name to load ``name`` (already checked with ``outside_folder``) by, or ``None`` if
-    no folder of ``loader`` has a regular file of that name (a directory is not a template).
-    Every spelling of one file (``./a//b.pt``, and on a case-insensitive filesystem ``A.PT``)
-    loads by the first one seen, so the loader's cache holds one template per file, however
-    requests spell it. The file is found as the loader finds it: its ``default_extension``
-    added to a name without a dot, its folders in order."""
-    name = canonical(name)
+    """The name to load ``name`` by, or ``None`` if no folder of ``loader`` has a regular file
+    of that name (a directory is not a template). Every spelling of one file (``./a//b.pt``,
+    and on a case-insensitive filesystem ``A.PT``) loads by the first one seen, so the loader's
+    cache holds one template per file, however requests spell it. The file is found as the
+    loader finds it: its ``default_extension`` added to a name without a dot, its folders in
+    order, an absolute path as it is (``..`` segments are kept: the filesystem resolves them).
+    A package spec (``pkg:path``) is the caller's to leave to the loader."""
+    absolute = os.path.isabs(name)
+    if not absolute:
+        name = canonical(name)
     extension = getattr(loader, 'default_extension', None)
     filename = name + extension if extension is not None and '.' not in name else name
-    for folder in loader.search_path:
+    for folder in [''] if absolute else loader.search_path:
         try:
-            info = os.stat(os.path.join(folder, filename))
+            info = os.stat(os.path.join(folder, filename) if folder else filename)
         except (OSError, ValueError):
             continue
         if not stat.S_ISREG(info.st_mode):
@@ -309,6 +327,34 @@ def spelling(loader: Any, name: str) -> str | None:
         spellings = loader.__dict__.setdefault('_rs_spellings', {})
         return spellings.setdefault((info.st_dev, info.st_ino), name)  # type: ignore[no-any-return]
     return None
+
+
+# At most this many names are remembered per loader by `view_spelling` (then they start over):
+# names built from request data must not grow it without bound. As `partials._CACHE_LIMIT`.
+_NAMES_LIMIT = 1024
+
+
+def view_spelling(loader: Any, name: Any) -> Any:
+    """The name ``Integration.page`` loads ``name`` by: its file's one spelling (``spelling``),
+    so ``./a.pt``, ``a.pt`` and an absolute path to the same file share one compiled template.
+    Anything that is not a regular file found that way (a missing file, a package spec, a
+    directory, not a string) is passed on as given, so the loader resolves it, or raises, as
+    it always did. Only names that reached a file are remembered (``_rs_names`` on the loader,
+    bounded by ``_NAMES_LIMIT``), so names of missing files never grow it."""
+    if not isinstance(name, str):
+        return name
+    # As the loader strips its spec.
+    spec = name.strip()
+    if not spec or '\0' in spec or (':' in spec and not os.path.isabs(spec)):
+        return name
+    found = spelling(loader, spec)
+    if found is None:
+        return name
+    names = loader.__dict__.setdefault('_rs_names', {})
+    if len(names) >= _NAMES_LIMIT:
+        names.clear()
+    names[name] = found
+    return found
 
 
 def is_not_found(exc: ValueError) -> bool:

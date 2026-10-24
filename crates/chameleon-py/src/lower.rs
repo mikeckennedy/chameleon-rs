@@ -30,19 +30,19 @@ impl<'py> PyExprCompiler<'_, 'py> {
                 .template_builtins
                 .iter()
                 .any(|b| b == name)
-                .then(|| Expr::RenderBuiltin(PyString::intern(py, name).unbind())));
+                .then(|| Expr::RenderBuiltin(crate::convert::intern(py, name).unbind())));
         }
         Ok(Some(match name {
             "econtext" => Expr::Econtext,
             "rcontext" => Expr::Rcontext,
             "translate" | "decode" | "on_error_handler" => {
-                Expr::ScopeKey(PyString::intern(py, &format!("__{name}")).unbind())
+                Expr::ScopeKey(crate::convert::intern(py, &format!("__{name}")).unbind())
             }
             // Compile-time aliases (`Alias` in a `Define`) come before builtins.
             "default" if cx.default == DefaultAlias::Marker => Expr::Const(self.marker.clone().unbind()),
             // `Alias(["default"], "target_language")`: an ordinary lookup of that name.
             "default" if cx.default == DefaultAlias::TargetLanguage => {
-                Expr::Name(PyString::intern(py, "target_language").unbind())
+                Expr::Name(crate::convert::intern(py, "target_language").unbind())
             }
             "attrs" if cx.attrs.is_some() => match self.attrs_dict(cx)? {
                 Some(d) => Expr::Const(d.into_any().unbind()),
@@ -51,10 +51,10 @@ impl<'py> PyExprCompiler<'_, 'py> {
             // Template builtins are parameters of Chameleon's render function, so they shadow
             // Python's builtins of the same name.
             _ if self.config.template_builtins.iter().any(|b| b == name) => {
-                Expr::TemplateBuiltin(PyString::intern(py, name).unbind())
+                Expr::TemplateBuiltin(crate::convert::intern(py, name).unbind())
             }
             _ => {
-                let id = PyString::intern(py, name);
+                let id = crate::convert::intern(py, name);
                 match self.builtins.get_item(&id)? {
                     Some(builtin) => Expr::Builtin(id.unbind(), builtin.unbind()),
                     None => Expr::Name(id.unbind()),
@@ -328,7 +328,7 @@ fn is_load(ctx: &Bound<'_, PyAny>) -> PyResult<bool> {
 
 fn intern_str(s: &Bound<'_, PyAny>) -> PyResult<Py<PyString>> {
     let s = s.cast::<PyString>()?;
-    Ok(PyString::intern(s.py(), s.to_str()?).unbind())
+    Ok(crate::convert::intern(s.py(), s.to_str()?).unbind())
 }
 
 /// A value the compiler treats as a constant: a literal, or a tuple of them (not an alias

@@ -53,18 +53,26 @@ a mapping of profiles, prefix -> ``True`` (the defaults) or options."""
 class Settings:
     """A configuration: the template folder, its loader, and the loader's options."""
 
-    __slots__ = ('auto_reload', 'loader', 'restricted_namespace', 'strict_tags', 'template_folder')
+    __slots__ = ('auto_reload', 'loader', 'restricted_namespace', 'strict_names', 'strict_tags', 'template_folder')
 
     def __init__(
-        self, template_folder: str, auto_reload: bool, restricted_namespace: bool, strict_tags: bool | None = None
+        self,
+        template_folder: str,
+        auto_reload: bool,
+        restricted_namespace: bool,
+        strict_tags: bool | None = None,
+        strict_names: bool | None = None,
     ) -> None:
-        from chameleon_rs.config import STRICT_TAGS
+        from chameleon_rs.config import STRICT_NAMES, STRICT_TAGS
         from chameleon_rs.zpt.loader import TemplateLoader
 
         self.template_folder = template_folder
         self.auto_reload = auto_reload
         self.restricted_namespace = restricted_namespace
         self.strict_tags = STRICT_TAGS if strict_tags is None else strict_tags
+        # Not a loader option: the integrations' `page()` checks names before the loader sees
+        # them (`_views.outside_folder`), so it changes neither compiling nor the cache digest.
+        self.strict_names = STRICT_NAMES if strict_names is None else strict_names
         kwargs: dict[str, Any] = {'auto_reload': auto_reload}
         if not restricted_namespace:
             kwargs['restricted_namespace'] = False
@@ -73,9 +81,13 @@ class Settings:
         self.loader = TemplateLoader(template_folder, **kwargs)
 
     def __repr__(self) -> str:
+        # The opt-in settings only when on, so the default repr is what it was before them.
+        extra = (', strict_tags=True' if self.strict_tags else '') + (
+            ', strict_names=True' if self.strict_names else ''
+        )
         return (
             f'Settings(template_folder={self.template_folder!r}, auto_reload={self.auto_reload!r}, '
-            f'restricted_namespace={self.restricted_namespace!r}' + (', strict_tags=True)' if self.strict_tags else ')')
+            f'restricted_namespace={self.restricted_namespace!r}{extra})'
         )
 
 
@@ -217,6 +229,7 @@ def build(
     restricted_namespace: bool | None = None,
     *,
     strict_tags: bool | None = None,
+    strict_names: bool | None = None,
     base: Settings | None = None,
     error: type[Exception] = TemplateError,
 ) -> Settings:
@@ -229,7 +242,9 @@ def build(
         restricted_namespace = base.restricted_namespace if base else True
     if strict_tags is None and base:
         strict_tags = base.strict_tags
-    return Settings(str(folder), bool(auto_reload), bool(restricted_namespace), strict_tags)
+    if strict_names is None and base:
+        strict_names = base.strict_names
+    return Settings(str(folder), bool(auto_reload), bool(restricted_namespace), strict_tags, strict_names)
 
 
 _KEEP: Any = object()
@@ -275,6 +290,7 @@ def configure(
     auto_reload: bool | None = None,
     restricted_namespace: bool | None = None,
     strict_tags: bool | None = None,
+    strict_names: bool | None = None,
     partial_search: str | None = None,
     markdown: MarkdownSetting | None = None,
     markdown_cache: int | None = None,
@@ -289,6 +305,12 @@ def configure(
     ``False`` allows attributes such as Alpine.js's ``@click`` (chameleon-flask's option).
     ``strict_tags``: ``True`` makes an unclosed element carrying TAL, METAL or i18n attributes a
     ``ParseError`` at its start tag (default: ``CHAMELEON_STRICT_TAGS``, else off).
+    ``strict_names``: ``True`` makes the integrations' decorator and module APIs (``@template``,
+    ``render``, ``response``, ``ErrorPage.template_file``) refuse a template name that could
+    reach outside the template folder (absolute, ``..``, a backslash, a drive letter or package
+    spec, a NUL, surrounding whitespace) with the loader's ``ValueError('Template not found:
+    ...')``, as for a missing file (default: ``CHAMELEON_STRICT_NAMES``, else off: they accept
+    such names, as the original libraries do).
     ``partial_search``: ``'caller'`` (the default: partials are looked for in the template
     folder, then on the calling template's search path, then in its folder and each folder above
     it, never outside its template tree) or ``'registered'`` (chameleon_partials' lookup: the template folder only, a path not
@@ -322,10 +344,16 @@ def configure(
         or auto_reload is not None
         or restricted_namespace is not None
         or strict_tags is not None
+        or strict_names is not None
     )
     if folder_given:
         settings = build(
-            template_folder, auto_reload, restricted_namespace, strict_tags=strict_tags, base=first_configured()
+            template_folder,
+            auto_reload,
+            restricted_namespace,
+            strict_tags=strict_tags,
+            strict_names=strict_names,
+            base=first_configured(),
         )
     if profiles is not None or markdown_cache is not None:
         size = markdown_cache_size if markdown_cache is None else markdown_cache

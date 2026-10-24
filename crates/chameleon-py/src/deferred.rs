@@ -9,9 +9,10 @@
 //!
 //! Only where the output written is final (`chameleon_core::VmState::can_defer`: no
 //! `tal:on-error` body, translation or attribute capture open), and only in the render's own
-//! unit (not inside a native partial, so fan-out is one level deep). When the render ends, the
-//! tasks are awaited in document order (they have been running meanwhile); an error ends the
-//! render, and the other tasks are cancelled.
+//! unit (not inside a native partial, so fan-out is one level deep), and at most [`limit`]
+//! tasks per render (past it, a call is awaited in place). When the render ends, the tasks
+//! (running meanwhile) are awaited until all are done or one fails; an error ends the render,
+//! and the other tasks are cancelled.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -84,12 +85,38 @@ pub(crate) fn running_loop(py: Python<'_>) -> Option<Bound<'_, PyAny>> {
     get.bind(py).call0().ok()
 }
 
-/// `loop.create_task(_await(awaitable))`.
+static LIMIT: PyOnceLock<usize> = PyOnceLock::new();
+static COROUTINE_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+
+/// How many tasks one render starts (`chameleon_rs.config.CONCURRENT_LIMIT`): past it, a call
+/// is awaited where it stands, so the fan-out stays bounded however many calls the data makes.
+pub(crate) fn limit(py: Python<'_>) -> usize {
+    *LIMIT.get_or_init(py, || {
+        py.import(intern!(py, "chameleon_rs.config"))
+            .and_then(|c| c.getattr(intern!(py, "CONCURRENT_LIMIT"))?.extract::<usize>())
+            .unwrap_or(64)
+    })
+}
+
+/// `loop.create_task(...)` for `awaitable`: a `@concurrent` call's coroutine itself (so a task
+/// cancelled before it starts closes the coroutine, rather than leaving it never awaited and
+/// warned about), anything else through `_await`.
 pub(crate) fn start_task<'py>(
     event_loop: &Bound<'py, PyAny>,
     awaitable: &Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyAny>> {
     let py = event_loop.py();
+    if is_concurrent_call(awaitable)? {
+        let inner = awaitable.getattr(intern!(py, "awaitable"))?;
+        let coroutine = COROUTINE_TYPE.get_or_try_init(py, || {
+            Ok::<_, PyErr>(
+                py.import(intern!(py, "types"))?.getattr(intern!(py, "CoroutineType"))?.cast_into::<PyType>()?.unbind(),
+            )
+        })?;
+        if inner.get_type().is(coroutine.bind(py)) {
+            return event_loop.call_method1(intern!(py, "create_task"), (inner,));
+        }
+    }
     let wrap = AWAIT.get_or_try_init(py, || {
         Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs._async"))?.getattr(intern!(py, "_await"))?.unbind())
     })?;
@@ -171,6 +198,23 @@ pub(crate) fn join<'py>(py: Python<'py>, entries: &[Deferred]) -> PyResult<Bound
     let kwargs = PyDict::new(py);
     kwargs.set_item(intern!(py, "return_exceptions"), true)?;
     gather.bind(py).call(tasks, Some(&kwargs))
+}
+
+static WAIT: PyOnceLock<(Py<PyAny>, Py<PyAny>)> = PyOnceLock::new();
+
+/// `asyncio.wait(tasks, return_when=FIRST_EXCEPTION)`: what wakes the render when every task
+/// is done or one fails.
+pub(crate) fn wait_first_exception<'py>(py: Python<'py>, tasks: Vec<Bound<'py, PyAny>>) -> PyResult<Bound<'py, PyAny>> {
+    let (wait, first_exception) = WAIT.get_or_try_init(py, || {
+        let asyncio = py.import(intern!(py, "asyncio"))?;
+        Ok::<_, PyErr>((
+            asyncio.getattr(intern!(py, "wait"))?.unbind(),
+            asyncio.getattr(intern!(py, "FIRST_EXCEPTION"))?.unbind(),
+        ))
+    })?;
+    let kwargs = PyDict::new(py);
+    kwargs.set_item(intern!(py, "return_when"), first_exception.bind(py))?;
+    wait.bind(py).call((pyo3::types::PyList::new(py, tasks)?,), Some(&kwargs))
 }
 
 /// A partial render's output (a `str`) as UTF-8 bytes, and whether they hold lone surrogates.

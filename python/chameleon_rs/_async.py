@@ -14,8 +14,10 @@ A template with the setting ``concurrent=True`` also fans native partials out: a
 renders as a render of its own, in a task, with a placeholder for its output.
 
 Both change the order in which expressions run (a helper's code runs while the render goes on),
-so they are opt-in. An error is raised when the render reaches the end (in document order, the
-other tasks cancelled), with the expression's position but without the enclosing macros'.
+so they are opt-in. An error is raised when the render reaches the end, as soon as a task has
+failed (the other tasks cancelled), with the expression's position but without the enclosing
+macros'. One render starts at most ``chameleon_rs.config.CONCURRENT_LIMIT`` tasks (64,
+``CHAMELEON_CONCURRENT_LIMIT``); further calls are awaited in place.
 
 A synchronous ``render`` sees what the helper returns (a coroutine, wrapped), as it would
 without the decorator.

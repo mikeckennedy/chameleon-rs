@@ -450,7 +450,10 @@ pub(crate) struct RenderCtx<'py> {
     /// reports (`chameleon_core::ErrorSite`).
     pub(crate) nested: Cell<(u32, u32)>,
     /// Each frame's namespace for code blocks, by frame serial, created on first use (see
-    /// [`NsCode`]).
+    /// [`NsCode`]). Only those of frames on the stack: serials grow up the stack, so when a
+    /// frame becomes active those above it have returned and their namespaces are dropped
+    /// (`PyRuntime::activate`). (Kept for the whole render, a macro with a code block called
+    /// in a long `tal:repeat` made each lookup a search of one namespace per call so far.)
     pub(crate) namespaces: RefCell<Vec<(u64, Bound<'py, PyDict>)>>,
     /// For a render called through `include` by another engine: the stream it writes to
     /// (that engine's slot fills append to it directly, through their closure).
@@ -1084,7 +1087,7 @@ fn eval_ns<'py>(code: &NsCode, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> 
     cx.render.scope_exposed.set(true);
     let py = cx.scope.py();
     let key = cx.frame.serial;
-    let existing = cx.render.namespaces.borrow().iter().find(|(k, _)| *k == key).map(|(_, ns)| ns.clone());
+    let existing = cx.render.namespaces.borrow().iter().rev().find(|(k, _)| *k == key).map(|(_, ns)| ns.clone());
     let ns = if let Some(ns) = existing {
         ns
     } else {

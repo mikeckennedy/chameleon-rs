@@ -58,6 +58,19 @@ A name that comes from a request must never reach a lookup that accepts any path
 - **Names from code only**: the decorator APIs (`@template`, `render`, `response` in each
   integration), `PageTemplateLoader` and `load:` expressions. They accept `../` and absolute
   paths, as the original libraries and Chameleon do.
+- **Opt in for the decorator APIs**: with `chameleon_rs.configure(strict_names=True)` (or
+  `CHAMELEON_STRICT_NAMES=1`), the decorator APIs refuse the same names: absolute paths, `..`
+  segments, backslashes, drive letters and `package:path` specs, a NUL, and surrounding
+  whitespace. A refused name raises the `ValueError` a missing template raises
+  (`Template not found: ...`), so existing `except` clauses still apply. It's off by default,
+  as in the original libraries. chameleon-rs only.
+
+The decorator APIs always keep one compiled template per file, however a name spells it
+(`./pages/a.pt`, `pages//a.pt`, an absolute path), and the names they remember for that are
+bounded, so `response(f'pages/{slug}.pt')` can't grow the template cache past one template
+per file. Without `strict_names`, the loader still caches an absolute path to a file that
+doesn't exist, as Chameleon's does (it fails when rendered), so turn it on if any part of a
+name comes from a request.
 
 If a page is chosen by the request, map the request value to a name you wrote:
 

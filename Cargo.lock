@@ -167,7 +167,7 @@ dependencies = [
 
 [[package]]
 name = "chameleon-core"
-version = "0.1.50"
+version = "0.1.51"
 dependencies = [
  "comrak",
  "criterion",
@@ -182,7 +182,7 @@ dependencies = [
 
 [[package]]
 name = "chameleon-py"
-version = "0.1.50"
+version = "0.1.51"
 dependencies = [
  "chameleon-core",
  "pyo3",

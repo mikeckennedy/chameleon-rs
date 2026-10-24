@@ -62,6 +62,11 @@ impl<'a, 'py, const ASYNC: bool> PyRuntime<'a, 'py, ASYNC> {
     }
 
     /// Records a task started for a placeholder and returns the placeholder.
+    /// The render started as many tasks as it may (`crate::deferred::limit`).
+    fn at_limit(&self) -> bool {
+        self.render.deferred.borrow().len() >= crate::deferred::limit(self.py)
+    }
+
     fn register(&self, task: Bound<'py, PyAny>, kind: crate::deferred::DeferKind) -> Vec<u8> {
         let mut deferred = self.render.deferred.borrow_mut();
         let id = deferred.len() as u64;
@@ -222,6 +227,13 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
         }
         self.scope = frame.scope.bind(py).cast::<Scope>()?.clone();
         self.frame.serial = frame.serial;
+        // The code-block namespaces of frames that returned (see `RenderCtx::namespaces`).
+        {
+            let mut namespaces = self.render.namespaces.borrow_mut();
+            while namespaces.last().is_some_and(|(serial, _)| *serial > frame.serial) {
+                namespaces.pop();
+            }
+        }
         let i18n = frame.i18n;
         let plain = i18n.domain.is_none()
             && i18n.context.is_none()
@@ -290,6 +302,9 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
     /// The pending partial as a render of its own, in a task (`crate::deferred`).
     fn defer_partial(&mut self) -> PyResult<Option<Vec<u8>>> {
         let py = self.py;
+        if self.at_limit() {
+            return Ok(None);
+        }
         let Some(event_loop) = crate::deferred::running_loop(py) else { return Ok(None) };
         let Some(pending) = self.render.partials.take_pending() else { return Ok(None) };
         let render = crate::awaitable::RenderAwaitable::start(
@@ -298,6 +313,7 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
             Some(pending.defaults),
             Some(pending.builtins),
             false,
+            true,
         )?;
         let task = crate::deferred::start_task(&event_loop, Bound::new(py, render)?.as_any())?;
         Ok(Some(self.register(task, crate::deferred::DeferKind::Partial)))
@@ -313,7 +329,7 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
         at: ErrorSite,
     ) -> PyResult<Result<Vec<u8>, Py<PyAny>>> {
         let py = self.py;
-        if self.render.partials.top() != 0 || !crate::deferred::is_concurrent_call(value.bind(py))? {
+        if self.render.partials.top() != 0 || self.at_limit() || !crate::deferred::is_concurrent_call(value.bind(py))? {
             return Ok(Err(value));
         }
         let Some(event_loop) = crate::deferred::running_loop(py) else { return Ok(Err(value)) };

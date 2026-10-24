@@ -143,7 +143,10 @@ decorator API (`configure`, `@template`, `render`, `response`, `not_found`, `err
 **Template names come from your code.** The decorator modules and `render_partial()` look names
 up as the original libraries do (`..` and absolute paths work), so never build one from
 request data. Starlette's `Templates` and Litestar's `ChameleonEngine` refuse names that reach
-outside their folder, as Jinja does.
+outside their folder, as Jinja does. `configure(strict_names=True)` (or
+`CHAMELEON_STRICT_NAMES=1`) makes the decorator modules refuse them too, as "not found";
+off by default, as in the original libraries. Either way, every spelling of one file
+(`./a.pt`, `a//a.pt`, an absolute path) shares one cached template.
 
 ## Performance
 

@@ -297,7 +297,7 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
                 if self.has_mapped(&name) {
                     Expr::Import(self.source_str(&name).map_err(ExprCompileError::Other)?.unbind())
                 } else {
-                    Expr::Import(PyString::intern(self.py, &name).unbind())
+                    Expr::Import(crate::convert::intern(self.py, &name).unbind())
                 }
             }
             Spec::Custom(factory) => self.custom(&factory, &expression, inner)?,
@@ -393,6 +393,21 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         }
         if SCOPE_NAMES.iter().any(|name| string.contains(name)) {
             self.mentions_scope = true;
+        }
+        // A bare name or a dotted path (most `${title}`, `${user.name}`): `ast.parse` gives
+        // `Name(id, Load)` under `Attribute(..., attr, Load)`s, lowered here without it.
+        // CPython's parser makes every identifier it reads immortal, so each name of a
+        // template generated per request stayed for the life of the process; skipping it is
+        // also faster.
+        if self.config.fast_path
+            && self.local_names.as_ref().is_none_or(PySetMethods::is_empty)
+            && let Some((first, attrs)) = plain_path(&string)
+            && let Some(mut expr) = self.name_expr(first, cx).map_err(ExprCompileError::Other)?
+        {
+            for attr in attrs {
+                expr = Expr::Attr(Box::new(expr), crate::convert::intern(self.py, attr).unbind());
+            }
+            return Ok(expr);
         }
         let tree = match self.ast_parse.call((string.as_str(),), Some(&self.eval_mode)) {
             Ok(tree) => tree,
@@ -832,6 +847,38 @@ fn default_alias(py: Python<'_>, default: DefaultAlias) -> Bound<'_, PyAny> {
         DefaultAlias::TargetLanguage => intern!(py, "target_language").clone().into_any(),
         DefaultAlias::Name => pyo3::types::PyBool::new(py, false).to_owned().into_any(),
     }
+}
+
+/// Python's hard keywords (`keyword.kwlist`, the same in 3.12 to 3.15): not names.
+const KEYWORDS: &[&str] = &[
+    "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del",
+    "elif", "else", "except", "finally", "for", "from", "global", "if", "import", "in", "is", "lambda", "nonlocal",
+    "not", "or", "pass", "raise", "return", "try", "while", "with", "yield",
+];
+
+/// Whether `name` is a name to Python's parser: an ASCII identifier that is not a keyword (a
+/// non-ASCII one is left to the parser, which normalizes it to NFKC).
+fn is_plain_name(name: &str) -> bool {
+    let mut chars = name.bytes();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == b'_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == b'_')
+        && !KEYWORDS.contains(&name)
+}
+
+/// The most attributes [`plain_path`] takes: a longer path goes through the parser and the
+/// lowering, whose recursion is guarded (`chameleon_core::stack`); the nested `Expr::Attr`s of
+/// a path thousands of attributes long would overflow the stack when evaluated or dropped.
+const PLAIN_PATH_MAX: usize = 16;
+
+/// `text` as a name and the attributes read from it (`a.b.c`), if that is all it is: what
+/// parses as `Attribute(Attribute(Name('a'), 'b'), 'c')`.
+fn plain_path(text: &str) -> Option<(&str, std::str::Split<'_, char>)> {
+    if text.bytes().filter(|&b| b == b'.').count() > PLAIN_PATH_MAX || !text.split('.').all(is_plain_name) {
+        return None;
+    }
+    let mut parts = text.split('.');
+    let first = parts.next()?;
+    Some((first, parts))
 }
 
 #[cfg(test)]

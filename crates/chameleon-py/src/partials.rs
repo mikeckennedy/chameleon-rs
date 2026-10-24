@@ -314,11 +314,7 @@ pub(crate) fn partial_step(
     if p.full_scope {
         // `page.render(encoding='utf-8', **template_data)`: the defaults it lacks, then a
         // fresh `repeat`.
-        for (key, value) in target.defaults.iter() {
-            if !locals.contains(&key)? {
-                locals.set_item(key, value)?;
-            }
-        }
+        locals.update_if_missing(target.defaults.as_mapping())?;
         let repeat = intern!(py, "repeat");
         if !locals.contains(repeat)? {
             locals.set_item(repeat, new_repeat_dict(py)?)?;
@@ -369,7 +365,9 @@ fn error_econtext<'py>(unit: &Unit<'py>) -> PyResult<Bound<'py, PyDict>> {
     let out = PyDict::new(py);
     let locals = unit.scope.as_super();
     let mut rest = Vec::new();
-    for (i, (key, value)) in locals.iter().enumerate() {
+    // (A snapshot of the items: user code may have keys that change the scope.)
+    for (i, item) in locals.items().iter().enumerate() {
+        let (key, value): (Bound<'py, PyAny>, Bound<'py, PyAny>) = item.extract()?;
         if i < unit.initial {
             out.set_item(key, value)?;
         } else {
@@ -387,7 +385,8 @@ fn error_econtext<'py>(unit: &Unit<'py>) -> PyResult<Bound<'py, PyDict>> {
     {
         out.set_item(name, added)?;
     }
-    for (key, value) in unit.target.defaults.iter() {
+    for item in unit.target.defaults.items().iter() {
+        let (key, value): (Bound<'py, PyAny>, Bound<'py, PyAny>) = item.extract()?;
         if !locals.contains(&key)? {
             out.set_item(key, value)?;
         }

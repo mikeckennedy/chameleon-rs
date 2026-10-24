@@ -13,7 +13,7 @@
 
 use std::sync::Arc;
 
-use pyo3::exceptions::{PyGeneratorExit, PyRuntimeError, PyStopIteration, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyBaseException, PyGeneratorExit, PyRuntimeError, PyStopIteration, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
@@ -142,19 +142,30 @@ struct Running {
     inner: Option<Py<PyAny>>,
     started: bool,
     phase: Phase,
+    /// A native partial's render started for a concurrent placeholder: the coroutines in its
+    /// scope are the arguments its caller's expressions made for it, so a render that does not
+    /// end with its result closes those never started (else each is warned about as never
+    /// awaited when the page is cancelled or fails).
+    owns_args: bool,
+    /// The render returned its result.
+    returned: bool,
 }
 
 /// What the awaited value is for.
 enum Phase {
     /// The value the VM suspended on.
     Vm,
-    /// The VM finished; the tasks started for placeholders (`crate::deferred`) are awaited in
-    /// order: this one is the `next`th. `filled` holds the text of those done.
-    Fill { entries: Vec<Deferred>, next: usize, filled: Vec<(u64, Vec<u8>, bool)> },
+    /// The VM finished; the tasks started for placeholders (`crate::deferred`) are awaited
+    /// until each is done or one fails (`asyncio.wait(..., return_when=FIRST_EXCEPTION)`, so a
+    /// failure ends the render at once, not once the tasks before it in the document are
+    /// done). `filled` holds the text of each entry done.
+    Fill { entries: Vec<Deferred>, filled: Vec<Option<(Vec<u8>, bool)>> },
     /// The render failed (or was cancelled) with `error` while tasks it started were running:
     /// they were cancelled and are awaited (`asyncio.gather(..., return_exceptions=True)`), so
-    /// their `finally` blocks have run when the error is raised, as a `TaskGroup` does.
-    Joining { error: Option<PyErr> },
+    /// their `finally` blocks have run when the error is raised, as a `TaskGroup` does. (The
+    /// exception object, not a `PyErr`: `__traverse__` visits it, since its traceback's frames
+    /// may refer back to this render.)
+    Joining { error: Option<Py<PyBaseException>> },
 }
 
 /// What happened since the last step: the render starts, or the awaited value returned or
@@ -187,6 +198,7 @@ impl RenderAwaitable {
         defaults: Option<Bound<'_, PyDict>>,
         builtins: Option<Bound<'_, PyDict>>,
         concurrent: bool,
+        owns_args: bool,
     ) -> PyResult<Self> {
         let py = program.py();
         let p = program.get();
@@ -212,6 +224,8 @@ impl RenderAwaitable {
                 inner: None,
                 started: false,
                 phase: Phase::Vm,
+                owns_args,
+                returned: false,
             })),
         })
     }
@@ -223,6 +237,26 @@ enum Outcome {
     Yield(Py<PyAny>),
     Return(Py<PyAny>),
     Raise(PyErr),
+}
+
+/// The error a render raises once the tasks it cancelled are done: its own, unless the join
+/// itself was interrupted by something that is not an `Exception` (the render's task
+/// cancelled, a `KeyboardInterrupt`): that passes through, with the render's error as its
+/// context, so cancellation is never lost (`asyncio.timeout`, `TaskGroup` and a client
+/// disconnect rely on the `CancelledError` coming back).
+fn joined(py: Python<'_>, error: Option<Py<PyBaseException>>, event: Event) -> PyErr {
+    let error = error.map(|e| PyErr::from_value(e.into_bound(py).into_any()));
+    if let Event::Awaited(Err(interrupt)) = event
+        && !interrupt.is_instance_of::<pyo3::exceptions::PyException>(py)
+    {
+        if let Some(error) = error
+            && interrupt.value(py).getattr(intern!(py, "__context__")).is_ok_and(|c| c.is_none())
+        {
+            interrupt.set_context(py, Some(error));
+        }
+        return interrupt;
+    }
+    error.unwrap_or_else(|| PyRuntimeError::new_err("render error missing"))
 }
 
 fn is_stop_iteration(py: Python<'_>, e: &PyErr) -> bool {
@@ -246,7 +280,11 @@ fn delegate(py: Python<'_>, inner: &Bound<'_, PyAny>, input: Input) -> Result<Py
             }
             match inner.getattr(intern!(py, "throw")) {
                 Ok(t) => t.call1((e.value(py),)),
-                Err(_) => return Err(Err(e)),
+                Err(missing) if missing.is_instance_of::<pyo3::exceptions::PyAttributeError>(py) => {
+                    return Err(Err(e));
+                }
+                // As CPython: looking `throw` up failing otherwise is the error raised.
+                Err(lookup) => return Err(Err(lookup)),
             }
         }
     };
@@ -289,10 +327,7 @@ impl Running {
             let next = match &mut self.phase {
                 Phase::Vm => self.vm_event(py, event),
                 Phase::Fill { .. } => self.fill_event(py, event),
-                // The cancelled tasks are done (whatever they raised): the render's error.
-                Phase::Joining { error } => {
-                    Err(Outcome::Raise(error.take().unwrap_or_else(|| PyRuntimeError::new_err("render error missing"))))
-                }
+                Phase::Joining { error } => Err(Outcome::Raise(joined(py, error.take(), event))),
             };
             let awaitable = match next {
                 Ok(awaitable) => awaitable,
@@ -338,43 +373,81 @@ impl Running {
         }
     }
 
-    /// The VM finished: the first placeholder's task to await, or the result.
+    /// The VM finished: what to await for the placeholders' tasks, or the result.
     fn begin_fill(&mut self, py: Python<'_>) -> Result<Py<PyAny>, Outcome> {
         let entries = self.render.as_mut().map(|r| std::mem::take(&mut r.deferred)).unwrap_or_default();
-        let Some(first) = entries.first() else { return Err(self.finish(py)) };
-        let task = first.task.clone_ref(py);
-        self.phase = Phase::Fill { entries, next: 0, filled: Vec::new() };
-        Ok(task)
+        if entries.is_empty() {
+            return Err(self.finish(py));
+        }
+        let filled = entries.iter().map(|_| None).collect();
+        self.phase = Phase::Fill { entries, filled };
+        self.fill_done(py)
     }
 
-    /// A placeholder's task ended: the next one to await, or the result.
+    /// What was awaited for the placeholders' tasks ended: what to await next, or the result.
     fn fill_event(&mut self, py: Python<'_>, event: Event) -> Result<Py<PyAny>, Outcome> {
-        let Phase::Fill { entries, next, .. } = &self.phase else {
-            return Err(Outcome::Raise(PyRuntimeError::new_err("not filling placeholders")));
-        };
-        let index = *next;
-        let Some(entry) = entries.get(index) else {
-            return Err(Outcome::Raise(PyRuntimeError::new_err("placeholder out of range")));
-        };
-        let id = entry.id;
-        let text = match event {
-            Event::Awaited(Ok(value)) => self.convert(py, index, value.bind(py)),
-            Event::Awaited(Err(error)) => Err(error),
-            Event::Start => Err(PyRuntimeError::new_err("render restarted")),
-        };
-        let text = match text {
-            Ok(text) => text,
-            Err(error) => return Err(Outcome::Raise(self.fill_error(py, index, error))),
-        };
-        let Phase::Fill { entries, next, filled } = &mut self.phase else {
-            return Err(Outcome::Raise(PyRuntimeError::new_err("not filling placeholders")));
-        };
-        filled.push((id, text.0, text.1));
-        *next += 1;
-        if let Some(entry) = entries.get(*next) {
-            return Ok(entry.task.clone_ref(py));
+        match event {
+            Event::Start => Err(Outcome::Raise(PyRuntimeError::new_err("render restarted"))),
+            // The wait itself interrupted (the render's task cancelled): raised as it is.
+            Event::Awaited(Err(error)) if !error.is_instance_of::<pyo3::exceptions::PyException>(py) => {
+                Err(Outcome::Raise(error))
+            }
+            // A task's own result or error: read from the task, with those of the others done.
+            Event::Awaited(_) => self.fill_done(py),
         }
-        let mut filled = std::mem::take(filled);
+    }
+
+    /// Takes the text of each task done, in document order (the first failed one's error ends
+    /// the render), then returns what to await for the rest: the one task left, or
+    /// `asyncio.wait(rest, return_when=FIRST_EXCEPTION)`. Once all are done, the result.
+    fn fill_done(&mut self, py: Python<'_>) -> Result<Py<PyAny>, Outcome> {
+        let count = match &self.phase {
+            Phase::Fill { entries, .. } => entries.len(),
+            _ => return Err(Outcome::Raise(PyRuntimeError::new_err("not filling placeholders"))),
+        };
+        let mut pending = Vec::new();
+        for index in 0..count {
+            let Phase::Fill { entries, filled } = &self.phase else { break };
+            if filled[index].is_some() {
+                continue;
+            }
+            let task = entries[index].task.bind(py).clone();
+            let done = task.call_method0(intern!(py, "done")).and_then(|d| d.is_truthy());
+            let text = match done {
+                Ok(false) => {
+                    pending.push(task);
+                    continue;
+                }
+                Ok(true) => match task.call_method0(intern!(py, "result")) {
+                    Ok(value) => self.convert(py, index, &value),
+                    Err(error) => Err(error),
+                },
+                Err(error) => Err(error),
+            };
+            match text {
+                Ok(text) => {
+                    if let Phase::Fill { filled, .. } = &mut self.phase {
+                        filled[index] = Some(text);
+                    }
+                }
+                Err(error) => return Err(Outcome::Raise(self.fill_error(py, index, error))),
+            }
+        }
+        match pending.len() {
+            0 => {}
+            1 => return Ok(pending.swap_remove(0).unbind()),
+            _ => {
+                return crate::deferred::wait_first_exception(py, pending).map(Bound::unbind).map_err(Outcome::Raise);
+            }
+        }
+        let Phase::Fill { entries, filled } = &mut self.phase else {
+            return Err(Outcome::Raise(PyRuntimeError::new_err("not filling placeholders")));
+        };
+        let mut filled: Vec<(u64, Vec<u8>, bool)> = entries
+            .iter()
+            .zip(std::mem::take(filled))
+            .filter_map(|(entry, text)| text.map(|(bytes, surrogates)| (entry.id, bytes, surrogates)))
+            .collect();
         let nonce = self.render.as_ref().map_or(0, SavedRender::nonce);
         if let Err(message) = crate::deferred::fill(&mut self.st.out, nonce, &mut filled) {
             return Err(Outcome::Raise(crate::errors::internal_error(py, message)));
@@ -440,9 +513,10 @@ impl Running {
     /// The tasks started for placeholders and not yet awaited.
     fn take_deferred(&mut self) -> Vec<Deferred> {
         let mut entries = self.render.as_mut().map(|r| std::mem::take(&mut r.deferred)).unwrap_or_default();
-        if let Phase::Fill { entries: fill, next, .. } = &mut self.phase {
+        if let Phase::Fill { entries: fill, filled } = &mut self.phase {
             let rest = std::mem::take(fill);
-            entries.extend(rest.into_iter().skip(*next));
+            let done = std::mem::take(filled);
+            entries.extend(rest.into_iter().zip(done).filter(|(_, text)| text.is_none()).map(|(entry, _)| entry));
         }
         entries
     }
@@ -460,7 +534,7 @@ impl Running {
         crate::deferred::cancel_all(py, &entries);
         match crate::deferred::join(py, &entries) {
             Ok(gather) => {
-                self.phase = Phase::Joining { error: Some(error) };
+                self.phase = Phase::Joining { error: Some(error.into_value(py)) };
                 Ok(gather.unbind())
             }
             Err(_) => Err(Outcome::Raise(error)),
@@ -475,6 +549,7 @@ impl Running {
     /// Runs the VM (or raises `error` at the suspended instruction): `Some(value)` suspended
     /// on `value`, `None` finished.
     fn drive(&mut self, py: Python<'_>, error: Option<PyErr>) -> PyResult<Option<Py<PyAny>>> {
+        crate::errors::render_room()?;
         let saved = self.render.take().ok_or_else(|| PyRuntimeError::new_err("render state missing"))?;
         let render = RenderCtx::restore(saved, py);
         let program = self.program.bind(py).clone();
@@ -501,7 +576,10 @@ impl Running {
     fn finish(&mut self, py: Python<'_>) -> Outcome {
         self.program.get().core.record_size(self.st.out.len());
         match output_str(py, &self.st.out) {
-            Ok(s) => Outcome::Return(s.into_any().unbind()),
+            Ok(s) => {
+                self.returned = true;
+                Outcome::Return(s.into_any().unbind())
+            }
             Err(e) => Outcome::Raise(e),
         }
     }
@@ -511,16 +589,51 @@ impl Drop for Running {
     /// A render dropped before it ended leaves no task running (not attempted while the
     /// interpreter shuts down).
     fn drop(&mut self) {
-        if self.has_deferred() {
-            Python::try_attach(|py| self.cancel_deferred(py));
+        let close_args = self.owns_args && !self.returned;
+        if self.has_deferred() || close_args {
+            Python::try_attach(|py| {
+                self.cancel_deferred(py);
+                if close_args {
+                    close_unstarted(py, self.scope.bind(py));
+                }
+            });
+        }
+    }
+}
+
+static CORO_STATE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+
+/// Closes each coroutine in `scope`'s own dict that never started (`inspect.getcoroutinestate`
+/// is `CORO_CREATED`), as dropping one the render would have awaited (see `Running::owns_args`).
+fn close_unstarted(py: Python<'_>, scope: &Bound<'_, Scope>) {
+    let Ok(state) = CORO_STATE.get_or_try_init(py, || {
+        Ok::<_, PyErr>(py.import(intern!(py, "inspect"))?.getattr(intern!(py, "getcoroutinestate"))?.unbind())
+    }) else {
+        return;
+    };
+    // A list of the values (iterating the dict itself panics in PyO3 if it changes size).
+    for value in scope.as_super().values().iter() {
+        if !value.hasattr(intern!(py, "cr_frame")).unwrap_or(false) {
+            continue;
+        }
+        let created = state.bind(py).call1((&value,)).and_then(|s| s.eq(intern!(py, "CORO_CREATED"))).unwrap_or(false);
+        if created {
+            let _ = value.call_method0(intern!(py, "close"));
         }
     }
 }
 
 #[pymethods]
 impl RenderAwaitable {
-    fn __await__(slf: Py<Self>) -> Py<Self> {
-        slf
+    /// Itself, as a coroutine's: awaited by a second awaiter while the first is suspended in it
+    /// is the error CPython raises (the two would otherwise drive one render by turns).
+    fn __await__(slf: &Bound<'_, Self>) -> PyResult<Py<Self>> {
+        if let Ok(this) = slf.try_borrow()
+            && this.running.as_ref().is_some_and(|r| r.inner.is_some())
+        {
+            return Err(PyRuntimeError::new_err("coroutine is being awaited already"));
+        }
+        Ok(slf.clone().unbind())
     }
 
     fn __iter__(slf: Py<Self>) -> Py<Self> {
@@ -602,10 +715,14 @@ impl RenderAwaitable {
         if let Some(inner) = &running.inner {
             visit.call(inner)?;
         }
-        if let Phase::Fill { entries, .. } = &running.phase {
-            for entry in entries {
-                entry.traverse(&visit)?;
+        match &running.phase {
+            Phase::Fill { entries, .. } => {
+                for entry in entries {
+                    entry.traverse(&visit)?;
+                }
             }
+            Phase::Joining { error: Some(error) } => visit.call(error)?,
+            Phase::Vm | Phase::Joining { error: None } => {}
         }
         Ok(())
     }
@@ -633,7 +750,9 @@ fn step(slf: &Bound<'_, RenderAwaitable>, input: Input) -> PyResult<Py<PyAny>> {
     {
         return Err(PyTypeError::new_err("can't send non-None value to a just-started coroutine"));
     }
-    match running.step(py, input) {
+    // (The fill and join steps run outside `drive`'s own `catch_panics`.)
+    let outcome = catch_panics(py, || Ok(running.step(py, input))).unwrap_or_else(Outcome::Raise);
+    match outcome {
         Outcome::Yield(y) => Ok(y),
         Outcome::Return(value) => {
             this.running = None;
@@ -641,7 +760,20 @@ fn step(slf: &Bound<'_, RenderAwaitable>, input: Input) -> PyResult<Py<PyAny>> {
         }
         Outcome::Raise(e) => {
             this.running = None;
-            Err(e)
+            Err(stop_iteration_raised(py, e))
         }
     }
+}
+
+/// PEP 479, as a coroutine: a `StopIteration` raised by the render (an expression calling
+/// `next()` on an exhausted iterator) must not end it as if it returned, so it becomes
+/// `RuntimeError`, caused by it. (Raised out of `__next__`, the awaiting coroutine would take
+/// it for the render's result, its args.)
+fn stop_iteration_raised(py: Python<'_>, e: PyErr) -> PyErr {
+    if !is_stop_iteration(py, &e) {
+        return e;
+    }
+    let error = PyRuntimeError::new_err("coroutine raised StopIteration");
+    error.set_cause(py, Some(e));
+    error
 }

@@ -410,6 +410,28 @@ def test_template_callables(folder: Path) -> None:
         page.render({'a': 1})
 
 
+def test_a_render_leaves_no_reference_cycle_holding_its_context(folder: Path) -> None:
+    # The callables were bound to the variables dict that held them: the context (the model,
+    # the request) lived until the next garbage collection.
+    import gc
+    import weakref
+
+    class Model:
+        pass
+
+    (folder / 'plain.pt').write_text('<p>${model.__class__.__name__}</p>')
+    page = ours.ChameleonEngine(folder).get_template('plain.pt')
+    model = Model()
+    ref = weakref.ref(model)
+    gc.disable()
+    try:
+        assert page.render(model=model) == '<p>Model</p>'
+        del model
+        assert ref() is None
+    finally:
+        gc.enable()
+
+
 def test_render_async_awaits_values(folder: Path) -> None:
     page = ours.ChameleonEngine(folder).get_template('home/index.pt')
 

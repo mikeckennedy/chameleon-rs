@@ -70,6 +70,40 @@ impl Drop for Guard {
     }
 }
 
+/// Stack a render needs left when it starts (see [`render_room`]): its own frames (the VM, a
+/// value's conversion, the Python calls an expression makes; a level of nesting through Python
+/// costs about 8 KiB on CPython 3.13) and the Python frames above it, with room to spare, but
+/// small enough that a thread with a small stack (512 KiB) can still nest a few dozen levels.
+pub const RENDER_RESERVE: usize = 128 * 1024;
+
+/// Stack a clone of a compiled subtree may use ([`deep_clone`]): the guarded compile nests at
+/// most [`BUDGET`] of `visit` frames, and the derived `Clone` takes about 2.5 times that per
+/// element (five `Node::clone` frames of ~1.8 KiB against one `visit_element` of ~3.9 KiB).
+const CLONE_STACK: usize = 4 * BUDGET;
+
+/// `value.clone()` for a compiled tree as deep as the guarded compile allows, on a stack of its
+/// own when the thread's has less than that left: the derived `Clone` recurses with no guard,
+/// and on a thread with a small stack (512 KiB to 1 MiB) a fill-slot body nested just under
+/// the compile's limit overflowed it, killing the process.
+pub fn deep_clone<T: Clone>(value: &T) -> T {
+    stacker::maybe_grow(CLONE_STACK, CLONE_STACK, || value.clone())
+}
+
+/// Whether a render may start on this thread's stack: `Err(TooDeep)` once less than
+/// [`RENDER_RESERVE`] is left. The VM itself doesn't recurse (macros and slots are frames on
+/// its own stack), but a render can be nested through Python: a value whose `__html__` or a
+/// helper that renders another template, which may render another, as deep as the data goes.
+/// Each level costs a few KiB of native stack, and CPython before 3.14 counts only Python
+/// frames, so without this a deep enough nesting on a thread with a small stack (a server's
+/// worker thread) would overflow it and kill the process instead of raising `RecursionError`.
+pub fn render_room() -> Result<(), TooDeep> {
+    // `None` where the platform doesn't tell: CPython's own limit is all there is.
+    if stacker::remaining_stack().is_some_and(|left| left < RENDER_RESERVE) {
+        return Err(TooDeep);
+    }
+    Ok(())
+}
+
 /// The address of a local in the caller's frame: how far the stack has grown.
 #[inline(never)]
 fn address() -> usize {

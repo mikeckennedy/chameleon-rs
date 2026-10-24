@@ -178,12 +178,15 @@ pub(crate) fn spans_from_lengths(body: &str, lengths: &[usize]) -> PyResult<Vec<
 /// `iter_text` with `mode="text"`).
 #[pyfunction]
 #[pyo3(signature = (body, mode = "xml"))]
-pub(crate) fn tokenize_ranges(body: &str, mode: &str) -> PyResult<Vec<(usize, usize)>> {
-    let source = Source::new(body);
-    Ok(spans(body, mode)?
-        .into_iter()
-        .map(|s| (source.char_offset(s.start as usize), source.char_offset(s.end as usize)))
-        .collect())
+pub(crate) fn tokenize_ranges(py: Python<'_>, body: &str, mode: &str) -> PyResult<Vec<(usize, usize)>> {
+    // Called from Python (`chameleon_rs.tokenize`): a panic is an `InternalError`.
+    crate::errors::catch_panics(py, || {
+        let source = Source::new(body);
+        Ok(spans(body, mode)?
+            .into_iter()
+            .map(|s| (source.char_offset(s.start as usize), source.char_offset(s.end as usize)))
+            .collect())
+    })
 }
 
 /// `list(ElementParser(tokens, namespaces, restricted_namespace))` for tokens that are
@@ -200,8 +203,11 @@ pub(crate) fn parse_elements<'py>(
     namespaces: &Bound<'py, PyDict>,
     restricted_namespace: bool,
 ) -> PyResult<Bound<'py, PyList>> {
-    let tokens = spans_from_lengths(body, &lengths)?;
-    parse_spans(py, body, &tokens, namespaces, restricted_namespace)
+    // Called from Python (`chameleon_rs.parser.ElementParser`): a panic is an `InternalError`.
+    crate::errors::catch_panics(py, || {
+        let tokens = spans_from_lengths(body, &lengths)?;
+        parse_spans(py, body, &tokens, namespaces, restricted_namespace)
+    })
 }
 
 pub(crate) fn parse_spans<'py>(
@@ -212,8 +218,10 @@ pub(crate) fn parse_spans<'py>(
     restricted_namespace: bool,
 ) -> PyResult<Bound<'py, PyList>> {
     let mut entries: Vec<(Option<String>, String)> = Vec::with_capacity(namespaces.len());
-    for (k, v) in namespaces.iter() {
-        entries.push((k.extract()?, v.extract()?));
+    // (A snapshot of the items: PyO3's dict iterator panics if the dict changes size.)
+    for item in namespaces.items().iter() {
+        let (k, v): (Option<String>, String) = item.extract()?;
+        entries.push((k, v));
     }
     let options = ParseOptions {
         namespaces: Namespaces::new(entries.iter().map(|(k, v)| (k.as_deref(), v.as_str()))),

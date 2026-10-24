@@ -170,14 +170,14 @@ impl Program {
             if let Some(base) = surrogate_base {
                 core.set_surrogate_base(base);
             }
-            let names = core.names().iter().map(|n| PyString::intern(py, n).unbind()).collect();
+            let names = core.names().iter().map(|n| crate::convert::intern(py, n).unbind()).collect();
             let mut slot_keys: Vec<(Box<str>, Py<PyString>)> = Vec::new();
             for name in core.slot_names() {
                 if !slot_keys.iter().any(|(n, _)| **n == *name) {
                     let key = crate::convert::source_str(py, &format!("__slot_{name}"), surrogate_base)?;
                     // Interned unless it holds lone surrogates (a `str` Rust cannot borrow).
                     let key = match key.to_str() {
-                        Ok(text) => PyString::intern(py, text),
+                        Ok(text) => crate::convert::intern(py, text),
                         Err(_) => key,
                     };
                     slot_keys.push((name.into(), key.unbind()));
@@ -319,7 +319,8 @@ pub(crate) fn render_page_async<'py>(
     match page(template, encoding, kw)? {
         Page::Protocol(result) => Ok(result),
         Page::Native { program, scope, defaults, builtins } => {
-            let awaitable = RenderAwaitable::start(&program, &scope, Some(defaults), Some(builtins), concurrent)?;
+            let awaitable =
+                RenderAwaitable::start(&program, &scope, Some(defaults), Some(builtins), concurrent, false)?;
             Ok(Bound::new(template.py(), awaitable)?.into_any())
         }
     }
@@ -381,11 +382,9 @@ fn page<'py>(
     let (program, builtins): (Bound<'py, Program>, Bound<'py, PyDict>) = compiled.extract()?;
     let scope = Scope::new_root(py, kw)?;
     let locals = scope.as_super();
-    for (name, value) in defaults.iter() {
-        if !locals.contains(&name)? {
-            locals.set_item(name, value)?;
-        }
-    }
+    // The defaults it lacks (`PyDict_Merge` without override: no PyO3 iterator to panic if
+    // the dict changes size).
+    locals.update_if_missing(defaults.as_mapping())?;
     let repeat = intern!(py, "repeat");
     if !locals.contains(repeat)? {
         locals.set_item(repeat, new_repeat_dict(py)?)?;
@@ -402,6 +401,7 @@ fn render_in<'py>(
     exposed: bool,
 ) -> PyResult<Bound<'py, PyString>> {
     let py = slf.py();
+    crate::errors::render_room()?;
     catch_panics(py, || {
         let program = slf.get();
         let builtins = builtins.unwrap_or_else(|| PyDict::new(py));
@@ -487,7 +487,9 @@ pub(crate) fn options(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Options> {
     let mut o = Options::default();
     let mut escape = None;
     let Some(kwargs) = kwargs else { return Ok(o) };
-    for (key, value) in kwargs.iter() {
+    // (A snapshot of the items: PyO3's dict iterator panics if the dict changes size.)
+    for item in kwargs.items().iter() {
+        let (key, value): (Bound<'_, PyAny>, Bound<'_, PyAny>) = item.extract()?;
         if value.is_none() {
             continue;
         }

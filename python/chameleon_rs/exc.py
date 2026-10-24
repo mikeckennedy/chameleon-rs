@@ -69,16 +69,7 @@ class TemplateError(Exception):
             if self.token.source:
                 lines = iter_source_marker_lines(self.token.source.splitlines(), self.token, lineno, column)
             elif self.filename and not self.filename.startswith('<'):
-                try:
-                    f = open(self.filename)  # noqa: SIM115 - as in Chameleon
-                except OSError:
-                    pass
-                else:
-                    lines = iter_source_marker_lines(iter(f), self.token, lineno, column)
-                    try:
-                        lines = list(lines)
-                    finally:
-                        f.close()
+                lines = _file_marker_lines(self.filename, self.token, lineno, column)
             else:
                 lines = ()
 
@@ -241,6 +232,19 @@ def iter_source_marker_lines(source: Iterable[str], expression: str, line: int, 
         break
 
 
+def _file_marker_lines(filename: str, expression: str, line: int, column: int) -> list[str]:
+    """The source marker lines for ``line`` of the file ``filename``, or none if it can't be
+    read. Chameleon opens the file with the locale's encoding and lets a decode error escape,
+    so ``str()`` of the error raises and its message is lost; this decodes as UTF-8 with
+    replacement characters instead (one per undecodable byte, so columns of a single-byte
+    encoding still line up)."""
+    try:
+        with open(filename, encoding='utf-8', errors='replace') as f:
+            return list(iter_source_marker_lines(f, expression, line, column))
+    except (OSError, ValueError):
+        return []
+
+
 def ellipsify(string: str, limit: int) -> str:
     if len(string) > limit:
         return '... ' + string[-(limit - 4) :]
@@ -272,6 +276,21 @@ class ExceptionFormatter:
         self._value_repr = value_repr
 
     def __call__(self) -> str:
+        # (Chameleon lets an error raised while formatting escape, and `str()` of the render
+        # error then fails with the original message lost; fall back to that message.)
+        try:
+            return self._format()
+        except Exception:  # noqa: BLE001 - any failure: the original message instead
+            if not self._errors:
+                return ''
+            exc = self._errors[-1][4]
+            original = getattr(exc, '_original__str__', None)
+            try:
+                return original() if original is not None else str(exc)
+            except Exception:  # noqa: BLE001 - a message that can't be shown at all
+                return f'<{type(exc).__name__}: message could not be formatted>'
+
+    def _format(self) -> str:
         # Format keyword arguments; consecutive arguments are indented for readability
         formatted_args = [f'{name}: {self._value_repr(value)}' for name, value in self._kwargs.items()]
 
@@ -299,16 +318,7 @@ class ExceptionFormatter:
             out.append(' - Location:   (line %d: col %d)' % (line, column))  # noqa: UP031
 
             if filename and not filename.startswith('<') and line and column:
-                try:
-                    f = open(filename)  # noqa: SIM115 - as in Chameleon
-                except OSError:
-                    pass
-                else:
-                    lines = iter_source_marker_lines(iter(f), expression, line, column)
-                    try:
-                        out.extend(lines)
-                    finally:
-                        f.close()
+                out.extend(_file_marker_lines(filename, expression, line, column))
 
         out.append(' - Arguments:  %s' % '\n'.join(formatted_args))  # noqa: UP031
 

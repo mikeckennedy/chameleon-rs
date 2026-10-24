@@ -20,6 +20,7 @@ chameleon_rs.configure(
     auto_reload=False,
     restricted_namespace=True,
     strict_tags=True,
+    strict_names=True,
     partial_search='caller',
     markdown=True,
     markdown_cache=1024,
@@ -32,6 +33,7 @@ chameleon_rs.configure(
 | `auto_reload` | `False` | Recompile a template when its file changes. For partials, each file is checked at most once per render. Use it in development only. |
 | `restricted_namespace` | `True` | `False` allows attributes with other namespaces or prefixes, such as Alpine.js's `@click` or Vue's `v-on:click`. |
 | `strict_tags` | `False` (or `CHAMELEON_STRICT_TAGS`) | `True` makes an unclosed element carrying template attributes a `ParseError` that points at it. Recommended. See [Catching unclosed tags](strict-tags.qmd). |
+| `strict_names` | `False` (or `CHAMELEON_STRICT_NAMES`) | `True` makes the decorator APIs (`@template`, `render`, `response`, `ErrorPage`'s template) refuse names that could leave the template folder, with the same `ValueError` as a missing template. For apps that build template names from request data. See [Security](security.qmd#template-names-from-requests). |
 | `partial_search` | `'caller'` | Where `render_partial` looks: `'caller'` searches the template folder, then the calling template's search path and folders. `'registered'` searches the template folder only, as chameleon_partials does. See [Partials](partials.qmd#how-a-path-is-found). |
 | `markdown` | none | The `markdown:` expression: `True` for the defaults, or a dict of profiles (prefix → options). `False` removes it. See [Markdown](markdown.qmd). |
 | `markdown_cache` | `1024` | How many Markdown conversions to keep. `0` turns the cache off. |
@@ -133,6 +135,7 @@ These are read once, when chameleon-rs is imported, as Chameleon reads them. The
 | `CHAMELEON_EAGER` | File templates compile when they're created, not on first use. Handy in a test that checks every template in a project compiles. |
 | `CHAMELEON_DEBUG` | Templates keep their body and a dump of their compiled program, and use a module loader in a temporary directory. |
 | `CHAMELEON_STRICT_TAGS` | chameleon-rs only. The default for `strict_tags`, for `configure()` and every template: unclosed elements carrying template attributes are errors. See [Catching unclosed tags](strict-tags.qmd). |
+| `CHAMELEON_STRICT_NAMES` | chameleon-rs only. The default for `strict_names`: the decorator APIs refuse template names that could leave the template folder. See [Security](security.qmd#template-names-from-requests). |
 | `CHAMELEON_CACHE` | A directory, which must exist. Chameleon writes the generated Python modules there. chameleon-rs checks the directory but doesn't write compiled programs to disk: compiling is fast enough not to need it. |
 
 Unknown `CHAMELEON_*` variables are logged as warnings, as in Chameleon.

@@ -235,6 +235,7 @@ fn render_function<'py>(
     slots: Vec<Option<Py<PyAny>>>,
 ) -> PyResult<Bound<'py, PyString>> {
     let py = program.py();
+    crate::errors::render_room()?;
     let scope = match econtext.cast::<Scope>() {
         Ok(scope) => scope.clone(),
         // Another engine's scope: its items, as a mapping.
@@ -257,12 +258,16 @@ fn render_function<'py>(
     if let Some(helpers) = helpers {
         st = st.with_helpers(helpers);
     }
-    let mut rt = PyRuntime::<false>::new(&render, program.clone(), scope);
-    match run(&mut st, &mut rt) {
-        Ok(Done::Finished) => {}
-        Ok(Done::Suspended(_)) => return Err(internal_error(py, "a synchronous render suspended")),
-        Err(VmError::Runtime(e)) => return Err(e),
-        Err(e) => return Err(vm_error(py, e)),
-    }
-    crate::program::output_str(py, &st.out)
+    // Called from Python (another engine's macro call, `macro.include(...)`): a panic is an
+    // `InternalError`, not a `PanicException` that `except Exception` would miss.
+    crate::errors::catch_panics(py, || {
+        let mut rt = PyRuntime::<false>::new(&render, program.clone(), scope);
+        match run(&mut st, &mut rt) {
+            Ok(Done::Finished) => {}
+            Ok(Done::Suspended(_)) => return Err(internal_error(py, "a synchronous render suspended")),
+            Err(VmError::Runtime(e)) => return Err(e),
+            Err(e) => return Err(vm_error(py, e)),
+        }
+        crate::program::output_str(py, &st.out)
+    })
 }

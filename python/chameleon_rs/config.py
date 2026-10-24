@@ -12,6 +12,12 @@ Chameleon reads them:
 - ``CHAMELEON_RELOAD``: file templates reload when their file changes (``auto_reload``).
 - ``CHAMELEON_STRICT_TAGS`` (chameleon-rs only): the default of ``strict_tags``, which makes an
   unclosed element carrying TAL, METAL or i18n attributes a ``ParseError`` at its start tag.
+- ``CHAMELEON_STRICT_NAMES`` (chameleon-rs only): the default of ``strict_names``, which makes
+  the framework integrations' decorator and module APIs refuse template names that could reach
+  outside the template folder.
+- ``CHAMELEON_CONCURRENT_LIMIT`` (chameleon-rs only, default 64): how many tasks one
+  asynchronous render starts for ``@concurrent`` calls and concurrent partials; further calls
+  are awaited where they stand.
 
 Values ``y``, ``yes``, ``t``, ``true``, ``on`` and ``1`` (any case) are true. Unknown
 ``CHAMELEON_*`` variables are logged as warnings.
@@ -51,6 +57,20 @@ AUTO_RELOAD = environment.pop('reload', 'false').lower() in TRUE
 
 # chameleon-rs: unclosed elements carrying TAL attributes are errors (``strict_tags``).
 STRICT_TAGS = environment.pop('strict_tags', 'false').lower() in TRUE
+
+# chameleon-rs: `@template`, `render()` and `response()` refuse names that could leave the
+# template folder (``strict_names``).
+STRICT_NAMES = environment.pop('strict_names', 'false').lower() in TRUE
+
+# chameleon-rs: how many tasks one asynchronous render starts for `@concurrent` calls and
+# concurrent partials; past it, each further call is awaited where it stands (fan-out bounded
+# however long a `tal:repeat` the data makes). Read once, at the first such call.
+_limit = environment.pop('concurrent_limit', '64')
+try:
+    CONCURRENT_LIMIT = max(1, int(_limit))
+except ValueError:
+    log.warning('CHAMELEON_CONCURRENT_LIMIT must be a whole number, not %r: using 64.', _limit)
+    CONCURRENT_LIMIT = 64
 
 for key in environment:
     log.warning('unknown environment variable set: "CHAMELEON_%s".', key.upper())

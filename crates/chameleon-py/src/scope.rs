@@ -114,8 +114,12 @@ impl Scope {
         // `Scope(self)`: `dict.__init__` on a dict subclass with its own `__iter__` takes the
         // slow path, `self[key]` for each local key in order, which (local first) is the
         // local value: the same as copying the local items directly.
+        // (A snapshot of the local items, `PyDict_Items`: PyO3's dict iterator panics if the
+        // dict changes size, which a key's `__hash__` or another thread can do; `dict.update`
+        // would take the subclass's `__iter__`, and copy the root's keys too.)
         let target = copy.as_super();
-        for (key, value) in slf.as_super().iter() {
+        for item in slf.as_super().items().iter() {
+            let (key, value): (Bound<'py, PyAny>, Bound<'py, PyAny>) = item.extract()?;
             target.set_item(key, value)?;
         }
         Ok(copy)

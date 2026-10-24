@@ -497,6 +497,28 @@ pub(crate) fn convert_text<'py>(
     }
 }
 
+static SYS_INTERN: pyo3::sync::PyOnceLock<Py<PyAny>> = pyo3::sync::PyOnceLock::new();
+
+/// `sys.intern(text)`: a name read from a template, interned as Python code's identifiers
+/// are, so scope lookups compare by identity. Not PyO3's `PyString::intern`: that makes the
+/// string immortal (`PyUnicode_InternFromString`), and every distinct name a template ever
+/// used would stay for the life of the process (templates built per request with generated
+/// names grew without bound). `sys.intern` makes it mortal where CPython can (3.13 and later
+/// with the GIL; 3.12 and free-threaded builds intern only immortally), so it goes with the
+/// last template using it.
+pub(crate) fn intern<'py>(py: Python<'py>, text: &str) -> Bound<'py, PyString> {
+    let fresh = PyString::new(py, text);
+    let Ok(sys_intern) = SYS_INTERN.get_or_try_init(py, || {
+        Ok::<_, PyErr>(py.import(intern!(py, "sys"))?.getattr(intern!(py, "intern"))?.unbind())
+    }) else {
+        return fresh;
+    };
+    match sys_intern.bind(py).call1((&fresh,)).map(Bound::cast_into::<PyString>) {
+        Ok(Ok(interned)) => interned,
+        _ => fresh,
+    }
+}
+
 /// A `str` for a piece of template source: with lone surrogates mapped to the private-use
 /// block at `base` (`chameleon_core::surrogates`), mapped back.
 pub(crate) fn source_str<'py>(py: Python<'py>, text: &str, base: Option<u32>) -> PyResult<Bound<'py, PyString>> {

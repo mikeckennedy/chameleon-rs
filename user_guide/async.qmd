@@ -156,8 +156,17 @@ in text, or one inside an attribute value. Anywhere its value decides what the t
 content) or where the output might be taken back (inside `tal:on-error` or a translation), it is
 awaited in place, like any awaitable.
 
-If a concurrent call raises, the error is raised when the render reaches the end, in document
-order, and the other tasks are cancelled. In a sync `render()` the decorator has no effect.
+If a concurrent call raises, the render waits for nothing else: the error is raised as soon as
+the render has reached its end and that call has failed, even if calls before it in the page are
+still running. The other tasks are cancelled and their `finally` blocks run before the error is
+raised, as in a `TaskGroup`. If the request is cancelled meanwhile, the `CancelledError` (or
+`asyncio.timeout`'s `TimeoutError`) wins over the template error. In a sync `render()` the
+decorator has no effect.
+
+One render starts at most 64 tasks for concurrent calls and partials (set
+`CHAMELEON_CONCURRENT_LIMIT` to change it). Past that, each further call is awaited where it
+stands, so a `tal:repeat` over request-sized data can't start an unbounded number of queries at
+once.
 
 ### Partials in parallel: `concurrent=True`
 
@@ -202,6 +211,9 @@ synchronous there, so awaitable values aren't awaited: load the data first.
   on.
 - **On a regular (GIL) build** it helps only pages dominated by long text, whose escaping
   releases the GIL. For most pages, a thread hop costs more than it saves.
+- **Cancellation**: a render still waiting for a thread is dropped when its request is cancelled
+  (a client disconnect), but one already running in a thread can't be interrupted: it finishes
+  and its result is discarded.
 
 ## In the web frameworks
 

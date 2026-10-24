@@ -731,7 +731,7 @@ impl Builder<'_> {
         if let Some((slots, i)) = fill_slot_at
             && let Some(slot) = self.tree.slot_lists.get_mut(slots.0 as usize).and_then(|l| l.get_mut(i))
         {
-            slot.body = node.clone();
+            slot.body = crate::stack::deep_clone(&node);
         }
         if let Some((at, id, clause)) = macro_at {
             if let Some(entry) = self.macros.get_mut(at)

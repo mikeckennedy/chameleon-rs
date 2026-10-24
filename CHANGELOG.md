@@ -5,6 +5,80 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.51] - 2026-10-23
+
+Fixes from a review for memory leaks, GC problems and anything that could crash or wedge a
+web worker.
+
+### Security
+
+- **Renders nested through Python could crash the process on Python 3.12 and 3.13.** A value
+  whose `__html__`, or a helper, renders another template (a comment thread rendering its
+  replies) nests as deep as the data goes. Before 3.14, CPython counts only Python frames, so
+  on a worker thread with a small stack (512 KiB to 2 MiB) the native stack overflowed at 68 to
+  268 levels (SIGBUS) instead of raising `RecursionError`. Every render now checks the stack
+  left when it starts.
+- **A deep `metal:fill-slot` body could crash a compile on a small thread stack.** Copying the
+  compiled slot body recursed without a guard; it now runs on a stack of its own when needed.
+- **The decorator and module APIs compiled and cached every spelling of a template name
+  forever** (`./sub/p.pt`, `sub//p.pt`, an absolute path): with names built from a request,
+  the cache grew without bound. They now load one template per file. The names remembered for
+  that are bounded (1024 per loader), names of missing files are never remembered, and a name
+  seen before costs no `stat`.
+
+### Added
+
+- **`strict_names`** (opt-in: `configure(strict_names=True)` or `CHAMELEON_STRICT_NAMES=1`):
+  the framework integrations' decorator and module APIs (`@template`, `render`, `response`,
+  their async forms, `ErrorPage`'s template) refuse template names that could reach outside
+  the template folder (absolute paths, `..`, backslashes, drive letters, `package:path` specs,
+  NUL, surrounding whitespace) with the `ValueError("Template not found: ...")` a missing
+  template raises. Off by default, as in the original libraries.
+- **`CHAMELEON_CONCURRENT_LIMIT`** (default 64): one asynchronous render starts at most this
+  many tasks for `@concurrent` calls and concurrent partials; further calls are awaited in
+  place, so a `tal:repeat` over request-sized data can't fan out without bound.
+
+### Fixed
+
+- **A cancellation during an async render's cleanup was swallowed.** When a `@concurrent` call
+  failed, the render cancelled the others and waited for their `finally` blocks; a
+  `CancelledError` arriving then (a client disconnect, `asyncio.timeout`, `wait_for`) was
+  replaced by the template's error, so a disconnect became a logged 500 and a timeout never
+  fired. Cancellation now wins, with the template error as its context.
+- **A failed `@concurrent` call no longer waits for slower calls before it in the page**: the
+  render ends as soon as one fails, as a `TaskGroup` does.
+- **A `StopIteration` raised in an async render** (`next()` on an exhausted iterator) made
+  `await render_async()` return the exception's arguments as if they were the page. It is now
+  a `RuntimeError`, as in any coroutine (PEP 479).
+- **Rendering error messages could fail and lose the original message**: the source line was
+  read with the locale's encoding, so a template file that isn't UTF-8 (or a non-UTF-8 locale)
+  made `str()` of the error raise. The file is now read as UTF-8 with replacement characters,
+  and a failure while formatting falls back to the original message.
+- **A macro with a `<?python ?>` block called in a long `tal:repeat` was quadratic**: each
+  call's namespace was kept until the end of the render and searched on every lookup (128k
+  items took 1.3 s and 62 MB at 64k). Namespaces are dropped when their frame returns: 0.85
+  µs per item at any size.
+- Cancelled `@concurrent` calls and concurrent partials' arguments no longer leave "coroutine
+  was never awaited" warnings.
+- **The Litestar integration made a reference cycle per render** (the template callables were
+  bound to the dict that held them), so each request and its model lived until the next
+  garbage collection. The callables now get a copy of the context, as Litestar's Mako engine
+  does.
+- **Each distinct name a template used stayed in memory for the life of the process**:
+  interned immortally, by PyO3 and by CPython's parser. Bare names and dotted paths
+  (`${title}`, `${user.name}`) now compile without the parser, which is also faster, and names
+  are interned with `sys.intern`, so they are freed with the last template using them on
+  CPython 3.13 and later with the GIL (3.12 and free-threaded builds intern only immortally).
+  This matters only for templates generated at runtime.
+- **No more `PanicException`s from a dict changed while chameleon-rs reads it** (a key whose
+  `__hash__` changes the scope, or another thread on a free-threaded build): the scope's copy,
+  the defaults and the partials' error context read a snapshot, and the macro, slot, async
+  step, tokenizer and element parser entry points turn any panic into `InternalError`. A
+  `PanicException` is a `BaseException`, so `except Exception` handlers missed it.
+- A render's saved error is visible to the garbage collector while its cancelled tasks are
+  joined; a second awaiter of a suspended render gets `RuntimeError("coroutine is being
+  awaited already")`; an error looking up a delegate's `throw` is raised, as in CPython.
+
 ## [0.1.50] - 2026-10-22
 
 ### Added
