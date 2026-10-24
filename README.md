@@ -107,6 +107,9 @@ OpenAPI docs work as without `@template`.
 - **Partials.** Any template can call `${render_partial('shared/card.pt', item=item)}`; the
   partial renders natively inside the page, 10.9x faster than chameleon_partials.
   [Partials](https://mkennedy.codes/docs/chameleon-rs/user-guide/partials.html).
+- **HTMX.** Because partials are built in, HTMX works natively: the page includes a fragment
+  with `render_partial`, and the HTMX view returns the same template on its own.
+  [HTMX](https://mkennedy.codes/docs/chameleon-rs/user-guide/htmx.html).
 - **Markdown.** `${markdown: episode.notes}` converts Markdown to HTML while the page renders:
   CommonMark plus the GitHub extensions (tables, task lists, footnotes, ...), converted in
   Rust, with raw HTML escaped by default. It's about 26x faster than mistune, a pure-Python

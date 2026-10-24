@@ -69,7 +69,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-search/fuse.min.js"></script>
 <script src="../site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="../">
-<link href="../user-guide/markdown.html" rel="next">
+<link href="../user-guide/htmx.html" rel="next">
 <link href="../user-guide/template-language.html" rel="prev">
 <link href="../favicon.ico" rel="icon">
 <script src="../site_libs/quarto-html/quarto.js" type="module"></script>
@@ -240,6 +240,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../user-guide/htmx.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">HTMX</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../user-guide/markdown.html" class="sidebar-item-text sidebar-link">
  <span class="menu-text">Markdown</span></a>
   </div>
@@ -389,7 +395,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<p>A partial is a template file rendered inside another template, with its own small model. Use them for anything you repeat: a card in a listing, a form field, a table row, a fragment you also return on its own to HTMX.</p>
+<p>A partial is a template file rendered inside another template, with its own small model. Use them for anything you repeat: a card in a listing, a form field, a table row, a fragment you also return on its own to HTMX (see <a href="../user-guide/htmx.html">HTMX</a>).</p>
 <p>chameleon-rs has partials built in. Every template can call <a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a>, with nothing to register or pass in:</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"video videos"</span><span class="dt">&gt;</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  ${render_partial('shared/partials/video_card.pt', video=video, show_date=True)}</span>
@@ -420,7 +426,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 └── admin/users/
     ├── list.pt      ${render_partial('row.pt', user=user)}
     └── row.pt       ${render_partial('shared/badge.pt', label='admin')}</code></pre>
-<div id="610b50cb" class="cell" data-execution_count="2">
+<div id="36c26730" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplateLoader</span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -452,7 +458,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="calling-it-from-python" class="level1">
 <h1>Calling it from Python</h1>
 <p><a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">chameleon_rs.render_partial</a> renders a partial from Python code: in a view that returns an HTMX fragment, in an email builder, or in a test. It returns an <a href="../reference/partials.HTML.html#chameleon_rs.partials.HTML" class="gdls-link gdls-code">HTML</a> object. Its <code>html_text</code> attribute is the markup, and its <code>__html__</code> method means a template inserts it without escaping:</p>
-<div id="492824fb" class="cell" data-execution_count="3">
+<div id="38d66251" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>fragment <span class="op">=</span> chameleon_rs.render_partial(<span class="st">'shared/badge.pt'</span>, label<span class="op">=</span><span class="st">'new'</span>)</span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="bu">type</span>(fragment).<span class="va">__name__</span>, <span class="bu">repr</span>(fragment.html_text))</span></code></pre></div>
 <div class="cell-output cell-output-stdout">
@@ -861,8 +867,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       </a>          
   </div>
   <div class="nav-page nav-page-next">
-      <a href="../user-guide/markdown.html" class="pagination-link" aria-label="Markdown">
-        <span class="nav-page-text">Markdown</span> <i class="bi bi-arrow-right-short"></i>
+      <a href="../user-guide/htmx.html" class="pagination-link" aria-label="HTMX">
+        <span class="nav-page-text">HTMX</span> <i class="bi bi-arrow-right-short"></i>
       </a>
   </div>
 </nav>

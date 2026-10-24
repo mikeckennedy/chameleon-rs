@@ -1,6 +1,6 @@
 # Partials
 
-A partial is a template file rendered inside another template, with its own small model. Use them for anything you repeat: a card in a listing, a form field, a table row, a fragment you also return on its own to HTMX.
+A partial is a template file rendered inside another template, with its own small model. Use them for anything you repeat: a card in a listing, a form field, a table row, a fragment you also return on its own to HTMX (see [HTMX](htmx.md)).
 
 chameleon-rs has partials built in. Every template can call [render_partial](../reference/render_partial.md#chameleon_rs.render_partial), with nothing to register or pass in:
 

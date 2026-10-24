@@ -25,6 +25,7 @@ pip install chameleon-rs
 | Load templates by name from folders | `chameleon_rs.PageTemplateLoader([folder])['page.pt'](**model)` |
 | Insert a reusable HTML fragment | `${render_partial('shared/fragment.pt', key=value)}` |
 | Get a rendered fragment as a string from Python (HTMX, email, tests) | `chameleon_rs.render_partial(path, **model).html_text` |
+| Serve HTMX: a full page on first load, one fragment on an HTMX request | `Put the fragment in its own template, include it with ${render_partial(...)}; the view returns response('fragment.pt', ...) when the HX-Request header is set (and HX-History-Restore-Request is not), or @template('fragment.pt') on an HTMX-only route` |
 | Render Chameleon templates from Flask or Quart views | `chameleon_rs.flask: configure(folder), then @template('page.pt') on the view` |
 | Render Chameleon templates from FastAPI views | `chameleon_rs.fastapi: configure(folder, app=app), then @template('page.pt') below @app.get` |
 | Replace Starlette's Jinja2Templates | `chameleon_rs.starlette.Templates(directory=folder); await templates.TemplateResponse_async(request, 'page.pt', context) in async endpoints` |

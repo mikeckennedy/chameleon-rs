@@ -277,7 +277,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">form</span><span class="dt">&gt;</span></span>
 <span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>${render_partial('todos/list.pt', todos=todos)}</span></code></pre></div>
 <p>The views render the page on <code>GET</code> and only the fragment on <code>POST</code>:</p>
-<div id="39c9d73b" class="cell" data-execution_count="2">
+<div id="b3c9c989" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> flask</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
@@ -311,6 +311,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <p><a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">chameleon_rs.render_partial()</a> returns an <a href="../reference/partials.HTML.html#chameleon_rs.partials.HTML" class="gdls-link gdls-code">HTML</a> object. Its <code>html_text</code> is the markup. Because the fragment is one template file, the page and the HTMX response can’t drift apart.</p>
 <p><code>chameleon_flask.response('todos/list.pt', todos=todos)</code> does the same and returns a <code>flask.Response</code>, if you’d rather set a content type or status code.</p>
+<p><a href="../user-guide/htmx.html">HTMX</a> covers more: one view that returns the page or the fragment from the <code>HX-Request</code> header, and <code>@template</code> on a fragment-only route.</p>
 
 
 

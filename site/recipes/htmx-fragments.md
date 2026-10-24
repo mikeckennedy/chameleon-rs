@@ -60,3 +60,5 @@ print(client.post('/todos', data={'title': 'Ship it'}).text)
 [chameleon_rs.render_partial()](../reference/render_partial.md#chameleon_rs.render_partial) returns an [HTML](../reference/partials.HTML.md#chameleon_rs.partials.HTML) object. Its `html_text` is the markup. Because the fragment is one template file, the page and the HTMX response can't drift apart.
 
 `chameleon_flask.response('todos/list.pt', todos=todos)` does the same and returns a `flask.Response`, if you'd rather set a content type or status code.
+
+[HTMX](../user-guide/htmx.md) covers more: one view that returns the page or the fragment from the `HX-Request` header, and `@template` on a fragment-only route.

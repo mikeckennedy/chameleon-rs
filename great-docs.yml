@@ -75,6 +75,7 @@ user_guide:
     contents:
       - template-language.qmd
       - partials.qmd
+      - htmx.qmd
       - markdown.qmd
       - async.qmd
       - strict-tags.qmd
@@ -135,6 +136,8 @@ skill:
       use: "${render_partial('shared/fragment.pt', key=value)}"
     - need: "Get a rendered fragment as a string from Python (HTMX, email, tests)"
       use: "chameleon_rs.render_partial(path, **model).html_text"
+    - need: "Serve HTMX: a full page on first load, one fragment on an HTMX request"
+      use: "Put the fragment in its own template, include it with ${render_partial(...)}; the view returns response('fragment.pt', ...) when the HX-Request header is set (and HX-History-Restore-Request is not), or @template('fragment.pt') on an HTMX-only route"
     - need: "Render Chameleon templates from Flask or Quart views"
       use: "chameleon_rs.flask: configure(folder), then @template('page.pt') on the view"
     - need: "Render Chameleon templates from FastAPI views"

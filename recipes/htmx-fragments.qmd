@@ -80,3 +80,6 @@ Because the fragment is one template file, the page and the HTMX response can't 
 
 `chameleon_flask.response('todos/list.pt', todos=todos)` does the same and returns a
 `flask.Response`, if you'd rather set a content type or status code.
+
+[HTMX](../user-guide/htmx.qmd) covers more: one view that returns the page or the fragment
+from the `HX-Request` header, and `@template` on a fragment-only route.
