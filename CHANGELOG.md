@@ -5,7 +5,36 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.52] - Unreleased
+## [0.1.52] - 2026-10-27
+
+Free-threaded scaling for pages with partials, and three bugs found on the way.
+
+### Changed
+
+- **Pages with partials scale across threads on free-threaded Python.** Every partial call
+  copied the template's render defaults (`__translate`, `__decode`, ...) from one dict shared by
+  every thread, and on free-threaded CPython reading a dict takes its lock: six threads
+  rendering a page with 52 partials did 2.4× the work of one. A loop or a mention of `repeat`
+  now only gives a scope a fresh `repeat`. The defaults are copied in only where a template
+  can see them (it names `econtext`, `rcontext` or a default, has names only known at render
+  time, or calls a macro); an error message still lists them, as Chameleon's does. Switching
+  between a page's and its partials' frames no longer takes references to shared objects, and
+  string constants are interned on free-threaded builds, as CPython does for code constants.
+  At six threads a page with partials now scales 3.7× (37,500 renders a second where it was
+  22,900), and a flat template shared by every thread 4.3×.
+
+### Fixed
+
+- **A partial whose code read a render default by its plain name** (`translate`, `decode`,
+  `on_error_handler`, which expressions read as `econtext['__translate']` and so on) raised
+  `KeyError` when it had no loop.
+- **An async render of a macro recursing until `tal:on-error` caught the `RecursionError`
+  rendered fewer levels than Chameleon** (936 against 991 at the default limit): it kept a fixed
+  reserve of 64 frames. It now measures the stack as a sync render does, and stops where
+  `render()` called in place of `await render_async(...)` would.
+- **Litestar's `render_string` cache could lose an entry** when two threads compiled the same
+  string at once: the second evicted the oldest template before storing the key the first had
+  stored. The second now keeps the first one's template.
 
 ## [0.1.51] - 2026-10-23
 
