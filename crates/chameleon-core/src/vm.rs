@@ -2014,9 +2014,18 @@ pub fn run<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R) -> Result<Done<Val<
     if st.suspended {
         return Err(VmError::Internal("run on a suspended render without resume_with"));
     }
+    // Each program the render runs, held once: cloning a frame's `Arc` at every frame switch
+    // made each partial call update a count every thread rendering that template shares.
+    let mut programs: Vec<Arc<Program>> = Vec::new();
     loop {
         let Some(frame) = st.frames.last_mut() else { return Ok(Done::Finished) };
-        let program = Arc::clone(&frame.program);
+        let i = if let Some(i) = programs.iter().position(|p| Arc::ptr_eq(p, &frame.program)) {
+            i
+        } else {
+            programs.push(Arc::clone(&frame.program));
+            programs.len() - 1
+        };
+        let program = &programs[i];
         if program.has_surrogate_text() {
             st.out.set_has_surrogates();
         }
@@ -2028,7 +2037,7 @@ pub fn run<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R) -> Result<Done<Val<
             unwind_error(st, rt, error)?;
             continue;
         }
-        let action = match execute(&program, &mut pc, st, rt) {
+        let action = match execute(program, &mut pc, st, rt) {
             Ok(action) => action,
             Err(VmError::Runtime(error)) => {
                 unwind_error(st, rt, error)?;
@@ -2395,7 +2404,7 @@ macro_rules! eval_or_leave {
 #[inline(always)]
 #[allow(clippy::inline_always)] // one call site (`run`); measured: see docs/plan.md, Phase 4
 fn execute<R: Runtime>(
-    program: &Program,
+    program: &Arc<Program>,
     pc: &mut usize,
     st: &mut VmState<Val<R>>,
     rt: &mut R,
@@ -2831,14 +2840,12 @@ macro_rules! eval_or_leave_rare {
 #[allow(clippy::cast_possible_truncation)] // instruction indices fit in u32 (checked at build)
 #[allow(clippy::too_many_lines)] // one arm per instruction
 fn execute_rare<R: Runtime>(
-    program: &Program,
+    program: &Arc<Program>,
     op: &Op,
     pc: usize,
     st: &mut VmState<Val<R>>,
     rt: &mut R,
 ) -> Result<Flow<Val<R>>, VmError<Err<R>>> {
-    // The running program, for the instructions that keep a reference to it.
-    let shared = &st.frames.last().map(|f| Arc::clone(&f.program)).ok_or(VmError::Internal("no frame"))?;
     let rt_err = VmError::Runtime;
     let no_call = |_| Err(VmError::Internal("frame call where a value is needed"));
     match *op {
@@ -2908,7 +2915,7 @@ fn execute_rare<R: Runtime>(
             let Some(frame) = st.frames.last() else { return Err(VmError::Internal("no frame")) };
             let i18n = frame.i18n(&st.none);
             let fill = Fill {
-                program: Arc::clone(shared),
+                program: Arc::clone(program),
                 code: rt.clone_value(&frame.code),
                 entry: f.entry,
                 i18n: I18n {
@@ -2945,12 +2952,12 @@ fn execute_rare<R: Runtime>(
         Op::CallMacro { entry } => {
             let Some(frame) = st.frames.last() else { return Err(VmError::Internal("no frame")) };
             let code = rt.clone_value(&frame.code);
-            let scope = if shared.shares_scope(entry) && rt.may_share_scope() {
+            let scope = if program.shares_scope(entry) && rt.may_share_scope() {
                 rt.clone_value(&frame.scope)
             } else {
                 rt.copy_scope().map_err(rt_err)?
             };
-            let call = Call { program: Arc::clone(shared), code, scope };
+            let call = Call { program: Arc::clone(program), code, scope };
             let mut pushed = Pushed::call(call, entry, 1, pc as u32 + 1, OnReturn::Update);
             pushed.reset_token = true;
             st.flush_fill();
@@ -3001,7 +3008,7 @@ fn execute_rare<R: Runtime>(
                 mark: st.out.mark(),
                 id,
                 translation: Box::new(OpenTranslation {
-                    program: Arc::clone(shared),
+                    program: Arc::clone(program),
                     info,
                     names: vec![NameValue::Text(Wtf8Buf::default()); t.names.len()],
                     before: Vec::new(),
@@ -3030,7 +3037,7 @@ fn execute_rare<R: Runtime>(
         }
         Op::NameBegin { info } => {
             let id = st.next_serial();
-            st.unwind.push(Unwind::Name { mark: st.out.mark(), id, program: Arc::clone(shared), info, before: None });
+            st.unwind.push(Unwind::Name { mark: st.out.mark(), id, program: Arc::clone(program), info, before: None });
         }
         Op::NameEnd { info } => {
             let n = program.tables.names.get(info as usize).ok_or(VmError::Internal("bad name"))?;
@@ -3041,7 +3048,7 @@ fn execute_rare<R: Runtime>(
             if let Some(before) = before {
                 st.out.push(&before.0);
             }
-            set_name(&mut st.unwind, shared, n, NameValue::Text(content));
+            set_name(&mut st.unwind, program, n, NameValue::Text(content));
             st.out.push(b"${");
             st.out.push(text(program, n.name)?);
             st.out.push(b"}");

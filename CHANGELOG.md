@@ -5,6 +5,28 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.53] - 2026-10-27
+
+Less shared reference counting per render on free-threaded Python.
+
+### Changed
+
+- **Less shared reference counting per render on free-threaded Python,** from Kitewing's
+  profile of a page served over HTTP. Each of these updated a count every rendering thread
+  shares:
+  - `chameleon_rs.tal.RepeatDict` (one per looping partial) is now a native class. Chameleon's
+    keeps the dict's bound `__getitem__` and `__setitem__`, which reference `dict`'s own slot
+    descriptors; creating them from six threads ran no faster than from one. It keeps
+    Chameleon's name, module, subclassing, errors and `copy.copy`.
+  - The check for `repeat` and `Markup` values took a reference to each value's type on every
+    attribute access and every emitted value.
+  - Calling a builtin such as `len` took a reference to it (builtin functions are not
+    immortal).
+  - The VM cloned the running program's `Arc` at every frame switch, twice per partial call; it
+    now holds each program once per render.
+  - The partials' `_prepare` imported the template module on every call, a lookup in
+    `sys.modules` that takes that dict's lock on free-threaded Python.
+
 ## [0.1.52] - 2026-10-27
 
 Free-threaded scaling for pages with partials, and three bugs found on the way.

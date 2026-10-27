@@ -452,12 +452,23 @@ def _legacy_target(func: Any, template_file: Any) -> Any:
     return loader[name]
 
 
+# The template classes `_prepare` checks for, imported on first use.
+_PageTemplate: Any = None
+_PageTextTemplateFile: Any = None
+
+
 def _prepare(template: Any) -> tuple[Any, Any, Any] | None:
     """What ``template.render(encoding='utf-8', ...)`` would use, in its order (defaults, then
     ``cook_check()``): ``(program, builtins, defaults)``, or ``None`` when the template cannot
     render as a native frame (another engine's, a text template, a ``_render`` function)."""
-    from chameleon_rs.template import PageTemplate, PageTextTemplateFile
+    global _PageTemplate, _PageTextTemplateFile
+    if _PageTemplate is None:
+        # `template` imports this module. An import statement here would look the module up in
+        # `sys.modules` on every call, a dict every thread shares (a lock on free-threaded Python).
+        from chameleon_rs.template import PageTemplate, PageTextTemplateFile
 
+        _PageTemplate, _PageTextTemplateFile = PageTemplate, PageTextTemplateFile
+    PageTemplate, PageTextTemplateFile = _PageTemplate, _PageTextTemplateFile
     if not isinstance(template, PageTemplate) or isinstance(template, PageTextTemplateFile):
         return None
     defaults = template._encoded_defaults('utf-8', None)

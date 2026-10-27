@@ -24,6 +24,7 @@ use crate::convert;
 use crate::expr::{Cx, FrameCx, Helpers, RenderCtx, eval, eval_emitted};
 use crate::macros::{Macro, SlotFill};
 use crate::program::{Program, record_error};
+use crate::repeat::RepeatDict;
 use crate::scope::Scope;
 
 static ERROR_INFO: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
@@ -446,8 +447,13 @@ impl<const ASYNC: bool> Loops for PyRuntime<'_, '_, ASYNC> {
             let keys = names.iter().map(|n| self.name(*n).map(|k| k.bind(py).clone())).collect::<PyResult<Vec<_>>>()?;
             PyTuple::new(py, keys)?.into_any()
         };
-        if repeat.get_type().is(crate::program::repeat_dict_type(py)?) {
-            return repeat_dict_call(&repeat, &key, iterable.bind(py));
+        if let Ok(repeat) = repeat.cast_exact::<RepeatDict>() {
+            let (iterator, length) = RepeatDict::register(repeat, &key, iterable.bind(py))?;
+            let index = match i64::try_from(length) {
+                Ok(n) => Countdown::Int(n),
+                Err(_) => Countdown::Value(length.into_pyobject(py)?.into_any().unbind()),
+            };
+            return Ok((iterator.unbind(), index));
         }
         let result = repeat.call1((key, iterable))?;
         let mut pair = unpack(&result, 2)?.into_iter();
@@ -669,40 +675,6 @@ impl<const ASYNC: bool> PyRuntime<'_, '_, ASYNC> {
         }
         Ok(())
     }
-}
-
-static REPEAT_ITEM: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
-
-/// `chameleon_rs.tal.RepeatDict.__call__` for an exact `RepeatDict`, natively (no Python frame,
-/// no result tuple to unpack):
-///
-/// ```python
-/// iterable = list(iterable) if iterable is not None else ()
-/// length = len(iterable)
-/// iterator = iter(iterable)
-/// self[key] = RepeatItem(iterator, length)
-/// return iterator, length
-/// ```
-fn repeat_dict_call(
-    repeat: &Bound<'_, PyAny>,
-    key: &Bound<'_, PyAny>,
-    iterable: &Bound<'_, PyAny>,
-) -> PyResult<(Py<PyAny>, Countdown<Py<PyAny>>)> {
-    let py = repeat.py();
-    let items =
-        if iterable.is_none() { PyTuple::empty(py).into_any() } else { py.get_type::<PyList>().call1((iterable,))? };
-    let length = items.len()?;
-    let iterator = items.try_iter()?.into_any();
-    let class = REPEAT_ITEM.get_or_try_init(py, || {
-        Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs.tal"))?.getattr(intern!(py, "RepeatItem"))?.unbind())
-    })?;
-    let item = class.bind(py).call1((&iterator, length))?;
-    repeat.set_item(key, item)?;
-    let index = match i64::try_from(length) {
-        Ok(n) => Countdown::Int(n),
-        Err(_) => Countdown::Value(length.into_pyobject(py)?.into_any().unbind()),
-    };
-    Ok((iterator.unbind(), index))
 }
 
 /// Whether this interpreter's "too many values" message has "got N" (CPython 3.14+).

@@ -40,24 +40,14 @@ impl DefaultMarker {
 }
 
 static MARKER: PyOnceLock<Py<DefaultMarker>> = PyOnceLock::new();
-static REPEAT_DICT: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 pub(crate) fn marker(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
     Ok(MARKER.get_or_try_init(py, || Py::new(py, DefaultMarker))?.bind(py).clone().into_any())
 }
 
-/// The class `chameleon_rs.tal.RepeatDict`.
-pub(crate) fn repeat_dict_type(py: Python<'_>) -> PyResult<&Bound<'_, PyAny>> {
-    Ok(REPEAT_DICT
-        .get_or_try_init(py, || {
-            Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs.tal"))?.getattr(intern!(py, "RepeatDict"))?.unbind())
-        })?
-        .bind(py))
-}
-
 /// A fresh `chameleon_rs.tal.RepeatDict({})`, as `PageTemplate.render` provides.
 pub(crate) fn new_repeat_dict(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
-    repeat_dict_type(py)?.call1((PyDict::new(py),))
+    crate::repeat::RepeatDict::empty(py)
 }
 
 /// An immutable compiled template. Frozen, so it is `Sync` and can be shared by threads

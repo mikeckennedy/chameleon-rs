@@ -1,4 +1,4 @@
-# Ported from Chameleon's src/chameleon/tal.py (RepeatItem, RepeatDict, ErrorInfo, the
+# Ported from Chameleon's src/chameleon/tal.py (RepeatItem, ErrorInfo, the
 # constants NAME, DEFINE_RE, SUBST_RE, ATTR_RE, ENTITY_RE, WHITELIST, and verbatim
 # split_parts, parse_attributes, parse_substitution, parse_defines, prepare_attributes),
 # modified: type annotations on the classes.
@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import copy
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from typing import Any
 
+from chameleon_rs import _native
 from chameleon_rs.exc import LanguageError
 from chameleon_rs.namespaces import XMLNS_NS
 from chameleon_rs.parser import groups
@@ -305,26 +306,10 @@ class RepeatItem:
         return self.Roman().lower()
 
 
-class RepeatDict:
-    __slots__ = '__getitem__', '__setitem__'
-
-    def __init__(self, d: dict[Any, RepeatItem]) -> None:
-        self.__setitem__ = d.__setitem__
-        self.__getitem__ = d.__getitem__
-
-    def __getattr__(self, key: str) -> RepeatItem:
-        try:
-            return self[key]  # type: ignore[index]
-        except KeyError:
-            raise AttributeError(key) from None
-
-    def __call__(self, key: Any, iterable: Iterable[Any] | None) -> tuple[Iterator[Any], int]:
-        """Materialize the iterable as a list and register a RepeatItem for it."""
-        iterable = list(iterable) if iterable is not None else ()
-        length = len(iterable)
-        iterator = iter(iterable)
-        self[key] = RepeatItem(iterator, length)  # type: ignore[index]
-        return iterator, length
+# Chameleon's ``RepeatDict``, natively (``crates/chameleon-py/src/repeat.rs``): the same proxy, holding the
+# mapping itself rather than its bound ``__getitem__`` and ``__setitem__``, which on free-threaded Python
+# made every instance take references every thread contends on.
+RepeatDict = _native.RepeatDict
 
 
 class ErrorInfo:

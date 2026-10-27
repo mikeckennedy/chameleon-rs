@@ -72,7 +72,7 @@ pub(crate) fn is_concurrent_call(value: &Bound<'_, PyAny>) -> PyResult<bool> {
                 .unbind(),
         )
     })?;
-    Ok(value.get_type().is(class.bind(py)))
+    Ok(crate::repeat::is_type(value, class.bind(py)))
 }
 
 /// The running event loop, if any (a render driven by hand has none: nothing is deferred).
@@ -113,7 +113,7 @@ pub(crate) fn start_task<'py>(
                 py.import(intern!(py, "types"))?.getattr(intern!(py, "CoroutineType"))?.cast_into::<PyType>()?.unbind(),
             )
         })?;
-        if inner.get_type().is(coroutine.bind(py)) {
+        if crate::repeat::is_type(&inner, coroutine.bind(py)) {
             return event_loop.call_method1(intern!(py, "create_task"), (inner,));
         }
     }

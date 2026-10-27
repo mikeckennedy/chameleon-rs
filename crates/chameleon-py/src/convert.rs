@@ -222,7 +222,7 @@ fn is_markdown(value: &Bound<'_, PyAny>) -> PyResult<bool> {
     let markdown = MARKDOWN.get_or_try_init(py, || {
         Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs.utils"))?.getattr(intern!(py, "MarkdownMarkup"))?.unbind())
     })?;
-    Ok(value.get_type().is(markdown.bind(py)))
+    Ok(crate::repeat::is_type(value, markdown.bind(py)))
 }
 
 /// `value.__html__()` if the value has the method (`None` if it has not). For an exact
@@ -233,7 +233,7 @@ fn is_markup(value: &Bound<'_, PyAny>) -> PyResult<bool> {
     let markup = MARKUP.get_or_try_init(py, || {
         Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs.utils"))?.getattr(intern!(py, "Markup"))?.unbind())
     })?;
-    Ok(value.get_type().is(markup.bind(py)))
+    Ok(crate::repeat::is_type(value, markup.bind(py)))
 }
 
 fn html_of<'py>(value: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {

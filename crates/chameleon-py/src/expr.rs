@@ -866,7 +866,8 @@ pub(crate) fn eval<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny
         }
         // Fixed arities go through vectorcall without building a tuple first.
         Expr::Call { func, args, kwargs } if kwargs.is_empty() && args.len() <= 2 => {
-            let func = eval(func, cx)?;
+            let mut held = None;
+            let func = callee(func, cx, &mut held)?;
             match args.as_slice() {
                 [] => func.call0(),
                 [a] => func.call1((eval(a, cx)?,)),
@@ -900,6 +901,25 @@ pub(crate) fn eval<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny
     }
 }
 
+/// A call's function. A builtin the scope does not override is called through the program's
+/// own reference: builtin functions such as `len` are not immortal, and on free-threaded Python
+/// a new reference to one is an atomic operation every rendering thread contends on (CPython's
+/// `LOAD_GLOBAL` takes none either).
+fn callee<'a, 'py>(
+    func: &'a Expr,
+    cx: &Cx<'_, 'py>,
+    held: &'a mut Option<Bound<'py, PyAny>>,
+) -> PyResult<&'a Bound<'py, PyAny>> {
+    let py = cx.scope.py();
+    if let Expr::Builtin(name, builtin) = func {
+        return Ok(match Scope::lookup(cx.scope, name.bind(py).as_any())? {
+            Some(value) => held.insert(value),
+            None => builtin.bind(py),
+        });
+    }
+    Ok(held.insert(eval(func, cx)?))
+}
+
 /// The other common kinds (comparisons, boolean and conditional expressions, arithmetic,
 /// displays, pipes, general calls, names that are not plain scope lookups).
 #[inline(never)]
@@ -921,7 +941,8 @@ fn eval_more<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
             cx.scope_or_default(key)?.ok_or_else(|| PyKeyError::new_err((key.clone().unbind(),)))
         }
         Expr::Call { func, args, kwargs } => {
-            let func = eval(func, cx)?;
+            let mut held = None;
+            let func = callee(func, cx, &mut held)?;
             let args = PyTuple::new(py, eval_all(args, cx)?)?;
             if kwargs.is_empty() {
                 return func.call1(args);

@@ -46,6 +46,8 @@ mod _native {
     #[pymodule_export]
     use super::program::{DefaultMarker, Program, render_page, render_page_async};
     #[pymodule_export]
+    use super::repeat::RepeatDict;
+    #[pymodule_export]
     use super::scope::Scope;
 
     /// Version of the Rust core, for bug reports and for checking which build is loaded.
@@ -73,6 +75,7 @@ mod _native {
         // are unchanged.
         m.getattr("Scope")?.setattr("__name__", "Scope")?;
         m.getattr("DefaultMarker")?.setattr("__name__", "ImportableMarker")?;
+        m.getattr("RepeatDict")?.setattr("__name__", "RepeatDict")?;
         m.add("DEFAULT_MARKER", super::program::marker(m.py())?)
     }
 }

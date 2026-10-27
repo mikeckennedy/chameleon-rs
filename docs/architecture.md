@@ -71,9 +71,11 @@ pinned down a detail. Each decision's text below still describes the intent.
   *before* evaluating the iterable but assigns `None` *after* registering it with `repeat`
   (compiler.py:1863-1876; verified: `tal:repeat="i [i]"` raises `NameError`, and with
   `i='outer'` the iterable sees `'outer'`). The skeleton does exactly that.
-- **The `repeat` variable** is a port of Chameleon's Python `RepeatDict`/`RepeatItem`
-  (`chameleon_rs.tal`): exact, including user-supplied `repeat` objects, at one Python call
-  per loop (not per item). A native version only if a profile asks for it.
+- **The `repeat` variable** is a port of Chameleon's `RepeatDict`/`RepeatItem`
+  (`chameleon_rs.tal`): exact, including user-supplied `repeat` objects. `RepeatItem` is
+  Python; `RepeatDict` is native (`repeat.rs`) since a free-threaded profile asked for it:
+  Chameleon's keeps the dict's bound `__getitem__`/`__setitem__` per instance, references
+  to `dict`'s slot descriptors that every thread's instances share, one per looping partial.
 - **D5:** like Chameleon's (a `__slots__` class), the native `Scope` is not
   weak-referenceable. `__traverse__` visits the root; the upstream doctest's `gc.collect() == 0`
   and a root cycle test pass.
@@ -905,7 +907,10 @@ back to that Python whenever its preconditions do not hold. Measurements: plan.m
   `RepeatItem` descriptors `index`, `number`, `start`, `end`, `odd`, `even`, `parity` for the
   exact classes with Python arithmetic and the same `callableint`/`callablestr` results;
   subclasses, other names, missing keys and iterators without `__length_hint__` run the Python
-  code (`crate::repeat`). The classes stay Python (identity, subclassing, pickling unchanged).
+  code (`crate::repeat`). `RepeatItem` stays Python. `RepeatDict` became native for
+  free-threaded scaling (see the `repeat` bullet above), with Chameleon's name, module,
+  subclassing, errors and `copy.copy` (sharing the mapping); unlike Chameleon's, it has no
+  `__slots__` attribute.
 - **Conversions (D6).** `structure:`'s exact `Markup` is written from its own text (its
   `__html__` is `str(self)`); with the default translation function (`simple_translate`,
   checked by identity, so an `encoding` wrapper or a user function takes the call), a

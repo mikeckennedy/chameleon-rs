@@ -26,6 +26,7 @@ use crate::deferred::{DeferKind, Deferred};
 use crate::errors::{catch_panics, vm_error};
 use crate::expr::{Cx, FrameCx, Model, RenderCtx, SavedRender};
 use crate::program::{Program, output_str, record_error, render_error};
+use crate::repeat::is_type;
 use crate::runtime::PyRuntime;
 use crate::scope::Scope;
 
@@ -63,11 +64,12 @@ pub(crate) fn is_awaitable_with<'py>(value: &Bound<'py, PyAny>, cache: Option<&A
         return Ok(false);
     }
     let py = value.py();
-    let ty = value.get_type();
-    let known = cache.and_then(|c| c.borrow().iter().find(|(t, _)| t.is(&ty)).map(|(_, a)| *a));
+    // Compared by pointer: `get_type()` would take a reference to a type every thread shares.
+    let known = cache.and_then(|c| c.borrow().iter().find(|(t, _)| is_type(value, t.as_any())).map(|(_, a)| *a));
     let awaits = if let Some(a) = known {
         a
     } else {
+        let ty = value.get_type();
         let a = defines_await(&ty)?;
         if let Some(cache) = cache {
             let mut cache = cache.borrow_mut();
@@ -85,7 +87,7 @@ pub(crate) fn is_awaitable_with<'py>(value: &Bound<'py, PyAny>, cache: Option<&A
             py.import(intern!(py, "types"))?.getattr(intern!(py, "GeneratorType"))?.cast_into::<PyType>()?.unbind(),
         )
     })?;
-    if ty.is(generator.bind(py)) {
+    if is_type(value, generator.bind(py)) {
         let flags: u32 = value.getattr(intern!(py, "gi_code"))?.getattr(intern!(py, "co_flags"))?.extract()?;
         return Ok(flags & CO_ITERABLE_COROUTINE != 0);
     }
