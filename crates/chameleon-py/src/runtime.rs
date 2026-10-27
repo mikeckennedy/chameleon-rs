@@ -561,13 +561,13 @@ impl<const ASYNC: bool> Errors for PyRuntime<'_, '_, ASYNC> {
     /// (`BaseTemplate.render`, the render function) and the helpers a macro calls into
     /// (measured: an `on-error` around infinite macro recursion catches at the same depth).
     ///
-    /// An asynchronous render runs on the event loop's stack, which differs at every resume:
-    /// its budget is the recursion limit less a fixed reserve instead.
+    /// An asynchronous render is measured the same way while it runs: its caller awaits it, so
+    /// the stack is the event loop's, the coroutines awaiting it, then `render_async` and
+    /// `_render_async`, one frame more than `render` called in its place. So it stops where
+    /// that `render` would.
     fn frame_budget(&mut self) -> usize {
         let py = self.py;
-        if ASYNC {
-            return crate::awaitable::async_frame_budget(py);
-        }
+        let reserve = if ASYNC { 3 } else { 4 };
         let measure = || -> PyResult<usize> {
             let sys = py.import(intern!(py, "sys"))?;
             let limit: usize = sys.getattr(intern!(py, "getrecursionlimit"))?.call0()?.extract()?;
@@ -577,7 +577,7 @@ impl<const ASYNC: bool> Errors for PyRuntime<'_, '_, ASYNC> {
                 depth += 1;
                 frame = f.getattr(intern!(py, "f_back")).ok();
             }
-            Ok(limit.saturating_sub(depth + 4))
+            Ok(limit.saturating_sub(depth + reserve))
         };
         measure().unwrap_or(chameleon_core::DEFAULT_FRAME_BUDGET)
     }

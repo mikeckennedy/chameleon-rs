@@ -24,6 +24,7 @@ import time
 import types
 import warnings
 import weakref
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +54,17 @@ async def aw(value: Any) -> Any:
 async def aw_raise(exc: BaseException) -> Any:
     await asyncio.sleep(0)
     raise exc
+
+
+async def chameleon_render(make: Callable[[], Any], **kw: Any) -> Any:
+    """Chameleon's render of ``make()``, or its error, as a coroutine to ``run`` the way ours
+    is run: ``render`` called where ``await render_async(...)`` is. A template whose macro
+    recurses until `tal:on-error` catches the `RecursionError` renders as many levels as the
+    stack has room for, so the two must start at the same depth."""
+    try:
+        return make().render(**kw)
+    except Exception as e:  # noqa: BLE001 - comparing exception types across engines
+        return e
 
 
 def same_outcome(want: Any, got: Any, body: str) -> None:
@@ -110,19 +122,15 @@ def test_fixture_renders_async_like_chameleon(filename: str, language: str | Non
 @settings(max_examples=EXAMPLES, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(body=st.lists(fuzz.node(2), min_size=1, max_size=3).map(''.join))
 def test_generated_templates_render_async_like_chameleon(body: str) -> None:
-    def sync() -> Any:
-        try:
-            return chameleon.PageTemplate(body)(**fuzz.VARIABLES)
-        except Exception as e:  # noqa: BLE001 - comparing exception types across engines
-            return e
-
     async def asynchronous() -> Any:
         try:
             return await chameleon_rs.PageTemplate(body).render_async(**fuzz.VARIABLES)
         except Exception as e:  # noqa: BLE001
             return e
 
-    same_outcome(sync(), run(asynchronous()), body)
+    same_outcome(
+        run(chameleon_render(lambda: chameleon.PageTemplate(body), **fuzz.VARIABLES)), run(asynchronous()), body
+    )
 
 
 @settings(max_examples=EXAMPLES, deadline=None, suppress_health_check=[HealthCheck.too_slow])
@@ -141,19 +149,32 @@ def test_generated_macro_and_i18n_templates_render_async_like_chameleon(
     }
     kw: dict[str, Any] = dict(fuzz.VARIABLES, translate=fuzz.TRANSLATIONS[mode], target_language=language)
 
-    def sync() -> Any:
-        try:
-            return chameleon.PageTemplate(body, **options)(**kw)
-        except Exception as e:  # noqa: BLE001
-            return e
-
     async def asynchronous() -> Any:
         try:
             return await chameleon_rs.PageTemplate(body, **options).render_async(**kw)
         except Exception as e:  # noqa: BLE001
             return e
 
-    same_outcome(sync(), run(asynchronous()), body)
+    same_outcome(
+        run(chameleon_render(lambda: chameleon.PageTemplate(body, **options), **kw)), run(asynchronous()), body
+    )
+
+
+def test_macro_recursion_caught_by_on_error_stops_where_render_would() -> None:
+    # Each level renders until the recursion limit, where `tal:on-error` catches the error: how
+    # many levels depends on the stack the render starts on. An async render stops where
+    # `render` called in place of `await render_async(...)` would (it once kept a fixed reserve).
+    body = (
+        '<div metal:use-macro="macros[\'m\']"><b metal:fill-slot="s"><tal:b metal:define-macro="m">'
+        '<div metal:use-macro="macros[\'m\']" tal:on-error="string:E"></div>${x}</tal:b></b></div>'
+    )
+
+    async def asynchronous() -> Any:
+        return await chameleon_rs.PageTemplate(body).render_async(x=1)
+
+    want = run(chameleon_render(lambda: chameleon.PageTemplate(body), x=1))
+    assert want.startswith('E1') and want.count('1') > 100
+    assert run(asynchronous()) == want
 
 
 _partial_count = iter(range(10**9))
@@ -173,12 +194,6 @@ def test_generated_partials_render_async_like_chameleon_partials(body: str, in_l
     chameleon_partials.register_extensions(fuzz.PARTIALS_DIR, cache_init=False)
     chameleon_rs.configure(template_folder=fuzz.PARTIALS_DIR)
 
-    def sync() -> Any:
-        try:
-            return chameleon.PageTemplate(page)(render_partial=chameleon_partials.render_partial, **fuzz.VARIABLES)
-        except Exception as e:  # noqa: BLE001
-            return e
-
     async def asynchronous() -> Any:
         try:
             return await chameleon_rs.PageTemplate(page).render_async(
@@ -188,7 +203,12 @@ def test_generated_partials_render_async_like_chameleon_partials(body: str, in_l
             return e
 
     try:
-        same_outcome(sync(), run(asynchronous()), body)
+        want = run(
+            chameleon_render(
+                lambda: chameleon.PageTemplate(page), render_partial=chameleon_partials.render_partial, **fuzz.VARIABLES
+            )
+        )
+        same_outcome(want, run(asynchronous()), body)
     finally:
         chameleon_rs._settings.clear()
 
@@ -329,12 +349,6 @@ def _translate(msgid: Any, mapping: Any = None, default: Any = None, **kw: Any) 
 @settings(max_examples=EXAMPLES, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(body=st.lists(aw_node(2), min_size=1, max_size=3).map(''.join))
 def test_awaitables_at_every_position_render_like_chameleon(body: str) -> None:
-    def sync() -> Any:
-        try:
-            return chameleon.PageTemplate(body)(**fuzz.VARIABLES, aw=_sync_aw, boom=_sync_boom, translate=_translate)
-        except Exception as e:  # noqa: BLE001
-            return e
-
     async def asynchronous() -> Any:
         try:
             return await chameleon_rs.PageTemplate(body).render_async(
@@ -344,7 +358,16 @@ def test_awaitables_at_every_position_render_like_chameleon(body: str) -> None:
             return e
 
     with _no_unawaited_coroutines():
-        same_outcome(sync(), run(asynchronous()), body)
+        want = run(
+            chameleon_render(
+                lambda: chameleon.PageTemplate(body),
+                **fuzz.VARIABLES,
+                aw=_sync_aw,
+                boom=_sync_boom,
+                translate=_translate,
+            )
+        )
+        same_outcome(want, run(asynchronous()), body)
 
 
 class _no_unawaited_coroutines:

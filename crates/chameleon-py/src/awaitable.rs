@@ -29,23 +29,10 @@ use crate::program::{Program, output_str, record_error, render_error};
 use crate::runtime::PyRuntime;
 use crate::scope::Scope;
 
-/// What an asynchronous render leaves for the event loop's own frames when it computes its
-/// nesting budget (see `PyRuntime::frame_budget`).
-const ASYNC_STACK_RESERVE: usize = 64;
-
 /// `CO_ITERABLE_COROUTINE`: a generator made awaitable by `@types.coroutine`.
 const CO_ITERABLE_COROUTINE: u32 = 0x100;
 
 static GENERATOR_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
-
-/// The nesting budget of an asynchronous render: the recursion limit less a fixed reserve
-/// (its frames are not on the interpreter's stack, and that stack is the event loop's).
-pub(crate) fn async_frame_budget(py: Python<'_>) -> usize {
-    let limit = py
-        .import(intern!(py, "sys"))
-        .and_then(|sys| sys.getattr(intern!(py, "getrecursionlimit"))?.call0()?.extract::<usize>());
-    limit.map_or(chameleon_core::DEFAULT_FRAME_BUDGET, |l| l.saturating_sub(ASYNC_STACK_RESERVE))
-}
 
 /// Whether `await value` accepts `value`: its type defines `__await__` (the type's slot, not
 /// an instance attribute), or it is a generator flagged as an iterable coroutine

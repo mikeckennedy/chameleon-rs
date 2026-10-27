@@ -1121,10 +1121,14 @@ value position and compares with Chameleon's render where `aw(v)` is `v`.
   suspension of a render inside nested partials and a foreign macro and in the Fill phase,
   that no referent is visited more often than it is referenced. PyO3 skips the
   traversal of an object borrowed mutably (a running render), which only delays collection.
-- **Recursion budget.** An async render's frames are not on the interpreter's stack, and the
-  stack at a resume is the event loop's: `frame_budget` is the recursion limit less a fixed
-  reserve of 64 instead of walking `sys._getframe` (infinite macro recursion is still a
-  `RecursionError`).
+- **Recursion budget.** An async render's frames are not on the interpreter's stack, but its
+  caller awaits it: while it runs, the stack is the event loop's, then the coroutines awaiting
+  it, then `render_async` and `_render_async`. `frame_budget` walks `sys._getframe` there as in
+  a sync render, with one frame less reserve for `_render_async`, so a macro recursing until
+  `tal:on-error` catches the `RecursionError` renders as many levels as `render` called in
+  place of `await render_async(...)`. (It was once the recursion limit less a fixed 64, which
+  rendered fewer levels than Chameleon; the async tests now render Chameleon's reference at
+  the same depth.)
 - **Errors.** As in a sync render, an error that ends the render is formatted with the
   render's `rcontext['__error__']`; in an async render a non-`Exception` (cancellation) passes
   through unformatted, both at the top and out of a native partial (`partial_failed`): the
