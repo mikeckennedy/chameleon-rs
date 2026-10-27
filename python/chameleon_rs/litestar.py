@@ -298,9 +298,14 @@ class ChameleonEngine(TemplateEngineProtocol[ChameleonTemplate, TemplateContext]
         if page is None:
             page = PageTemplate(template_string, **(loader.kwargs if loader is not None else {}))
             with self._strings_lock:
-                while len(self._strings) >= 128:
-                    self._strings.pop(next(iter(self._strings)))
-                self._strings[key] = page
+                # Another thread may have compiled it meanwhile: keep its template.
+                kept = self._strings.get(key)
+                if kept is not None:
+                    page = kept
+                else:
+                    while len(self._strings) >= 128:
+                        self._strings.pop(next(iter(self._strings)))
+                    self._strings[key] = page
         return page.render(encoding='utf-8', **_variables(context, self.template_callables))
 
     def register_template_callable[**P, T](

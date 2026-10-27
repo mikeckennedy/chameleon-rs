@@ -491,6 +491,28 @@ def test_render_string_is_thread_safe(folder: Path) -> None:
     assert len(engine._strings) == 128
 
 
+def test_a_string_compiled_by_two_threads_at_once_is_kept_once(folder: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Two threads that miss the same string both compile it. The second to finish must use the
+    # first one's template, not evict another to store its own (the full cache shrank: the
+    # thread-safety test above saw 127 under load).
+    engine = ours.ChameleonEngine(folder)
+    for n in range(128):
+        engine.render_string(f'<i>{n}</i>', {})
+    compile_template = ours.PageTemplate
+
+    def other_thread_finishes_first(*args: Any, **kwargs: Any) -> Any:
+        monkeypatch.setattr(ours, 'PageTemplate', compile_template)
+        engine.render_string('<i>new</i>', {})
+        return compile_template(*args, **kwargs)
+
+    monkeypatch.setattr(ours, 'PageTemplate', other_thread_finishes_first)
+    assert engine.render_string('<i>new</i>', {}) == '<i>new</i>'
+    kept = [string for _, string in engine._strings]
+    assert len(kept) == 128
+    assert kept[0] == '<i>1</i>'
+    assert kept[-1] == '<i>new</i>'
+
+
 def test_partials_render_inside_engine_templates(folder: Path) -> None:
     chameleon_rs._settings.clear()
     assert ours.ChameleonEngine(folder).get_template('partial.pt').render(a='p') == '<div><i>p</i></div>'
