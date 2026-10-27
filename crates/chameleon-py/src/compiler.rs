@@ -249,7 +249,16 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
             builtins: py.import(intern!(py, "builtins"))?.dict(),
             constant: rewrite.getattr(intern!(py, "constant"))?,
             fold: rewrite.getattr(intern!(py, "fold"))?,
-            constants: PyDict::new(py),
+            constants: {
+                let constants = PyDict::new(py);
+                // `str` constants of a template read from a file are interned on free-threaded
+                // builds (`_rewrite.constant`): never those of a string, which may be one per
+                // request.
+                if filename != "<string>" && rewrite.getattr(intern!(py, "INTERN_STR"))?.is_truthy()? {
+                    constants.set_item(rewrite.getattr(intern!(py, "INTERN"))?, true)?;
+                }
+                constants
+            },
             rewrite: rewrite.getattr(intern!(py, "compile_expression"))?,
             bridge: None,
             lookup_attr: wrap_pyfunction!(crate::expr::py_lookup_attr, py)?.into_any(),

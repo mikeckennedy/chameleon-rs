@@ -19,7 +19,9 @@ Free-threaded scaling for pages with partials, and three bugs found on the way.
   can see them (it names `econtext`, `rcontext` or a default, has names only known at render
   time, or calls a macro); an error message still lists them, as Chameleon's does. Switching
   between a page's and its partials' frames no longer takes references to shared objects, and
-  string constants are interned on free-threaded builds, as CPython does for code constants.
+  on free-threaded builds the string constants of templates read from files are interned, as
+  CPython does for code constants (never those of a template made from a string, which may be
+  one per request).
   At six threads a page with partials now scales 3.7× (37,500 renders a second where it was
   22,900), and a flat template shared by every thread 4.3×.
 

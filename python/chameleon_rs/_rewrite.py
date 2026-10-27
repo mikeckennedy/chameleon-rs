@@ -195,17 +195,23 @@ def constant_key(value: Any) -> Any:
 
 
 # Free-threaded CPython interns (so makes immortal) every `str` constant of a code object.
-_INTERN_STR = bool(sysconfig.get_config_var('Py_GIL_DISABLED'))
+INTERN_STR = bool(sysconfig.get_config_var('Py_GIL_DISABLED'))
+# In a template's constant cache: its `str` constants are interned (see `constant`).
+INTERN = object()
 
 
 def constant(cache: dict[Any, Any], value: Any) -> Any:
     """The template's one object for this constant. Chameleon compiles a template into one
     module, whose compiler merges equal constants (a tuple's items too), so `${x is 1.5}` and
-    a `1.5` elsewhere in the template are the same object. A `str` is interned where CPython
-    would intern it, so threads rendering the template share no reference count for it."""
+    a `1.5` elsewhere in the template are the same object.
+
+    In a template read from a file (`INTERN` in `cache`, set on free-threaded builds) a `str`
+    is interned, as CPython interns a code object's: immortal, so threads rendering the
+    template share no reference count for it. Not in a template made from a string, which
+    may be generated per request: its constants would never be freed."""
     if type(value) is tuple:
         value = tuple(constant(cache, v) for v in value)
-    elif _INTERN_STR and type(value) is str:
+    elif type(value) is str and INTERN in cache:
         value = sys.intern(value)
     return cache.setdefault(constant_key(value), value)
 
