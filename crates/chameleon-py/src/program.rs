@@ -13,7 +13,7 @@ use chameleon_core::{Done, ErrorSite, Mode, Options, Output, VmError, VmState, r
 use crate::awaitable::RenderAwaitable;
 use crate::compiler::{Config, PyExprCompiler, TokenSpan};
 use crate::errors::{catch_panics, compile_error_mapped, internal_error, vm_error};
-use crate::expr::{RenderCtx, Site};
+use crate::expr::{Model, RenderCtx, Site};
 use crate::runtime::PyRuntime;
 use crate::scope::Scope;
 
@@ -68,12 +68,17 @@ pub(crate) struct Program {
     pub(crate) exprs: Vec<Site>,
     /// The core program's names, interned, indexed by `NameId`.
     pub(crate) names: Vec<Py<PyString>>,
-    /// Whether a native partial frame running this program needs the scope a Python render
-    /// would give it (the render defaults and `repeat`): the program loops, names `repeat`,
-    /// `econtext`, `rcontext` or a default (`target_language`, `__translate`, ...), has
-    /// expressions whose names are unknown, or calls macros (whose code may). Otherwise its
-    /// scope holds just the model, and the defaults are read from the unit.
+    /// Whether a render of this program needs the scope a Python render would give it (the
+    /// render defaults and `repeat`): the program names `econtext`, `rcontext` or a default
+    /// (`target_language`, `__translate`, ...), has expressions whose names are unknown, or
+    /// calls macros (whose code may). Otherwise its scope holds just the model (and `repeat`,
+    /// see [`Program::needs_repeat`]), the defaults are read from the render or the unit, and
+    /// an error's `econtext` is completed when it is formatted. (Copying the defaults in takes
+    /// the shared defaults dict's lock on free-threaded Python, once per page or partial.)
     pub(crate) full_scope: bool,
+    /// Whether the scope needs a fresh `repeat`: the whole scope, a loop, or a mention of
+    /// `repeat`.
+    pub(crate) needs_repeat: bool,
     /// The scope key of each slot name the program uses (`__slot_<name>`), interned once.
     slot_keys: Vec<(Box<str>, Py<PyString>)>,
     pub(crate) token_table: Vec<TokenSpan>,
@@ -183,14 +188,15 @@ impl Program {
                     slot_keys.push((name.into(), key.unbind()));
                 }
             }
-            let full_scope = compiler.mentions_scope
+            let full_scope = compiler.mentions.scope
                 || compiler.free.iter().any(|f| matches!(f, chameleon_core::FreeVars::Dynamic))
-                || core
-                    .ops()
-                    .iter()
-                    .any(|op| matches!(op, chameleon_core::Op::LoopStart { .. } | chameleon_core::Op::UseMacro { .. }));
+                || core.ops().iter().any(|op| matches!(op, chameleon_core::Op::UseMacro { .. }));
+            let needs_repeat = full_scope
+                || compiler.mentions.repeat
+                || core.ops().iter().any(|op| matches!(op, chameleon_core::Op::LoopStart { .. }));
             Ok(Self {
                 full_scope,
+                needs_repeat,
                 slot_keys,
                 core: Arc::new(core),
                 exprs: compiler
@@ -221,7 +227,7 @@ impl Program {
     ) -> PyResult<Bound<'py, PyString>> {
         let py = slf.py();
         let scope = Scope::new_root(py, variables)?;
-        render_in(slf, &scope, defaults, builtins, false)
+        render_in(slf, &scope, defaults, builtins, None, false)
     }
 
     /// Renders with `scope` itself as the scope, so names the template assigns stay in it
@@ -232,7 +238,7 @@ impl Program {
         scope: &Bound<'py, Scope>,
         builtins: Option<Bound<'py, PyDict>>,
     ) -> PyResult<Bound<'py, PyString>> {
-        render_in(slf, scope, None, builtins, true)
+        render_in(slf, scope, None, builtins, None, true)
     }
 
     /// A readable listing of the bytecode.
@@ -297,8 +303,9 @@ pub(crate) fn render_page<'py>(
 ) -> PyResult<Bound<'py, PyAny>> {
     match page(template, encoding, kw)? {
         Page::Protocol(result) => Ok(result),
-        Page::Native { program, scope, defaults, builtins } => {
-            Ok(render_in(&program, &scope, Some(defaults), Some(builtins), false)?.into_any())
+        Page::Native { program, scope, defaults, builtins, model } => {
+            let model = model.map(|initial| Model { initial, added: None });
+            Ok(render_in(&program, &scope, Some(defaults), Some(builtins), model, false)?.into_any())
         }
     }
 }
@@ -318,9 +325,10 @@ pub(crate) fn render_page_async<'py>(
 ) -> PyResult<Bound<'py, PyAny>> {
     match page(template, encoding, kw)? {
         Page::Protocol(result) => Ok(result),
-        Page::Native { program, scope, defaults, builtins } => {
+        Page::Native { program, scope, defaults, builtins, model } => {
+            let model = model.map(|initial| Model { initial, added: None });
             let awaitable =
-                RenderAwaitable::start(&program, &scope, Some(defaults), Some(builtins), concurrent, false)?;
+                RenderAwaitable::start(&program, &scope, Some(defaults), Some(builtins), model, concurrent, false)?;
             Ok(Bound::new(template.py(), awaitable)?.into_any())
         }
     }
@@ -335,6 +343,8 @@ enum Page<'py> {
         scope: Bound<'py, Scope>,
         defaults: Bound<'py, PyDict>,
         builtins: Bound<'py, PyDict>,
+        /// The scope was not given the defaults: the number of keys of the model.
+        model: Option<usize>,
     },
 }
 
@@ -382,14 +392,20 @@ fn page<'py>(
     let (program, builtins): (Bound<'py, Program>, Bound<'py, PyDict>) = compiled.extract()?;
     let scope = Scope::new_root(py, kw)?;
     let locals = scope.as_super();
-    // The defaults it lacks (`PyDict_Merge` without override: no PyO3 iterator to panic if
-    // the dict changes size).
-    locals.update_if_missing(defaults.as_mapping())?;
+    let p = program.get();
+    let model = if p.full_scope {
+        // The defaults it lacks (`PyDict_Merge` without override: no PyO3 iterator to panic if
+        // the dict changes size).
+        locals.update_if_missing(defaults.as_mapping())?;
+        None
+    } else {
+        Some(locals.len())
+    };
     let repeat = intern!(py, "repeat");
-    if !locals.contains(repeat)? {
+    if p.needs_repeat && !locals.contains(repeat)? {
         locals.set_item(repeat, new_repeat_dict(py)?)?;
     }
-    Ok(Page::Native { program, scope, defaults, builtins })
+    Ok(Page::Native { program, scope, defaults, builtins, model })
 }
 
 /// A render of `program` in `scope` (see [`Program::render`]).
@@ -398,6 +414,7 @@ fn render_in<'py>(
     scope: &Bound<'py, Scope>,
     defaults: Option<Bound<'py, PyDict>>,
     builtins: Option<Bound<'py, PyDict>>,
+    model: Option<Model<'py>>,
     exposed: bool,
 ) -> PyResult<Bound<'py, PyString>> {
     let py = slf.py();
@@ -405,7 +422,8 @@ fn render_in<'py>(
     catch_panics(py, || {
         let program = slf.get();
         let builtins = builtins.unwrap_or_else(|| PyDict::new(py));
-        let render = RenderCtx::new(program.marker.bind(py).clone(), defaults, builtins);
+        let mut render = RenderCtx::new(program.marker.bind(py).clone(), defaults, builtins);
+        render.model = model;
         // A scope given by the caller (`render_scope`) is already in user code's hands.
         render.scope_exposed.set(exposed);
         // `render(..., target_language=__kw.get("target_language"))`.
@@ -445,6 +463,15 @@ pub(crate) fn render_error(py: Python<'_>, error: PyErr, econtext: &Bound<'_, Sc
         Ok(Some(errors)) if errors.is_truthy().unwrap_or(false) => errors,
         _ => return error,
     };
+    let econtext = match (&render.model, &render.defaults) {
+        (Some(model), Some(defaults)) => {
+            match completed_econtext(econtext.as_super(), model.initial, model.added.as_ref(), defaults) {
+                Ok(full) => full.into_any(),
+                Err(e) => return e,
+            }
+        }
+        _ => econtext.clone().into_any(),
+    };
     let formatted = RENDER_ERROR
         .get_or_try_init(py, || {
             Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs.exc"))?.getattr(intern!(py, "render_error"))?.unbind())
@@ -454,6 +481,52 @@ pub(crate) fn render_error(py: Python<'_>, error: PyErr, econtext: &Bound<'_, Sc
         Ok(exc) => PyErr::from_value(exc),
         Err(e) => e,
     }
+}
+
+/// The `econtext` of a render whose scope was not given the render defaults (see
+/// [`Program::full_scope`]), as a Python render would have it: the model (the first `initial`
+/// keys of `locals`), then `added` as `render_partial` if it lacks one, then the defaults and
+/// `repeat` it lacks, then what the template defined.
+pub(crate) fn completed_econtext<'py>(
+    locals: &Bound<'py, PyDict>,
+    initial: usize,
+    added: Option<&Bound<'py, PyAny>>,
+    defaults: &Bound<'py, PyDict>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let py = locals.py();
+    let out = PyDict::new(py);
+    let mut rest = Vec::new();
+    // (A snapshot of the items: user code may have keys that change the scope.)
+    for (i, item) in locals.items().iter().enumerate() {
+        let (key, value): (Bound<'py, PyAny>, Bound<'py, PyAny>) = item.extract()?;
+        if i < initial {
+            out.set_item(key, value)?;
+        } else {
+            rest.push((key, value));
+        }
+    }
+    let name = intern!(py, "render_partial");
+    if let Some(added) = added
+        && !out.contains(name)?
+    {
+        out.set_item(name, added)?;
+    }
+    for item in defaults.items().iter() {
+        let (key, value): (Bound<'py, PyAny>, Bound<'py, PyAny>) = item.extract()?;
+        if !locals.contains(&key)? {
+            out.set_item(key, value)?;
+        }
+    }
+    let repeat = intern!(py, "repeat");
+    if !locals.contains(repeat)? {
+        out.set_item(repeat, new_repeat_dict(py)?)?;
+    }
+    for (key, value) in rest {
+        if !out.contains(&key)? {
+            out.set_item(key, value)?;
+        }
+    }
+    Ok(out)
 }
 
 /// `rcontext.setdefault('__error__', []).append((token, line, column, filename, exc))`.

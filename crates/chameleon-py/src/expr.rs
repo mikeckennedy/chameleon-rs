@@ -433,6 +433,16 @@ impl Free {
     }
 }
 
+/// The model of a render whose scope was not given the render defaults (see
+/// `Program::full_scope`), to complete its `econtext` for an error message
+/// (`crate::program::completed_econtext`).
+pub(crate) struct Model<'py> {
+    /// How many keys the scope started with.
+    pub(crate) initial: usize,
+    /// What a native partial's model gets as `render_partial` (`crate::partials`).
+    pub(crate) added: Option<Bound<'py, PyAny>>,
+}
+
 /// Render-wide state shared by every frame.
 pub(crate) struct RenderCtx<'py> {
     pub(crate) marker: Bound<'py, PyAny>,
@@ -441,6 +451,8 @@ pub(crate) struct RenderCtx<'py> {
     pub(crate) partials: crate::partials::Partials<'py>,
     /// The template's default `__translate`, `__decode`, ... for scopes that lack them.
     pub(crate) defaults: Option<Bound<'py, PyDict>>,
+    /// The render's scope was not given the defaults: its model.
+    pub(crate) model: Option<Model<'py>>,
     /// The template builtins' values (`template`, `macros`, `nothing`, `__loader`, ...).
     pub(crate) builtins: Bound<'py, PyDict>,
     /// `rcontext`, created on first use.
@@ -581,6 +593,7 @@ impl<'py> RenderCtx<'py> {
             marker,
             partials: crate::partials::Partials::default(),
             defaults,
+            model: None,
             builtins,
             rcontext: OnceCell::new(),
             nested: Cell::new((0, 0)),
@@ -608,6 +621,7 @@ impl<'py> RenderCtx<'py> {
             marker: self.marker.unbind(),
             partials: self.partials.save(),
             defaults: self.defaults.map(Bound::unbind),
+            model: self.model.map(|m| (m.initial, m.added.map(Bound::unbind))),
             builtins: self.builtins.unbind(),
             rcontext: self.rcontext.into_inner().map(Bound::unbind),
             nested: self.nested.get(),
@@ -628,6 +642,7 @@ impl<'py> RenderCtx<'py> {
             marker: saved.marker.into_bound(py),
             partials: crate::partials::Partials::restore(saved.partials, py),
             defaults: saved.defaults.map(|d| d.into_bound(py)),
+            model: saved.model.map(|(initial, added)| Model { initial, added: added.map(|a| a.into_bound(py)) }),
             builtins: saved.builtins.into_bound(py),
             rcontext: saved.rcontext.map(|r| r.into_bound(py)).map_or_else(OnceCell::new, OnceCell::from),
             nested: Cell::new(saved.nested),
@@ -652,6 +667,7 @@ pub(crate) struct SavedRender {
     marker: Py<PyAny>,
     partials: crate::partials::SavedPartials,
     defaults: Option<Py<PyDict>>,
+    model: Option<(usize, Option<Py<PyAny>>)>,
     builtins: Py<PyDict>,
     rcontext: Option<Py<PyDict>>,
     nested: (u32, u32),
@@ -677,6 +693,9 @@ impl SavedRender {
         self.partials.traverse(visit)?;
         if let Some(d) = &self.defaults {
             visit.call(d)?;
+        }
+        if let Some((_, Some(added))) = &self.model {
+            visit.call(added)?;
         }
         visit.call(&self.builtins)?;
         if let Some(r) = &self.rcontext {

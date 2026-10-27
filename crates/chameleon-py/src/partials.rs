@@ -29,7 +29,7 @@ use pyo3::{PyTraverseError, PyVisit};
 
 use chameleon_core::{Call, Step};
 
-use crate::expr::{Cx, Expr, eval};
+use crate::expr::{Cx, Expr, Model, eval};
 use crate::program::{Program, new_repeat_dict};
 use crate::scope::Scope;
 
@@ -71,6 +71,19 @@ pub(crate) struct Target<'py> {
     pub(crate) defaults: Bound<'py, PyDict>,
     /// Its own `render_partial` builtin (resolving relative to it).
     own: Option<Bound<'py, PyAny>>,
+    /// The items of `defaults`, read once per render: the dict is the template's, shared by
+    /// every thread, and reading it takes its lock on free-threaded Python.
+    default_items: OnceCell<Vec<(Bound<'py, PyAny>, Bound<'py, PyAny>)>>,
+}
+
+impl<'py> Target<'py> {
+    fn default_items(&self) -> PyResult<&[(Bound<'py, PyAny>, Bound<'py, PyAny>)]> {
+        if let Some(items) = self.default_items.get() {
+            return Ok(items);
+        }
+        let items = self.defaults.items().iter().map(|item| item.extract()).collect::<PyResult<Vec<_>>>()?;
+        Ok(self.default_items.get_or_init(|| items))
+    }
 }
 
 /// A native partial rendered on its own (opt-in concurrency, `crate::deferred`).
@@ -79,6 +92,8 @@ pub(crate) struct PendingRender<'py> {
     pub(crate) scope: Bound<'py, Scope>,
     pub(crate) defaults: Bound<'py, PyDict>,
     pub(crate) builtins: Bound<'py, PyDict>,
+    /// The scope was not given the defaults (see [`crate::program::completed_econtext`]).
+    pub(crate) model: Option<Model<'py>>,
 }
 
 /// A native partial's render (see the module docs).
@@ -95,6 +110,17 @@ pub(crate) struct Unit<'py> {
     /// the same name is the same object).
     added: Added<'py>,
     pub(crate) rcontext: OnceCell<Bound<'py, PyDict>>,
+}
+
+impl<'py> Unit<'py> {
+    /// What the model gets as `render_partial` when it lacks one (see [`Unit::added`]).
+    fn added(&self) -> Option<&Bound<'py, PyAny>> {
+        match &self.added {
+            Added::Nothing => None,
+            Added::Own => self.target.own.as_ref(),
+            Added::Func(func) => Some(func),
+        }
+    }
 }
 
 /// The `render_partial` a partial's model gets (see [`Unit::added`]).
@@ -168,11 +194,14 @@ impl<'py> Partials<'py> {
     /// program, scope, defaults and builtins.
     pub(crate) fn take_pending(&self) -> Option<PendingRender<'py>> {
         let unit = self.pending.borrow_mut().take()?;
+        let model = (!unit.target.program.get().full_scope)
+            .then(|| Model { initial: unit.initial, added: unit.added().cloned() });
         Some(PendingRender {
             program: unit.target.program.clone(),
             scope: unit.scope.clone(),
             defaults: unit.target.defaults.clone(),
             builtins: unit.target.builtins.clone(),
+            model,
         })
     }
 
@@ -246,7 +275,14 @@ impl<'py> Partials<'py> {
         let (program, builtins, defaults): (Bound<'py, Program>, Bound<'py, PyDict>, Bound<'py, PyDict>) =
             prepared.extract()?;
         let own = builtins.get_item(intern!(py, "render_partial"))?;
-        let target = Rc::new(Target { template: template.clone(), program, builtins, defaults, own });
+        let target = Rc::new(Target {
+            template: template.clone(),
+            program,
+            builtins,
+            defaults,
+            own,
+            default_items: OnceCell::new(),
+        });
         self.targets.borrow_mut().push((key, Rc::clone(&target)));
         Ok(Some(target))
     }
@@ -312,9 +348,15 @@ pub(crate) fn partial_step(
         Added::Func(func)
     };
     if p.full_scope {
-        // `page.render(encoding='utf-8', **template_data)`: the defaults it lacks, then a
-        // fresh `repeat`.
-        locals.update_if_missing(target.defaults.as_mapping())?;
+        // `page.render(encoding='utf-8', **template_data)`: the defaults it lacks.
+        for (key, value) in target.default_items()? {
+            if !locals.contains(key)? {
+                locals.set_item(key, value)?;
+            }
+        }
+    }
+    if p.needs_repeat {
+        // Then a fresh `repeat`.
         let repeat = intern!(py, "repeat");
         if !locals.contains(repeat)? {
             locals.set_item(repeat, new_repeat_dict(py)?)?;
@@ -361,46 +403,7 @@ pub(crate) fn partial_error<'py>(unit: &Unit<'py>, error: PyErr) -> PyErr {
 /// The partial's `econtext` as `chameleon_partials`' render would have it: the model, then the
 /// render defaults and `repeat` it lacks, then what the template defined.
 fn error_econtext<'py>(unit: &Unit<'py>) -> PyResult<Bound<'py, PyDict>> {
-    let py = unit.scope.py();
-    let out = PyDict::new(py);
-    let locals = unit.scope.as_super();
-    let mut rest = Vec::new();
-    // (A snapshot of the items: user code may have keys that change the scope.)
-    for (i, item) in locals.items().iter().enumerate() {
-        let (key, value): (Bound<'py, PyAny>, Bound<'py, PyAny>) = item.extract()?;
-        if i < unit.initial {
-            out.set_item(key, value)?;
-        } else {
-            rest.push((key, value));
-        }
-    }
-    let name = intern!(py, "render_partial");
-    let added = match &unit.added {
-        Added::Nothing => None,
-        Added::Own => unit.target.own.as_ref(),
-        Added::Func(func) => Some(func),
-    };
-    if let Some(added) = added
-        && !out.contains(name)?
-    {
-        out.set_item(name, added)?;
-    }
-    for item in unit.target.defaults.items().iter() {
-        let (key, value): (Bound<'py, PyAny>, Bound<'py, PyAny>) = item.extract()?;
-        if !locals.contains(&key)? {
-            out.set_item(key, value)?;
-        }
-    }
-    let repeat = intern!(py, "repeat");
-    if !locals.contains(repeat)? {
-        out.set_item(repeat, new_repeat_dict(py)?)?;
-    }
-    for (key, value) in rest {
-        if !out.contains(&key)? {
-            out.set_item(key, value)?;
-        }
-    }
-    Ok(out)
+    crate::program::completed_econtext(unit.scope.as_super(), unit.initial, unit.added(), &unit.target.defaults)
 }
 
 /// [`Target`] without the GIL lifetime, kept by a suspended render (Phase 11).
@@ -513,6 +516,7 @@ impl<'py> Partials<'py> {
                 builtins: t.builtins.bind(py).clone(),
                 defaults: t.defaults.bind(py).clone(),
                 own: t.own.as_ref().map(|o| o.bind(py).clone()),
+                default_items: OnceCell::new(),
             });
             memo.push((key, Rc::clone(&restored)));
             restored

@@ -35,7 +35,12 @@ static DEQUE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 pub(crate) struct PyRuntime<'a, 'py, const ASYNC: bool = false> {
     py: Python<'py>,
     render: &'a RenderCtx<'py>,
-    code: Bound<'py, Program>,
+    /// The programs this runtime's frames ran, each held once, and the active frame's (an
+    /// index): switching frames takes no new reference to a template's objects, which on
+    /// free-threaded Python is an atomic operation on a counter every thread rendering it
+    /// shares.
+    codes: Vec<Bound<'py, Program>>,
+    code: usize,
     scope: Bound<'py, Scope>,
     frame: FrameCx<'py>,
 }
@@ -44,7 +49,27 @@ impl<'a, 'py, const ASYNC: bool> PyRuntime<'a, 'py, ASYNC> {
     pub(crate) fn new(render: &'a RenderCtx<'py>, code: Bound<'py, Program>, scope: Bound<'py, Scope>) -> Self {
         let py = code.py();
         let frame = FrameCx::new(None, 0, py.None().into_bound(py), render.marker.clone());
-        Self { py, render, code, scope, frame }
+        Self { py, render, codes: vec![code], code: 0, scope, frame }
+    }
+
+    /// The active frame's program.
+    #[inline]
+    fn program(&self) -> &Program {
+        self.codes[self.code].get()
+    }
+
+    /// Makes `code` the active frame's program.
+    #[inline]
+    fn set_code(&mut self, code: &Bound<'py, Program>) {
+        if self.codes[self.code].is(code) {
+            return;
+        }
+        if let Some(i) = self.codes.iter().position(|c| c.is(code)) {
+            self.code = i;
+        } else {
+            self.code = self.codes.len();
+            self.codes.push(code.clone());
+        }
     }
 
     /// [`Eval::eval`] in an asynchronous render: a final value that is awaitable suspends the
@@ -80,7 +105,7 @@ impl<'a, 'py, const ASYNC: bool> PyRuntime<'a, 'py, ASYNC> {
 
     /// The active program's private-use block for lone surrogates, if its source had any.
     fn surrogate_base(&self) -> Option<u32> {
-        self.code.get().core.surrogate_base()
+        self.program().core.surrogate_base()
     }
 
     /// A `str` for a piece of the active program's source text.
@@ -89,7 +114,7 @@ impl<'a, 'py, const ASYNC: bool> PyRuntime<'a, 'py, ASYNC> {
     }
 
     fn name(&self, name: NameId) -> PyResult<&Py<PyString>> {
-        self.code.get().names.get(name.0 as usize).ok_or_else(|| PyValueError::new_err("unknown name id"))
+        self.program().names.get(name.0 as usize).ok_or_else(|| PyValueError::new_err("unknown name id"))
     }
 
     /// The i18n settings as Python values.
@@ -156,7 +181,7 @@ impl<'a, 'py, const ASYNC: bool> PyRuntime<'a, 'py, ASYNC> {
 
     /// The key of slot `name` in the scope (`__slot_<mangled name>`).
     fn slot_key(&self, name: &str) -> PyResult<Bound<'py, PyString>> {
-        match self.code.get().slot_key(name) {
+        match self.program().slot_key(name) {
             Some(key) => Ok(key.bind(self.py).clone()),
             None => self.source_str(&format!("__slot_{name}")),
         }
@@ -208,21 +233,24 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
         // The frames of a native partial's render use its unit (builtins, defaults,
         // `rcontext`); there are none on the stack in most renders.
         if let Some((unit, target)) = self.render.partials.changed(self.frame.unit) {
-            self.frame.marker = match &target {
-                Some(t) => t.program.get().marker.bind(py).clone(),
-                None => self.render.marker.clone(),
+            let marker = match &target {
+                Some(t) => t.program.get().marker.bind(py),
+                None => &self.render.marker,
             };
+            if !self.frame.marker.is(marker) {
+                self.frame.marker = marker.clone();
+            }
             self.frame.unit = unit;
             self.frame.target = target;
         }
         if let Ok(program) = code.cast::<Program>() {
-            self.code = program.clone();
+            self.set_code(program);
             if self.frame.builtins.is_some() {
                 self.frame.builtins = None;
             }
         } else {
             let m = code.cast::<Macro>()?.get();
-            self.code = m.program.bind(py).clone();
+            self.set_code(m.program.bind(py));
             self.frame.builtins = Some(m.builtins.bind(py).clone());
         }
         self.scope = frame.scope.bind(py).cast::<Scope>()?.clone();
@@ -253,7 +281,7 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
 
     #[inline]
     fn eval(&mut self, expr: ExprId, emitted: bool) -> PyResult<Step<Py<PyAny>>> {
-        let program = self.code.get();
+        let program = self.program();
         let site = program.exprs.get(expr.0 as usize).ok_or_else(|| PyValueError::new_err("unknown expression id"))?;
         // Chameleon's `__token = pos` is the VM's `ErrorSite`; only nested tokens are kept
         // here, cleared when an expression that sets them starts.
@@ -312,6 +340,7 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
             &pending.scope,
             Some(pending.defaults),
             Some(pending.builtins),
+            pending.model,
             false,
             true,
         )?;
@@ -334,7 +363,7 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
         }
         let Some(event_loop) = crate::deferred::running_loop(py) else { return Ok(Err(value)) };
         let task = crate::deferred::start_task(&event_loop, value.bind(py))?;
-        let program = self.code.get();
+        let program = self.program();
         let token = program.token_at(at, self.render.nested.get());
         let site = crate::deferred::ValueSite {
             esc,
@@ -347,7 +376,7 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
             context: self.frame.context.clone().map(Bound::unbind),
             target_language: self.frame.target_language.clone().unbind(),
             helpers: self.frame.helpers.as_ref().map(|h| h.unbind()),
-            program: self.code.clone().unbind(),
+            program: self.codes[self.code].clone().unbind(),
             token,
         };
         Ok(Ok(self.register(task, crate::deferred::DeferKind::Value(Box::new(site)))))
@@ -485,7 +514,7 @@ impl<const ASYNC: bool> Errors for PyRuntime<'_, '_, ASYNC> {
     /// `__on_error_handler`). Without a token, `__tokens[None]` is a `KeyError`.
     fn catch(&mut self, error: &PyErr, name: NameId, at: ErrorSite) -> PyResult<()> {
         let py = self.py;
-        let program = self.code.get();
+        let program = self.program();
         let Some((_, line, column)) = program.token_info(program.token_at(at, self.render.nested.get())) else {
             return Err(PyKeyError::new_err((py.None(),)));
         };
@@ -506,7 +535,7 @@ impl<const ASYNC: bool> Errors for PyRuntime<'_, '_, ASYNC> {
 
     fn record_error(&mut self, error: &PyErr, at: ErrorSite) {
         let rcontext = self.cx().rcontext();
-        let program = self.code.get();
+        let program = self.program();
         let token = program.token_at(at, self.render.nested.get());
         // A failure to record (an odd `rcontext['__error__']`) must not replace the error.
         let _ = record_error(self.py, &rcontext, program, token, error);

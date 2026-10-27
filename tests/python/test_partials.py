@@ -196,6 +196,20 @@ GRID: list[tuple[str, dict[str, str], dict[str, Any]]] = [
         {'z': 'Z'},
     ),
     (
+        # Neither scope gets the render defaults (they only loop): the message still lists them.
+        'error in a looping partial of a looping page',
+        {
+            'page.pt': '<p tal:repeat="n ns">${render_partial("loop.pt", n=n)}</p>',
+            'loop.pt': '<i tal:define="d 2" tal:repeat="c n">${repeat.c.index}${c / 0}</i>',
+        },
+        {'ns': [[1]]},
+    ),
+    (
+        'a partial whose code reads a default by its own name',
+        {'page.pt': '${render_partial("t.pt")}', 't.pt': '${[translate is not None for translate in [1]]}'},
+        {},
+    ),
+    (
         'error in a nested partial after a define',
         {
             'page.pt': '<p>${render_partial("mid.pt", a=1)}</p>',

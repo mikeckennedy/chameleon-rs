@@ -175,9 +175,8 @@ pub(crate) struct PyExprCompiler<'a, 'py> {
     local_names: Option<Bound<'py, PySet>>,
     /// The ones the render function itself binds.
     bound_names: Option<Bound<'py, PySet>>,
-    /// Whether any expression mentions `repeat`, `econtext`, `rcontext` or a render default
-    /// (so a native partial frame gets the whole scope a Python render would give it).
-    pub(crate) mentions_scope: bool,
+    /// The scope names expressions mention (see `Program::full_scope`).
+    pub(crate) mentions: Mentions,
     pub(crate) config: Config<'py>,
     /// The `attrs` dict of each element, by `StaticAttrs::id`.
     pub(crate) attrs_dicts: HashMap<u32, Bound<'py, PyDict>>,
@@ -203,10 +202,20 @@ pub(crate) struct PyExprCompiler<'a, 'py> {
     pub(crate) surrogate_base: Option<u32>,
 }
 
-/// Names whose mention makes a native partial frame build the whole scope (see
-/// `Program::full_scope`).
-const SCOPE_NAMES: [&str; 7] =
-    ["repeat", "econtext", "rcontext", "target_language", "__translate", "__decode", "__on_error_handler"];
+/// Which scope names a template's expressions mention.
+#[derive(Default)]
+pub(crate) struct Mentions {
+    /// `econtext`, `rcontext` or a render default (so the render's scope gets everything a
+    /// Python render would give it).
+    pub(crate) scope: bool,
+    /// `repeat` (so the render's scope gets a `repeat`).
+    pub(crate) repeat: bool,
+}
+
+/// Names whose mention makes a render build the whole scope (see `Program::full_scope`): a
+/// default's own name also matches the name an expression's code reads it by (`translate` is
+/// `econtext['__translate']`, `chameleon_rs._rewrite.DEFAULTS`).
+const SCOPE_NAMES: [&str; 6] = ["econtext", "rcontext", "target_language", "translate", "decode", "on_error_handler"];
 
 impl<'a, 'py> PyExprCompiler<'a, 'py> {
     pub(crate) fn new(
@@ -232,7 +241,7 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
             free: Vec::new(),
             local_names: None,
             bound_names: None,
-            mentions_scope: false,
+            mentions: Mentions::default(),
             config,
             attrs_dicts: HashMap::new(),
             ast_parse: py.import(intern!(py, "ast"))?.getattr(intern!(py, "parse"))?,
@@ -392,7 +401,10 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
             return Err(invalid("invalid syntax".to_owned()));
         }
         if SCOPE_NAMES.iter().any(|name| string.contains(name)) {
-            self.mentions_scope = true;
+            self.mentions.scope = true;
+        }
+        if string.contains("repeat") {
+            self.mentions.repeat = true;
         }
         // A bare name or a dotted path (most `${title}`, `${user.name}`): `ast.parse` gives
         // `Name(id, Load)` under `Attribute(..., attr, Load)`s, lowered here without it.

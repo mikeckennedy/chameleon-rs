@@ -12,6 +12,7 @@ import ast
 import builtins
 import dis
 import sys
+import sysconfig
 import textwrap
 import warnings
 from collections.abc import Callable, Iterable
@@ -193,12 +194,19 @@ def constant_key(value: Any) -> Any:
     return (type(value), value)
 
 
+# Free-threaded CPython interns (so makes immortal) every `str` constant of a code object.
+_INTERN_STR = bool(sysconfig.get_config_var('Py_GIL_DISABLED'))
+
+
 def constant(cache: dict[Any, Any], value: Any) -> Any:
     """The template's one object for this constant. Chameleon compiles a template into one
     module, whose compiler merges equal constants (a tuple's items too), so `${x is 1.5}` and
-    a `1.5` elsewhere in the template are the same object."""
+    a `1.5` elsewhere in the template are the same object. A `str` is interned where CPython
+    would intern it, so threads rendering the template share no reference count for it."""
     if type(value) is tuple:
         value = tuple(constant(cache, v) for v in value)
+    elif _INTERN_STR and type(value) is str:
+        value = sys.intern(value)
     return cache.setdefault(constant_key(value), value)
 
 

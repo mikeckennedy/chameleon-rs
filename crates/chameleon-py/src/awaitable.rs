@@ -24,7 +24,7 @@ use chameleon_core::{Done, Output, VmError, VmState, run, throw};
 
 use crate::deferred::{DeferKind, Deferred};
 use crate::errors::{catch_panics, vm_error};
-use crate::expr::{Cx, FrameCx, RenderCtx, SavedRender};
+use crate::expr::{Cx, FrameCx, Model, RenderCtx, SavedRender};
 use crate::program::{Program, output_str, record_error, render_error};
 use crate::runtime::PyRuntime;
 use crate::scope::Scope;
@@ -192,11 +192,12 @@ pub(crate) struct RenderAwaitable {
 impl RenderAwaitable {
     /// A render of `program` in `scope`, not started. `concurrent`: native partials called
     /// with an awaitable argument render concurrently (`crate::deferred`).
-    pub(crate) fn start(
-        program: &Bound<'_, Program>,
-        scope: &Bound<'_, Scope>,
-        defaults: Option<Bound<'_, PyDict>>,
-        builtins: Option<Bound<'_, PyDict>>,
+    pub(crate) fn start<'py>(
+        program: &Bound<'py, Program>,
+        scope: &Bound<'py, Scope>,
+        defaults: Option<Bound<'py, PyDict>>,
+        builtins: Option<Bound<'py, PyDict>>,
+        model: Option<Model<'py>>,
         concurrent: bool,
         owns_args: bool,
     ) -> PyResult<Self> {
@@ -204,6 +205,7 @@ impl RenderAwaitable {
         let p = program.get();
         let builtins = builtins.unwrap_or_else(|| PyDict::new(py));
         let mut render = RenderCtx::new(p.marker.bind(py).clone(), defaults, builtins);
+        render.model = model;
         render.awaits = true;
         render.concurrent = concurrent;
         render.nonce = crate::deferred::nonce();
