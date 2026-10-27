@@ -335,4 +335,4 @@ Raw HTML in the text is escaped by default; a profile such as
 - [Full documentation](https://mkennedy.codes/docs/chameleon-rs/)
 - [llms.txt](llms.txt) — Indexed API reference for LLMs
 - [llms-full.txt](llms-full.txt) — Comprehensive documentation for LLMs
-- [Source code](https://github.com/mikeckennedy/chameleon-rust)
+- [Source code](https://github.com/mikeckennedy/chameleon-rs)

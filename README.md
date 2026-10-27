@@ -14,8 +14,8 @@ FastAPI, Starlette, Robyn and Litestar, partials, Markdown, and support for free
 Python. No runtime dependencies.
 
 **Documentation: <https://mkennedy.codes/docs/chameleon-rs/>** ·
-**Source: <https://github.com/mikeckennedy/chameleon-rust>** ·
-[Changelog](https://github.com/mikeckennedy/chameleon-rust/blob/main/CHANGELOG.md) ·
+**Source: <https://github.com/mikeckennedy/chameleon-rs>** ·
+[Changelog](https://github.com/mikeckennedy/chameleon-rs/blob/main/CHANGELOG.md) ·
 [Compatibility](https://mkennedy.codes/docs/chameleon-rs/user-guide/compatibility.html) ·
 [Performance](https://mkennedy.codes/docs/chameleon-rs/user-guide/performance.html)
 

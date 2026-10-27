@@ -77,4 +77,4 @@ The built-ins differ from chameleon_partials, chameleon-flask, fastapi-chameleon
 
 # Found a difference?
 
-If a template renders differently on chameleon-rs than on Chameleon, that's a bug. Please [open an issue](https://github.com/mikeckennedy/chameleon-rust/issues) with the template, the model, and both outputs. [Shadow mode](switching-from-chameleon.md#check-your-own-app-first-shadow-mode) can find such templates in a running app.
+If a template renders differently on chameleon-rs than on Chameleon, that's a bug. Please [open an issue](https://github.com/mikeckennedy/chameleon-rs/issues) with the template, the model, and both outputs. [Shadow mode](switching-from-chameleon.md#check-your-own-app-first-shadow-mode) can find such templates in a running app.

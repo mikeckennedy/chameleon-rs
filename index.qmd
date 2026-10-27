@@ -12,9 +12,9 @@ rendering that never blocks the event loop, built-in integrations for Flask/Quar
 Starlette, Robyn and Litestar, partials, Markdown, and support for free-threaded Python. No
 runtime dependencies.
 
-**Source on GitHub: <https://github.com/mikeckennedy/chameleon-rust>** ·
-[Changelog](https://github.com/mikeckennedy/chameleon-rust/blob/main/CHANGELOG.md) ·
-[Issues](https://github.com/mikeckennedy/chameleon-rust/issues)
+**Source on GitHub: <https://github.com/mikeckennedy/chameleon-rs>** ·
+[Changelog](https://github.com/mikeckennedy/chameleon-rs/blob/main/CHANGELOG.md) ·
+[Issues](https://github.com/mikeckennedy/chameleon-rs/issues)
 
 ```python
 from chameleon_rs import PageTemplate

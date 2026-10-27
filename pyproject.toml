@@ -48,9 +48,9 @@ dynamic = ["version"]
 [project.urls]
 Homepage = "https://mkennedy.codes/docs/chameleon-rs/"
 Documentation = "https://mkennedy.codes/docs/chameleon-rs/"
-Changelog = "https://github.com/mikeckennedy/chameleon-rust/blob/main/CHANGELOG.md"
-Source = "https://github.com/mikeckennedy/chameleon-rust"
-Issues = "https://github.com/mikeckennedy/chameleon-rust/issues"
+Changelog = "https://github.com/mikeckennedy/chameleon-rs/blob/main/CHANGELOG.md"
+Source = "https://github.com/mikeckennedy/chameleon-rs"
+Issues = "https://github.com/mikeckennedy/chameleon-rs/issues"
 Funding = "https://github.com/sponsors/mikeckennedy"
 
 [dependency-groups]

@@ -47,7 +47,7 @@ seo:
   canonical:
     base_url: "https://mkennedy.codes/docs/chameleon-rs/"
 
-repo: https://github.com/mikeckennedy/chameleon-rust
+repo: https://github.com/mikeckennedy/chameleon-rs
 github_style: widget
 source:
   enabled: true
