@@ -432,6 +432,29 @@ def test_message_attributes_are_read_once() -> None:
     assert results[0] == results[1]
 
 
+class Thing:
+    def __str__(self) -> str:
+        return 'thing'
+
+
+@pytest.mark.parametrize('returns_str', [False, True], ids=['returns-the-object', 'returns-str'])
+def test_translate_returning_a_message_is_called_again(returns_str: bool) -> None:
+    """malthe/chameleon#329, by design and documented: a `translate` that returns the message
+    object itself is called again to convert it; one that returns a string is called once."""
+    source = '<div i18n:translate="" tal:content="x"></div>|<div tal:content="x"></div>'
+    results = []
+    for engine in (chameleon, chameleon_rs):
+        calls: list[str] = []
+
+        def translate(msgid: Any, calls: list[str] = calls, **kwargs: Any) -> Any:
+            calls.append(type(msgid).__name__)
+            return str(msgid) if returns_str else msgid
+
+        results.append((engine.PageTemplate(source, translate=translate)(x=Thing()), calls))
+    assert results[0] == results[1]
+    assert results[1] == ('<div>thing</div>|<div>thing</div>', ['Thing'] * (2 if returns_str else 3))
+
+
 @pytest.mark.xfail(strict=True, reason='known difference: write boundaries in a name a handler left unfinished')
 @pytest.mark.parametrize(
     'source',
