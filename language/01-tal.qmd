@@ -528,13 +528,26 @@ For legacy compatibility, the attributes `odd`, `even`, `number`, `letter`, `Let
 and `Roman` are callable (returning `self`).
 :::
 
-::: {.callout-note}
-Earlier versions of this document, and the [Zope Page Templates
-Reference](https://zope.readthedocs.io/en/latest/zopebook/AppendixC.html#repeat-variables),
-referred to `first` and `last` attributes for use with sorted sequences. These are not
-implemented in Chameleon or the Zope reference implementation zope.tales. Instead, you can use
-`itertools.groupby`, as in the example below.
-:::
+### Grouping a sorted sequence: `first` and `last`
+
+chameleon-rs adds Zope's `first(name)` and `last(name)` methods, which Chameleon never
+implemented ([malthe/chameleon#144](https://github.com/malthe/chameleon/issues/144)).
+`repeat.item.first('kind')` is true when the item starts a run of items with the same `kind`,
+because it is the first item or its `kind` differs from the item before. `last('kind')` is
+true when the item ends such a run. For a mapping item, `name` is a key; for any other item,
+it is an attribute. Without a name, whole items are compared. A part missing from either item
+counts as different.
+
+```html
+<div tal:repeat="object objects">
+  <h2 tal:condition="repeat.object.first('meta_type')" tal:content="object.meta_type">Meta Type</h2>
+  <p tal:content="object.id">Object ID</p>
+  <hr tal:condition="repeat.object.last('meta_type')" />
+</div>
+```
+
+They are methods: call them. A bare `repeat.object.first` is always true. Templates that must
+also run on Chameleon can use `itertools.groupby` instead, as in the last example below.
 
 ### Examples
 
