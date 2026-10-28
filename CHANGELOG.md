@@ -22,6 +22,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the repeated items as an optional third argument; one made with Chameleon's two arguments
   raises a `TypeError` from `first` and `last` only.
 
+### Fixed
+
+- **A valueless attribute given a value is written `name="value"`** (malthe/chameleon#429,
+  reported by petschki): `<input disabled tal:attributes="disabled True">` rendered
+  `<input disableddisabled>`, and the same for any valueless attribute set by `tal:attributes`
+  or translated by `i18n:attributes` (`titlehello`, `altAlt`). It's now written as an added
+  attribute is, `disabled="disabled"`. `default` still keeps the attribute as written
+  (`checked`). This changes output that Chameleon gets wrong; see "Chameleon bugs fixed" in the
+  compatibility guide.
+
 ## [0.1.53] - 2026-10-27
 
 Less shared reference counting per render on free-threaded Python.

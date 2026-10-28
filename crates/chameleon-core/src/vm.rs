@@ -95,6 +95,9 @@ pub(crate) struct AttrInfo {
     pub(crate) suffix: TextRef,
     /// What the `default` marker converts to (`None` drops the attribute).
     pub(crate) default: Option<TextRef>,
+    /// What the `default` marker writes instead of `prefix default suffix`: a valueless
+    /// attribute (`checked`) as written, for `Op::AttrValue`.
+    pub(crate) as_written: Option<TextRef>,
     /// `(start, len)` in [`Tables::filters`].
     pub(crate) filters: (u32, u32),
 }
@@ -2594,8 +2597,12 @@ fn execute<R: Runtime>(
                     }
                 };
                 let mark = st.out.mark();
-                st.out.push(text(program, a.prefix)?);
-                let written = if rt.is_default(&value) {
+                // A valueless attribute (`checked`) keeps that spelling for the marker.
+                let as_written = if rt.is_default(&value) { a.as_written } else { None };
+                st.out.push(text(program, as_written.unwrap_or(a.prefix))?);
+                let written = if as_written.is_some() {
+                    true
+                } else if rt.is_default(&value) {
                     // `__quote` / `emit_bool`: the marker means the static value, as written.
                     match a.default {
                         Some(d) => {
@@ -2620,7 +2627,7 @@ fn execute<R: Runtime>(
                 };
                 if !written || filtered(program, st, rt, program.text_str(a.name), a.filters, cached)? {
                     st.out.truncate(mark);
-                } else {
+                } else if as_written.is_none() {
                     st.out.push(text(program, a.suffix)?);
                 }
             }

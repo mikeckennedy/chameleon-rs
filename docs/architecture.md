@@ -1664,6 +1664,14 @@ of a template that renders today are listed in D11.
   Chameleon's two-argument signature still works, and only `first`/`last` need it). A mapping
   item's part is its key, an extension over Zope's `getattr`. A part missing from either item
   counts as different, as in Zope.
+- **#429, a valueless attribute given a value.** In `zpt.rs`'s `attribute_nodes`, an attribute
+  with no `=` in the source that `tal:attributes`, `i18n:attributes` or implicit translation
+  makes dynamic gets `="` and `"`, as an added attribute does. Chameleon keeps the empty `=` and
+  quote and writes `disableddisabled`. The `default` marker must still write it as written
+  (upstream test 071: `<input checked tal:attributes="checked default">` renders `checked`), so
+  `Attr::Dynamic` and `AttrInfo` carry `as_written` (`space name`), which `Op::AttrValue`
+  writes alone for `default`. A translated attribute's `default` is translated, then written
+  with the new quotes. A bare value (`title=x`) is left as Chameleon writes it. Listed in D11.
 
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
@@ -1979,6 +1987,8 @@ exactly. See the Phase 9 amendments.)*
 - Custom expression types (classes returning Python AST statements) work through a bridge
   that wraps their AST in a Python function, at fallback speed. Types that depend on Chameleon
   compiler internals beyond that interface are out of scope.
+- A valueless attribute given a value renders `name="value"`, where Chameleon writes
+  `namevalue` (malthe/chameleon#429; see "Adopted upstream issues").
 - `CHAMELEON_CACHE` (on-disk compiled modules) is replaced by an optional on-disk cache of the
   compiled program, only if compile time turns out to matter.
 

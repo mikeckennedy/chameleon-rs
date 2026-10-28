@@ -253,7 +253,9 @@ SITES = [
     '<p tal:replace="{e}">d</p>',
     '<p tal:content="structure {e}">d</p>',
     '<p tal:attributes="title {e}" title="T">d</p>',
-    '<input tal:attributes="checked {e}" checked/>',
+    # `checked=""`: valueless, Chameleon writes `checkedchecked` (malthe/chameleon#429, tested in
+    # test_builder).
+    '<input tal:attributes="checked {e}" checked=""/>',
     '<input checked="${{{e}}}"/>',
     '<p tal:condition="{e}">yes</p>',
     '<p tal:define="v {e}">${{v}}</p>',

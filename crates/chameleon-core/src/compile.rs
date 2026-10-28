@@ -627,8 +627,9 @@ impl<'a> Lower<'a> {
                         self.op(Op::AttrStatic { info, cached })?;
                     }
                 }
-                Attr::Dynamic { name, prefix, suffix, value, default, filters } => {
-                    self.dynamic_attr(name, prefix, suffix, value, default.as_deref(), filters, cached)?;
+                Attr::Dynamic { name, prefix, suffix, value, default, as_written, filters } => {
+                    let default = default.as_deref();
+                    self.dynamic_attr(name, prefix, suffix, value, default, as_written.as_deref(), filters, cached)?;
                 }
                 Attr::Dict { exclude, bool_names, .. } => {
                     let exclude = exclude.iter().map(|n| self.intern(n.as_bytes())).collect::<LResult<_>>()?;
@@ -676,6 +677,7 @@ impl<'a> Lower<'a> {
         suffix: &str,
         value: &'a AttrValue,
         default: Option<&str>,
+        as_written: Option<&str>,
         filters: &[u32],
         cached: u32,
     ) -> LResult<()> {
@@ -726,6 +728,12 @@ impl<'a> Lower<'a> {
             AttrValue::Static(_) => return Err(unsupported("internal: a static value outside a translation")),
         };
         let info = self.attr_info(name, prefix, suffix, default, filters)?;
+        if let Some(written) = as_written {
+            let written = self.intern(written.as_bytes())?;
+            if let Some(a) = self.tables.attrs.get_mut(info as usize) {
+                a.as_written = Some(written);
+            }
+        }
         self.op(Op::AttrValue { info, kind, cached })?;
         Ok(())
     }
@@ -775,6 +783,7 @@ impl<'a> Lower<'a> {
             prefix: self.intern(prefix.as_bytes())?,
             suffix: self.intern(suffix.as_bytes())?,
             default: default.map(|d| self.intern(d.as_bytes())).transpose()?,
+            as_written: None,
             filters: self.filters(filters)?,
         };
         let i = index(self.tables.attrs.len())?;

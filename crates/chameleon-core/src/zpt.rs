@@ -774,15 +774,20 @@ impl Builder<'_> {
         for (i, p) in prepared.iter().enumerate() {
             let name = p.name.as_ref().map(|n| n.text.clone());
             let implicit = name.as_deref().is_some_and(|n| self.options.is_implicit_i18n(n));
-            let quote = match p.quote.as_str() {
-                "\"" => Quote::Double,
-                "'" => Quote::Single,
-                _ => Quote::Bare,
-            };
             let mut msgid: Option<Option<String>> = name
                 .as_deref()
                 .and_then(|n| i18n.iter().find(|(a, _)| a.text == n))
                 .map(|(_, m)| m.as_ref().map(|m| m.text.clone()));
+            // A valueless attribute (`<input disabled>`) given a value by `tal:attributes` or a
+            // translation is written as an added one is, `="..."`; Chameleon keeps its empty
+            // `=` and quote and writes `disableddisabled` (malthe/chameleon#429).
+            let valueless = p.eq.is_empty() && (p.expr.is_some() || msgid.is_some() || implicit);
+            let (eq, quote_text) = if valueless { ("=", "\"") } else { (p.eq.as_str(), p.quote.as_str()) };
+            let quote = match quote_text {
+                "\"" => Quote::Double,
+                "'" => Quote::Single,
+                _ => Quote::Bare,
+            };
             let boolean = name.as_deref().is_some_and(|n| self.options.is_boolean(n));
             let (value, default) = match (&p.expr, &p.text) {
                 (None, Some(text)) if text.text.contains("${") => {
@@ -831,11 +836,14 @@ impl Builder<'_> {
                 None => value,
             };
             let space = self.trim(Some(&p.space), Span::default())?;
-            let prefix = format!("{space}{name}{}{}", p.eq, p.quote);
+            let as_written = valueless.then(|| format!("{space}{name}"));
+            let prefix = format!("{space}{name}{eq}{quote_text}");
             let filters = filters_after(i);
             out.push(match value {
-                AttrValue::Static(text) => Attr::Static { text: format!("{prefix}{text}{}", p.quote), name, filters },
-                value => Attr::Dynamic { name, prefix, suffix: p.quote.clone(), value, default, filters },
+                AttrValue::Static(text) => Attr::Static { text: format!("{prefix}{text}{quote_text}"), name, filters },
+                value => {
+                    Attr::Dynamic { name, prefix, suffix: quote_text.to_owned(), value, default, as_written, filters }
+                }
             });
         }
         Ok(out)

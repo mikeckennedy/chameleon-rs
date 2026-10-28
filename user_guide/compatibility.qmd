@@ -106,6 +106,15 @@ renders) counts as such an override. Every `render_async()`, including the async
 framework integrations, then renders synchronously through your function. See
 [Migrating](migrating.qmd#timing-renders) for a way to time both.
 
+### Chameleon bugs fixed
+
+Where Chameleon's output is clearly broken, chameleon-rs writes what the template means. Each
+fix is a Chameleon issue that chameleon-rs adopted.
+
+| Template | Chameleon | chameleon-rs |
+|---|---|---|
+| A valueless attribute given a value: `<input disabled tal:attributes="disabled True">` or `<img alt i18n:attributes="alt">` ([#429](https://github.com/malthe/chameleon/issues/429)) | `<input disableddisabled>`, `<img altAlt>` | `<input disabled="disabled">`, `<img alt="Alt">` |
+
 ## Found a difference?
 
 If a template renders differently on chameleon-rs than on Chameleon, that's a bug. Please

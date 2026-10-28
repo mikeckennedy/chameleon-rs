@@ -42,7 +42,7 @@ body
           scope attrs=#6
             element "<input"
               attr " type=\"input\""
-              attr "checked" " checked".."" default=Some("") boolean "checked" v4 "default"@322
+              attr "checked" " checked=\"".."\"" default=Some("") as_written=" checked" boolean "checked" v4 "default"@322
               close " />"
               empty
           text "\n    "

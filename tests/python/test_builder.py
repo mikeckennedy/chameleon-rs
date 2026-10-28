@@ -369,6 +369,14 @@ RENDER_OPTIONS = {
 }
 
 
+# Deliberate differences: Chameleon's output, then ours.
+FIXED = {
+    # malthe/chameleon#429: Chameleon writes a valueless attribute given a value with no `="`.
+    'attributes-valueless': ('<a hrefv>t</a>', '<a href="v">t</a>'),
+    'attributes-boolean-valueless': ('<input checkedchecked/>', '<input checked="checked"/>'),
+}
+
+
 @pytest.mark.parametrize(('source', 'variables'), [c[1:] for c in RENDERS], ids=[c[0] for c in RENDERS])
 def test_render_matches(source: str, variables: dict[str, Any], request: pytest.FixtureRequest) -> None:
     options = RENDER_OPTIONS.get(request.node.callspec.id, {})
@@ -388,7 +396,48 @@ def test_render_matches(source: str, variables: dict[str, Any], request: pytest.
         assert type(got).__name__ in names, f'reference raised {want!r}, we raised {got!r}'
         return
     assert not isinstance(got, Exception), f'we raised {got!r}, reference rendered {want!r}'
+    if request.node.callspec.id in FIXED:
+        chameleons, ours = FIXED[request.node.callspec.id]
+        assert want == chameleons
+        want = ours
     assert got == want
+
+
+@pytest.mark.parametrize(
+    ('source', 'expected'),
+    [
+        ('<input disabled tal:attributes="disabled python:True" />', '<input disabled="disabled" />'),
+        ('<input disabled tal:attributes="disabled python:False" />', '<input />'),
+        ('<input disabled tal:attributes="disabled None" />', '<input />'),
+        ('<p title tal:attributes="title string:a&quot;b" />', '<p title="a&quot;b" />'),
+        ('<p title tal:attributes="title string:it\'s" />', '<p title="it\'s" />'),
+        ('<p title tal:attributes="title None" />', '<p />'),
+        # `default` keeps the attribute as written, valueless (upstream test 071).
+        ('<input checked tal:attributes="checked default" />', '<input checked />'),
+        ('<p title tal:attributes="title default" />', '<p title />'),
+        ('<p title tal:attributes="title default; x python:{}" />', '<p title x="{}" />'),
+        # Translated: `i18n:attributes`, alone or with `tal:attributes`.
+        ('<img alt i18n:attributes="alt" />', '<img alt="T()" />'),
+        ('<img alt tal:attributes="alt string:x" i18n:attributes="alt" />', '<img alt="T(x)" />'),
+        # Untouched valueless attributes, and a bare value (not part of the fix), as in Chameleon.
+        ('<input disabled /><p title data-x />', '<input disabled /><p title data-x />'),
+        ('<p title=bare tal:attributes="title string:x" />', '<p title=x />'),
+    ],
+)
+def test_valueless_attribute_given_a_value(source: str, expected: str) -> None:
+    """malthe/chameleon#429: a valueless attribute (`<input disabled>`) that `tal:attributes`
+    or a translation gives a value is written `disabled="disabled"`, as an added one is;
+    Chameleon writes `disableddisabled`."""
+
+    def translate(msgid: Any, **kwargs: Any) -> str:
+        return f'T({msgid})' if isinstance(msgid, str) else str(msgid)
+
+    assert chameleon_rs.PageTemplate(source, translate=translate)() == expected
+
+
+def test_valueless_attribute_given_a_value_in_xml_mode() -> None:
+    source = '<?xml version="1.0"?><r><p title tal:attributes="title string:x" /></r>'
+    assert chameleon_rs.PageTemplate(source)() == '<?xml version="1.0"?><r><p title="x" /></r>'
 
 
 def test_text_template() -> None:

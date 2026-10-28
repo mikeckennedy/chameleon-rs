@@ -212,13 +212,16 @@ pub enum Attr {
     /// `prefix VALUE suffix`, with `prefix = space name eq quote` and `suffix = quote`; left
     /// out if the value converts to `None`, or a dictionary in `filters` has the name (the
     /// value is evaluated first). `default` is the attribute's static value: what the
-    /// `default` marker converts to (`None` drops the attribute).
+    /// `default` marker converts to (`None` drops the attribute). `as_written` is set for a
+    /// valueless attribute (`checked`), whose prefix and suffix add `="` and `"`: the
+    /// `default` marker writes it alone instead.
     Dynamic {
         name: String,
         prefix: String,
         suffix: String,
         value: AttrValue,
         default: Option<String>,
+        as_written: Option<String>,
         filters: Vec<u32>,
     },
     /// `tal:attributes` with a dictionary expression (`DictAttributes`): every item whose
@@ -401,8 +404,9 @@ impl Dumper<'_> {
                 for attr in &e.start.attrs {
                     let line = match attr {
                         Attr::Static { text, filters, .. } => format!("attr {text:?}{}", filters_text(filters)),
-                        Attr::Dynamic { name, prefix, suffix, value, default, filters } => format!(
-                            "attr {name:?} {prefix:?}..{suffix:?} default={default:?}{} {}",
+                        Attr::Dynamic { name, prefix, suffix, value, default, as_written, filters } => format!(
+                            "attr {name:?} {prefix:?}..{suffix:?} default={default:?}{}{} {}",
+                            as_written.as_ref().map(|w| format!(" as_written={w:?}")).unwrap_or_default(),
                             filters_text(filters),
                             self.attr_value(value)
                         ),
