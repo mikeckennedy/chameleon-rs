@@ -5,7 +5,10 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.54] - 2026-10-28
+
+Zope and Plone: z3c.pt's and Zope 6.3's own test suites pass unmodified on `compat.install()`.
+Also fixes for adopted upstream Chameleon issues, and three additions.
 
 ### Added
 
@@ -67,6 +70,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it does in Chameleon's render function (it raised `AttributeError` from Python's builtins),
   and attribute access in a type's AST no longer falls back to item lookup, which Chameleon
   only does inside `PythonExpr`.
+- **A custom expression type's AST is left as the type made it** (found by Zope's suite): the
+  bridge replaced `Symbol` and `Static` nodes inside the type's own objects, so a type that hands
+  every expression the same nodes (Zope's untrusted `python:` shares one `Static` per builtin)
+  failed on its second expression with `NameError: name '__rs_symbol_2' is not defined`. The
+  bridge now works on copies, as Chameleon's code generator leaves the nodes alone.
+- **Error reports use the template's `value_repr` when its builtins have no `template`** (found
+  by Zope's suite): z3c.pt replaces a template's builtins, and Zope passes its own `template`, so
+  the report used the default formatting instead of Zope's `value_repr = repr`.
 - **A macro is not callable** (#10, reported by zopyx): Zope's path expressions call whatever
   they resolve to, so `metal:use-macro="context/@@main_template/macros/master"` called the
   macro and raised a `TypeError`, on every Plone page. As in Chameleon, `Macro` is a plain
