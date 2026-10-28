@@ -201,6 +201,43 @@ about speed. Phase 3 measures; Phase 4 is where larger gains would come from.
 **Exit:** a short report in this plan. If Route A passes, decide with Michael whether Route B
 still goes ahead (see *Open questions*).
 
+#### Phase 0 results (2026-10-28)
+
+**Setup:**
+- Zope 6.3, from the `6.3` tag (`c9225db`), with its own `constraints.txt` pins (Chameleon
+  4.6.0, z3c.pt 5.2).
+- Python 3.14.10, in a throwaway venv `temp/venv-zope`.
+- chameleon-rs from main plus the two fixes below.
+- `compat.install()` loaded at startup through `tests/integration/child_alias`, as for z3c.pt.
+
+| Suite | Stock Chameleon | `compat.install()`, before fixes | After fixes |
+|---|---|---|---|
+| `Products.PageTemplates` | 285 tests, all pass (1 skipped) | 19 failures | all pass (1 skipped) |
+| `Products.Five` | 62, all pass | all pass | all pass |
+| All of Zope 6.3 | 1,736, all pass (1 skipped) | not run | all pass (1 skipped), same as stock |
+
+**Two chameleon-rs bugs found and fixed.** Neither is Zope-specific, and neither touches the
+native path the other frameworks use:
+
+1. **The bridge changed a custom type's AST in place** (18 of the 19 failures). Lowering
+   `Symbol`/`Static` nodes used `ast.NodeTransformer`, which replaces child nodes inside the
+   type's own objects.
+   - Zope's untrusted `python:` hands every expression the same `Static` node per builtin. The
+     first compile replaced its `Symbol` with a name bound only in that compile, and the next
+     expression that used it failed with `NameError: __rs_symbol_2`.
+   - Lowering now copies nodes instead (Chameleon's code generator leaves them alone).
+   - Only custom expression types go through this code.
+2. **Error reports ignored the template's `value_repr`** when the template's builtins have no
+   `template` entry. z3c.pt replaces the builtins, and Zope passes its own `template` render
+   variable. Zope sets `value_repr = repr`.
+   - The native render's error handler now finds the rendering template through a reserved
+     builtins entry (`__rs_template`). It's added after compiling, so expressions can't see it.
+   - This affects only the text of error reports.
+
+**Conclusion: Route A works for Zope itself.** Plone wasn't tested (no Plone install here). That
+is Phase 3's job with zopyx, and it can now start with plain `compat.install()`. The decision on
+Route B (the module) comes after this review: see *Open questions*.
+
 ### Phase 1: `engine.py` and ZCML (1 to 2 days)
 
 1. Port `Program`, `MappedExpr`, the context bridge and the repeat wrappers. Write
@@ -276,7 +313,7 @@ separate decision after Phase 3's numbers.
    more module to maintain for a framework few people start new projects on.
 2. **Test cost:** Zope's suites need a Zope install in a separate venv (no Plone). Fine in
    `make test-integration`, or a separate `make test-zope` that `make test` doesn't run?
-3. **Python versions:** Zope supports up to 3.14 today. Run the Zope venv on 3.14 like the other
-   integration suites?
+3. **Python versions:** decided, 3.14. Zope 6.3 supports 3.11 to 3.15, and Phase 0 ran on
+   3.14.10 with no problems.
 4. **The reporter:** coordinate Phase 3 with zopyx through the GitHub issues, or a new tracking
    issue for the Zope engine?

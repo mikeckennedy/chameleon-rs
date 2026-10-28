@@ -273,6 +273,11 @@ class BaseTemplate:
             # normalize to str
             exc.token.filename = str(self.filename)
             raise
+        # For the native render's error handler (`exc.render_error`), which formats with this
+        # template's `value_repr`, as Chameleon's `self.value_repr`: the `template` builtin
+        # can't be relied on (z3c.pt's builtins have none, and Zope passes its own
+        # `template`). Added after compiling, so expressions don't see it.
+        builtins_dict['__rs_template'] = self
         previous = self.__dict__.get('_compiled')
         if previous is not None:
             self._keep_removed_macros(previous, program)

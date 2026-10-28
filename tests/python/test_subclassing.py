@@ -165,3 +165,46 @@ def test_chameleons_doctest_helper(engine: Any) -> None:
     tales = engine.tales
     assert tales.test(tales.PythonExpr('foo | 2 + 2 | 5')) == 4
     assert tales.test(tales.ExistsExpr('int(None)'), tales.SimpleEngine(tales.PythonExpr)) == 0
+
+
+def upper_function() -> Any:
+    return str.upper
+
+
+def shared_node_type(engine: Any) -> Any:
+    """A type that hands every expression the same nodes, as Zope's untrusted ``python:``
+    shares one ``Static`` per builtin."""
+    shared = engine.astutil.Static(ast.Call(func=engine.astutil.Symbol(upper_function), args=[], keywords=[]))
+
+    class Up:
+        def __init__(self, expression: str) -> None:
+            self.expression = expression
+
+        def __call__(self, target: Any, engine_: Any) -> Any:
+            call = ast.Call(func=shared, args=[ast.Constant(self.expression.strip())], keywords=[])
+            return [ast.Assign(targets=[target], value=call)]
+
+    return Up
+
+
+@pytest.mark.parametrize('engine', ENGINES)
+def test_a_types_shared_nodes_survive_compiling(engine: Any) -> None:
+    types = {**engine.PageTemplate.expression_types, 'up': shared_node_type(engine)}
+    for i in range(3):
+        assert engine.PageTemplate(f'<p>${{up: a{i}}}</p>${{up: b}}', expression_types=types)() == f'<p>A{i}</p>B'
+
+
+@pytest.mark.parametrize('engine', ENGINES)
+def test_error_report_uses_the_templates_value_repr_without_a_template_builtin(engine: Any) -> None:
+    """Zope's templates set ``value_repr = repr``, and z3c.pt's builtins have no `template`."""
+
+    class Template(engine.PageTemplate):
+        value_repr = staticmethod(repr)
+
+        @property
+        def builtins(self) -> dict[str, Any]:
+            return {'nothing': None}
+
+    with pytest.raises(ZeroDivisionError) as info:
+        Template('<p>${1/0}</p>')(obj={'a': 1})
+    assert "obj: {'a': 1}" in str(info.value)

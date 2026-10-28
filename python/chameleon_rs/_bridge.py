@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import ast
 import builtins
+import copy
 from collections.abc import Callable, Iterable
 from typing import Any, cast
 
@@ -111,6 +112,32 @@ class _Lower(ast.NodeTransformer):
         if kind in ('Comment', 'TokenRef'):
             return None
         return super().visit(node)
+
+    def generic_visit(self, node: ast.AST) -> ast.AST:
+        """``NodeTransformer.generic_visit`` on a copy: a type may hand out the same nodes for
+        every expression (Zope's untrusted ``python:`` shares one ``Static`` per builtin), and
+        Chameleon's code generator leaves them as they are, so lowering must not change them."""
+        new = copy.copy(node)
+        for field, old in ast.iter_fields(node):
+            if isinstance(old, list):
+                values: list[Any] = []
+                for item in old:
+                    if isinstance(item, ast.AST):
+                        item = self.visit(item)
+                        if item is None:
+                            continue
+                        if not isinstance(item, ast.AST):
+                            values.extend(item)
+                            continue
+                    values.append(item)
+                setattr(new, field, values)
+            elif isinstance(old, ast.AST):
+                value = self.visit(old)
+                if value is None:
+                    delattr(new, field)
+                else:
+                    setattr(new, field, value)
+        return new
 
 
 def _bridge_name(name: str) -> bool:

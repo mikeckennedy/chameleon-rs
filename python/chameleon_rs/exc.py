@@ -353,7 +353,7 @@ def render_error(
             formatter._errors.extend(errors)
         return exc
 
-    template = builtins.get('template')
+    template = builtins.get('__rs_template', builtins.get('template'))
     represent = getattr(template, 'value_repr', value_repr)
     formatter = ExceptionFormatter(errors, econtext, rcontext, represent)
     try:
