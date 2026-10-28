@@ -48,6 +48,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `MappedExpr`) aborted the template, and any Plone attribute with two `${...}` failed to
   compile. Chameleon's class counts too now, when Chameleon is loaded; chameleon-rs still
   never imports it.
+- **A macro is not callable** (#10, reported by zopyx): Zope's path expressions call whatever
+  they resolve to, so `metal:use-macro="context/@@main_template/macros/master"` called the
+  macro and raised a `TypeError`, on every Plone page. As in Chameleon, `Macro` is a plain
+  object again and its `include` (now a separate `MacroInclude`) renders it, with the same
+  signature as before. Code that called a macro directly calls `macro.include(...)`, which
+  works on both engines.
 
 ## [0.1.53] - 2026-10-27
 

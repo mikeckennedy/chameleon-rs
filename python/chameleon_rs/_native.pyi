@@ -102,7 +102,12 @@ class Macro:
 
     def __init__(self, program: Program, name: str | None, builtins: dict[str, Any]) -> None: ...
     @property
-    def include(self) -> Macro: ...
+    def include(self) -> MacroInclude: ...
+
+@final
+class MacroInclude:
+    """``Macro.include``: renders the macro into ``stream``."""
+
     def __call__(
         self,
         stream: list[str],

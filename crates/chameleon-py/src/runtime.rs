@@ -22,7 +22,7 @@ use chameleon_core::{
 
 use crate::convert;
 use crate::expr::{Cx, FrameCx, Helpers, RenderCtx, eval, eval_emitted};
-use crate::macros::{Macro, SlotFill};
+use crate::macros::{Macro, MacroInclude, SlotFill};
 use crate::program::{Program, record_error};
 use crate::repeat::RepeatDict;
 use crate::scope::Scope;
@@ -747,6 +747,30 @@ fn unpack<'py>(item: &Bound<'py, PyAny>, n: usize) -> PyResult<Vec<Bound<'py, Py
     Ok(values)
 }
 
+impl<const ASYNC: bool> PyRuntime<'_, '_, ASYNC> {
+    /// Runs one of our macros as a frame of the current render.
+    fn macro_frame(&self, m: &Bound<'_, Macro>) -> PyResult<MacroStep<Py<PyAny>>> {
+        let py = self.py;
+        let get = m.get();
+        let program = Arc::clone(&get.program.bind(py).get().core);
+        let scope = if program.shares_scope(get.entry) && !self.render.scope_exposed.get() {
+            self.scope.clone()
+        } else {
+            Scope::copy(&self.scope)?
+        };
+        Ok(MacroStep::Frame {
+            call: chameleon_core::Call {
+                program,
+                code: m.clone().into_any().unbind(),
+                scope: scope.into_any().unbind(),
+            },
+            entry: get.entry,
+            // A template used as a macro goes through its `include` method first.
+            cost: if get.entry == 0 { 2 } else { 1 },
+        })
+    }
+}
+
 impl<const ASYNC: bool> Macros for PyRuntime<'_, '_, ASYNC> {
     /// `__m = __macro.include; __m(__stream, econtext.copy(), rcontext, __i18n_domain,
     /// __i18n_context, target_language)`: a `Macro` of ours runs as a frame; anything else is
@@ -754,29 +778,14 @@ impl<const ASYNC: bool> Macros for PyRuntime<'_, '_, ASYNC> {
     fn macro_call(&mut self, value: Py<PyAny>, out: &mut Output) -> PyResult<MacroStep<Py<PyAny>>> {
         let py = self.py;
         let value = value.into_bound(py);
-        // A `Macro`'s `include` is the macro itself (the class cannot be subclassed).
-        let include = match value.cast::<Macro>() {
-            Ok(m) => m.clone().into_any(),
-            Err(_) => value.getattr(intern!(py, "include"))?,
-        };
-        if let Ok(m) = include.cast::<Macro>() {
-            let get = m.get();
-            let program = Arc::clone(&get.program.bind(py).get().core);
-            let scope = if program.shares_scope(get.entry) && !self.render.scope_exposed.get() {
-                self.scope.clone()
-            } else {
-                Scope::copy(&self.scope)?
-            };
-            return Ok(MacroStep::Frame {
-                call: chameleon_core::Call {
-                    program,
-                    code: m.clone().into_any().unbind(),
-                    scope: scope.into_any().unbind(),
-                },
-                entry: get.entry,
-                // A template used as a macro goes through its `include` method first.
-                cost: if get.entry == 0 { 2 } else { 1 },
-            });
+        // Our `Macro`, or the `include` of one (a template's, or a proxy's that forwards it),
+        // runs as a frame (neither class can be subclassed).
+        if let Ok(m) = value.cast::<Macro>() {
+            return self.macro_frame(m);
+        }
+        let include = value.getattr(intern!(py, "include"))?;
+        if let Ok(include) = include.cast::<MacroInclude>() {
+            return self.macro_frame(include.get().target.bind(py));
         }
         let (domain, context, target_language) = self.i18n_args();
         let scope = Scope::copy(&self.scope)?.into_any();

@@ -554,8 +554,9 @@ reference (the differential tests and the fuzzer compare whole outputs and messa
   overwrite the caller's locals of the same name, as in Chameleon). The element where a
   `metal:define-macro` stood is `Op::CallMacro`, which also resets the caller's `__token` (an
   error caught around it is then a `KeyError`). A template used as a macro is its main function
-  (`template.include` is a `Macro`). `Macro` and `SlotFill` are callable with Chameleon's
-  signatures, so Chameleon's templates can use our macros and slots and ours theirs (a
+  (`template.include` is a `Macro`'s `include`). As in Chameleon, a `Macro` is not callable
+  (Zope's path expressions call whatever they resolve to): its `include`, a `MacroInclude`,
+  and a `SlotFill` are callable with Chameleon's signatures, so Chameleon's templates can use our macros and slots and ours theirs (a
   Chameleon fill appends through its closure to the stream it was defined with: when we were
   called by Chameleon, what it appended there is moved into our output).
 - **D3 item 5 and D11, slot stacks.** D11 planned native slot stacks with no `__slot_*` keys

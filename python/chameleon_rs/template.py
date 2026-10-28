@@ -42,6 +42,7 @@ from typing import Any, ClassVar
 from chameleon_rs._native import (
     DEFAULT_MARKER,
     Macro,
+    MacroInclude,
     Program,
     RenderAwaitable,
     Scope,
@@ -673,13 +674,13 @@ class PageTemplate(BaseTemplate):
             raise _surrogate_error(body, exc.start) from None
 
     @property
-    def include(self) -> Macro:
+    def include(self) -> MacroInclude:
         """The whole template as a macro (``metal:use-macro="template"``): Chameleon's
         ``include(stream, econtext, rcontext, ...)``, which renders the main function into
         ``stream``."""
         self.cook_check()
         program, builtins = self._compiled
-        return Macro(program, None, builtins)
+        return Macro(program, None, builtins).include
 
     def _render(self, *args: Any, **kwargs: Any) -> None:
         # Chameleon's compiled render function: `(stream, econtext, rcontext, domain=None,

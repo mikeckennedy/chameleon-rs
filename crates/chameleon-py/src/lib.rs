@@ -40,7 +40,7 @@ mod _native {
     #[pymodule_export]
     use super::expr::py_lookup_attr;
     #[pymodule_export]
-    use super::macros::{Macro, SlotFill};
+    use super::macros::{Macro, MacroInclude, SlotFill};
     #[pymodule_export]
     use super::markdown::{MarkdownProfile, markdown_cache_info, markdown_cache_limits, set_markdown_cache};
     #[pymodule_export]

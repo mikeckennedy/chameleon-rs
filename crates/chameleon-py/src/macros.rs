@@ -6,9 +6,9 @@
 //!
 //! A [`Macro`] names a function of a compiled program (a `metal:define-macro`, or the main
 //! render function for a template used as a macro) together with its template's builtins.
-//! The VM runs one as a frame when a `metal:use-macro` expression evaluates to it; from
-//! Python (or Chameleon's generated code) it is callable with Chameleon's `include`
-//! signature. A [`SlotFill`] is a `metal:fill-slot` body as registered in the scope's slot
+//! The VM runs one as a frame when a `metal:use-macro` expression evaluates to it. Like
+//! Chameleon's, it is not callable: from Python (or Chameleon's generated code) its
+//! `include` ([`MacroInclude`]) renders it, with Chameleon's `include` signature. A [`SlotFill`] is a `metal:fill-slot` body as registered in the scope's slot
 //! stacks (`econtext['__slot_<name>']`), with what Chameleon's closure captures.
 
 use std::sync::Arc;
@@ -59,18 +59,42 @@ impl Macro {
         Ok(Self { program: program.unbind(), entry, builtins: builtins.unbind() })
     }
 
-    /// Chameleon's `Macro.include`: the macro itself is the callable.
+    /// Chameleon's `Macro.include`: the function that renders the macro. The macro itself is
+    /// not callable, as in Chameleon: Zope's path expressions call whatever they resolve to
+    /// (`context/@@main_template/macros/master`), and must get the macro back.
     #[getter]
-    fn include<'py>(slf: &Bound<'py, Self>) -> Bound<'py, Self> {
-        slf.clone()
+    fn include(slf: &Bound<'_, Self>) -> MacroInclude {
+        MacroInclude { target: slf.clone().unbind() }
     }
 
+    fn __repr__(&self, py: Python<'_>) -> String {
+        let program = self.program.bind(py).get();
+        let name = program.core.macros().iter().find(|m| m.entry == self.entry).map_or("<main>", |m| &*m.name);
+        format!("<Macro {name:?} of {}>", program.filename.bind(py))
+    }
+
+    fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
+        visit.call(&self.program)?;
+        visit.call(&self.builtins)
+    }
+}
+
+/// `Macro.include`: renders its macro with Chameleon's `include` signature, for callers
+/// outside a native render (another engine's `metal:use-macro`, `PageTemplate._render`).
+#[pyclass(frozen, module = "chameleon_rs._native")]
+pub(crate) struct MacroInclude {
+    pub(crate) target: Py<Macro>,
+}
+
+#[pymethods]
+impl MacroInclude {
     /// `include(stream, econtext, rcontext, __i18n_domain=None, __i18n_context=None,
     /// target_language=None)`: renders the macro and appends the result to `stream`.
     #[pyo3(signature = (stream, econtext, rcontext, domain = None, context = None, target_language = None))]
     #[allow(clippy::too_many_arguments)] // Chameleon's signature
     fn __call__(
-        slf: &Bound<'_, Self>,
+        &self,
+        py: Python<'_>,
         stream: &Bound<'_, PyAny>,
         econtext: &Bound<'_, PyAny>,
         rcontext: &Bound<'_, PyAny>,
@@ -78,19 +102,19 @@ impl Macro {
         context: Option<String>,
         target_language: Option<Bound<'_, PyAny>>,
     ) -> PyResult<()> {
-        let py = slf.py();
-        let m = slf.get();
+        let m = self.target.bind(py);
+        let get = m.get();
         let i18n = I18n {
             domain: domain.map(Arc::from),
             context: context.map(Arc::from),
             target_language: target_language.map(Bound::unbind),
         };
-        let program = m.program.bind(py);
-        let builtins = m.builtins.bind(py).clone();
+        let program = get.program.bind(py);
+        let builtins = get.builtins.bind(py).clone();
         let text = render_function(
             program,
-            m.entry,
-            slf.clone().into_any(),
+            get.entry,
+            m.clone().into_any(),
             builtins,
             stream,
             econtext,
@@ -103,14 +127,11 @@ impl Macro {
     }
 
     fn __repr__(&self, py: Python<'_>) -> String {
-        let program = self.program.bind(py).get();
-        let name = program.core.macros().iter().find(|m| m.entry == self.entry).map_or("<main>", |m| &*m.name);
-        format!("<Macro {name:?} of {}>", program.filename.bind(py))
+        format!("<include of {}>", self.target.bind(py).get().__repr__(py))
     }
 
     fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
-        visit.call(&self.program)?;
-        visit.call(&self.builtins)
+        visit.call(&self.target)
     }
 }
 

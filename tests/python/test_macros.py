@@ -367,6 +367,32 @@ def test_macro_and_template_include_with_chameleons_signature() -> None:
             include([], {'a': 1, '__translate': None}, {})
 
 
+def test_macro_is_not_callable() -> None:
+    """As in Chameleon: Zope's path expressions call whatever they resolve to unless it isn't
+    callable, so `context/@@main_template/macros/master` must give back the macro (#10)."""
+    for engine in (chameleon, chameleon_rs):
+        template = engine.PageTemplate('<div metal:define-macro="m">b</div>')
+        assert not callable(template.macros['m'])
+        assert callable(template.macros['m'].include)
+        assert callable(template.include)
+
+
+class MacroProxy:
+    """A wrapper that forwards `include`, as Zope integrations put around macros."""
+
+    def __init__(self, macro: Any) -> None:
+        self.include = macro.include
+
+
+@pytest.mark.parametrize('engine', [chameleon, chameleon_rs])
+def test_use_macro_through_a_proxy_forwarding_include(engine: Any) -> None:
+    layout = engine.PageTemplate(
+        '<html><div metal:define-macro="m">[<b metal:define-slot="s">d</b>]</div><p>rest</p></html>'
+    )
+    page = engine.PageTemplate('<p metal:use-macro="proxy"><u metal:fill-slot="s">F</u></p>')
+    assert page(proxy=MacroProxy(layout.macros['m'])) == '<div>[<u>F</u>]</div>'
+
+
 def test_included_macro_does_not_share_a_scope_its_caller_holds() -> None:
     """A macro called from outside (`include`) gets a scope that user code holds: the read-only
     macro it calls must still get a copy, as in Chameleon."""
