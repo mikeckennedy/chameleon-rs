@@ -241,7 +241,7 @@ impl Macros for Toy {
         Err("unused".into())
     }
 
-    fn after_macro(&mut self) -> Result<(), String> {
+    fn after_macro(&mut self, _shadowed: Option<V>) -> Result<(), String> {
         Ok(())
     }
 

@@ -36,6 +36,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   outer loop's next items read its `index` and `number` (`-1` and `0` after a leaf's empty
   loop). The outer loop's item is put back when the inner loop ends. Loops one after another
   still leave the last loop's item, and a `repeat` passed in by the caller is left alone.
+- **A local that shadows a global survives a macro call** (malthe/chameleon#445, reported by
+  vnmabus): after every macro call, Chameleon copies all globals into the caller's scope, so
+  `tal:define="foo ..."` inside an element reverted to the global `foo` after any
+  `metal:use-macro` in it. Only globals the macro changed are copied now; a macro that sets
+  the global still updates the caller, as before.
 
 ## [0.1.53] - 2026-10-27
 

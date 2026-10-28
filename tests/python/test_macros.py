@@ -12,6 +12,7 @@ files (`load:`), and macros across engines (Chameleon's in ours, ours in Chamele
 
 from __future__ import annotations
 
+import asyncio
 import re
 import sys
 from pathlib import Path
@@ -303,6 +304,41 @@ CASES: list[tuple[str, tuple[str, ...]]] = [
 @pytest.mark.parametrize(('source', 'others'), CASES)
 def test_macros_render_like_chameleon(source: str, others: tuple[str, ...]) -> None:
     same(source, others)
+
+
+SHADOW_MACROS = hidden(
+    """<i metal:define-macro="plain">m</i>"""
+    """<i metal:define-macro="sets" tal:define="global foo string:fromMacro">s</i>"""
+    """<i metal:define-macro="fails">${1/0}</i>"""
+)
+SHADOWED = """<tal:g define="global foo string:global; global bar string:g2"/><div tal:define="foo string:local">"""
+
+
+@pytest.mark.parametrize(
+    ('call', 'chameleons', 'ours'),
+    [
+        # The macro leaves the global alone: the local stays (Chameleon resets it to the global).
+        ("""<b metal:use-macro="macros['plain']"/>""", 'global', 'local'),
+        ("""<b metal:use-macro="other.macros['m']"/>""", 'global', 'local'),
+        # The macro sets the global: the caller gets it, as in Chameleon.
+        ("""<b metal:use-macro="macros['sets']"/>""", 'fromMacro', 'fromMacro'),
+        # The macro fails under `tal:on-error`: no update, as in Chameleon.
+        ("""<b tal:on-error="string:E"><b metal:use-macro="macros['fails']"/></b>""", 'local', 'local'),
+    ],
+)
+def test_a_local_that_shadows_a_global_survives_a_macro_call(call: str, chameleons: str, ours: str) -> None:
+    """malthe/chameleon#445: after a macro call Chameleon copies every global into the scope
+    (`econtext.update(rcontext)`), overwriting a local that shadows one. chameleon_rs copies
+    only globals the call changed, and the others (`bar`) as before."""
+    source = SHADOW_MACROS + SHADOWED + call + '${foo}|${bar}</div>${foo}'
+    results = []
+    for engine in (chameleon, chameleon_rs):
+        other = engine.PageTemplate('<b metal:define-macro="m">o</b>')
+        template = engine.PageTemplate(source)
+        results.append(template(other=other).rsplit('>', 2)[-2])
+        if engine is chameleon_rs:
+            assert asyncio.run(template.render_async(other=other)) == template(other=other)
+    assert results == [f'{chameleons}|g2</div', f'{ours}|g2</div']
 
 
 def test_macro_lookup() -> None:

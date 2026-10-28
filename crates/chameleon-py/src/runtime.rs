@@ -793,15 +793,41 @@ impl<const ASYNC: bool> Macros for PyRuntime<'_, '_, ASYNC> {
         Ok(Scope::copy(&self.scope)?.into_any().unbind())
     }
 
+    /// The globals a local shadows: `rcontext` entries the scope has a different value for.
+    /// Almost always none, and then nothing is made.
+    fn before_macro(&mut self) -> PyResult<Option<Py<PyAny>>> {
+        let Some(rcontext) = self.cx().rcontext_made() else { return Ok(None) };
+        let scope = self.scope.as_super();
+        let mut shadowed: Option<Bound<'_, PyDict>> = None;
+        for (key, global) in rcontext.iter() {
+            if let Some(local) = scope.get_item(&key)?
+                && !local.is(&global)
+            {
+                shadowed.get_or_insert_with(|| PyDict::new(self.py)).set_item(key, global)?;
+            }
+        }
+        Ok(shadowed.map(|d| d.into_any().unbind()))
+    }
+
     /// `econtext.update(rcontext)`: the local dict gets every `rcontext` entry (the globals
-    /// defined so far, and `__error__` once an error was recorded).
-    fn after_macro(&mut self) -> PyResult<()> {
+    /// defined so far, and `__error__` once an error was recorded), except a shadowed global
+    /// the macro left as it was: Chameleon overwrites the local that shadows it
+    /// (malthe/chameleon#445).
+    fn after_macro(&mut self, shadowed: Option<Py<PyAny>>) -> PyResult<()> {
         // Nothing to copy while `rcontext` is empty (or not even made yet).
         let Some(rcontext) = self.cx().rcontext_made() else { return Ok(()) };
         if rcontext.is_empty() {
             return Ok(());
         }
-        self.scope.as_super().update(rcontext.as_mapping())
+        let Some(shadowed) = shadowed else { return self.scope.as_super().update(rcontext.as_mapping()) };
+        let shadowed = shadowed.bind(self.py).cast::<PyDict>()?;
+        let scope = self.scope.as_super();
+        for (key, global) in rcontext.iter() {
+            if !shadowed.get_item(&key)?.is_some_and(|before| before.is(&global)) {
+                scope.set_item(key, global)?;
+            }
+        }
+        Ok(())
     }
 
     fn fill_slot(&mut self, name: &str, fill: Fill<Py<PyAny>>, extend: bool) -> PyResult<()> {

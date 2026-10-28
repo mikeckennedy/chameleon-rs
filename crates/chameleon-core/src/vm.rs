@@ -1187,8 +1187,15 @@ pub trait Macros: Values {
     fn may_share_scope(&mut self) -> bool {
         true
     }
-    /// `econtext.update(rcontext)` in the active scope, after a macro call returned.
-    fn after_macro(&mut self) -> Result<(), Self::Error>;
+    /// What [`Macros::after_macro`] needs from before a macro call: the globals a local
+    /// shadows (malthe/chameleon#445). The default records nothing.
+    fn before_macro(&mut self) -> Result<Option<Self::Value>, Self::Error> {
+        Ok(None)
+    }
+    /// `econtext.update(rcontext)` in the active scope, after a macro call returned, except
+    /// for a global in `shadowed` (from [`Macros::before_macro`]) the call left unchanged:
+    /// the local that shadows it stays.
+    fn after_macro(&mut self, shadowed: Option<Self::Value>) -> Result<(), Self::Error>;
     /// Registers a fill for slot `name` in the active scope: `econtext['__slot_name'] =
     /// deque((fill,))`, or for `metal:extend-macro` `getname('__slot_name').appendleft(fill)`
     /// when that exists.
@@ -1316,6 +1323,8 @@ struct Frame<V> {
     serial: u64,
     /// The caller still has to run `econtext.update(rcontext)` (set when a macro returns).
     pending_update: bool,
+    /// [`Macros::before_macro`]'s record for the macro call in progress.
+    shadowed: Option<V>,
     /// How deep the frame nests, in [`MacroStep::Frame`]'s `cost` units.
     depth: usize,
     /// What macros, slots and translation need, boxed so a plain frame (a native partial's)
@@ -1522,6 +1531,7 @@ impl<V> VmState<V> {
             fallback: Mark::default(),
             serial: 1,
             pending_update: false,
+            shadowed: None,
             depth: 0,
             extra: (!is_plain(&i18n) || !slots.is_empty()).then(|| Box::new(Extra { slots, ..Extra::new(i18n) })),
         };
@@ -1571,6 +1581,9 @@ impl<V> VmState<V> {
     /// `__traverse__` once suspended renders live in Python objects).
     pub fn for_each_value(&self, mut f: impl FnMut(&V)) {
         for frame in &self.frames {
+            if let Some(shadowed) = &frame.shadowed {
+                f(shadowed);
+            }
             f(&frame.code);
             f(&frame.scope);
             if let Some(extra) = &frame.extra {
@@ -2052,9 +2065,10 @@ pub fn run<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R) -> Result<Done<Val<
         }
         let mut pc = frame.pc as usize;
         let update = std::mem::take(&mut frame.pending_update);
+        let shadowed = frame.shadowed.take();
         st.recent = frame.recent;
         activate(rt, st)?;
-        if update && let Err(error) = rt.after_macro() {
+        if update && let Err(error) = rt.after_macro(shadowed) {
             unwind_error(st, rt, error)?;
             continue;
         }
@@ -2220,6 +2234,7 @@ fn push_partial<R: Runtime>(
         fallback: Mark::default(),
         serial,
         pending_update: false,
+        shadowed: None,
         depth,
         extra: None,
     });
@@ -2285,6 +2300,7 @@ fn push_frame<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, pushed: Pushed<V
         fallback: Mark::default(),
         serial,
         pending_update: false,
+        shadowed: None,
         depth,
         extra,
     });
@@ -2399,6 +2415,7 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
         st.restart_fill();
         let Some(caller) = st.frames.last_mut() else { return Err(VmError::Runtime(error)) };
         caller.pending_update = false;
+        caller.shadowed = None;
         st.recent = caller.recent;
         activate(rt, st)?;
     }
@@ -2978,14 +2995,18 @@ fn execute_rare<R: Runtime>(
         Op::UseMacro { expr } => {
             let value = eval_or_leave_rare!(st, rt, pc, expr, false, no_call);
             st.flush_fill();
+            let shadowed = rt.before_macro().map_err(rt_err)?;
             match rt.macro_call(value, &mut st.out).map_err(rt_err)? {
                 MacroStep::Frame { call, entry, cost } => {
+                    if let Some(caller) = st.frames.last_mut() {
+                        caller.shadowed = shadowed;
+                    }
                     let pushed = Pushed::call(call, entry, cost, pc as u32 + 1, OnReturn::Update);
                     return Ok(Flow::Leave(Action::Push(pushed)));
                 }
                 MacroStep::Done => {
                     st.restart_fill();
-                    rt.after_macro().map_err(rt_err)?;
+                    rt.after_macro(shadowed).map_err(rt_err)?;
                 }
             }
         }
@@ -2998,6 +3019,10 @@ fn execute_rare<R: Runtime>(
                 rt.copy_scope().map_err(rt_err)?
             };
             let call = Call { program: Arc::clone(program), code, scope };
+            let shadowed = rt.before_macro().map_err(rt_err)?;
+            if let Some(caller) = st.frames.last_mut() {
+                caller.shadowed = shadowed;
+            }
             let mut pushed = Pushed::call(call, entry, 1, pc as u32 + 1, OnReturn::Update);
             pushed.reset_token = true;
             st.flush_fill();

@@ -454,7 +454,7 @@ impl Macros for World {
         Ok(V::Scope(self.scopes.len() - 1))
     }
 
-    fn after_macro(&mut self) -> Result<(), String> {
+    fn after_macro(&mut self, _shadowed: Option<V>) -> Result<(), String> {
         let globals: Vec<_> = self.rcontext.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         self.scopes[self.scope].extend(globals);
         Ok(())

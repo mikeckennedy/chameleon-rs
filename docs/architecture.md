@@ -1683,6 +1683,13 @@ of a template that renders today are listed in D11.
   nothing, as for names. Loops one after another leave the last loop's item, as in Chameleon,
   because the first has left the unwind stack. A caller's own `repeat` (not an exact
   `RepeatDict`) is untouched. Listed in D11.
+- **#445, a local that shadows a global.** Chameleon's `econtext.update(rcontext)` after each
+  macro call overwrites a local of the same name as a global. `Macros::before_macro` records
+  the shadowed globals before the call: `rcontext` entries whose scope value is a different
+  object, almost always none, so usually no dict is made. `after_macro(shadowed)` skips a
+  shadowed global whose `rcontext` value is still the same object, so the local stays, and
+  copies the rest as before. A frame call keeps the record in the caller's `Frame::shadowed`
+  until it returns; it's cleared on an error, as `pending_update` is. Listed in D11.
 
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
@@ -2002,6 +2009,8 @@ exactly. See the Phase 9 amendments.)*
   `namevalue` (malthe/chameleon#429; see "Adopted upstream issues").
 - When a loop ends inside a running loop of the same name, `repeat[name]` is the outer loop's
   item again; Chameleon leaves the inner loop's (malthe/chameleon#177).
+- After a macro call, a local that shadows a global keeps its value unless the macro changed
+  the global; Chameleon resets it to the global (malthe/chameleon#445).
 - `CHAMELEON_CACHE` (on-disk compiled modules) is replaced by an optional on-disk cache of the
   compiled program, only if compile time turns out to matter.
 

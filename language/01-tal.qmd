@@ -330,6 +330,11 @@ Global variables may be changed by the execution of a macro if that macro also d
 variable to be global.
 :::
 
+A local variable can have the same name as a global one, and hides it in its element. A macro
+called inside that element doesn't change this unless the macro sets the global itself. In
+Chameleon, any macro call resets the local to the global's value
+([malthe/chameleon#445](https://github.com/malthe/chameleon/issues/445)).
+
 To set the definition scope of a variable, use the keywords `local` or `global` in front of
 the assignment. The default setting is `local`; thus, in practice, only the `global` keyword
 is used.
