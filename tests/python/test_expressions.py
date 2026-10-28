@@ -13,6 +13,7 @@ from typing import Any
 
 import chameleon
 import chameleon.astutil
+import chameleon.exc
 import chameleon.tales
 import chameleon_rs
 import chameleon_rs.tales
@@ -600,6 +601,17 @@ def test_custom_type_compile_error() -> None:
     for engine in (chameleon, chameleon_rs):
         with pytest.raises(engine.exc.ExpressionError):
             custom_class(engine)('<p tal:content="brace: }">x</p>')
+
+
+def test_custom_type_raising_chameleons_expression_error() -> None:
+    # Types written for Chameleon (z3c.pt, Zope's MappedExpr) reject a too-long `${...}`
+    # candidate with Chameleon's ExpressionError; the Interpolator retries on it (#8).
+    brace = type('Brace', (BraceExpr,), {'error': chameleon.exc.ExpressionError})
+    types = {**chameleon_rs.PageTemplate.expression_types, 'brace': brace}
+    template = chameleon_rs.PageTemplate(
+        '<p class="a-${x} b-${y}">${x} y}</p>', expression_types=types, default_expression='brace'
+    )
+    assert template() == '<p class="a-x b-y">x y}</p>'
 
 
 # `load:` (file templates): relative paths, interpolated specs, pipes, packages.

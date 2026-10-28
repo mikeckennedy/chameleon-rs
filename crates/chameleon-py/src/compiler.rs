@@ -672,16 +672,26 @@ enum Spec<'py> {
 }
 
 /// A custom type's `ExpressionError` drives the Interpolator's retry like any other;
-/// anything else aborts compilation.
+/// anything else aborts compilation. Stock Chameleon's `ExpressionError` counts too: types
+/// written for Chameleon (z3c.pt, Zope's `MappedExpr`) raise it. It is looked up in
+/// `sys.modules` only, never imported.
 fn expression_error(py: Python<'_>, e: PyErr, expression: &Tok) -> ExprCompileError<PyErr> {
-    let is_expression_error = py
+    let value = e.value(py);
+    let is_instance = |cls: Bound<'_, PyAny>| value.is_instance(&cls).unwrap_or(false);
+    let ours = py
         .import(intern!(py, "chameleon_rs.exc"))
         .and_then(|m| m.getattr(intern!(py, "ExpressionError")))
-        .is_ok_and(|cls| e.value(py).is_instance(&cls).unwrap_or(false));
-    if !is_expression_error {
+        .is_ok_and(is_instance);
+    let chameleons = || {
+        py.import(intern!(py, "sys"))
+            .and_then(|sys| sys.getattr(intern!(py, "modules")))
+            .and_then(|modules| modules.get_item(intern!(py, "chameleon.exc")))
+            .and_then(|m| m.getattr(intern!(py, "ExpressionError")))
+            .is_ok_and(is_instance)
+    };
+    if !(ours || chameleons()) {
         return ExprCompileError::Other(e);
     }
-    let value = e.value(py);
     let args = value.getattr(intern!(py, "args")).ok();
     let arg = |i: usize| args.as_ref().and_then(|a| a.get_item(i).ok()).and_then(|v| v.extract::<String>().ok());
     let message = arg(0).unwrap_or_default();

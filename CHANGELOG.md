@@ -41,6 +41,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `tal:define="foo ..."` inside an element reverted to the global `foo` after any
   `metal:use-macro` in it. Only globals the macro changed are copied now; a macro that sets
   the global still updates the caller, as before.
+- **Custom expression types written for Chameleon reject a `${...}` candidate with its
+  `ExpressionError`** (#8, reported by zopyx): the interpolator offers the longest candidate
+  first and shortens it while the type raises `ExpressionError`, but it only recognized
+  chameleon-rs' class, so a type raising `chameleon.exc.ExpressionError` (z3c.pt, Zope's
+  `MappedExpr`) aborted the template, and any Plone attribute with two `${...}` failed to
+  compile. Chameleon's class counts too now, when Chameleon is loaded; chameleon-rs still
+  never imports it.
 
 ## [0.1.53] - 2026-10-27
 
