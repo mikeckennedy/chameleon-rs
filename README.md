@@ -128,7 +128,9 @@ OpenAPI docs work as without `@template`.
   `repeat.item.first('category')` / `last('category')` group a sorted sequence
   ([#144](https://github.com/malthe/chameleon/issues/144)), and
   `<input disabled tal:attributes="disabled True">` renders `disabled="disabled"`, not
-  `disableddisabled` ([#429](https://github.com/malthe/chameleon/issues/429)).
+  `disableddisabled` ([#429](https://github.com/malthe/chameleon/issues/429)), and
+  `repeat.item` stays right in a recursive macro
+  ([#177](https://github.com/malthe/chameleon/issues/177)).
 - **Typed.** PEP 561 type information for the whole API, including the native module.
 - **No runtime dependencies.** The engine, the Markdown converter and the integrations are in
   the wheel; each integration imports its framework only when you import it.

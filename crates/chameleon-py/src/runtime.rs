@@ -441,12 +441,7 @@ impl<const ASYNC: bool> Loops for PyRuntime<'_, '_, ASYNC> {
         let py = self.py;
         let repeat_name = intern!(py, "repeat");
         let repeat = Scope::lookup(&self.scope, repeat_name.as_any())?.ok_or_else(|| PyNameError::new_err("repeat"))?;
-        let key = if let [one] = names {
-            self.name(*one)?.bind(py).clone().into_any()
-        } else {
-            let keys = names.iter().map(|n| self.name(*n).map(|k| k.bind(py).clone())).collect::<PyResult<Vec<_>>>()?;
-            PyTuple::new(py, keys)?.into_any()
-        };
+        let key = self.repeat_key(names)?;
         if let Ok(repeat) = repeat.cast_exact::<RepeatDict>() {
             let (iterator, length) = RepeatDict::register(repeat, &key, iterable.bind(py))?;
             let index = match i64::try_from(length) {
@@ -495,6 +490,19 @@ impl<const ASYNC: bool> Loops for PyRuntime<'_, '_, ASYNC> {
             return self.scope.as_super().set_item(self.name(*one)?.bind(py), item);
         }
         self.assign_into(names, item.bind(py), self.scope.as_super().as_any())
+    }
+
+    /// Only for the render's own `RepeatDict`: a user's `repeat` keeps Chameleon's behavior.
+    fn running_repeat(&mut self, names: &[NameId], running: &[&Py<PyAny>]) -> PyResult<Option<Py<PyAny>>> {
+        let Some(repeat) = self.own_repeat()? else { return Ok(None) };
+        let key = self.repeat_key(names)?;
+        Ok(RepeatDict::running_item(&repeat, &key, running)?.map(Bound::unbind))
+    }
+
+    fn restore_repeat(&mut self, names: &[NameId], item: Py<PyAny>) -> PyResult<()> {
+        let Some(repeat) = self.own_repeat()? else { return Ok(()) };
+        let key = self.repeat_key(names)?;
+        RepeatDict::put_back(&repeat, &key, item.bind(self.py))
     }
 
     /// `name '__backup_x_ID' is not defined`, the backup variable a global loop's restore
@@ -662,7 +670,23 @@ impl<const ASYNC: bool> Attrs for PyRuntime<'_, '_, ASYNC> {
     }
 }
 
-impl<const ASYNC: bool> PyRuntime<'_, '_, ASYNC> {
+impl<'py, const ASYNC: bool> PyRuntime<'_, 'py, ASYNC> {
+    /// A loop's key in `repeat`: its name, or a tuple of its names.
+    fn repeat_key(&self, names: &[NameId]) -> PyResult<Bound<'py, PyAny>> {
+        let py = self.py;
+        if let [one] = names {
+            return Ok(self.name(*one)?.bind(py).clone().into_any());
+        }
+        let keys = names.iter().map(|n| self.name(*n).map(|k| k.bind(py).clone())).collect::<PyResult<Vec<_>>>()?;
+        Ok(PyTuple::new(py, keys)?.into_any())
+    }
+
+    /// The scope's `repeat`, if it is an exact `RepeatDict` (what a render provides).
+    fn own_repeat(&self) -> PyResult<Option<Bound<'py, RepeatDict>>> {
+        let repeat = Scope::lookup(&self.scope, intern!(self.py, "repeat").as_any())?;
+        Ok(repeat.and_then(|r| r.cast_exact::<RepeatDict>().ok().cloned()))
+    }
+
     /// `target[a], target[b] = item` (or `target[a] = item`).
     fn assign_into(&self, names: &[NameId], item: &Bound<'_, PyAny>, target: &Bound<'_, PyAny>) -> PyResult<()> {
         let py = self.py;

@@ -31,6 +31,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   attribute is, `disabled="disabled"`. `default` still keeps the attribute as written
   (`checked`). This changes output that Chameleon gets wrong; see "Chameleon bugs fixed" in the
   compatibility guide.
+- **`repeat` in a recursive macro** (malthe/chameleon#177, reported by marcidy): when a loop
+  ended inside a loop of the same name, `repeat.item` kept the inner loop's item, so the
+  outer loop's next items read its `index` and `number` (`-1` and `0` after a leaf's empty
+  loop). The outer loop's item is put back when the inner loop ends. Loops one after another
+  still leave the last loop's item, and a `repeat` passed in by the caller is left alone.
 
 ## [0.1.53] - 2026-10-27
 

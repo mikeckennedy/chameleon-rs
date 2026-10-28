@@ -114,6 +114,7 @@ fix is a Chameleon issue that chameleon-rs adopted.
 | Template | Chameleon | chameleon-rs |
 |---|---|---|
 | A valueless attribute given a value: `<input disabled tal:attributes="disabled True">` or `<img alt i18n:attributes="alt">` ([#429](https://github.com/malthe/chameleon/issues/429)) | `<input disableddisabled>`, `<img altAlt>` | `<input disabled="disabled">`, `<img alt="Alt">` |
+| A loop inside a loop of the same name, as in a recursive macro ([#177](https://github.com/malthe/chameleon/issues/177)) | After the inner loop ends, `repeat.item` is still the inner loop's, so the outer loop's next items get its `index` and `length` (often `-1` and `0`). | `repeat.item` is the outer loop's again. |
 
 ## Found a difference?
 

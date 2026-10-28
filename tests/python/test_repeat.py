@@ -4,6 +4,8 @@ loops, unpacking, whitespace between items, and the names after the loop."""
 
 from __future__ import annotations
 
+import asyncio
+import re
 from typing import Any
 
 import chameleon
@@ -59,7 +61,8 @@ def test_repeat_item_attributes(attribute: str, called: bool, name: str) -> None
 GRID = [
     # Nested loops see the outer item.
     '<p tal:repeat="o [1, 2]"><b tal:repeat="i \'ab\'">${repeat.o.index}${repeat.i.letter}${o}${i}</b></p>',
-    # Same name nested: the inner loop's item shadows, then the outer is restored.
+    # Same name nested: the inner loop's item shadows, then the outer is restored (the
+    # repeat item too: a deliberate difference, see FIXED).
     '<p tal:repeat="i [1, 2]"><b tal:repeat="i [3]">${i}${repeat.i.index}</b>${i}${repeat.i.index}</p>',
     # Unpacking.
     "<p tal:repeat=\"(k, v) items.items()\">${k}${v}${repeat['k', 'v'].index}</p>",
@@ -92,10 +95,71 @@ GRID = [
 ]
 
 
+# Deliberate differences: Chameleon's output, then ours.
+FIXED = {
+    # malthe/chameleon#177: after an inner loop of the same name ends, Chameleon's `repeat.i`
+    # is still the inner loop's (index 0 for the outer loop's second item).
+    GRID[1]: ('<p><b>30</b>10</p>\n<p><b>30</b>20</p>', '<p><b>30</b>10</p>\n<p><b>30</b>21</p>'),
+}
+
+
 @pytest.mark.parametrize('source', GRID)
 def test_repeat_grid(source: str) -> None:
     items = {'a': 1, 'b': 2}
-    assert render(chameleon_rs, source, items=items) == render(chameleon, source, items=items)
+    want = render(chameleon, source, items=items)
+    if source in FIXED:
+        chameleons, ours = FIXED[source]
+        assert want == chameleons
+        want = ours
+    assert render(chameleon_rs, source, items=items) == want
+
+
+class Node:
+    def __init__(self, name: str, *children: Node) -> None:
+        self.name = name
+        self.children = list(children)
+
+
+TREE = [Node('a', Node('a1'), Node('a2', Node('a21'))), Node('b'), Node('c', Node('c1'))]
+RECURSIVE = (
+    '<ul metal:define-macro="tree"><li tal:repeat="item items">${item.name}:${repeat.item.number}'
+    "/${repeat.item.length}${'.' if repeat.item.end else ''}"
+    '<tal:c define="items item.children" condition="items"><ul metal:use-macro="template.macros[\'tree\']"/>'
+    '</tal:c></li></ul>'
+)
+
+
+def test_repeat_in_a_recursive_macro() -> None:
+    """malthe/chameleon#177: each level of a recursive macro has its own `repeat.item`. In
+    Chameleon the inner loop's item stays in `repeat` after it ends, so the outer loop's next
+    items read the inner one's: `b` and `c` get `a21`'s `1/1.`."""
+    expected = [
+        'a:1/3',
+        'a1:1/2',
+        'a2:2/2.',
+        'a21:1/1.',
+        'b:2/3',
+        'c:3/3.',
+        'c1:1/1.',
+    ]
+    got = chameleon_rs.PageTemplate(RECURSIVE)(items=TREE)
+    assert re.findall(r'\w+:\d+/\d+\.?', got) == expected
+    assert asyncio.run(chameleon_rs.PageTemplate(RECURSIVE).render_async(items=TREE)) == got
+    want = chameleon.PageTemplate(RECURSIVE)(items=TREE)
+    assert re.findall(r'\w+:\d+/\d+\.?', want)[4:6] == ['b:1/1.', 'c:1/1.']
+
+
+def test_repeat_restores_only_a_running_loops_item() -> None:
+    # Loops one after another leave the last one's item, as in Chameleon.
+    source = '<i tal:repeat="i [1, 2]">${i}</i><b tal:repeat="i [3, 4, 5]">${i}</b>${repeat.i.index}|${repeat.i.length}'
+    assert render(chameleon_rs, source) == render(chameleon, source)
+    # A user's `repeat` gets Chameleon's behavior.
+    source = '<p tal:repeat="i [1, 2]"><b tal:repeat="i [3]">${i}</b>${i}</p>'
+    results = []
+    for engine in (chameleon, chameleon_rs):
+        repeat = Repeat()
+        results.append((engine.PageTemplate(source)(repeat=repeat), repeat.calls))
+    assert results[0] == results[1]
 
 
 class Repeat:
@@ -198,12 +262,12 @@ def test_repeat_first_and_last_edge_cases() -> None:
     # Without a name, whole items compare; a part missing from either item counts as different.
     source = '<i tal:repeat="x items">${int(repeat.x.first())}${int(repeat.x.last())}${int(repeat.x.first(\'n\'))}</i>'
     assert chameleon_rs.PageTemplate(source)(items=[1, 1, 2]) == '<i>101</i>\n<i>011</i>\n<i>111</i>'
-    # After a nested loop of the same name, `repeat.i` is the inner loop's, as for `index`.
+    # After a nested loop of the same name ends, `repeat.i` is the outer loop's again.
     source = (
         '<p tal:repeat="i [1, 1]"><b tal:repeat="i [2, 2]">${int(repeat.i.first())}</b>'
         '${int(repeat.i.first())}${repeat.i.index}</p>'
     )
-    assert chameleon_rs.PageTemplate(source)() == '<p><b>1</b>\n<b>0</b>01</p>\n<p><b>1</b>\n<b>0</b>01</p>'
+    assert chameleon_rs.PageTemplate(source)() == '<p><b>1</b>\n<b>0</b>10</p>\n<p><b>1</b>\n<b>0</b>01</p>'
     # A `RepeatItem` made by hand without its items (Chameleon's signature) has everything else.
     item = chameleon_rs.tal.RepeatItem(iter([1, 2]), 2)
     next(item._iterator)

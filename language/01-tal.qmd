@@ -523,6 +523,11 @@ same way in a condition, but print differently.
 You can access the contents of the repeat variable using either dictionary- or
 attribute-style access, e.g. `repeat['item'].start` or `repeat.item.start`.
 
+A loop inside a loop of the same name, such as the loop in a recursive macro that renders a
+tree, has its own repeat variable. When the inner loop ends, `repeat.item` is the outer loop's
+again. In Chameleon, it stays the inner loop's
+([malthe/chameleon#177](https://github.com/malthe/chameleon/issues/177)).
+
 ::: {.callout-note}
 For legacy compatibility, the attributes `odd`, `even`, `number`, `letter`, `Letter`, `roman`,
 and `Roman` are callable (returning `self`).

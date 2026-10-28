@@ -1672,6 +1672,17 @@ of a template that renders today are listed in D11.
   `Attr::Dynamic` and `AttrInfo` carry `as_written` (`space name`), which `Op::AttrValue`
   writes alone for `default`. A translated attribute's `default` is translated, then written
   with the new quotes. A bare value (`title=x`) is left as Chameleon writes it. Listed in D11.
+- **#177, `repeat` in nested loops of the same name.** Chameleon's `repeat(key, iterable)`
+  replaces `repeat[key]` and nothing puts the outer loop's item back, so in a recursive macro
+  the outer loop's next items read the finished inner loop's (`index` -1). At `LoopStart`
+  (local loops) the VM passes the iterators of the loops on the unwind stack to
+  `Loops::running_repeat`, and the runtime returns `repeat[key]` if it is an exact
+  `RepeatItem` whose `_iterator` is one of them, a loop still running. It's kept after the name
+  backups in `Unwind::Loop`'s `backups` (which keeps `Unwind` at 48 bytes) and put back by
+  `restore_repeat` when the loop ends normally. An error unwinding through the loop restores
+  nothing, as for names. Loops one after another leave the last loop's item, as in Chameleon,
+  because the first has left the unwind stack. A caller's own `repeat` (not an exact
+  `RepeatDict`) is untouched. Listed in D11.
 
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
@@ -1989,6 +2000,8 @@ exactly. See the Phase 9 amendments.)*
   compiler internals beyond that interface are out of scope.
 - A valueless attribute given a value renders `name="value"`, where Chameleon writes
   `namevalue` (malthe/chameleon#429; see "Adopted upstream issues").
+- When a loop ends inside a running loop of the same name, `repeat[name]` is the outer loop's
+  item again; Chameleon leaves the inner loop's (malthe/chameleon#177).
 - `CHAMELEON_CACHE` (on-disk compiled modules) is replaced by an optional on-disk cache of the
   compiled program, only if compile time turns out to matter.
 

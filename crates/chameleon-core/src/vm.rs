@@ -1098,6 +1098,24 @@ pub trait Loops: Values {
     /// The error a global loop raises when it ends: Chameleon restores names it never backed
     /// up, a `NameError` for its backup variable.
     fn missing_backup(&mut self, name: NameId) -> Self::Error;
+    /// What `repeat` holds for `names` if it is the repeat item of a loop that is still
+    /// running, one of `running` (their iterators); called before a loop registers, so the
+    /// item can be put back when it ends (malthe/chameleon#177; Chameleon leaves the inner
+    /// loop's item there). The default backs nothing up.
+    fn running_repeat(
+        &mut self,
+        names: &[NameId],
+        running: &[&Self::Value],
+    ) -> Result<Option<Self::Value>, Self::Error> {
+        let _ = (names, running);
+        Ok(None)
+    }
+    /// Puts back an item [`Loops::running_repeat`] returned, when the loop that replaced it
+    /// ends.
+    fn restore_repeat(&mut self, names: &[NameId], item: Self::Value) -> Result<(), Self::Error> {
+        let _ = (names, item);
+        Ok(())
+    }
 }
 
 /// Errors: `tal:on-error` and Chameleon's per-function error records. The defaults suit
@@ -2483,6 +2501,21 @@ fn execute<R: Runtime>(
                     }
                 }
                 let iterable = eval_or_leave!(st, rt, pc, expr, false, no_call);
+                if li.visibility == Visibility::Local {
+                    // An enclosing loop of the same name (a recursive macro) gets its repeat
+                    // item back when this one ends; kept after the name backups.
+                    let running: Vec<&Val<R>> = st
+                        .unwind
+                        .iter()
+                        .filter_map(|u| if let Unwind::Loop { iterator, .. } = u { Some(iterator) } else { None })
+                        .collect();
+                    let outer = if running.is_empty() {
+                        None
+                    } else {
+                        rt.running_repeat(&li.names, &running).map_err(rt_err)?
+                    };
+                    backups.push(outer);
+                }
                 let (iterator, index) = rt.repeat(&li.names, iterable).map_err(rt_err)?;
                 for &name in &li.names {
                     rt.set_null(name).map_err(rt_err)?;
@@ -3309,8 +3342,13 @@ fn bind_or_exit<R: Runtime>(
         let first = li.names.first().copied().ok_or(VmError::Internal("loop without names"))?;
         return Err(VmError::Runtime(rt.missing_backup(first)));
     }
-    for (&name, backup) in li.names.iter().zip(backups) {
+    // The name backups, then the enclosing loop's repeat item (see `Op::LoopStart`).
+    let mut backups = backups.into_iter();
+    for (&name, backup) in li.names.iter().zip(backups.by_ref()) {
         rt.restore(name, backup).map_err(VmError::Runtime)?;
+    }
+    if let Some(Some(outer)) = backups.next() {
+        rt.restore_repeat(&li.names, outer).map_err(VmError::Runtime)?;
     }
     Ok(exit)
 }

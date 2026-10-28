@@ -1,6 +1,7 @@
 // Ported from Chameleon's src/chameleon/tal.py (`RepeatDict`, and the `RepeatItem` descriptors
 // `index`, `number`, `start`, `end`, `odd`, `even`, `parity`), modified: `RepeatDict` is a native
-// class that also gives each `RepeatItem` its items (for `first` and `last`), and the descriptors are computed natively for the exact `RepeatItem` class of
+// class that also gives each `RepeatItem` its items (for `first` and `last`) and puts an
+// enclosing loop's item back when an inner loop of the same name ends, and the descriptors are computed natively for the exact `RepeatItem` class of
 // `chameleon_rs.tal`, with the same results and types.
 
 //! The `repeat` variable without Python frames (Phase 10).
@@ -69,6 +70,31 @@ impl RepeatDict {
             slf.as_any().set_item(key, item)?;
         }
         Ok((iterator, length))
+    }
+
+    /// `self[key]` if it is an exact `RepeatItem` of a loop still running (its iterator is one
+    /// of `running`): what an inner loop of the same key puts back when it ends.
+    pub(crate) fn running_item<'py>(
+        slf: &Bound<'py, Self>,
+        key: &Bound<'py, PyAny>,
+        running: &[&Py<PyAny>],
+    ) -> PyResult<Option<Bound<'py, PyAny>>> {
+        let py = slf.py();
+        let item = match slf.get().d.bind(py).get_item(key) {
+            Ok(item) => item,
+            Err(e) if e.is_instance_of::<PyKeyError>(py) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        if !is_type(&item, classes(py)?.item.bind(py)) {
+            return Ok(None);
+        }
+        let iterator = item.getattr(intern!(py, "_iterator"))?;
+        Ok(running.iter().any(|r| r.as_ptr() == iterator.as_ptr()).then_some(item))
+    }
+
+    /// `self[key] = item`, putting back what [`RepeatDict::running_item`] returned.
+    pub(crate) fn put_back(slf: &Bound<'_, Self>, key: &Bound<'_, PyAny>, item: &Bound<'_, PyAny>) -> PyResult<()> {
+        slf.get().d.bind(slf.py()).set_item(key, item)
     }
 }
 
