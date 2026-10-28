@@ -16,6 +16,7 @@ import re
 from typing import Any
 
 import chameleon
+import chameleon.tal
 import chameleon_rs
 import pytest
 from exprtest import evaluate
@@ -126,6 +127,21 @@ def normal(part: str) -> str:
     return joined.replace('chameleon_rs.', 'chameleon.').replace('__rrss', '')
 
 
+def depends_on_repeat_repr(expression: str, shadow: bool) -> bool:
+    """Whether the value is computed from `repeat`'s default repr, which holds its module name
+    and a new address in every render (`sorted(str(repeat))`): such values can't be compared
+    across engines. Checked on Chameleon with the repr pinned to two different strings."""
+    repeat_dict = chameleon.tal.RepeatDict
+    results = []
+    for text in ('<R>', '<RR 2>'):
+        repeat_dict.__repr__ = lambda self, text=text: text
+        try:
+            results.append(outcome(chameleon, expression, shadow))
+        finally:
+            del repeat_dict.__repr__
+    return results[0] != results[1]
+
+
 @pytest.mark.filterwarnings('ignore::SyntaxWarning')  # `x is 1.5` and the like, from both engines
 @settings(max_examples=EXAMPLES, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(expressions(), st.booleans())
@@ -134,4 +150,6 @@ def test_generated_expressions(expression: str, shadow: bool) -> None:
     got = outcome(chameleon_rs, expression, shadow)
     if want[:2] == ('raise', 'SyntaxError') and got[:2] == ('raise', 'SyntaxError'):
         return  # the message names the generated module
+    if got != want and depends_on_repeat_repr(expression, shadow):
+        return
     assert got == want, expression
