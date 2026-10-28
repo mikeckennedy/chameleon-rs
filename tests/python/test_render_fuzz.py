@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import os
 import re
+from html.parser import HTMLParser
 from typing import Any
 
 import chameleon
 import chameleon_rs
 import chameleon_rs.exc
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
 EXAMPLES = int(os.environ.get('CHAMELEON_RS_FUZZ_EXAMPLES', '300'))
@@ -456,6 +457,47 @@ def i18n_node(depth: int, safe: bool = False) -> Any:
     )
 
 
+class _NestedFillUnderAHandler(HTMLParser):
+    """Finds a fill under a macro call under a `tal:on-error` inside a fill."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stack: list[tuple[str, set[str]]] = []
+        self.found = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        names = {name for name, _ in attrs}
+        if 'metal:fill-slot' in names:
+            # Each element's role from the root: fill, handler, call, in that order.
+            want = ['metal:fill-slot', 'tal:on-error', 'metal:use-macro']
+            for _, above in self.stack:
+                while want and (want[0] in above or (want[0] == 'metal:use-macro' and 'metal:extend-macro' in above)):
+                    want.pop(0)
+            self.found = self.found or not want
+        self.stack.append((tag, names))
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+        self.stack.pop()
+
+    def handle_endtag(self, tag: str) -> None:
+        while self.stack and self.stack.pop()[0] != tag:
+            pass
+
+
+def nested_fill_under_a_handler(body: str) -> bool:
+    """A known difference (#1, `test_macros.test_handler_around_a_nested_call_in_a_slot_body`):
+    a `tal:on-error` in a fill, around a macro call whose own fill fails. When both fills land
+    in slots inside a translation, Chameleon's one fallback mark per function, taken in the
+    outer stream, cuts the inner one and leaves the inner fill's start tag unclosed, where
+    chameleon-rs takes the inner fill's output back. Which slot a fill lands in depends on the
+    call that takes it, so any template with this structure is skipped."""
+    parser = _NestedFillUnderAHandler()
+    parser.feed(body)
+    parser.close()
+    return parser.found
+
+
 @settings(max_examples=EXAMPLES, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(
     body=st.lists(i18n_node(2), min_size=1, max_size=3).map(''.join),
@@ -466,6 +508,7 @@ def i18n_node(depth: int, safe: bool = False) -> Any:
 def test_generated_macro_and_i18n_templates_render_like_chameleon(
     body: str, implicit: bool, language: str | None, mode: str
 ) -> None:
+    assume(not nested_fill_under_a_handler(body))
     options = {'implicit_i18n_translate': implicit, 'implicit_i18n_attributes': {'title', 'a'} if implicit else ()}
 
     def run(engine: Any) -> Any:

@@ -35,7 +35,7 @@ import pytest
 import test_fixtures as fixtures_mod
 import test_render_fuzz as fuzz
 from chameleon_rs import PageTemplate, PageTemplateFile, PageTextTemplate, concurrent
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
 EXAMPLES = fuzz.EXAMPLES
@@ -143,6 +143,7 @@ def test_generated_templates_render_async_like_chameleon(body: str) -> None:
 def test_generated_macro_and_i18n_templates_render_async_like_chameleon(
     body: str, implicit: bool, language: str | None, mode: str
 ) -> None:
+    assume(not fuzz.nested_fill_under_a_handler(body))
     options: dict[str, Any] = {
         'implicit_i18n_translate': implicit,
         'implicit_i18n_attributes': {'title', 'a'} if implicit else (),

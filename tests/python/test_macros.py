@@ -664,6 +664,49 @@ def test_handler_in_a_slot_body_drops_the_failing_text_node(body: str) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ('macro', 'call', 'chameleons', 'ours'),
+    [
+        (
+            'm',
+            """<z metal:use-macro="macros['m']" tal:on-error="string:E"><u metal:fill-slot="s">${1/0}</u></z>""",
+            '<div><b><y>T <u>E U</y><FG|None></b></div>',
+            '<div><b><y>T E U</y><FG|None></b></div>',
+        ),
+        (
+            'm',
+            """<q tal:on-error="string:E">Q<z metal:use-macro="macros['m']"><u metal:fill-slot="s">${1/0}</u></z></q>""",
+            '<div><b><y>T <q>Q<u><q>E</q> U</y><FG|None></b></div>',
+            '<div><b><y>T <q>Q<q>E</q> U</y><FG|None></b></div>',
+        ),
+        (
+            'n',
+            """<z metal:use-macro="macros['n']" tal:on-error="string:E"><u metal:fill-slot="s">${1/0}</u></z>""",
+            """<div><b><y>T <u>E U</y><F${x}G|{'x': '<i></i>'}></b></div>""",
+            """<div><b><y>T E U</y><F${x}G|{'x': '<i></i>'}></b></div>""",
+        ),
+    ],
+)
+def test_handler_around_a_nested_call_in_a_slot_body(macro: str, call: str, chameleons: str, ours: str) -> None:
+    """A known difference (#1): a handler in a slot body whose slot sits inside a translation,
+    around a call of the same macro whose own fill fails. Chameleon's one fallback mark per
+    function was taken in the outer call's stream and cuts the inner call's, so the inner
+    fill's start tag stays and is never closed (`<u>E`). chameleon-rs keeps Chameleon's single
+    mark within a frame (`<q>Q` stays, as `test_slot_body_macro_streams_like_chameleon` pins),
+    but the inner fill is another frame and its output is taken back."""
+    source = (
+        SLOT_STREAM_MACROS
+        + f"""<x metal:use-macro="macros['{macro}']"><y metal:fill-slot="s">T {call}"""
+        + """ U</y></x>"""
+    )
+
+    def translate(msgid: Any, **kw: Any) -> str:
+        return f'<{msgid}|{kw.get("mapping")}>'
+
+    assert chameleon.PageTemplate(source)(translate=translate) == chameleons
+    assert chameleon_rs.PageTemplate(source)(translate=translate) == ours
+
+
 def test_extended_slot_inside_a_name_with_a_recursive_translated_fill() -> None:
     """An `extend-macro` whose first fill of a slot (defined inside an `i18n:name`) is a
     translated body calling the macro itself, and whose second fill is plain: the inner call

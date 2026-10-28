@@ -2024,6 +2024,14 @@ exactly. See the Phase 9 amendments.)*
   item again; Chameleon leaves the inner loop's (malthe/chameleon#177).
 - After a macro call, a local that shadows a global keeps its value unless the macro changed
   the global; Chameleon resets it to the global (malthe/chameleon#445).
+- A `tal:on-error` in a slot body whose slot sits inside a translation, around a nested macro
+  call whose own fill fails (#1): Chameleon's one `__fallback` per function is taken in the
+  outer call's stream and cuts the inner call's, leaving the failed fill's start tag unclosed.
+  chameleon-rs keeps one fallback mark per frame (D3 item 2), and the inner fill runs in its own
+  frame, so its output is taken back. Matching would mean modelling Chameleon's streams as lists
+  of appends to reproduce invalid markup. Pinned by
+  `test_macros.test_handler_around_a_nested_call_in_a_slot_body`; the macro and i18n fuzzers
+  skip the structure (`test_render_fuzz.nested_fill_under_a_handler`).
 - `CHAMELEON_CACHE` (on-disk compiled modules) is replaced by an optional on-disk cache of the
   compiled program, only if compile time turns out to matter.
 

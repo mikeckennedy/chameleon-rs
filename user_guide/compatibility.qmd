@@ -66,7 +66,7 @@ builtin of every template, so it is not in either.
 
 ### Corner cases in slot bodies
 
-Three cases, all involving the slot fills of a macro call together with `tal:on-error` or
+Four cases, all involving the slot fills of a macro call together with `tal:on-error` or
 i18n settings, render differently. No real template we've seen does this; each is pinned by a
 test that fails if the behaviour changes.
 
@@ -77,6 +77,10 @@ test that fails if the behaviour changes.
   (`<q>Q` where Chameleon gives `<q>`).
 - **A handler on an `i18n:name` element** whose content calls a macro that fails partway: the
   same difference, for the text of the failing node inside the macro.
+- **A handler around a nested macro call in a slot body** whose slot sits inside
+  `i18n:translate` or `i18n:name`, when the nested call's own fill fails. Chameleon keeps the
+  start tag of the failed fill and never closes it (`T <u>E U`). chameleon-rs takes the failed
+  fill's output back (`T E U`).
 - **A fill no macro took**, used by a later macro call while the calling template has
   different `i18n:domain`, `i18n:context` or `i18n:target` settings: values converted by that
   fill use the settings where it was defined. Chameleon uses the settings at the later call.
