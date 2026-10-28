@@ -98,7 +98,7 @@ The common ones:
 | `auto_reload` | `False` (or `CHAMELEON_RELOAD`) | File templates recompile when their file changes. |
 | `encoding` | none | Lets you pass encoded byte strings as values. |
 | `translate` | none | The translation function for `i18n:` attributes: `translate(msgid, domain=None, mapping=None, default=None, context=None, target_language=None)`. |
-| `boolean_attributes` | the HTML set, in HTML mode | Attributes rendered as `name="name"` for a true value and dropped for a false one. |
+| `boolean_attributes` | the HTML set, in HTML mode | Attributes rendered as `name="name"` for a true value and dropped for a false one. The default is Chameleon's XHTML 1.0 list; `chameleon_rs.template.HTML5_BOOLEAN_ATTRIBUTES` adds HTML5's (`required`, `autofocus`, ...). |
 | `strict` | `True` | Compile every expression up front. `False` only requires an expression to be valid when it's evaluated. |
 | `restricted_namespace` | `True` | `False` passes unknown namespaces and prefixes through, for Alpine.js or Vue. |
 | `strict_tags` | `False` (or `CHAMELEON_STRICT_TAGS`) | chameleon-rs only. An unclosed element carrying `tal:`, `metal:` or `i18n:` attributes is a `ParseError` at its start tag, instead of an error far away or none at all. See [Catching unclosed tags](strict-tags.qmd). |

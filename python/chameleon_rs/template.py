@@ -96,6 +96,36 @@ BOOLEAN_HTML_ATTRIBUTES = [
     'defer',
 ]
 
+# chameleon-rs only, not a default: Chameleon's list plus HTML5's boolean attributes, the set
+# z3c.pt (Zope, Plone) uses, from https://html.spec.whatwg.org/multipage/indices.html#attributes-3.
+# `boolean_attributes = HTML5_BOOLEAN_ATTRIBUTES` renders `required="required"` instead of
+# `required="True"`.
+HTML5_BOOLEAN_ATTRIBUTES = frozenset(
+    {
+        *BOOLEAN_HTML_ATTRIBUTES,
+        'allowfullscreen',
+        'async',
+        'autofocus',
+        'autoplay',
+        'controls',
+        'default',
+        'formnovalidate',
+        'inert',
+        'itemscope',
+        'loop',
+        'muted',
+        'nomodule',
+        'novalidate',
+        'open',
+        'playsinline',
+        'required',
+        'reversed',
+        'shadowrootclonable',
+        'shadowrootdelegatesfocus',
+        'shadowrootserializable',
+    }
+)
+
 # Settings that change the compiled program, passed to the native `Program`.
 PROGRAM_OPTIONS = (
     'implicit_i18n_translate',
@@ -993,6 +1023,7 @@ _BASE_RENDERS = (PageTemplate.render, PageTextTemplateFile.render)
 
 __all__ = [
     'BOOLEAN_HTML_ATTRIBUTES',
+    'HTML5_BOOLEAN_ATTRIBUTES',
     'BaseTemplate',
     'BaseTemplateFile',
     'Macro',

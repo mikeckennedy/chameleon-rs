@@ -175,6 +175,19 @@ template = PageTemplate('<input type="checkbox" tal:attributes="checked True" />
 templates = PageTemplateLoader(path, boolean_attributes={"selected", "checked"})
 ```
 
+The default set is Chameleon's, from XHTML 1.0, so HTML5's boolean attributes such as
+`required`, `autofocus` and `formnovalidate` render as `required="True"`. chameleon-rs ships
+the HTML5 set as `HTML5_BOOLEAN_ATTRIBUTES` (the one z3c.pt uses for Zope and Plone):
+
+```python
+from chameleon_rs import PageTemplate
+from chameleon_rs.template import HTML5_BOOLEAN_ATTRIBUTES
+
+
+class MyTemplate(PageTemplate):
+    boolean_attributes = HTML5_BOOLEAN_ATTRIBUTES
+```
+
 ## `tal:condition`
 
 Conditionally includes or omits an element:

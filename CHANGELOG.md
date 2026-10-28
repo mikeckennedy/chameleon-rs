@@ -21,6 +21,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Chameleon never implemented them (its docs suggest `itertools.groupby`). `RepeatItem` takes
   the repeated items as an optional third argument; one made with Chameleon's two arguments
   raises a `TypeError` from `first` and `last` only.
+- **`chameleon_rs.template.HTML5_BOOLEAN_ATTRIBUTES`** (#11, reported by zopyx): Chameleon's
+  12 boolean attributes plus HTML5's 20 (`required`, `autofocus`, `formnovalidate`, ...), the
+  set z3c.pt uses for Zope and Plone. Set `boolean_attributes = HTML5_BOOLEAN_ATTRIBUTES` to
+  render `required="required"` instead of `required="True"`. The default stays Chameleon's.
 
 ### Fixed
 

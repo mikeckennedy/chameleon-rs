@@ -188,6 +188,22 @@ def test_custom_tokenizer_errors_point_into_its_tokens() -> None:
     assert e.value.location == (2, 2)
 
 
+def test_html5_boolean_attributes() -> None:
+    """The opt-in HTML5 set: Chameleon's 12 plus z3c.pt's 20 (#11)."""
+    html5 = chameleon_rs.template.HTML5_BOOLEAN_ATTRIBUTES
+    assert len(html5) == 32
+    assert html5 >= set(chameleon_rs.template.BOOLEAN_HTML_ATTRIBUTES)
+    source = '<input tal:attributes="required x; formnovalidate x; checked x; hidden x"/>'
+    template = chameleon_rs.PageTemplate(source, boolean_attributes=html5)
+    assert (
+        template(x=True)
+        == '<input required="required" formnovalidate="formnovalidate" checked="checked" hidden="True"/>'
+    )
+    assert template(x=False) == '<input hidden="False"/>'
+    # The default stays Chameleon's.
+    assert chameleon_rs.PageTemplate(source)(x=True) == chameleon.PageTemplate(source)(x=True)
+
+
 def test_configuration_options() -> None:
     both('<p>${x}</p>', {'x': object()}, translate=None)
     both('<p>${x}</p>', {'x': 'Тест'.encode('windows-1251')}, encoding='windows-1251')
