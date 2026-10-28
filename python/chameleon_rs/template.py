@@ -53,7 +53,7 @@ from chameleon_rs.codegen import reverse_builtin_map
 from chameleon_rs.config import AUTO_RELOAD, CACHE_DIRECTORY, DEBUG_MODE, EAGER_PARSING, STRICT_TAGS
 from chameleon_rs.exc import ExceptionFormatter, RenderError, TemplateError, UnsupportedError
 from chameleon_rs.i18n import simple_translate
-from chameleon_rs.loader import MemoryLoader, ModuleLoader, TemplateLoader, import_package_resource
+from chameleon_rs.loader import MemoryLoader, ModuleLoader, TemplateLoader, import_package_resource, search_paths
 from chameleon_rs.partials import PartialRenderer
 from chameleon_rs.tal import RepeatDict
 from chameleon_rs.tales import (
@@ -912,15 +912,10 @@ class PageTemplateFile(PageTemplate, BaseTemplateFile):
         filename: str | os.PathLike[str],
         loader_class: type[TemplateLoader] = TemplateLoader,
         package_name: str | None = None,
-        search_path: Iterable[str] | str | None = None,
+        search_path: Iterable[str | os.PathLike[str]] | str | os.PathLike[str] | None = None,
         **config: Any,
     ) -> None:
-        if search_path is None:
-            paths: list[str] = []
-        elif isinstance(search_path, str):
-            paths = [search_path]
-        else:
-            paths = list(search_path)
+        paths = search_paths(search_path)
 
         # For `render_partial`: partials are looked for on this search path (and siblings are
         # built with these settings), before this template's own folder.

@@ -1,6 +1,7 @@
 # Ported from Chameleon's src/chameleon/loader.py (`cache`, `import_package_resource`,
 # `TemplateLoader`, `MemoryLoader`, `ModuleLoader`), modified: type annotations; `cache`
-# stores with `setdefault`, so concurrent loads share one template. chameleon-rs
+# stores with `setdefault`, so concurrent loads share one template; search paths and specs
+# may be `os.PathLike` (malthe/chameleon#342). chameleon-rs
 # does not compile templates into Python modules, so `MemoryLoader` and `ModuleLoader` are
 # kept only for code that uses them directly (and as a template's `loader` attribute).
 """Template loading by path spec: what the ``load:`` expression type calls (as the
@@ -19,7 +20,7 @@ import shutil
 import sys
 import tempfile
 import warnings
-from collections.abc import Callable, Generator, Sequence
+from collections.abc import Callable, Generator, Iterable, Sequence
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 from threading import RLock
@@ -34,6 +35,16 @@ release_lock = lock.release
 del lock
 
 log = logging.getLogger('chameleon.loader')
+
+
+def search_paths(search_path: Iterable[str | os.PathLike[str]] | str | os.PathLike[str] | None) -> list[str]:
+    """A search path argument as a list of strings: one path or a sequence of them, each a
+    string or an ``os.PathLike`` (malthe/chameleon#342; Chameleon accepts only strings)."""
+    if search_path is None:
+        return []
+    if isinstance(search_path, (str, os.PathLike)):
+        search_path = [search_path]
+    return [os.fspath(path) for path in search_path]
 
 
 def cache[F: Callable[..., Any]](func: F) -> F:
@@ -78,26 +89,29 @@ class TemplateLoader:
 
     def __init__(
         self,
-        search_path: Sequence[str] | str | None = None,
+        search_path: Iterable[str | os.PathLike[str]] | str | os.PathLike[str] | None = None,
         default_extension: str | None = None,
         **kwargs: Any,
     ) -> None:
-        if search_path is None:
-            search_path = []
-        if isinstance(search_path, str):
-            search_path = [search_path]
+        # A list or tuple of strings is kept as is, as in Chameleon (code may append to
+        # `loader.search_path` later).
+        paths: Sequence[str]
+        if isinstance(search_path, (list, tuple)) and all(isinstance(path, str) for path in search_path):
+            paths = cast('Sequence[str]', search_path)
+        else:
+            paths = search_paths(search_path)
         if default_extension is not None:
             self.default_extension = '.' + default_extension.lstrip('.')
-        self.search_path = search_path
+        self.search_path = paths
         self.registry = {}
         self.kwargs = kwargs
 
     @cache
-    def load(self, spec: str, cls: Any = None) -> Any:
+    def load(self, spec: str | os.PathLike[str], cls: Any = None) -> Any:
         if cls is None:
             raise ValueError('Unbound template loader.')
 
-        spec = spec.strip()
+        spec = os.fspath(spec).strip()
 
         if self.default_extension is not None and '.' not in spec:
             spec += self.default_extension

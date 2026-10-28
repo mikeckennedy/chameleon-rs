@@ -123,6 +123,8 @@ OpenAPI docs work as without `@template`.
 - **Free-threaded Python.** Wheels for 3.14t and 3.15t that keep the GIL off.
   `render_async(..., offload=True)` (experimental) renders in a worker thread, in parallel
   with the event loop on a free-threaded build.
+- **Long-standing Chameleon issues fixed.** `pathlib.Path` works wherever a path string does
+  ([#342](https://github.com/malthe/chameleon/issues/342)).
 - **Typed.** PEP 561 type information for the whole API, including the native module.
 - **No runtime dependencies.** The engine, the Markdown converter and the integrations are in
   the wheel; each integration imports its framework only when you import it.

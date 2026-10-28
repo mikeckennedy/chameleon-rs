@@ -406,6 +406,33 @@ def test_search_path_options(tmp_path: Path) -> None:
         assert t(x=1) == '<p>a 1</p>'
 
 
+def test_pathlib_search_paths_and_specs(tmp_path: Path) -> None:
+    # malthe/chameleon#342: Chameleon raises "'PosixPath' object is not iterable" for a single
+    # `Path` search path and has no `strip` for a `Path` spec; chameleon_rs takes any
+    # `os.PathLike` wherever it takes a path string.
+    make_tree(tmp_path)
+    (tmp_path / 'b' / 'partial.pt').write_text("<div>${render_partial('other.pt')}</div>")
+    loader = chameleon_rs.PageTemplateLoader(tmp_path / 'b', '.pt')
+    assert loader['page'](x=1) == '<p>b 1</p>'
+    assert loader[Path('page.pt')](x=2) == '<p>b 2</p>'
+    assert loader['uses'](x=3) == '<html><i>3</i></html>'
+    assert loader['partial']() == '<div><p>other</p></div>'
+    assert loader.search_path == [str(tmp_path / 'b')]
+    loader = chameleon_rs.PageTemplateLoader((tmp_path / 'a', str(tmp_path / 'b')))
+    assert loader['other.pt']() == '<p>other</p>'
+    t = chameleon_rs.PageTemplateFile(tmp_path / 'b' / 'uses.pt', search_path=tmp_path / 'a')
+    assert t(x=4) == '<html><i>4</i></html>'
+    with pytest.raises(TypeError, match='not iterable'):
+        chameleon.PageTemplateLoader(tmp_path / 'b')['page.pt']  # ty: ignore[invalid-argument-type]
+
+
+def test_search_path_list_is_kept() -> None:
+    # As in Chameleon: a list of strings is the loader's own `search_path`, not a copy.
+    paths = ['a']
+    for engine in (chameleon, chameleon_rs):
+        assert engine.PageTemplateLoader(paths).search_path is paths
+
+
 def test_auto_reload(tmp_path: Path) -> None:
     path = tmp_path / 't.pt'
     path.write_text('<p>one</p>')

@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`pathlib.Path` wherever a path string works** (malthe/chameleon#342, reported by
+  markkuleinio): a single `Path` as `search_path` (Chameleon raises "'PosixPath' object is not
+  iterable"), `Path` entries in a search path, and `loader[Path('page.pt')]`. Any
+  `os.PathLike` is accepted; a list or tuple of strings is still kept as the loader's own
+  `search_path`, as in Chameleon.
+
 ## [0.1.53] - 2026-10-27
 
 Less shared reference counting per render on free-threaded Python.

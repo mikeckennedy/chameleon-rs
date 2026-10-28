@@ -1647,6 +1647,18 @@ Release blockers. Each behaviour checked against Chameleon's generated code firs
   signatures. The cache digest includes it only when it is on.
 - **Checked against the corpus:** all 229 Talk Python templates compile with it on.
 
+## Adopted upstream issues (2026-10-27)
+
+Open malthe/chameleon issues that chameleon-rs resolves. Each fix credits the issue in the
+CHANGELOG. Additions that only replace an error need no option. Fixes that change the output
+of a template that renders today are listed in D11.
+
+- **#342, `os.PathLike` paths.** `loader.search_paths()` turns a search path argument (one
+  path or an iterable, each a string or `os.PathLike`) into a list of strings, for
+  `TemplateLoader` and `BaseTemplateFile`. A list or tuple of strings is kept as the loader's
+  `search_path`, the same object, as in Chameleon. `TemplateLoader.load` takes an
+  `os.PathLike` spec.
+
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
 ```
