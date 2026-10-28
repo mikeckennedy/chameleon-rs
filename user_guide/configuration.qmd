@@ -115,6 +115,17 @@ The rest are also accepted, as in Chameleon: `default_marker`, `value_repr`, `to
 File templates also take `search_path`, `package_name`, `loader_class` and
 `prepend_relative_search_path`.
 
+Paths can be `pathlib.Path` objects (any `os.PathLike`) anywhere a path string works: the
+template's filename, a single search path or a list of them, and the name you look up in a
+loader. Chameleon accepts only strings here
+([malthe/chameleon#342](https://github.com/malthe/chameleon/issues/342)).
+
+```python
+from pathlib import Path
+
+templates = PageTemplateLoader(Path(__file__).parent / 'templates', '.pt')
+```
+
 ::: {.callout-note}
 ## `source` is a program dump, not Python
 
