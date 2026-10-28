@@ -1703,6 +1703,15 @@ of a template that renders today are listed in D11.
   shadowed global whose `rcontext` value is still the same object, so the local stays, and
   copies the rest as before. A frame call keeps the record in the caller's `Frame::shadowed`
   until it returns; it's cleared on an error, as `pending_update` is. Listed in D11.
+- **#447 (and #291, #259), errors through a slot body.** Chameleon's `__fill_<slot>` function
+  has no `except` of its own, so the fill's `__token` is never recorded, and the function that
+  rendered the slot records its own last token, set by an expression that finished before the
+  slot (`define-slot` has none). `unwind_error` now records a `Kind::Fill` frame as any other,
+  and skips the frame directly below a failed fill. `Errors::slot_error_sites_like_chameleon`
+  (default `false`) restores Chameleon's recording; the Python runtime reads it from
+  `_native._testing.set_slot_error_sites_like_chameleon`, which `tests/python/conftest.py`
+  turns on for every test not marked `own_slot_error_sites`, so the differential tests and
+  fuzzers still compare whole messages. Listed in D11.
 
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
@@ -2024,6 +2033,8 @@ exactly. See the Phase 9 amendments.)*
   item again; Chameleon leaves the inner loop's (malthe/chameleon#177).
 - After a macro call, a local that shadows a global keeps its value unless the macro changed
   the global; Chameleon resets it to the global (malthe/chameleon#445).
+- An error through a slot body records the fill's failing expression, and not the stale last
+  expression of the frame that rendered the slot (malthe/chameleon#447, #291, #259).
 - A `tal:on-error` in a slot body whose slot sits inside a translation, around a nested macro
   call whose own fill fails (#1): Chameleon's one `__fallback` per function is taken in the
   outer call's stream and cuts the inner call's, leaving the failed fill's start tag unclosed.

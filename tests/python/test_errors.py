@@ -492,3 +492,134 @@ def test_ordinary_templates_compile_on_a_small_thread_stack() -> None:
         threading.stack_size(old)
     assert isinstance(results[0], str), results[0]
     assert results[0] == chameleon.PageTemplate(source)(items=[1, 2])
+
+
+# -- Errors through slot bodies (malthe/chameleon#447, #291, #259) --------------------------
+
+SLOT_PAGE = """<div metal:use-macro="macro">
+    <div metal:fill-slot="content"
+          tal:condition="value()">
+    </div>
+</div>"""
+SLOT_MACRO = """<div metal:define-macro="macro">
+    <p tal:content="value2"></p>
+    <div metal:define-slot="content"></div>
+</div>"""
+SLOT_MACRO_EMPTY = """<div metal:define-macro="macro">
+    <div metal:define-slot="content"></div>
+</div>"""
+SLOT_INNER = """<div metal:define-macro="inner">
+    <i tal:content="value2"></i>
+    <s metal:define-slot="deep"></s>
+</div>"""
+SLOT_AFTER = """<div metal:define-macro="macro">
+    <div metal:define-slot="content"></div>
+    <p tal:content="1/0"></p>
+</div>"""
+ENTRY = re.compile(r' - Expression: +"(.*)"\n - Filename: +(.+)\n - Location: +\(line (\d+): col (\d+)\)')
+
+
+def slot_error_entries(engine: Any, page: str, macro: str, **kw: Any) -> tuple[str, list[tuple[str, ...]]]:
+    """The error type and its `(expression, filename, line, column)` entries, innermost first."""
+    template = engine.PageTemplate(page, filename='page.pt')
+    kw = {
+        'macro': engine.PageTemplate(macro, filename='macro.pt').macros['macro'],
+        'inner': engine.PageTemplate(SLOT_INNER, filename='inner.pt').macros['inner'],
+        'value': lambda: 7 / 0,
+        'value2': 'Hi',
+        **kw,
+    }
+    with pytest.raises(Exception) as info:
+        template(**kw)
+    return type(info.value).__name__, ENTRY.findall(str(info.value))
+
+
+def bad_translate(msgid: Any, **kw: Any) -> str:
+    raise RuntimeError('translate failed')
+
+
+USE_MACRO = ('macro', 'page.pt', '1', '22')
+
+
+@pytest.mark.own_slot_error_sites
+@pytest.mark.parametrize(
+    ('page', 'macro', 'kw', 'chameleons', 'ours'),
+    [
+        # #447's first experiment: the macro has no expression before the slot.
+        pytest.param(
+            SLOT_PAGE,
+            SLOT_MACRO_EMPTY,
+            {},
+            [USE_MACRO],
+            [('value()', 'page.pt', '3', '25'), USE_MACRO],
+            id='fill-condition',
+        ),
+        # #447's second: Chameleon names the macro's last expression, which didn't fail.
+        pytest.param(
+            SLOT_PAGE,
+            SLOT_MACRO,
+            {},
+            [('value2', 'macro.pt', '2', '20'), USE_MACRO],
+            [('value()', 'page.pt', '3', '25'), USE_MACRO],
+            id='stale-macro-expression',
+        ),
+        # A macro called in a fill, failing in its own fill: the whole path, in page.pt.
+        pytest.param(
+            '<div metal:use-macro="macro">\n  <b metal:fill-slot="content"><x metal:use-macro="inner">'
+            '<y metal:fill-slot="deep">${1/0}</y></x></b>\n</div>',
+            SLOT_MACRO,
+            {},
+            [('value2', 'inner.pt', '2', '20'), ('value2', 'macro.pt', '2', '20'), USE_MACRO],
+            [('1/0', 'page.pt', '2', '86'), ('inner', 'page.pt', '2', '51'), USE_MACRO],
+            id='nested-fill',
+        ),
+        # A fill failing outside any expression of its own records nothing.
+        pytest.param(
+            '<div metal:use-macro="macro">\n  <b metal:fill-slot="content" i18n:translate="">hello</b>\n</div>',
+            SLOT_MACRO,
+            {'translate': bad_translate},
+            [('value2', 'macro.pt', '2', '20'), USE_MACRO],
+            [USE_MACRO],
+            id='translate-in-fill',
+        ),
+        # An error in the macro itself, after its slot rendered: unchanged.
+        pytest.param(
+            '<div metal:use-macro="macro">\n  <b metal:fill-slot="content">${value2}</b>\n</div>',
+            SLOT_AFTER,
+            {},
+            [('1/0', 'macro.pt', '3', '20'), USE_MACRO],
+            [('1/0', 'macro.pt', '3', '20'), USE_MACRO],
+            id='after-the-slot',
+        ),
+    ],
+)
+def test_error_in_a_slot_body_names_its_expression(
+    page: str, macro: str, kw: dict[str, Any], chameleons: list[tuple[str, ...]], ours: list[tuple[str, ...]]
+) -> None:
+    """malthe/chameleon#447 (also #291, #259): a fill's function has no `except` of its own, so
+    Chameleon never records the fill's failing expression, and the macro that rendered the slot
+    records its last expression, which had nothing to do with the error. chameleon_rs records
+    the fill's expression and drops the stale one. The differential tests compare Chameleon's
+    recording (conftest.py)."""
+    kind, entries = slot_error_entries(chameleon, page, macro, **kw)
+    assert entries == chameleons
+    assert slot_error_entries(chameleon_rs, page, macro, **kw) == (kind, ours)
+
+
+@pytest.mark.own_slot_error_sites
+def test_error_in_a_slot_body_from_a_file(tmp_path: Path) -> None:
+    """The Plone shape of malthe/chameleon#291: a page filling a layout's slot, loaded from
+    files. The message leads with the fill's failing expression and shows its source line."""
+    (tmp_path / 'layout.pt').write_text(
+        '<html metal:define-macro="layout"><body>\n${title}\n<div metal:define-slot="content"/>\n</body></html>'
+    )
+    (tmp_path / 'page.pt').write_text(
+        '<html metal:use-macro="load: layout.pt">\n<div metal:fill-slot="content">\n'
+        '<p tal:content="len(items)"/>\n</div>\n</html>'
+    )
+    with pytest.raises(TypeError) as info:
+        chameleon_rs.PageTemplateLoader([str(tmp_path)])['page.pt'](title='T', items=None)
+    message = str(info.value)
+    entries = [(expression, line) for expression, _, line, _ in ENTRY.findall(message)]
+    assert entries == [('len(items)', '3'), ('load: layout.pt', '1')]
+    assert '<p tal:content="len(items)"/>' in message

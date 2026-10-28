@@ -22,3 +22,16 @@ def configured(tmp_path):
     chameleon_rs.configure(template_folder=str(tmp_path))
     yield tmp_path
     chameleon_rs._settings.clear()
+
+
+@pytest.fixture(autouse=True)
+def slot_error_sites_like_chameleon(request):
+    """Errors through slot bodies recorded as Chameleon records them, so the differential tests
+    compare whole error messages. chameleon_rs's default records the slot body's own failing
+    expression and drops the stale one Chameleon adds (malthe/chameleon#447); tests of that
+    default are marked `own_slot_error_sites`."""
+    from chameleon_rs._native import _testing
+
+    previous = _testing.set_slot_error_sites_like_chameleon('own_slot_error_sites' not in request.keywords)
+    yield
+    _testing.set_slot_error_sites_like_chameleon(previous)

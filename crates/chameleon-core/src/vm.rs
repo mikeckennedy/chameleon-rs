@@ -1135,9 +1135,16 @@ pub trait Errors: Values {
     }
     /// The current frame ends with `error` (Chameleon's render-function `except`: the token,
     /// its position, the filename and the error are appended to `rcontext['__error__']`).
-    /// Not called for a slot's frame, whose function has no such handler.
+    /// Also called for a slot's frame, whose function in Chameleon has no such handler, and not
+    /// for the frame that rendered the slot, whose last token is stale (malthe/chameleon#447).
     fn record_error(&mut self, error: &Self::Error, at: ErrorSite) {
         let _ = (error, at);
+    }
+    /// Whether errors through slot bodies are recorded as Chameleon records them: not in the
+    /// slot's frame, and in the frame that rendered the slot with its stale last token. Off by
+    /// default (malthe/chameleon#447); the differential tests turn it on to compare messages.
+    fn slot_error_sites_like_chameleon(&self) -> bool {
+        false
     }
     /// A native partial's frame ends with `error` (already recorded): its render's handler
     /// (Chameleon's `BaseTemplate.render` formats the error it raises) returns the error its
@@ -2326,8 +2333,8 @@ pub fn throw<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, error: Err<R>) ->
 }
 
 /// An error raised in the active frame (D3 item 2): the innermost `tal:on-error` of the frame
-/// that catches it gets it, or the frame ends (recording the error, unless it is a slot
-/// body) and its caller is tried.
+/// that catches it gets it, or the frame ends (recording the error, unless it rendered the
+/// slot body that failed) and its caller is tried.
 ///
 /// Catching drops every unwind entry above the handler's own, without restoring anything:
 /// Chameleon's generated code has no `try/finally`, so a failed body's `tal:define` and loop
@@ -2337,6 +2344,10 @@ pub fn throw<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, error: Err<R>) ->
 #[cold]
 #[inline(never)]
 fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err<R>) -> Result<(), VmError<Err<R>>> {
+    // Whether the frame below was a slot body: its caller stopped at `define-slot`, which has
+    // no expression, so the caller's last token is stale and isn't recorded.
+    let mut from_fill = false;
+    let like_chameleon = rt.slot_error_sites_like_chameleon();
     loop {
         let Some(frame) = st.frames.last_mut() else { return Err(VmError::Runtime(error)) };
         let base = frame.unwind_base;
@@ -2400,9 +2411,11 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
             }
         }
         let kind = frame.kind;
-        if kind != Kind::Fill {
+        let records = if like_chameleon { kind != Kind::Fill } else { !from_fill };
+        if records {
             rt.record_error(&error, ErrorSite::unpack(st.recent));
         }
+        from_fill = kind == Kind::Fill;
         // The frame's streams are abandoned (a frame that returns has closed its own).
         if let Some(frame) = st.frames.last() {
             st.place_before_from(frame.unwind_base);

@@ -78,6 +78,9 @@ exclude = [
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]
 addopts = "-p no:cacheprovider"
+markers = [
+    "own_slot_error_sites: errors through slot bodies recorded as chameleon_rs does by default, not as Chameleon does (conftest.py)",
+]
 
 # ty is the type checker for this project; `make lint` runs it (zero diagnostics expected).
 [tool.ty.environment]

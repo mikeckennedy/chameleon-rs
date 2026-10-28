@@ -2,6 +2,8 @@
 //! shape the differential tests compare directly with Chameleon's `iter_xml` and
 //! `ElementParser` output (normalized the same way on the Python side; see `elements.rs`).
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
@@ -11,6 +13,20 @@ use chameleon_core::testing::{Class, ParseOptions, parse_tokens, pattern, tokeni
 
 use crate::elements::{Conv, parse_spans, spans};
 use crate::errors::compile_error;
+
+static SLOT_ERROR_SITES_LIKE_CHAMELEON: AtomicBool = AtomicBool::new(false);
+
+/// Records errors through slot bodies as Chameleon does (see
+/// `Errors::slot_error_sites_like_chameleon`), for every render in the process; returns the
+/// previous setting. For the differential tests, which compare error messages with Chameleon's.
+#[pyfunction]
+pub(crate) fn set_slot_error_sites_like_chameleon(on: bool) -> bool {
+    SLOT_ERROR_SITES_LIKE_CHAMELEON.swap(on, Ordering::Relaxed)
+}
+
+pub(crate) fn slot_error_sites_like_chameleon() -> bool {
+    SLOT_ERROR_SITES_LIKE_CHAMELEON.load(Ordering::Relaxed)
+}
 
 /// `[(token, pos), ...]` like `[(str(t), t.pos) for t in iter_xml(body)]`. `mode` is `xml` or
 /// `text` (`iter_text`).

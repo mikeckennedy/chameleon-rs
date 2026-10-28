@@ -10,8 +10,8 @@ from chameleon_rs.utils import Markup
 @final
 @type_check_only
 class _TestingModule:
-    """`chameleon_rs._native._testing`: tokens and element trees for the differential tests
-    (testing.rs). The keyword options are `Program`'s."""
+    """`chameleon_rs._native._testing`: tokens, element trees and switches for the differential
+    tests (testing.rs). The keyword options are `Program`'s."""
 
     @staticmethod
     def tokens(body: str, mode: str = 'xml') -> list[tuple[str, int]]: ...
@@ -35,6 +35,8 @@ class _TestingModule:
     def free_variables(body: str, **options: Any) -> list[tuple[str, list[str] | None, list[str] | None]]: ...
     @staticmethod
     def fast_path_coverage(body: str, load: bool = False, **options: Any) -> tuple[int, int]: ...
+    @staticmethod
+    def set_slot_error_sites_like_chameleon(on: bool) -> bool: ...
 
 _testing: _TestingModule
 

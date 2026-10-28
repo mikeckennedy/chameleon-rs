@@ -56,13 +56,13 @@ mod _native {
         chameleon_core::VERSION
     }
 
-    /// Tokens and element trees for the differential tests (see `testing.rs`).
+    /// Tokens, element trees and switches for the differential tests (see `testing.rs`).
     #[pymodule(gil_used = false)]
     mod _testing {
         #[pymodule_export]
         use crate::testing::{
-            char_class, fast_path_coverage, free_variables, inventory, parse, parse_count, token_count,
-            tokenizer_pattern, tokens, tree,
+            char_class, fast_path_coverage, free_variables, inventory, parse, parse_count,
+            set_slot_error_sites_like_chameleon, token_count, tokenizer_pattern, tokens, tree,
         };
     }
 

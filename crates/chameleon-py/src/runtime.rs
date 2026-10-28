@@ -555,6 +555,10 @@ impl<const ASYNC: bool> Errors for PyRuntime<'_, '_, ASYNC> {
         let _ = record_error(self.py, &rcontext, program, token, error);
     }
 
+    fn slot_error_sites_like_chameleon(&self) -> bool {
+        crate::testing::slot_error_sites_like_chameleon()
+    }
+
     /// In an asynchronous render, cancellation (any non-`Exception`) passes unformatted: the
     /// formatted error would be a `RenderError`, an `Exception` that `tal:on-error` catches.
     fn partial_failed(&mut self, error: PyErr) -> PyErr {

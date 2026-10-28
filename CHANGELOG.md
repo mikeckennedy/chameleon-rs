@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Errors inside a slot fill name the expression that failed** (malthe/chameleon#447, reported
+  by gelbi123; also #291, reported by Franco Pellegrini, and #259, reported by castilma). An
+  error in a `metal:fill-slot` body was reported at the page's `metal:use-macro`, often after
+  the macro's last expression, which had nothing to do with it: in Plone, every error in a
+  view's content pointed at `context/main_template/macros/master`. The message now leads with
+  the fill's failing expression, its file, line and source, followed by the `use-macro` that
+  led there; the macro's unrelated expression is gone. Errors outside slot fills are reported
+  as before. This changes messages Chameleon gets wrong; see "Chameleon bugs fixed" in the
+  compatibility guide.
+
 ## [0.1.54] - 2026-10-28
 
 Zope and Plone: z3c.pt's and Zope 6.3's own test suites pass unmodified on `compat.install()`.
