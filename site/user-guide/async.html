@@ -403,7 +403,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="render_async" class="level1">
 <h1><a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a></h1>
 <p><code>await template.render_async(**model)</code> renders like <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a>, except that when a value the template uses is awaitable (a coroutine, task or future), the render awaits it right there and continues with the result. While it waits, the event loop serves other requests.</p>
-<div id="3d5e64cc" class="cell" data-execution_count="1">
+<div id="b59d0621" class="cell" data-execution_count="1">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> asyncio</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplate</span>
@@ -489,7 +489,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </tbody>
 </table>
 <p>So pass the awaitable the template needs as a whole, or <code>tal:define</code> it first and use the result:</p>
-<div id="7533f32c" class="cell" data-execution_count="2">
+<div id="fac6ef14" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>page <span class="op">=</span> PageTemplate(<span class="st">"""</span><span class="op">\</span></span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="st">&lt;p tal:define="items episodes"&gt;${len(items)} episodes, the first is $</span><span class="sc">{items[0]}</span><span class="st">.&lt;/p&gt;</span></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="st">"""</span>)</span>
@@ -510,7 +510,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><strong><code>tal:on-error</code>.</strong> An exception raised by an awaited value is raised where the expression is, so the nearest <code>tal:on-error</code> handles it, as for any other error.</li>
 <li><strong>Cancellation.</strong> Cancelling the task that runs the render cancels the value being awaited.</li>
 </ul>
-<div id="7d450f1a" class="cell" data-execution_count="3">
+<div id="be6ad148" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> broken():</span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">raise</span> <span class="pp">LookupError</span>(<span class="st">'the recommendations service is down'</span>)</span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -533,7 +533,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="chameleon_rs.concurrent-helpers" class="level2">
 <h2 class="anchored" data-anchor-id="chameleon_rs.concurrent-helpers"><code>@chameleon_rs.concurrent</code> helpers</h2>
 <p>Decorate an async helper with <code>@chameleon_rs.concurrent</code>, and each call to it written as a whole <code>${...}</code> starts as a task. The render writes a placeholder and keeps going, and each placeholder is filled in, escaped as usual, when the render reaches the end:</p>
-<div id="009a03e2" class="cell" data-execution_count="4">
+<div id="e24228e9" class="cell" data-execution_count="4">
 <div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> time</span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
@@ -569,7 +569,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="partials-in-parallel-concurrenttrue" class="level2">
 <h2 class="anchored" data-anchor-id="partials-in-parallel-concurrenttrue">Partials in parallel: <code>concurrent=True</code></h2>
 <p>A template created with <code>concurrent=True</code> also renders its <code>render_partial(...)</code> calls concurrently, when a call has an awaitable argument. Each such partial renders as a render of its own, in a task:</p>
-<div id="7a5c22e8" class="cell" data-execution_count="5">
+<div id="29a5751a" class="cell" data-execution_count="5">
 <div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> pathlib, tempfile</span>
 <span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>folder <span class="op">=</span> pathlib.Path(tempfile.mkdtemp())</span>

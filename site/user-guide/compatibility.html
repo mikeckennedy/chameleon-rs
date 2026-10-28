@@ -336,6 +336,7 @@ ul.task-list li input[type="checkbox"] {
   <li><a href="#corner-cases-in-slot-bodies" id="toc-corner-cases-in-slot-bodies" class="nav-link" data-scroll-target="#corner-cases-in-slot-bodies">Corner cases in slot bodies</a></li>
   <li><a href="#behaviour-of-the-helper-libraries" id="toc-behaviour-of-the-helper-libraries" class="nav-link" data-scroll-target="#behaviour-of-the-helper-libraries">Behaviour of the helper libraries</a></li>
   <li><a href="#render_async-and-a-replaced-render" id="toc-render_async-and-a-replaced-render" class="nav-link" data-scroll-target="#render_async-and-a-replaced-render"><code>render_async</code> and a replaced <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render</a></a></li>
+  <li><a href="#chameleon-bugs-fixed" id="toc-chameleon-bugs-fixed" class="nav-link" data-scroll-target="#chameleon-bugs-fixed">Chameleon bugs fixed</a></li>
   </ul></li>
   <li><a href="#found-a-difference" id="toc-found-a-difference" class="nav-link" data-scroll-target="#found-a-difference">Found a difference?</a></li>
   </ul>
@@ -429,7 +430,7 @@ ul.task-list li input[type="checkbox"] {
 <tr class="even">
 <td>Custom expression types</td>
 <td>A class whose compiler returns Python AST statements.</td>
-<td>Supported through a bridge that wraps the AST in a Python function, at the speed of an ordinary Python call. Types that depend on Chameleon’s compiler internals beyond that interface aren’t supported.</td>
+<td>Supported through a bridge that wraps the AST in a Python function, at the speed of an ordinary Python call. Types that depend on Chameleon’s compiler internals beyond that interface aren’t supported. See <a href="../language/expressions.html#custom-expression-types">Custom expression types</a>.</td>
 </tr>
 <tr class="odd">
 <td><code>CHAMELEON_CACHE</code></td>
@@ -476,6 +477,36 @@ ul.task-list li input[type="checkbox"] {
 <section id="render_async-and-a-replaced-render" class="level2">
 <h2 class="anchored" data-anchor-id="render_async-and-a-replaced-render"><a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a> and a replaced <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render</a></h2>
 <p><a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async()</a> honours a <a href="../reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> that a subclass overrides, since the override may add defaults or post-process the output: it calls it, synchronously, so awaitable values are not awaited. Assigning a new function to <a href="../reference/PageTemplate.render.html#chameleon_rs.PageTemplate.render" class="gdls-link gdls-code">PageTemplate.render</a> (a monkeypatch, for example to time renders) counts as such an override. Every <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async()</a>, including the async views of the framework integrations, then renders synchronously through your function. See <a href="../user-guide/migrating.html#timing-renders">Migrating</a> for a way to time both.</p>
+</section>
+<section id="chameleon-bugs-fixed" class="level2">
+<h2 class="anchored" data-anchor-id="chameleon-bugs-fixed">Chameleon bugs fixed</h2>
+<p>Where Chameleon’s output is clearly broken, chameleon-rs writes what the template means. Each fix is a Chameleon issue that chameleon-rs adopted.</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Template</th>
+<th>Chameleon</th>
+<th>chameleon-rs</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>A valueless attribute given a value: <code>&lt;input disabled tal:attributes="disabled True"&gt;</code> or <code>&lt;img alt i18n:attributes="alt"&gt;</code> (<a href="https://github.com/malthe/chameleon/issues/429">#429</a>)</td>
+<td><code>&lt;input disableddisabled&gt;</code>, <code>&lt;img altAlt&gt;</code></td>
+<td><code>&lt;input disabled="disabled"&gt;</code>, <code>&lt;img alt="Alt"&gt;</code></td>
+</tr>
+<tr class="even">
+<td>A loop inside a loop of the same name, as in a recursive macro (<a href="https://github.com/malthe/chameleon/issues/177">#177</a>)</td>
+<td>After the inner loop ends, <code>repeat.item</code> is still the inner loop’s, so the outer loop’s next items get its <code>index</code> and <code>length</code> (often <code>-1</code> and <code>0</code>).</td>
+<td><code>repeat.item</code> is the outer loop’s again.</td>
+</tr>
+<tr class="odd">
+<td>A local variable with the same name as a global, then a macro call inside it (<a href="https://github.com/malthe/chameleon/issues/445">#445</a>)</td>
+<td>The macro call resets the local to the global’s value.</td>
+<td>The local keeps its value, unless the macro sets the global.</td>
+</tr>
+</tbody>
+</table>
 </section>
 </section>
 <section id="found-a-difference" class="level1">

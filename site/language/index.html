@@ -367,7 +367,7 @@ Note
 <p>Every statement, expression type and built-in name described here behaves in chameleon-rs as it does in Chameleon; the examples on these pages were rendered with both engines to check. The engine underneath is different, which shows in three places, none of them in the template language itself:</p>
 <ul>
 <li>Chameleon compiles a template to Python source code, available as <code>template.source</code>. chameleon-rs compiles it to a native program; with <code>keep_source=True</code>, <code>template.source</code> is a readable dump of that program, not Python code.</li>
-<li>Custom expression types (classes that return Python AST) work through a bridge, at the speed of an ordinary Python call. Types that depend on Chameleon’s compiler internals beyond that interface aren’t supported.</li>
+<li>Custom expression types (classes that return Python AST) work through a bridge, at the speed of an ordinary Python call. Types that depend on Chameleon’s compiler internals beyond that interface aren’t supported. See <a href="../language/expressions.html#custom-expression-types">Custom expression types</a>.</li>
 <li>Chameleon’s <code>CHAMELEON_CACHE</code> (compiled templates cached on disk as Python modules) has no equivalent. Compiling is fast enough that it isn’t needed.</li>
 </ul>
 <p>See <a href="../user-guide/compatibility.html">Compatibility</a> for how compatibility is measured.</p>

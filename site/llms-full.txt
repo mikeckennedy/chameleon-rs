@@ -22,7 +22,7 @@ Every template has the builtin ``render_partial(path, **kwargs)`` (D10, see
 ``chameleon_rs.partials``), which a render keyword or ``extra_builtins`` entry of the same
 name overrides.
 
-PageTemplateFile(filename: 'str | os.PathLike[str]', loader_class: 'type[TemplateLoader]' = <class 'chameleon_rs.loader.TemplateLoader'>, package_name: 'str | None' = None, search_path: 'Iterable[str] | str | None' = None, **config: 'Any') -> 'None'
+PageTemplateFile(filename: 'str | os.PathLike[str]', loader_class: 'type[TemplateLoader]' = <class 'chameleon_rs.loader.TemplateLoader'>, package_name: 'str | None' = None, search_path: 'Iterable[str | os.PathLike[str]] | str | os.PathLike[str] | None' = None, **config: 'Any') -> 'None'
 
 File-based constructor: the template is read from ``filename`` (or, with
 ``package_name``, from that package's resources) when first used.
@@ -40,12 +40,12 @@ Takes a non-XML input::
 
   template = PageTextTemplate("Hello, ${name}.")
 
-PageTextTemplateFile(filename: 'str | os.PathLike[str]', loader_class: 'type[TemplateLoader]' = <class 'chameleon_rs.loader.TemplateLoader'>, package_name: 'str | None' = None, search_path: 'Iterable[str] | str | None' = None, **config: 'Any') -> 'None'
+PageTextTemplateFile(filename: 'str | os.PathLike[str]', loader_class: 'type[TemplateLoader]' = <class 'chameleon_rs.loader.TemplateLoader'>, package_name: 'str | None' = None, search_path: 'Iterable[str | os.PathLike[str]] | str | os.PathLike[str] | None' = None, **config: 'Any') -> 'None'
 
 File-based text template. Rendering returns ``bytes``, encoded with the template's
 ``encoding`` (UTF-8 by default), as Chameleon's does.
 
-TemplateLoader(search_path: 'Sequence[str] | str | None' = None, default_extension: 'str | None' = None, *, formats: 'Mapping[str, type[PageTemplateFile]] | None' = None, **kwargs: 'Any') -> 'None'
+TemplateLoader(search_path: 'Iterable[str | os.PathLike[str]] | str | os.PathLike[str] | None' = None, default_extension: 'str | None' = None, *, formats: 'Mapping[str, type[PageTemplateFile]] | None' = None, **kwargs: 'Any') -> 'None'
 
 
 ## PageTemplate Methods
@@ -1648,7 +1648,7 @@ The common ones:
 | `auto_reload` | `False` (or `CHAMELEON_RELOAD`) | File templates recompile when their file changes. |
 | `encoding` | none | Lets you pass encoded byte strings as values. |
 | `translate` | none | The translation function for `i18n:` attributes: `translate(msgid, domain=None, mapping=None, default=None, context=None, target_language=None)`. |
-| `boolean_attributes` | the HTML set, in HTML mode | Attributes rendered as `name="name"` for a true value and dropped for a false one. |
+| `boolean_attributes` | the HTML set, in HTML mode | Attributes rendered as `name="name"` for a true value and dropped for a false one. The default is Chameleon's XHTML 1.0 list; `chameleon_rs.template.HTML5_BOOLEAN_ATTRIBUTES` adds HTML5's (`required`, `autofocus`, ...). |
 | `strict` | `True` | Compile every expression up front. `False` only requires an expression to be valid when it's evaluated. |
 | `restricted_namespace` | `True` | `False` passes unknown namespaces and prefixes through, for Alpine.js or Vue. |
 | `strict_tags` | `False` (or `CHAMELEON_STRICT_TAGS`) | chameleon-rs only. An unclosed element carrying `tal:`, `metal:` or `i18n:` attributes is a `ParseError` at its start tag, instead of an error far away or none at all. See [Catching unclosed tags](strict-tags.qmd). |
@@ -1664,6 +1664,17 @@ The rest are also accepted, as in Chameleon: `default_marker`, `value_repr`, `to
 `debug`, `enable_data_attributes`, `enable_comment_interpolation` and `expression_types`.
 File templates also take `search_path`, `package_name`, `loader_class` and
 `prepend_relative_search_path`.
+
+Paths can be `pathlib.Path` objects (any `os.PathLike`) anywhere a path string works: the
+template's filename, a single search path or a list of them, and the name you look up in a
+loader. Chameleon accepts only strings here
+([malthe/chameleon#342](https://github.com/malthe/chameleon/issues/342)).
+
+```python
+from pathlib import Path
+
+templates = PageTemplateLoader(Path(__file__).parent / 'templates', '.pt')
+```
 
 ::: {.callout-note}
 ## `source` is a program dump, not Python
@@ -3208,7 +3219,7 @@ to Python source code.
 | Area | Chameleon | chameleon-rs |
 |---|---|---|
 | `template.source` | The generated Python module's code. | With `keep_source=True`, a readable dump of the compiled program. It isn't Python. |
-| Custom expression types | A class whose compiler returns Python AST statements. | Supported through a bridge that wraps the AST in a Python function, at the speed of an ordinary Python call. Types that depend on Chameleon's compiler internals beyond that interface aren't supported. |
+| Custom expression types | A class whose compiler returns Python AST statements. | Supported through a bridge that wraps the AST in a Python function, at the speed of an ordinary Python call. Types that depend on Chameleon's compiler internals beyond that interface aren't supported. See [Custom expression types](../language/expressions.qmd#custom-expression-types). |
 | `CHAMELEON_CACHE` | Writes the generated modules to disk and loads them on the next start. | Checks the directory but writes nothing. Compiling is about 70x faster than Chameleon, so there's little to cache. |
 | Code-generation modules | `chameleon.nodes`, `chameleon.program`, `chameleon.zpt.program`, `chameleon.benchmark`. | Not provided, since chameleon-rs doesn't generate code. Importing them raises `ModuleNotFoundError`. |
 
@@ -3271,6 +3282,17 @@ awaited. Assigning a new function to `PageTemplate.render` (a monkeypatch, for e
 renders) counts as such an override. Every `render_async()`, including the async views of the
 framework integrations, then renders synchronously through your function. See
 [Migrating](migrating.qmd#timing-renders) for a way to time both.
+
+### Chameleon bugs fixed
+
+Where Chameleon's output is clearly broken, chameleon-rs writes what the template means. Each
+fix is a Chameleon issue that chameleon-rs adopted.
+
+| Template | Chameleon | chameleon-rs |
+|---|---|---|
+| A valueless attribute given a value: `<input disabled tal:attributes="disabled True">` or `<img alt i18n:attributes="alt">` ([#429](https://github.com/malthe/chameleon/issues/429)) | `<input disableddisabled>`, `<img altAlt>` | `<input disabled="disabled">`, `<img alt="Alt">` |
+| A loop inside a loop of the same name, as in a recursive macro ([#177](https://github.com/malthe/chameleon/issues/177)) | After the inner loop ends, `repeat.item` is still the inner loop's, so the outer loop's next items get its `index` and `length` (often `-1` and `0`). | `repeat.item` is the outer loop's again. |
+| A local variable with the same name as a global, then a macro call inside it ([#445](https://github.com/malthe/chameleon/issues/445)) | The macro call resets the local to the global's value. | The local keeps its value, unless the macro sets the global. |
 
 ## Found a difference?
 

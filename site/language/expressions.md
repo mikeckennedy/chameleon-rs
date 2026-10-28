@@ -48,7 +48,7 @@ These are the available TALES expression types:
 
 > **Note: Note**
 >
-> **chameleon-rs:** custom expression types (classes registered in `expression_types` that return Python AST) are supported through a bridge that wraps their AST in a Python function, so they run at the speed of an ordinary Python call. Types that depend on Chameleon's compiler internals beyond that interface aren't supported.
+> **chameleon-rs:** custom expression types (classes registered in `expression_types` that return Python AST) are supported through a bridge that wraps their AST in a Python function, so they run at the speed of an ordinary Python call. Types that depend on Chameleon's compiler internals beyond that interface aren't supported. See [Custom expression types](#custom-expression-types).
 
 There's a mechanism to allow fallback to alternative expressions, if one should fail (raise an exception). The pipe character ('\|') is used to separate two expressions:
 
@@ -175,6 +175,78 @@ Loading a template and using it as a macro:
 ``` html
 
 ```
+
+
+# Custom expression types
+
+A template class's `expression_types` maps each prefix to a type. Add your own by extending the mapping:
+
+``` python
+from chameleon_rs import PageTemplate
+
+
+class MyTemplate(PageTemplate):
+    expression_types = {**PageTemplate.expression_types, 'upper': UpperExpr}
+```
+
+A type is called with the expression text (without the prefix), and the result is called with `(target, engine)`. It returns a list of Python AST statements that assign the value to `target`. There are two ways to write one.
+
+
+## Subclass `TalesExpr`
+
+`chameleon_rs.tales.TalesExpr` is Chameleon's base class (`chameleon.tales.TalesExpr`). A subclass implements `translate(expression, target)` for one expression, and the base class adds the `|` fallbacks:
+
+``` python
+import ast
+
+from chameleon_rs.codegen import template
+from chameleon_rs.exc import ExpressionError
+from chameleon_rs.tales import TalesExpr
+
+
+class UpperExpr(TalesExpr):
+    """``upper: name``: the value of ``name``, upper-cased."""
+
+    def translate(self, expression, target):
+        name = expression.strip()
+        if not name.isidentifier():
+            raise ExpressionError('expected a name', expression)
+        return template(
+            'target = str(name).upper()',
+            target=target,
+            name=ast.Name(id=name, ctx=ast.Load()),
+        )
+```
+
+`<p tal:content="upper: title"/>` renders `<p>HALLO</p>` for `title='hallo'`, and `upper: missing | title` falls back to `title`. Names in the AST are looked up in the template's variables, as in a `python:` expression.
+
+
+## Delegate to the engine
+
+A type that rewrites its text into another expression can let the engine compile it. It doesn't need a base class:
+
+``` python
+class TwiceExpr:
+    def __init__(self, expression):
+        self.expression = expression
+
+    def __call__(self, target, engine):
+        return engine.parse(self.expression).assign_value(target)
+```
+
+`engine.parse(text)` compiles `text` with the template's own expression types, so `twice: python: title * 2` works. `assign_value(target)` assigns its value; `assign_text` and `assign_bool` assign it converted to text or to a boolean.
+
+
+## Rejecting text it can't compile
+
+A type must raise `ExpressionError` for text it can't compile. Either chameleon-rs' class (`chameleon_rs.exc.ExpressionError`) or Chameleon's (`chameleon.exc.ExpressionError`) works.
+
+This matters for `${...}`. The closing brace can't be found by scanning, because an expression can contain braces of its own. So for `class="${upper: a} ${upper: b}"` the type first gets the longest candidate, `a} ${upper: b`, and then shorter ones until it accepts one. A type that accepts anything takes the first candidate, and the rest of the attribute disappears without an error. Chameleon works the same way.
+
+
+## What isn't supported
+
+Chameleon's compiler internals (`chameleon.nodes`, `chameleon.program`, `chameleon.zpt.program`) don't exist in chameleon-rs, and types built on them don't work.
 
 
 # Built-in names

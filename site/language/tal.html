@@ -323,6 +323,7 @@ window.Quarto = {
   <li><a href="#syntax-6" id="toc-syntax-6" class="nav-link" data-scroll-target="#syntax-6">Syntax</a></li>
   <li><a href="#description-6" id="toc-description-6" class="nav-link" data-scroll-target="#description-6">Description</a></li>
   <li><a href="#repeat-variables" id="toc-repeat-variables" class="nav-link" data-scroll-target="#repeat-variables">Repeat variables</a></li>
+  <li><a href="#grouping-a-sorted-sequence-first-and-last" id="toc-grouping-a-sorted-sequence-first-and-last" class="nav-link" data-scroll-target="#grouping-a-sorted-sequence-first-and-last">Grouping a sorted sequence: <code>first</code> and <code>last</code></a></li>
   <li><a href="#examples-6" id="toc-examples-6" class="nav-link" data-scroll-target="#examples-6">Examples</a></li>
   </ul></li>
   <li><a href="#talreplace" id="toc-talreplace" class="nav-link" data-scroll-target="#talreplace"><code>tal:replace</code></a>
@@ -538,14 +539,21 @@ it ("\)</span>$”).</p>
 <span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>                        boolean_attributes<span class="op">=</span>{<span class="st">"selected"</span>, <span class="st">"checked"</span>})</span>
 <span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co"># or</span></span>
 <span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>templates <span class="op">=</span> PageTemplateLoader(path, boolean_attributes<span class="op">=</span>{<span class="st">"selected"</span>, <span class="st">"checked"</span>})</span></code></pre></div>
+<p>The default set is Chameleon’s, from XHTML 1.0, so HTML5’s boolean attributes such as <code>required</code>, <code>autofocus</code> and <code>formnovalidate</code> render as <code>required="True"</code>. chameleon-rs ships the HTML5 set as <code>HTML5_BOOLEAN_ATTRIBUTES</code> (the one z3c.pt uses for Zope and Plone):</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplate</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs.template <span class="im">import</span> HTML5_BOOLEAN_ATTRIBUTES</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> MyTemplate(PageTemplate):</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>    boolean_attributes <span class="op">=</span> HTML5_BOOLEAN_ATTRIBUTES</span></code></pre></div>
 </section>
 </section>
 <section id="talcondition" class="level1">
 <h1><code>tal:condition</code></h1>
 <p>Conditionally includes or omits an element:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:condition</span><span class="op">=</span><span class="st">"comments"</span><span class="dt">&gt;</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  ...</span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb10"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:condition</span><span class="op">=</span><span class="st">"comments"</span><span class="dt">&gt;</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>  ...</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span></code></pre></div>
 <section id="syntax-1" class="level2">
 <h2 class="anchored" data-anchor-id="syntax-1">Syntax</h2>
 <p><code>tal:condition</code> syntax:</p>
@@ -584,12 +592,12 @@ Note
 <section id="examples-1" class="level2">
 <h2 class="anchored" data-anchor-id="examples-1">Examples</h2>
 <p>Test a variable before inserting it:</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:condition</span><span class="op">=</span><span class="st">"request.message"</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"request.message"</span><span class="ot"> </span><span class="dt">/&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb12"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:condition</span><span class="op">=</span><span class="st">"request.message"</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"request.message"</span><span class="ot"> </span><span class="dt">/&gt;</span></span></code></pre></div>
 <p>Testing for odd/even in a repeat-loop:</p>
-<div class="sourceCode" id="cb12"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"item range(10)"</span><span class="dt">&gt;</span></span>
-<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:condition</span><span class="op">=</span><span class="st">"repeat.item.even"</span><span class="dt">&gt;</span>Even<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span>
-<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:condition</span><span class="op">=</span><span class="st">"repeat.item.odd"</span><span class="dt">&gt;</span>Odd<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span>
-<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb13"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"item range(10)"</span><span class="dt">&gt;</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:condition</span><span class="op">=</span><span class="st">"repeat.item.even"</span><span class="dt">&gt;</span>Even<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:condition</span><span class="op">=</span><span class="st">"repeat.item.odd"</span><span class="dt">&gt;</span>Odd<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span></code></pre></div>
 </section>
 </section>
 <section id="talcontent" class="level1">
@@ -621,11 +629,11 @@ Note
 <section id="examples-2" class="level2">
 <h2 class="anchored" data-anchor-id="examples-2">Examples</h2>
 <p>Inserting the user name:</p>
-<div class="sourceCode" id="cb14"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"user.getUserName()"</span><span class="dt">&gt;</span>Fred Farkas<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb15"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"user.getUserName()"</span><span class="dt">&gt;</span>Fred Farkas<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span></code></pre></div>
 <p>Inserting HTML/XML:</p>
-<div class="sourceCode" id="cb15"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"structure context.getStory()"</span><span class="dt">&gt;</span></span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>   Marked <span class="dt">&lt;</span><span class="kw">b</span><span class="dt">&gt;</span>up<span class="dt">&lt;/</span><span class="kw">b</span><span class="dt">&gt;</span> content goes here.</span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb16"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"structure context.getStory()"</span><span class="dt">&gt;</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>   Marked <span class="dt">&lt;</span><span class="kw">b</span><span class="dt">&gt;</span>up<span class="dt">&lt;/</span><span class="kw">b</span><span class="dt">&gt;</span> content goes here.</span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span></code></pre></div>
 </section>
 </section>
 <section id="taldefine" class="level1">
@@ -674,6 +682,7 @@ Tip
 <p>Global variables may be changed by the execution of a macro if that macro also declares the variable to be global.</p>
 </div>
 </div>
+<p>A local variable can have the same name as a global one, and hides it in its element. A macro called inside that element doesn’t change this unless the macro sets the global itself. In Chameleon, any macro call resets the local to the global’s value (<a href="https://github.com/malthe/chameleon/issues/445">malthe/chameleon#445</a>).</p>
 <p>To set the definition scope of a variable, use the keywords <code>local</code> or <code>global</code> in front of the assignment. The default setting is <code>local</code>; thus, in practice, only the <code>global</code> keyword is used.</p>
 <div class="callout callout-style-default callout-note callout-titled">
 <div class="callout-header d-flex align-content-center">
@@ -692,22 +701,22 @@ Note
 <section id="examples-3" class="level2">
 <h2 class="anchored" data-anchor-id="examples-3">Examples</h2>
 <p>Defining a variable:</p>
-<div class="sourceCode" id="cb17"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>tal:define="company_name 'Zope Corp, Inc.'"</span></code></pre></div>
+<div class="sourceCode" id="cb18"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>tal:define="company_name 'Zope Corp, Inc.'"</span></code></pre></div>
 <p>Defining two variables, where the second depends on the first:</p>
-<div class="sourceCode" id="cb18"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>tal:define="mytitle context.title; tlen len(mytitle)"</span></code></pre></div>
+<div class="sourceCode" id="cb19"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>tal:define="mytitle context.title; tlen len(mytitle)"</span></code></pre></div>
 <p>Defining a local and global variable:</p>
-<div class="sourceCode" id="cb19"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>tal:define="global mytitle context.title; tlen len(mytitle)"</span></code></pre></div>
+<div class="sourceCode" id="cb20"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>tal:define="global mytitle context.title; tlen len(mytitle)"</span></code></pre></div>
 <p>Unpacking a sequence:</p>
-<div class="sourceCode" id="cb20"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>tal:define="(key,value) ('a', 42)"</span></code></pre></div>
+<div class="sourceCode" id="cb21"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>tal:define="(key,value) ('a', 42)"</span></code></pre></div>
 </section>
 </section>
 <section id="talswitch-and-talcase" class="level1">
 <h1><code>tal:switch</code> and <code>tal:case</code></h1>
 <p>Defines a switch clause.</p>
-<div class="sourceCode" id="cb21"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">ul</span><span class="ot"> tal:switch</span><span class="op">=</span><span class="st">"len(items) % 2"</span><span class="dt">&gt;</span></span>
-<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:case</span><span class="op">=</span><span class="st">"True"</span><span class="dt">&gt;</span>odd<span class="dt">&lt;/</span><span class="kw">li</span><span class="dt">&gt;</span></span>
-<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:case</span><span class="op">=</span><span class="st">"False"</span><span class="dt">&gt;</span>even<span class="dt">&lt;/</span><span class="kw">li</span><span class="dt">&gt;</span></span>
-<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">ul</span><span class="dt">&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb22"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">ul</span><span class="ot"> tal:switch</span><span class="op">=</span><span class="st">"len(items) % 2"</span><span class="dt">&gt;</span></span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:case</span><span class="op">=</span><span class="st">"True"</span><span class="dt">&gt;</span>odd<span class="dt">&lt;/</span><span class="kw">li</span><span class="dt">&gt;</span></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:case</span><span class="op">=</span><span class="st">"False"</span><span class="dt">&gt;</span>even<span class="dt">&lt;/</span><span class="kw">li</span><span class="dt">&gt;</span></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">ul</span><span class="dt">&gt;</span></span></code></pre></div>
 <section id="syntax-4" class="level2">
 <h2 class="anchored" data-anchor-id="syntax-4">Syntax</h2>
 <p><code>tal:case</code> and <code>tal:switch</code> syntax:</p>
@@ -734,17 +743,17 @@ Note
 </section>
 <section id="examples-4" class="level2">
 <h2 class="anchored" data-anchor-id="examples-4">Examples</h2>
-<div class="sourceCode" id="cb23"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">ul</span><span class="ot"> tal:switch</span><span class="op">=</span><span class="st">"item.type"</span><span class="dt">&gt;</span></span>
-<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:case</span><span class="op">=</span><span class="st">"'document'"</span><span class="dt">&gt;</span></span>
-<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>    Document</span>
-<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">li</span><span class="dt">&gt;</span></span>
-<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:case</span><span class="op">=</span><span class="st">"'folder'"</span><span class="dt">&gt;</span></span>
-<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>    Folder</span>
-<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">li</span><span class="dt">&gt;</span></span>
-<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:case</span><span class="op">=</span><span class="st">"default"</span><span class="dt">&gt;</span></span>
-<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a>    Other</span>
-<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">li</span><span class="dt">&gt;</span></span>
-<span id="cb23-11"><a href="#cb23-11" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">ul</span><span class="dt">&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb24"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">ul</span><span class="ot"> tal:switch</span><span class="op">=</span><span class="st">"item.type"</span><span class="dt">&gt;</span></span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:case</span><span class="op">=</span><span class="st">"'document'"</span><span class="dt">&gt;</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>    Document</span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">li</span><span class="dt">&gt;</span></span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:case</span><span class="op">=</span><span class="st">"'folder'"</span><span class="dt">&gt;</span></span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a>    Folder</span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">li</span><span class="dt">&gt;</span></span>
+<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">li</span><span class="ot"> tal:case</span><span class="op">=</span><span class="st">"default"</span><span class="dt">&gt;</span></span>
+<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a>    Other</span>
+<span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">li</span><span class="dt">&gt;</span></span>
+<span id="cb24-11"><a href="#cb24-11" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">ul</span><span class="dt">&gt;</span></span></code></pre></div>
 </section>
 </section>
 <section id="talomit-tag" class="level1">
@@ -776,17 +785,17 @@ Note
 <section id="examples-5" class="level2">
 <h2 class="anchored" data-anchor-id="examples-5">Examples</h2>
 <p>Unconditionally omitting a tag:</p>
-<div class="sourceCode" id="cb25"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:omit-tag</span><span class="op">=</span><span class="st">""</span><span class="ot"> comment</span><span class="op">=</span><span class="st">"This tag will be removed"</span><span class="dt">&gt;</span></span>
-<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">i</span><span class="dt">&gt;</span>...but this text will remain.<span class="dt">&lt;/</span><span class="kw">i</span><span class="dt">&gt;</span></span>
-<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb26"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:omit-tag</span><span class="op">=</span><span class="st">""</span><span class="ot"> comment</span><span class="op">=</span><span class="st">"This tag will be removed"</span><span class="dt">&gt;</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">i</span><span class="dt">&gt;</span>...but this text will remain.<span class="dt">&lt;/</span><span class="kw">i</span><span class="dt">&gt;</span></span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span></code></pre></div>
 <p>Conditionally omitting a tag:</p>
-<div class="sourceCode" id="cb26"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">b</span><span class="ot"> tal:omit-tag</span><span class="op">=</span><span class="st">"not:bold"</span><span class="dt">&gt;</span>I may be bold.<span class="dt">&lt;/</span><span class="kw">b</span><span class="dt">&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb27"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">b</span><span class="ot"> tal:omit-tag</span><span class="op">=</span><span class="st">"not:bold"</span><span class="dt">&gt;</span>I may be bold.<span class="dt">&lt;/</span><span class="kw">b</span><span class="dt">&gt;</span></span></code></pre></div>
 <p>The above example will omit the <code>b</code> tag if the variable <code>bold</code> is false.</p>
 <p>Creating ten paragraph tags, with no enclosing tag:</p>
-<div class="sourceCode" id="cb27"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"n range(10)"</span></span>
-<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a><span class="ot">      tal:omit-tag</span><span class="op">=</span><span class="st">""</span><span class="dt">&gt;</span></span>
-<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"n"</span><span class="dt">&gt;</span>1<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span>
-<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">span</span><span class="dt">&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb28"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"n range(10)"</span></span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a><span class="ot">      tal:omit-tag</span><span class="op">=</span><span class="st">""</span><span class="dt">&gt;</span></span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"n"</span><span class="dt">&gt;</span>1<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">span</span><span class="dt">&gt;</span></span></code></pre></div>
 </section>
 </section>
 <section id="tal-repeat" class="level1">
@@ -867,6 +876,7 @@ variable_name ::= Name</code></pre>
 </table>
 <p>The true and false values are not booleans: <code>even</code> and <code>odd</code> are the strings <code>'even'</code> and <code>'odd'</code> when true and <code>''</code> when false, and <code>start</code> and <code>end</code> are <code>1</code> or <code>0</code>. They test the same way in a condition, but print differently.</p>
 <p>You can access the contents of the repeat variable using either dictionary- or attribute-style access, e.g.&nbsp;<code>repeat['item'].start</code> or <code>repeat.item.start</code>.</p>
+<p>A loop inside a loop of the same name, such as the loop in a recursive macro that renders a tree, has its own repeat variable. When the inner loop ends, <code>repeat.item</code> is the outer loop’s again. In Chameleon, it stays the inner loop’s (<a href="https://github.com/malthe/chameleon/issues/177">malthe/chameleon#177</a>).</p>
 <div class="callout callout-style-default callout-note callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -880,53 +890,50 @@ Note
 <p>For legacy compatibility, the attributes <code>odd</code>, <code>even</code>, <code>number</code>, <code>letter</code>, <code>Letter</code>, <code>roman</code>, and <code>Roman</code> are callable (returning <code>self</code>).</p>
 </div>
 </div>
-<div class="callout callout-style-default callout-note callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-Note
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>Earlier versions of this document, and the <a href="https://zope.readthedocs.io/en/latest/zopebook/AppendixC.html#repeat-variables">Zope Page Templates Reference</a>, referred to <code>first</code> and <code>last</code> attributes for use with sorted sequences. These are not implemented in Chameleon or the Zope reference implementation zope.tales. Instead, you can use <code>itertools.groupby</code>, as in the example below.</p>
-</div>
-</div>
+</section>
+<section id="grouping-a-sorted-sequence-first-and-last" class="level2">
+<h2 class="anchored" data-anchor-id="grouping-a-sorted-sequence-first-and-last">Grouping a sorted sequence: <code>first</code> and <code>last</code></h2>
+<p>chameleon-rs adds Zope’s <code>first(name)</code> and <code>last(name)</code> methods, which Chameleon never implemented (<a href="https://github.com/malthe/chameleon/issues/144">malthe/chameleon#144</a>). <code>repeat.item.first('kind')</code> is true when the item starts a run of items with the same <code>kind</code>, because it is the first item or its <code>kind</code> differs from the item before. <code>last('kind')</code> is true when the item ends such a run. For a mapping item, <code>name</code> is a key; for any other item, it is an attribute. Without a name, whole items are compared. A part missing from either item counts as different.</p>
+<div class="sourceCode" id="cb30"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"object objects"</span><span class="dt">&gt;</span></span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">h2</span><span class="ot"> tal:condition</span><span class="op">=</span><span class="st">"repeat.object.first('meta_type')"</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"object.meta_type"</span><span class="dt">&gt;</span>Meta Type<span class="dt">&lt;/</span><span class="kw">h2</span><span class="dt">&gt;</span></span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"object.id"</span><span class="dt">&gt;</span>Object ID<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">hr</span><span class="ot"> tal:condition</span><span class="op">=</span><span class="st">"repeat.object.last('meta_type')"</span><span class="ot"> </span><span class="dt">/&gt;</span></span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>They are methods: call them. A bare <code>repeat.object.first</code> is always true. Templates that must also run on Chameleon can use <code>itertools.groupby</code> instead, as in the last example below.</p>
 </section>
 <section id="examples-6" class="level2">
 <h2 class="anchored" data-anchor-id="examples-6">Examples</h2>
 <p>Iterating over a sequence of strings:</p>
-<div class="sourceCode" id="cb29"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"txt ('one', 'two', 'three')"</span><span class="dt">&gt;</span></span>
-<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>   <span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> tal:replace</span><span class="op">=</span><span class="st">"txt"</span><span class="ot"> </span><span class="dt">/&gt;</span></span>
-<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb31"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"txt ('one', 'two', 'three')"</span><span class="dt">&gt;</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>   <span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> tal:replace</span><span class="op">=</span><span class="st">"txt"</span><span class="ot"> </span><span class="dt">/&gt;</span></span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span></code></pre></div>
 <p>Inserting a sequence of table rows, and using the repeat variable to number the rows:</p>
-<div class="sourceCode" id="cb30"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">table</span><span class="dt">&gt;</span></span>
-<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">tr</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"item here.cart"</span><span class="dt">&gt;</span></span>
-<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;</span><span class="kw">td</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"repeat.item.number"</span><span class="dt">&gt;</span>1<span class="dt">&lt;/</span><span class="kw">td</span><span class="dt">&gt;</span></span>
-<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;</span><span class="kw">td</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"item.description"</span><span class="dt">&gt;</span>Widget<span class="dt">&lt;/</span><span class="kw">td</span><span class="dt">&gt;</span></span>
-<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;</span><span class="kw">td</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"item.price"</span><span class="dt">&gt;</span>$1.50<span class="dt">&lt;/</span><span class="kw">td</span><span class="dt">&gt;</span></span>
-<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">tr</span><span class="dt">&gt;</span></span>
-<span id="cb30-7"><a href="#cb30-7" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">table</span><span class="dt">&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb32"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">table</span><span class="dt">&gt;</span></span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">tr</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"item here.cart"</span><span class="dt">&gt;</span></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;</span><span class="kw">td</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"repeat.item.number"</span><span class="dt">&gt;</span>1<span class="dt">&lt;/</span><span class="kw">td</span><span class="dt">&gt;</span></span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;</span><span class="kw">td</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"item.description"</span><span class="dt">&gt;</span>Widget<span class="dt">&lt;/</span><span class="kw">td</span><span class="dt">&gt;</span></span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;</span><span class="kw">td</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"item.price"</span><span class="dt">&gt;</span>$1.50<span class="dt">&lt;/</span><span class="kw">td</span><span class="dt">&gt;</span></span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">tr</span><span class="dt">&gt;</span></span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">table</span><span class="dt">&gt;</span></span></code></pre></div>
 <p>Nested repeats:</p>
-<div class="sourceCode" id="cb31"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">table</span><span class="ot"> border</span><span class="op">=</span><span class="st">"1"</span><span class="dt">&gt;</span></span>
-<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">tr</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"row range(10)"</span><span class="dt">&gt;</span></span>
-<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&lt;</span><span class="kw">td</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"column range(10)"</span><span class="dt">&gt;</span></span>
-<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> tal:define</span><span class="op">=</span><span class="st">"x repeat.row.number;</span></span>
-<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a><span class="st">                        y repeat.column.number;</span></span>
-<span id="cb31-6"><a href="#cb31-6" aria-hidden="true" tabindex="-1"></a><span class="st">                        z x * y"</span></span>
-<span id="cb31-7"><a href="#cb31-7" aria-hidden="true" tabindex="-1"></a><span class="ot">            tal:replace</span><span class="op">=</span><span class="st">"string:$x * $y = $z"</span><span class="dt">&gt;</span>1 * 1 = 1<span class="dt">&lt;/</span><span class="kw">span</span><span class="dt">&gt;</span></span>
-<span id="cb31-8"><a href="#cb31-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&lt;/</span><span class="kw">td</span><span class="dt">&gt;</span></span>
-<span id="cb31-9"><a href="#cb31-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">tr</span><span class="dt">&gt;</span></span>
-<span id="cb31-10"><a href="#cb31-10" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">table</span><span class="dt">&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb33"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">table</span><span class="ot"> border</span><span class="op">=</span><span class="st">"1"</span><span class="dt">&gt;</span></span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">tr</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"row range(10)"</span><span class="dt">&gt;</span></span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&lt;</span><span class="kw">td</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"column range(10)"</span><span class="dt">&gt;</span></span>
+<span id="cb33-4"><a href="#cb33-4" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> tal:define</span><span class="op">=</span><span class="st">"x repeat.row.number;</span></span>
+<span id="cb33-5"><a href="#cb33-5" aria-hidden="true" tabindex="-1"></a><span class="st">                        y repeat.column.number;</span></span>
+<span id="cb33-6"><a href="#cb33-6" aria-hidden="true" tabindex="-1"></a><span class="st">                        z x * y"</span></span>
+<span id="cb33-7"><a href="#cb33-7" aria-hidden="true" tabindex="-1"></a><span class="ot">            tal:replace</span><span class="op">=</span><span class="st">"string:$x * $y = $z"</span><span class="dt">&gt;</span>1 * 1 = 1<span class="dt">&lt;/</span><span class="kw">span</span><span class="dt">&gt;</span></span>
+<span id="cb33-8"><a href="#cb33-8" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&lt;/</span><span class="kw">td</span><span class="dt">&gt;</span></span>
+<span id="cb33-9"><a href="#cb33-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;/</span><span class="kw">tr</span><span class="dt">&gt;</span></span>
+<span id="cb33-10"><a href="#cb33-10" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">table</span><span class="dt">&gt;</span></span></code></pre></div>
 <p>Grouping objects by type, drawing a rule between elements of different types:</p>
-<div class="sourceCode" id="cb32"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"(type,objects) list(map(lambda g: (g[0], list(g[1])), itertools.groupby(objects, key=lambda o: o.meta_type)))"</span></span>
-<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a><span class="ot">     tal:define</span><span class="op">=</span><span class="st">"itertools import:itertools"</span><span class="dt">&gt;</span></span>
-<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">h2</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"type"</span><span class="dt">&gt;</span>Meta Type<span class="dt">&lt;/</span><span class="kw">h2</span><span class="dt">&gt;</span></span>
-<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"object objects"</span></span>
-<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a><span class="ot">     tal:content</span><span class="op">=</span><span class="st">"object.id"</span><span class="dt">&gt;</span>Object ID<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span>
-<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">hr</span><span class="ot"> </span><span class="dt">/&gt;</span></span>
-<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb34"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"(type,objects) list(map(lambda g: (g[0], list(g[1])), itertools.groupby(objects, key=lambda o: o.meta_type)))"</span></span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a><span class="ot">     tal:define</span><span class="op">=</span><span class="st">"itertools import:itertools"</span><span class="dt">&gt;</span></span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">h2</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"type"</span><span class="dt">&gt;</span>Meta Type<span class="dt">&lt;/</span><span class="kw">h2</span><span class="dt">&gt;</span></span>
+<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:repeat</span><span class="op">=</span><span class="st">"object objects"</span></span>
+<span id="cb34-5"><a href="#cb34-5" aria-hidden="true" tabindex="-1"></a><span class="ot">     tal:content</span><span class="op">=</span><span class="st">"object.id"</span><span class="dt">&gt;</span>Object ID<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span>
+<span id="cb34-6"><a href="#cb34-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&lt;</span><span class="kw">hr</span><span class="ot"> </span><span class="dt">/&gt;</span></span>
+<span id="cb34-7"><a href="#cb34-7" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">div</span><span class="dt">&gt;</span></span></code></pre></div>
 <div class="callout callout-style-default callout-caution callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">
@@ -971,15 +978,15 @@ Note
 <section id="examples-7" class="level2">
 <h2 class="anchored" data-anchor-id="examples-7">Examples</h2>
 <p>Inserting a title:</p>
-<div class="sourceCode" id="cb34"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> tal:replace</span><span class="op">=</span><span class="st">"context.title"</span><span class="dt">&gt;</span>Title<span class="dt">&lt;/</span><span class="kw">span</span><span class="dt">&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb36"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">span</span><span class="ot"> tal:replace</span><span class="op">=</span><span class="st">"context.title"</span><span class="dt">&gt;</span>Title<span class="dt">&lt;/</span><span class="kw">span</span><span class="dt">&gt;</span></span></code></pre></div>
 <p>Inserting HTML/XML:</p>
-<div class="sourceCode" id="cb35"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:replace</span><span class="op">=</span><span class="st">"structure table"</span><span class="ot"> </span><span class="dt">/&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb37"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:replace</span><span class="op">=</span><span class="st">"structure table"</span><span class="ot"> </span><span class="dt">/&gt;</span></span></code></pre></div>
 </section>
 </section>
 <section id="talon-error" class="level1">
 <h1><code>tal:on-error</code></h1>
 <p>Substitutes the content of an element if processing it raises an exception. The argument is an expression, like that of <code>tal:content</code>:</p>
-<div class="sourceCode" id="cb36"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:on-error</span><span class="op">=</span><span class="st">"string:Not available"</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"context.price()"</span><span class="dt">&gt;</span>$1.50<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span></code></pre></div>
+<div class="sourceCode" id="cb38"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">p</span><span class="ot"> tal:on-error</span><span class="op">=</span><span class="st">"string:Not available"</span><span class="ot"> tal:content</span><span class="op">=</span><span class="st">"context.price()"</span><span class="dt">&gt;</span>$1.50<span class="dt">&lt;/</span><span class="kw">p</span><span class="dt">&gt;</span></span></code></pre></div>
 <p>If evaluating anything inside the element fails, the element is rendered with the <code>tal:on-error</code> result as its content.</p>
 
 

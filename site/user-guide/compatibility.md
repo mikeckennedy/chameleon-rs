@@ -34,7 +34,7 @@ These are deliberate. Each comes from chameleon-rs compiling to a native program
 | Area | Chameleon | chameleon-rs |
 |----|----|----|
 | `template.source` | The generated Python module's code. | With `keep_source=True`, a readable dump of the compiled program. It isn't Python. |
-| Custom expression types | A class whose compiler returns Python AST statements. | Supported through a bridge that wraps the AST in a Python function, at the speed of an ordinary Python call. Types that depend on Chameleon's compiler internals beyond that interface aren't supported. |
+| Custom expression types | A class whose compiler returns Python AST statements. | Supported through a bridge that wraps the AST in a Python function, at the speed of an ordinary Python call. Types that depend on Chameleon's compiler internals beyond that interface aren't supported. See [Custom expression types](../language/expressions.md#custom-expression-types). |
 | `CHAMELEON_CACHE` | Writes the generated modules to disk and loads them on the next start. | Checks the directory but writes nothing. Compiling is about 70x faster than Chameleon, so there's little to cache. |
 | Code-generation modules | `chameleon.nodes`, `chameleon.program`, `chameleon.zpt.program`, `chameleon.benchmark`. | Not provided, since chameleon-rs doesn't generate code. Importing them raises `ModuleNotFoundError`. |
 
@@ -73,6 +73,17 @@ The built-ins differ from chameleon_partials, chameleon-flask, fastapi-chameleon
 ## [render_async](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async) and a replaced [render](../reference/flask.render.md#chameleon_rs.flask.render)
 
 [render_async()](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async) honours a [render()](../reference/flask.render.md#chameleon_rs.flask.render) that a subclass overrides, since the override may add defaults or post-process the output: it calls it, synchronously, so awaitable values are not awaited. Assigning a new function to [PageTemplate.render](../reference/PageTemplate.render.md#chameleon_rs.PageTemplate.render) (a monkeypatch, for example to time renders) counts as such an override. Every [render_async()](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async), including the async views of the framework integrations, then renders synchronously through your function. See [Migrating](migrating.md#timing-renders) for a way to time both.
+
+
+## Chameleon bugs fixed
+
+Where Chameleon's output is clearly broken, chameleon-rs writes what the template means. Each fix is a Chameleon issue that chameleon-rs adopted.
+
+| Template | Chameleon | chameleon-rs |
+|----|----|----|
+| A valueless attribute given a value: `<input disabled tal:attributes="disabled True">` or `<img alt i18n:attributes="alt">` ([\#429](https://github.com/malthe/chameleon/issues/429)) | `<input disableddisabled>`, `<img altAlt>` | `<input disabled="disabled">`, `<img alt="Alt">` |
+| A loop inside a loop of the same name, as in a recursive macro ([\#177](https://github.com/malthe/chameleon/issues/177)) | After the inner loop ends, `repeat.item` is still the inner loop's, so the outer loop's next items get its `index` and `length` (often `-1` and `0`). | `repeat.item` is the outer loop's again. |
+| A local variable with the same name as a global, then a macro call inside it ([\#445](https://github.com/malthe/chameleon/issues/445)) | The macro call resets the local to the global's value. | The local keeps its value, unless the macro sets the global. |
 
 
 # Found a difference?

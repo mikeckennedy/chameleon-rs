@@ -144,6 +144,17 @@ template = PageTemplate('<input type="checkbox" tal:attributes="checked True" />
 templates = PageTemplateLoader(path, boolean_attributes={"selected", "checked"})
 ```
 
+The default set is Chameleon's, from XHTML 1.0, so HTML5's boolean attributes such as `required`, `autofocus` and `formnovalidate` render as `required="True"`. chameleon-rs ships the HTML5 set as `HTML5_BOOLEAN_ATTRIBUTES` (the one z3c.pt uses for Zope and Plone):
+
+``` python
+from chameleon_rs import PageTemplate
+from chameleon_rs.template import HTML5_BOOLEAN_ATTRIBUTES
+
+
+class MyTemplate(PageTemplate):
+    boolean_attributes = HTML5_BOOLEAN_ATTRIBUTES
+```
+
 
 # `tal:condition`
 
@@ -278,6 +289,8 @@ You can define two different kinds of variables: *local* and *global*. When you 
 > **Tip: Tip**
 >
 > Global variables may be changed by the execution of a macro if that macro also declares the variable to be global.
+
+A local variable can have the same name as a global one, and hides it in its element. A macro called inside that element doesn't change this unless the macro sets the global itself. In Chameleon, any macro call resets the local to the global's value ([malthe/chameleon#445](https://github.com/malthe/chameleon/issues/445)).
 
 To set the definition scope of a variable, use the keywords `local` or `global` in front of the assignment. The default setting is `local`; thus, in practice, only the `global` keyword is used.
 
@@ -464,13 +477,26 @@ The true and false values are not booleans: `even` and `odd` are the strings `'e
 
 You can access the contents of the repeat variable using either dictionary- or attribute-style access, e.g. `repeat['item'].start` or `repeat.item.start`.
 
+A loop inside a loop of the same name, such as the loop in a recursive macro that renders a tree, has its own repeat variable. When the inner loop ends, `repeat.item` is the outer loop's again. In Chameleon, it stays the inner loop's ([malthe/chameleon#177](https://github.com/malthe/chameleon/issues/177)).
+
 > **Note: Note**
 >
 > For legacy compatibility, the attributes `odd`, `even`, `number`, `letter`, `Letter`, `roman`, and `Roman` are callable (returning `self`).
 
-> **Note: Note**
->
-> Earlier versions of this document, and the [Zope Page Templates Reference](https://zope.readthedocs.io/en/latest/zopebook/AppendixC.html#repeat-variables), referred to `first` and `last` attributes for use with sorted sequences. These are not implemented in Chameleon or the Zope reference implementation zope.tales. Instead, you can use `itertools.groupby`, as in the example below.
+
+## Grouping a sorted sequence: `first` and `last`
+
+chameleon-rs adds Zope's `first(name)` and `last(name)` methods, which Chameleon never implemented ([malthe/chameleon#144](https://github.com/malthe/chameleon/issues/144)). `repeat.item.first('kind')` is true when the item starts a run of items with the same `kind`, because it is the first item or its `kind` differs from the item before. `last('kind')` is true when the item ends such a run. For a mapping item, `name` is a key; for any other item, it is an attribute. Without a name, whole items are compared. A part missing from either item counts as different.
+
+``` html
+
+  <h2 tal:condition="repeat.object.first('meta_type')" tal:content="object.meta_type">Meta Type</h2>
+  <p tal:content="object.id">Object ID</p>
+  <hr tal:condition="repeat.object.last('meta_type')" />
+
+```
+
+They are methods: call them. A bare `repeat.object.first` is always true. Templates that must also run on Chameleon can use `itertools.groupby` instead, as in the last example below.
 
 
 ## Examples

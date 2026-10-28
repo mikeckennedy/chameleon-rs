@@ -272,6 +272,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#description-2" id="toc-description-2" class="nav-link" data-scroll-target="#description-2">Description</a></li>
   <li><a href="#examples-1" id="toc-examples-1" class="nav-link" data-scroll-target="#examples-1">Examples</a></li>
   </ul></li>
+  <li><a href="#custom-expression-types" id="toc-custom-expression-types" class="nav-link" data-scroll-target="#custom-expression-types">Custom expression types</a>
+  <ul class="collapse">
+  <li><a href="#subclass-talesexpr" id="toc-subclass-talesexpr" class="nav-link" data-scroll-target="#subclass-talesexpr">Subclass <code>TalesExpr</code></a></li>
+  <li><a href="#delegate-to-the-engine" id="toc-delegate-to-the-engine" class="nav-link" data-scroll-target="#delegate-to-the-engine">Delegate to the engine</a></li>
+  <li><a href="#rejecting-text-it-cant-compile" id="toc-rejecting-text-it-cant-compile" class="nav-link" data-scroll-target="#rejecting-text-it-cant-compile">Rejecting text it can’t compile</a></li>
+  <li><a href="#what-isnt-supported" id="toc-what-isnt-supported" class="nav-link" data-scroll-target="#what-isnt-supported">What isn’t supported</a></li>
+  </ul></li>
   <li><a href="#built-in-names" id="toc-built-in-names" class="nav-link" data-scroll-target="#built-in-names">Built-in names</a></li>
   </ul>
 </nav>
@@ -394,7 +401,7 @@ Note
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p><strong>chameleon-rs:</strong> custom expression types (classes registered in <code>expression_types</code> that return Python AST) are supported through a bridge that wraps their AST in a Python function, so they run at the speed of an ordinary Python call. Types that depend on Chameleon’s compiler internals beyond that interface aren’t supported.</p>
+<p><strong>chameleon-rs:</strong> custom expression types (classes registered in <code>expression_types</code> that return Python AST) are supported through a bridge that wraps their AST in a Python function, so they run at the speed of an ordinary Python call. Types that depend on Chameleon’s compiler internals beyond that interface aren’t supported. See <a href="#custom-expression-types">Custom expression types</a>.</p>
 </div>
 </div>
 <p>There’s a mechanism to allow fallback to alternative expressions, if one should fail (raise an exception). The pipe character (‘|’) is used to separate two expressions:</p>
@@ -498,6 +505,60 @@ Note
 <h2 class="anchored" data-anchor-id="examples-1">Examples</h2>
 <p>Loading a template and using it as a macro:</p>
 <div class="sourceCode" id="cb11"><pre class="sourceCode html"><code class="sourceCode html"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">div</span><span class="ot"> tal:define</span><span class="op">=</span><span class="st">"master load: ../master.pt"</span><span class="ot"> metal:use-macro</span><span class="op">=</span><span class="st">"master"</span><span class="ot"> </span><span class="dt">/&gt;</span></span></code></pre></div>
+</section>
+</section>
+<section id="custom-expression-types" class="level1">
+<h1>Custom expression types</h1>
+<p>A template class’s <code>expression_types</code> maps each prefix to a type. Add your own by extending the mapping:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplate</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> MyTemplate(PageTemplate):</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    expression_types <span class="op">=</span> {<span class="op">**</span>PageTemplate.expression_types, <span class="st">'upper'</span>: UpperExpr}</span></code></pre></div>
+<p>A type is called with the expression text (without the prefix), and the result is called with <code>(target, engine)</code>. It returns a list of Python AST statements that assign the value to <code>target</code>. There are two ways to write one.</p>
+<section id="subclass-talesexpr" class="level2">
+<h2 class="anchored" data-anchor-id="subclass-talesexpr">Subclass <code>TalesExpr</code></h2>
+<p><code>chameleon_rs.tales.TalesExpr</code> is Chameleon’s base class (<code>chameleon.tales.TalesExpr</code>). A subclass implements <code>translate(expression, target)</code> for one expression, and the base class adds the <code>|</code> fallbacks:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> ast</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs.codegen <span class="im">import</span> template</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs.exc <span class="im">import</span> ExpressionError</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs.tales <span class="im">import</span> TalesExpr</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> UpperExpr(TalesExpr):</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""``upper: name``: the value of ``name``, upper-cased."""</span></span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> translate(<span class="va">self</span>, expression, target):</span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a>        name <span class="op">=</span> expression.strip()</span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="kw">not</span> name.isidentifier():</span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>            <span class="cf">raise</span> ExpressionError(<span class="st">'expected a name'</span>, expression)</span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> template(</span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a>            <span class="st">'target = str(name).upper()'</span>,</span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a>            target<span class="op">=</span>target,</span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>            name<span class="op">=</span>ast.Name(<span class="bu">id</span><span class="op">=</span>name, ctx<span class="op">=</span>ast.Load()),</span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a>        )</span></code></pre></div>
+<p><code>&lt;p tal:content="upper: title"/&gt;</code> renders <code>&lt;p&gt;HALLO&lt;/p&gt;</code> for <code>title='hallo'</code>, and <code>upper: missing | title</code> falls back to <code>title</code>. Names in the AST are looked up in the template’s variables, as in a <code>python:</code> expression.</p>
+</section>
+<section id="delegate-to-the-engine" class="level2">
+<h2 class="anchored" data-anchor-id="delegate-to-the-engine">Delegate to the engine</h2>
+<p>A type that rewrites its text into another expression can let the engine compile it. It doesn’t need a base class:</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> TwiceExpr:</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, expression):</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.expression <span class="op">=</span> expression</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__call__</span>(<span class="va">self</span>, target, engine):</span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> engine.parse(<span class="va">self</span>.expression).assign_value(target)</span></code></pre></div>
+<p><code>engine.parse(text)</code> compiles <code>text</code> with the template’s own expression types, so <code>twice: python: title * 2</code> works. <code>assign_value(target)</code> assigns its value; <code>assign_text</code> and <code>assign_bool</code> assign it converted to text or to a boolean.</p>
+</section>
+<section id="rejecting-text-it-cant-compile" class="level2">
+<h2 class="anchored" data-anchor-id="rejecting-text-it-cant-compile">Rejecting text it can’t compile</h2>
+<p>A type must raise <code>ExpressionError</code> for text it can’t compile. Either chameleon-rs’ class (<code>chameleon_rs.exc.ExpressionError</code>) or Chameleon’s (<code>chameleon.exc.ExpressionError</code>) works.</p>
+<p>This matters for <code>${...}</code>. The closing brace can’t be found by scanning, because an expression can contain braces of its own. So for <code>class="${upper: a} ${upper: b}"</code> the type first gets the longest candidate, <code>a} ${upper: b</code>, and then shorter ones until it accepts one. A type that accepts anything takes the first candidate, and the rest of the attribute disappears without an error. Chameleon works the same way.</p>
+</section>
+<section id="what-isnt-supported" class="level2">
+<h2 class="anchored" data-anchor-id="what-isnt-supported">What isn’t supported</h2>
+<p>Chameleon’s compiler internals (<code>chameleon.nodes</code>, <code>chameleon.program</code>, <code>chameleon.zpt.program</code>) don’t exist in chameleon-rs, and types built on them don’t work.</p>
 </section>
 </section>
 <section id="built-in-names" class="level1">

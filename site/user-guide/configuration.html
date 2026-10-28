@@ -469,7 +469,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><strong><code>partial_search</code> and the Markdown settings don’t need a folder.</strong> Every other option needs one, on the first call.</li>
 <li>It returns the new settings, and raises <a href="../reference/web.TemplateError.html#chameleon_rs.web.TemplateError" class="gdls-link gdls-code">chameleon_rs.web.TemplateError</a> for a missing folder, or <code>ValueError</code> for an unknown <code>partial_search</code> or an invalid Markdown setting (<code>TypeError</code> for one of the wrong type). A call that raises changes nothing.</li>
 </ul>
-<div id="c7d4d54a" class="cell" data-execution_count="2">
+<div id="00c1aa95" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>settings <span class="op">=</span> chameleon_rs.configure(template_folder<span class="op">=</span>template_folder, auto_reload<span class="op">=</span><span class="va">True</span>)</span>
@@ -521,7 +521,7 @@ True</code></pre>
 <tr class="even">
 <td><code>boolean_attributes</code></td>
 <td>the HTML set, in HTML mode</td>
-<td>Attributes rendered as <code>name="name"</code> for a true value and dropped for a false one.</td>
+<td>Attributes rendered as <code>name="name"</code> for a true value and dropped for a false one. The default is Chameleon’s XHTML 1.0 list; <code>chameleon_rs.template.HTML5_BOOLEAN_ATTRIBUTES</code> adds HTML5’s (<code>required</code>, <code>autofocus</code>, …).</td>
 </tr>
 <tr class="odd">
 <td><code>strict</code></td>
@@ -576,6 +576,10 @@ True</code></pre>
 </tbody>
 </table>
 <p>The rest are also accepted, as in Chameleon: <code>default_marker</code>, <code>value_repr</code>, <code>tokenizer</code>, <code>debug</code>, <code>enable_data_attributes</code>, <code>enable_comment_interpolation</code> and <code>expression_types</code>. File templates also take <code>search_path</code>, <code>package_name</code>, <code>loader_class</code> and <code>prepend_relative_search_path</code>.</p>
+<p>Paths can be <code>pathlib.Path</code> objects (any <code>os.PathLike</code>) anywhere a path string works: the template’s filename, a single search path or a list of them, and the name you look up in a loader. Chameleon accepts only strings here (<a href="https://github.com/malthe/chameleon/issues/342">malthe/chameleon#342</a>).</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> pathlib <span class="im">import</span> Path</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>templates <span class="op">=</span> PageTemplateLoader(Path(<span class="va">__file__</span>).parent <span class="op">/</span> <span class="st">'templates'</span>, <span class="st">'.pt'</span>)</span></code></pre></div>
 <div class="callout callout-style-default callout-note callout-titled">
 <div class="callout-header d-flex align-content-center">
 <div class="callout-icon-container">

@@ -71,7 +71,7 @@ template = PageTemplate('<p data-tal-content="text">...</p>', enable_data_attrib
 Every statement, expression type and built-in name described here behaves in chameleon-rs as it does in Chameleon; the examples on these pages were rendered with both engines to check. The engine underneath is different, which shows in three places, none of them in the template language itself:
 
 - Chameleon compiles a template to Python source code, available as `template.source`. chameleon-rs compiles it to a native program; with `keep_source=True`, `template.source` is a readable dump of that program, not Python code.
-- Custom expression types (classes that return Python AST) work through a bridge, at the speed of an ordinary Python call. Types that depend on Chameleon's compiler internals beyond that interface aren't supported.
+- Custom expression types (classes that return Python AST) work through a bridge, at the speed of an ordinary Python call. Types that depend on Chameleon's compiler internals beyond that interface aren't supported. See [Custom expression types](expressions.md#custom-expression-types).
 - Chameleon's `CHAMELEON_CACHE` (compiled templates cached on disk as Python modules) has no equivalent. Compiling is fast enough that it isn't needed.
 
 See [Compatibility](../user-guide/compatibility.md) for how compatibility is measured.

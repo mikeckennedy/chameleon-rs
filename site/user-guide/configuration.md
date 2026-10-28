@@ -83,7 +83,7 @@ The common ones:
 | `auto_reload` | `False` (or `CHAMELEON_RELOAD`) | File templates recompile when their file changes. |
 | `encoding` | none | Lets you pass encoded byte strings as values. |
 | `translate` | none | The translation function for `i18n:` attributes: `translate(msgid, domain=None, mapping=None, default=None, context=None, target_language=None)`. |
-| `boolean_attributes` | the HTML set, in HTML mode | Attributes rendered as `name="name"` for a true value and dropped for a false one. |
+| `boolean_attributes` | the HTML set, in HTML mode | Attributes rendered as `name="name"` for a true value and dropped for a false one. The default is Chameleon's XHTML 1.0 list; `chameleon_rs.template.HTML5_BOOLEAN_ATTRIBUTES` adds HTML5's (`required`, `autofocus`, …). |
 | `strict` | `True` | Compile every expression up front. `False` only requires an expression to be valid when it's evaluated. |
 | `restricted_namespace` | `True` | `False` passes unknown namespaces and prefixes through, for Alpine.js or Vue. |
 | `strict_tags` | `False` (or `CHAMELEON_STRICT_TAGS`) | chameleon-rs only. An unclosed element carrying `tal:`, `metal:` or `i18n:` attributes is a `ParseError` at its start tag, instead of an error far away or none at all. See [Catching unclosed tags](strict-tags.md). |
@@ -96,6 +96,14 @@ The common ones:
 | `keep_body` / `keep_source` | `False` | Keep the template's source text, or a readable dump of its compiled program. |
 
 The rest are also accepted, as in Chameleon: `default_marker`, `value_repr`, `tokenizer`, `debug`, `enable_data_attributes`, `enable_comment_interpolation` and `expression_types`. File templates also take `search_path`, `package_name`, `loader_class` and `prepend_relative_search_path`.
+
+Paths can be `pathlib.Path` objects (any `os.PathLike`) anywhere a path string works: the template's filename, a single search path or a list of them, and the name you look up in a loader. Chameleon accepts only strings here ([malthe/chameleon#342](https://github.com/malthe/chameleon/issues/342)).
+
+``` python
+from pathlib import Path
+
+templates = PageTemplateLoader(Path(__file__).parent / 'templates', '.pt')
+```
 
 > **Note: `source` is a program dump, not Python**
 >
