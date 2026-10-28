@@ -14,6 +14,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   iterable"), `Path` entries in a search path, and `loader[Path('page.pt')]`. Any
   `os.PathLike` is accepted; a list or tuple of strings is still kept as the loader's own
   `search_path`, as in Chameleon.
+- **Zope's `repeat.item.first(name)` and `repeat.item.last(name)`** (malthe/chameleon#144,
+  reported by pbauer): whether the item starts or ends a run of items with the same `name`
+  attribute (or key, for a mapping), for headings and rules in a sorted sequence:
+  `<h2 tal:condition="repeat.item.first('category')">`. Without a name, whole items compare.
+  Chameleon never implemented them (its docs suggest `itertools.groupby`). `RepeatItem` takes
+  the repeated items as an optional third argument; one made with Chameleon's two arguments
+  raises a `TypeError` from `first` and `last` only.
 
 ## [0.1.53] - 2026-10-27
 

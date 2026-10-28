@@ -149,3 +149,64 @@ def test_letters_beyond_z_and_roman_numerals() -> None:
     source = '<i tal:repeat="x items">${repeat.x.letter}${repeat.x.Letter}${repeat.x.roman}</i>'
     items = list(range(60))
     assert render(chameleon_rs, source, items=items) == render(chameleon, source, items=items)
+
+
+# --- `first` and `last` (malthe/chameleon#144): Zope's, which Chameleon never had -----------
+
+
+class Obj:
+    def __init__(self, kind: str) -> None:
+        self.kind = kind
+
+
+GROUPED = [Obj('a'), Obj('a'), Obj('b'), Obj('c'), Obj('c')]
+
+
+@pytest.mark.parametrize(
+    ('items', 'expected'),
+    [
+        # Attributes of objects, keys of mappings.
+        (GROUPED, 'a:1:0|a:0:1|b:1:1|c:1:0|c:0:1|'),
+        ([{'kind': k.kind} for k in GROUPED], 'a:1:0|a:0:1|b:1:1|c:1:0|c:0:1|'),
+        ([Obj('x')], 'x:1:1|'),
+        ([], ''),
+    ],
+    ids=['objects', 'mappings', 'one', 'empty'],
+)
+def test_repeat_first_and_last(items: list[Any], expected: str) -> None:
+    source = (
+        '<tal:r repeat="o items">${o.kind if hasattr(o, "kind") else o["kind"]}'
+        ":${int(repeat.o.first('kind'))}:${int(repeat['o'].last('kind'))}|</tal:r>"
+    )
+    assert chameleon_rs.PageTemplate(source)(items=items) == expected
+    with pytest.raises(AttributeError, match='first'):
+        chameleon.PageTemplate(source)(items=items or [Obj('x')])
+
+
+def test_repeat_first_and_last_group_a_sorted_sequence() -> None:
+    # Zope's documented use: a heading before each group, a rule after it.
+    source = (
+        '<div tal:repeat="o items"><h2 tal:condition="repeat.o.first(\'kind\')">${o.kind}</h2>'
+        '<hr tal:condition="repeat.o.last(\'kind\')"/></div>'
+    )
+    assert chameleon_rs.PageTemplate(source)(items=GROUPED) == (
+        '<div><h2>a</h2></div>\n<div><hr/></div>\n<div><h2>b</h2><hr/></div>\n<div><h2>c</h2></div>\n<div><hr/></div>'
+    )
+
+
+def test_repeat_first_and_last_edge_cases() -> None:
+    # Without a name, whole items compare; a part missing from either item counts as different.
+    source = '<i tal:repeat="x items">${int(repeat.x.first())}${int(repeat.x.last())}${int(repeat.x.first(\'n\'))}</i>'
+    assert chameleon_rs.PageTemplate(source)(items=[1, 1, 2]) == '<i>101</i>\n<i>011</i>\n<i>111</i>'
+    # After a nested loop of the same name, `repeat.i` is the inner loop's, as for `index`.
+    source = (
+        '<p tal:repeat="i [1, 1]"><b tal:repeat="i [2, 2]">${int(repeat.i.first())}</b>'
+        '${int(repeat.i.first())}${repeat.i.index}</p>'
+    )
+    assert chameleon_rs.PageTemplate(source)() == '<p><b>1</b>\n<b>0</b>01</p>\n<p><b>1</b>\n<b>0</b>01</p>'
+    # A `RepeatItem` made by hand without its items (Chameleon's signature) has everything else.
+    item = chameleon_rs.tal.RepeatItem(iter([1, 2]), 2)
+    next(item._iterator)
+    assert item.start
+    with pytest.raises(TypeError, match='need the repeated items'):
+        item.first()

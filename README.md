@@ -124,7 +124,9 @@ OpenAPI docs work as without `@template`.
   `render_async(..., offload=True)` (experimental) renders in a worker thread, in parallel
   with the event loop on a free-threaded build.
 - **Long-standing Chameleon issues fixed.** `pathlib.Path` works wherever a path string does
-  ([#342](https://github.com/malthe/chameleon/issues/342)).
+  ([#342](https://github.com/malthe/chameleon/issues/342)), and Zope's
+  `repeat.item.first('category')` / `last('category')` group a sorted sequence
+  ([#144](https://github.com/malthe/chameleon/issues/144)).
 - **Typed.** PEP 561 type information for the whole API, including the native module.
 - **No runtime dependencies.** The engine, the Markdown converter and the integrations are in
   the wheel; each integration imports its framework only when you import it.

@@ -1,14 +1,15 @@
 # Ported from Chameleon's src/chameleon/tal.py (RepeatItem, ErrorInfo, the
 # constants NAME, DEFINE_RE, SUBST_RE, ATTR_RE, ENTITY_RE, WHITELIST, and verbatim
 # split_parts, parse_attributes, parse_substitution, parse_defines, prepare_attributes),
-# modified: type annotations on the classes.
+# modified: type annotations on the classes; RepeatItem keeps the repeated items and has Zope's
+# `first` and `last` (malthe/chameleon#144).
 """The ``repeat`` variable available in templates."""
 
 from __future__ import annotations
 
 import copy
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
 
 from chameleon_rs import _native
@@ -207,14 +208,30 @@ def prepare_attributes(attrs, dyn_attributes, i18n_attributes, ns_attributes, dr
     return attributes
 
 
+_MISSING = object()
+
+
+def _part(item: Any, name: str | None) -> Any:
+    """The part of a repeated item that ``first`` and ``last`` compare: the item itself, or its
+    attribute ``name`` (its key ``name``, for a mapping)."""
+    if name is None:
+        return item
+    if isinstance(item, Mapping):
+        return item.get(name, _MISSING)
+    return getattr(item, name, _MISSING)
+
+
 class RepeatItem:
-    __slots__ = '_iterator', 'length'
+    __slots__ = '_items', '_iterator', 'length'
 
     __allow_access_to_unprotected_subobjects__ = True
 
-    def __init__(self, iterator: Iterator[Any], length: int) -> None:
+    def __init__(self, iterator: Iterator[Any], length: int, items: Sequence[Any] | None = None) -> None:
         self.length = length
         self._iterator = iterator
+        # The repeated sequence, for `first` and `last` (Chameleon's RepeatItem has no third
+        # argument, and code that makes one without it gets everything else).
+        self._items = items
 
     def __iter__(self) -> Iterator[Any]:
         return self._iterator
@@ -250,6 +267,28 @@ class RepeatItem:
     @descriptorstr
     def parity(self) -> str:
         return (self.index % 2 == 0 and 'even') or 'odd'
+
+    def first(self, name: str | None = None) -> bool:
+        """Whether this item starts a run of items with the same ``name`` part (an attribute,
+        or a key for a mapping; without a name, the whole item): the first item, or one whose
+        part differs from the item before. Zope's ``first``, for grouping a sorted sequence:
+        ``<h2 tal:condition="repeat.item.first('category')">``."""
+        return self._run_edge(name, -1)
+
+    def last(self, name: str | None = None) -> bool:
+        """Whether this item ends a run of items with the same ``name`` part: the last item,
+        or one whose part differs from the item after (see ``first``)."""
+        return self._run_edge(name, 1)
+
+    def _run_edge(self, name: str | None, step: int) -> bool:
+        if self._items is None:
+            raise TypeError('first() and last() need the repeated items: RepeatItem(iterator, length, items)')
+        index = self.index
+        if index == (0 if step < 0 else self.length - 1):
+            return True
+        part = _part(self._items[index], name)
+        # As in Zope: a part missing from either item counts as different.
+        return part is _MISSING or part != _part(self._items[index + step], name)
 
     def next(self) -> None:
         raise NotImplementedError("Method not implemented (can't update local variable).")

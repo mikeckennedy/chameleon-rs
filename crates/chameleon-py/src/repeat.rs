@@ -1,6 +1,6 @@
 // Ported from Chameleon's src/chameleon/tal.py (`RepeatDict`, and the `RepeatItem` descriptors
 // `index`, `number`, `start`, `end`, `odd`, `even`, `parity`), modified: `RepeatDict` is a native
-// class, and the descriptors are computed natively for the exact `RepeatItem` class of
+// class that also gives each `RepeatItem` its items (for `first` and `last`), and the descriptors are computed natively for the exact `RepeatItem` class of
 // `chameleon_rs.tal`, with the same results and types.
 
 //! The `repeat` variable without Python frames (Phase 10).
@@ -46,7 +46,7 @@ impl RepeatDict {
     /// iterable = list(iterable) if iterable is not None else ()
     /// length = len(iterable)
     /// iterator = iter(iterable)
-    /// self[key] = RepeatItem(iterator, length)
+    /// self[key] = RepeatItem(iterator, length, iterable)   # Chameleon: RepeatItem(iterator, length)
     /// return iterator, length
     /// ```
     pub(crate) fn register<'py>(
@@ -62,7 +62,7 @@ impl RepeatDict {
         };
         let length = items.len()?;
         let iterator = items.try_iter()?.into_any();
-        let item = classes(py)?.item.bind(py).call1((&iterator, length))?;
+        let item = classes(py)?.item.bind(py).call1((&iterator, length, &items))?;
         if slf.is_exact_instance_of::<Self>() {
             slf.get().d.bind(py).set_item(key, item)?;
         } else {

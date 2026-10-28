@@ -1658,6 +1658,12 @@ of a template that renders today are listed in D11.
   `TemplateLoader` and `BaseTemplateFile`. A list or tuple of strings is kept as the loader's
   `search_path`, the same object, as in Chameleon. `TemplateLoader.load` takes an
   `os.PathLike` spec.
+- **#144, Zope's `first(name)` and `last(name)`.** `RepeatItem` methods, as in zope.tales:
+  methods rather than callable values, so `first('k')` never compares whole items first.
+  `RepeatDict` passes the materialized list as a third constructor argument (optional:
+  Chameleon's two-argument signature still works, and only `first`/`last` need it). A mapping
+  item's part is its key, an extension over Zope's `getattr`. A part missing from either item
+  counts as different, as in Zope.
 
 ## D1. Workspace shape: a pure-Rust core and a PyO3 shell
 
