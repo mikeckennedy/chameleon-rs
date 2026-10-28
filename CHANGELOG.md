@@ -52,6 +52,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `MappedExpr`) aborted the template, and any Plone attribute with two `${...}` failed to
   compile. Chameleon's class counts too now, when Chameleon is loaded; chameleon-rs still
   never imports it.
+- **Chameleon's expression types can be subclassed, and z3c.pt runs on `compat.install()`**
+  (#9, reported by zopyx): z3c.pt, the page template layer of Zope and Plone, subclasses
+  `chameleon.tales.PythonExpr` and `ExistsExpr`, which failed with "'PythonExpr' object has no
+  attribute 'translate'" and a `RecursionError`. `PythonExpr` now has Chameleon's `translate`,
+  and `NotExpr`, `ExistsExpr`, `ImportExpr` and `StructureExpr` compile as Chameleon's do when
+  called from Python; templates that name the classes themselves still compile natively.
+  `PageTemplate.engine` and `expression_parser` exist as in Chameleon, `ExpressionEvaluator`
+  works with a parser that has no `python` type, and `tales.test`, `SimpleEngine` and
+  `SimpleCompiler` are there for doctests. z3c.pt's own suite passes unmodified and runs in
+  `make test-integration`.
+- **Custom expression types: `Builtin` names and attribute access as in Chameleon** (#9): a
+  `Builtin('get')`, `Builtin('econtext')` or a template builtin in a type's AST now means what
+  it does in Chameleon's render function (it raised `AttributeError` from Python's builtins),
+  and attribute access in a type's AST no longer falls back to item lookup, which Chameleon
+  only does inside `PythonExpr`.
 - **A macro is not callable** (#10, reported by zopyx): Zope's path expressions call whatever
   they resolve to, so `metal:use-macro="context/@@main_template/macros/master"` called the
   macro and raised a `TypeError`, on every Plone page. As in Chameleon, `Macro` is a plain

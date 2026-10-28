@@ -30,6 +30,12 @@ LITESTAR_CHAMELEON_COMMIT := da0652d3b3b32f42af5ae806242779e8df21ba09
 # Its tests live in the package (pyramid_chameleon/tests), and it imports pkg_resources.
 PYRAMID_CHAMELEON_REPO := https://github.com/Pylons/pyramid_chameleon
 PYRAMID_CHAMELEON_COMMIT := e11b8947cd06a5913af2ec8d4aa5ebcd3c774994
+# z3c.pt, the page template bridge of Zope and Plone (third party): it subclasses Chameleon's
+# expression types, which the other suites don't. Like the two above it is put on the path,
+# not installed; its zope.* dependencies are installed. Its suite runs with zope-testrunner,
+# the alias installed at startup by tests/integration/child_alias.
+Z3C_PT_REPO := https://github.com/zopefoundation/z3c.pt
+Z3C_PT_COMMIT := a942d676a9d6af3a39febb7e3ac3934dc4551fb0
 INTEGRATION_PYTHON ?= 3.14
 INTEGRATION_VENV := $(CURDIR)/temp/venv-integration
 INTEGRATION_SUITES := fastapi-chameleon chameleon-flask chameleon-robyn chameleon_partials litestar-chameleon
@@ -77,14 +83,17 @@ temp/chameleon:
 temp/chameleon_partials:
 	git clone -q $(PARTIALS_REPO) $@
 
-integration: reference temp/fastapi-chameleon temp/chameleon-flask temp/chameleon-robyn temp/litestar-chameleon temp/pyramid_chameleon
+integration: reference temp/fastapi-chameleon temp/chameleon-flask temp/chameleon-robyn temp/litestar-chameleon temp/pyramid_chameleon temp/z3c.pt
 	$(call checkout,temp/fastapi-chameleon,$(FASTAPI_COMMIT))
 	$(call checkout,temp/chameleon-flask,$(FLASK_COMMIT))
 	$(call checkout,temp/chameleon-robyn,$(ROBYN_COMMIT))
 	$(call checkout,temp/litestar-chameleon,$(LITESTAR_CHAMELEON_COMMIT))
 	$(call checkout,temp/pyramid_chameleon,$(PYRAMID_CHAMELEON_COMMIT))
+	$(call checkout,temp/z3c.pt,$(Z3C_PT_COMMIT))
 	test -x $(INTEGRATION_VENV)/bin/python || uv venv -q $(INTEGRATION_VENV) --python $(INTEGRATION_PYTHON)
-	uv pip install -q --python $(INTEGRATION_VENV)/bin/python fastapi httpx 'flask[async]' robyn==$(ROBYN_VERSION) 'litestar>=2.25,<3' pyramid 'setuptools<82' pytest maturin
+	uv pip install -q --python $(INTEGRATION_VENV)/bin/python fastapi httpx 'flask[async]' robyn==$(ROBYN_VERSION) 'litestar>=2.25,<3' pyramid 'setuptools<82' pytest maturin \
+		zope.interface zope.component 'zope.i18n>=3.5' zope.traversing zope.contentprovider \
+		zope.pagetemplate zope.testing zope.testrunner
 	VIRTUAL_ENV=$(INTEGRATION_VENV) PYO3_PYTHON=$(INTEGRATION_VENV)/bin/python CARGO_TARGET_DIR=$(CURDIR)/target/integration \
 		$(INTEGRATION_VENV)/bin/maturin develop -q --profile dev-opt
 
@@ -102,6 +111,9 @@ temp/litestar-chameleon:
 
 temp/pyramid_chameleon:
 	git clone -q $(PYRAMID_CHAMELEON_REPO) $@
+
+temp/z3c.pt:
+	git clone -q $(Z3C_PT_REPO) $@
 
 # Fast optimized build for the test loop; release (fat LTO) for benchmarks and wheels.
 build:
@@ -212,6 +224,10 @@ test-integration: integration
 		PYTHONPATH=$(CURDIR)/tests/integration:$(CURDIR)/temp/pyramid_chameleon \
 		$(INTEGRATION_VENV)/bin/python -m pytest -q -c setup.cfg --rootdir . \
 		-p chameleon_compat_plugin -p no:cacheprovider pyramid_chameleon/tests
+	@echo "== z3c.pt (original)"
+	cd $(CURDIR)/temp/z3c.pt && INTEGRATION_MODE=original \
+		PYTHONPATH=$(CURDIR)/tests/integration/child_alias:$(CURDIR)/temp/z3c.pt/src \
+		$(INTEGRATION_VENV)/bin/zope-testrunner --test-path=src
 	set -e; for suite in $(BUILTIN_SUITES); do \
 		echo "== $$suite (built-in)"; \
 		cd $(CURDIR)/temp/$$suite; \

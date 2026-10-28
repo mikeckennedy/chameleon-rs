@@ -389,7 +389,7 @@ ul.task-list li input[type="checkbox"] {
 <td>No differences in 20,000 examples per generator.</td>
 </tr>
 <tr class="even">
-<td><strong>Integration suites.</strong> The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials, litestar-chameleon and pyramid_chameleon, unmodified, on chameleon-rs.</td>
+<td><strong>Integration suites.</strong> The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials, litestar-chameleon, pyramid_chameleon and z3c.pt (Zope and Plone’s page templates), unmodified, on chameleon-rs.</td>
 <td>All pass.</td>
 </tr>
 <tr class="odd">
@@ -430,7 +430,7 @@ ul.task-list li input[type="checkbox"] {
 <tr class="even">
 <td>Custom expression types</td>
 <td>A class whose compiler returns Python AST statements.</td>
-<td>Supported through a bridge that wraps the AST in a Python function, at the speed of an ordinary Python call. Types that depend on Chameleon’s compiler internals beyond that interface aren’t supported. See <a href="../language/expressions.html#custom-expression-types">Custom expression types</a>.</td>
+<td>Supported through a bridge that wraps the AST in a Python function, at the speed of an ordinary Python call. Subclasses of Chameleon’s own types (<code>PythonExpr</code>, <code>ExistsExpr</code>, …, as z3c.pt has) work the same way. Types that depend on Chameleon’s compiler internals beyond that interface aren’t supported. See <a href="../language/expressions.html#custom-expression-types">Custom expression types</a>.</td>
 </tr>
 <tr class="odd">
 <td><code>CHAMELEON_CACHE</code></td>

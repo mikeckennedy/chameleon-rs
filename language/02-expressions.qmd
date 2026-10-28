@@ -238,7 +238,12 @@ class UpperExpr(TalesExpr):
 
 `<p tal:content="upper: title"/>` renders `<p>HALLO</p>` for `title='hallo'`, and
 `upper: missing | title` falls back to `title`. Names in the AST are looked up in the
-template's variables, as in a `python:` expression.
+template's variables, as in a `python:` expression. Attribute access is left as it is: the
+fallback from `obj.name` to `obj['name']` is part of `PythonExpr`, which applies
+`tales.transform_attribute` in its `translate`.
+
+Chameleon's own types can be subclassed the same way, as z3c.pt does: a subclass of
+`PythonExpr` can call `self.translate(...)` or replace its `transform`.
 
 ### Delegate to the engine
 

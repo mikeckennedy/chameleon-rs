@@ -33,6 +33,12 @@ Methods for the PageTemplate class
 
 [PageTemplate.__getitem__()](PageTemplate.__getitem__.md#chameleon_rs.PageTemplate.__getitem__)  
 
+[PageTemplate.engine](PageTemplate.engine.md#chameleon_rs.PageTemplate.engine)  
+Chameleon's expression engine factory, for code that evaluates expressions with
+
+[PageTemplate.expression_parser](PageTemplate.expression_parser.md#chameleon_rs.PageTemplate.expression_parser)  
+Chameleon's parser for this template's `expression_types` and
+
 [PageTemplate.builtins](PageTemplate.builtins.md#chameleon_rs.PageTemplate.builtins)  
 The template builtins: names every expression can use (a render keyword of the
 

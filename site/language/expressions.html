@@ -538,7 +538,8 @@ Note
 <span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a>            target<span class="op">=</span>target,</span>
 <span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>            name<span class="op">=</span>ast.Name(<span class="bu">id</span><span class="op">=</span>name, ctx<span class="op">=</span>ast.Load()),</span>
 <span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a>        )</span></code></pre></div>
-<p><code>&lt;p tal:content="upper: title"/&gt;</code> renders <code>&lt;p&gt;HALLO&lt;/p&gt;</code> for <code>title='hallo'</code>, and <code>upper: missing | title</code> falls back to <code>title</code>. Names in the AST are looked up in the template’s variables, as in a <code>python:</code> expression.</p>
+<p><code>&lt;p tal:content="upper: title"/&gt;</code> renders <code>&lt;p&gt;HALLO&lt;/p&gt;</code> for <code>title='hallo'</code>, and <code>upper: missing | title</code> falls back to <code>title</code>. Names in the AST are looked up in the template’s variables, as in a <code>python:</code> expression. Attribute access is left as it is: the fallback from <code>obj.name</code> to <code>obj['name']</code> is part of <code>PythonExpr</code>, which applies <code>tales.transform_attribute</code> in its <code>translate</code>.</p>
+<p>Chameleon’s own types can be subclassed the same way, as z3c.pt does: a subclass of <code>PythonExpr</code> can call <code>self.translate(...)</code> or replace its <code>transform</code>.</p>
 </section>
 <section id="delegate-to-the-engine" class="level2">
 <h2 class="anchored" data-anchor-id="delegate-to-the-engine">Delegate to the engine</h2>

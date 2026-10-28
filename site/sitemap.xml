@@ -181,6 +181,18 @@
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.engine.html</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.expression_parser.html</loc>
+    <lastmod>2026-10-28</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.html</loc>
     <lastmod>2026-10-28</lastmod>
     <changefreq>monthly</changefreq>

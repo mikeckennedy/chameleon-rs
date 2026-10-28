@@ -409,7 +409,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="full-page-or-fragment-from-one-view" class="level1">
 <h1>Full page or fragment from one view</h1>
 <p>HTMX sends an <code>HX-Request: true</code> header with every request it makes. One view can check it, returning the fragment to HTMX and the whole page to everyone else: a first visit, a reload, or a shared link to a URL that <code>hx-push-url</code> put in the address bar. With FastAPI:</p>
-<div id="68e93d05" class="cell" data-execution_count="2">
+<div id="3c2b229a" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> fastapi</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.fastapi <span class="im">as</span> fastapi_chameleon</span>
@@ -436,7 +436,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="cf">await</span> fastapi_chameleon.response_async(<span class="st">'search/results.pt'</span>, results<span class="op">=</span>results)</span>
 <span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="cf">await</span> fastapi_chameleon.response_async(<span class="st">'search/index.pt'</span>, q<span class="op">=</span>q, results<span class="op">=</span>results)</span></code></pre></div>
 </div>
-<div id="abbbcde1" class="cell" data-execution_count="3">
+<div id="941fafcf" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> fastapi.testclient <span class="im">import</span> TestClient</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>client <span class="op">=</span> TestClient(app)</span>
@@ -464,7 +464,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="from-python-without-a-framework" class="level1">
 <h1>From Python, without a framework</h1>
 <p><code>chameleon_rs.render_partial(path, **model)</code> renders a fragment anywhere: an HTMX view in a framework without an integration, a WebSocket or server-sent events handler pushing HTML, or a test. It returns an <a href="../reference/partials.HTML.html#chameleon_rs.partials.HTML" class="gdls-link gdls-code">HTML</a> object whose <code>html_text</code> is the markup:</p>
-<div id="2cb023fe" class="cell" data-execution_count="4">
+<div id="a0caa6c4" class="cell" data-execution_count="4">
 <div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>fragment <span class="op">=</span> chameleon_rs.render_partial(<span class="st">'search/results.pt'</span>, results<span class="op">=</span>[<span class="st">'HTMX in practice'</span>])</span>

@@ -400,12 +400,24 @@ it changes earlier interfaces. Every behaviour below was checked by running the 
   `parse(s).assign_value` / `assign_text` / `assign_bool(target)` emit a call to a
   sub-expression the Rust compiler compiles natively (full TALES, the site's engine conversion,
   `char_escape` honoured). The statements get Chameleon's name rewriting (including its
-  scoping: a `def` or an import binds for good, nested lambdas do not see outer parameters)
-  and are compiled into a function at fallback speed. Chameleon's node types `Symbol`,
-  `Builtin`, `Static`, `Comment` and `TokenRef` are recognized by class name. The code goes
-  through source like Chameleon's codegen, so expression contexts in the type's AST do not
-  matter. An `ExpressionError` from the type drives the Interpolator's retry. Types that
-  subclass Chameleon's classes to override `translate` are still out of scope (D11).
+  scoping: a `def` or an import binds for good, nested lambdas do not see outer parameters),
+  but not the attribute-to-item fallback, which belongs to Chameleon's `PythonExpr`, not to
+  its compiler; they are compiled into a function at fallback speed. Chameleon's node types
+  `Symbol`, `Builtin`, `Static`, `Comment` and `TokenRef` are recognized by class name. A
+  `Builtin` is what the bare name is in Chameleon's render function: `econtext`, `rcontext`,
+  `get` (`econtext.get`), `getname`, a template builtin read directly, or a Python builtin.
+  The code goes through source like Chameleon's codegen, so expression contexts in the type's
+  AST do not matter. An `ExpressionError` from the type (ours or Chameleon's) drives the
+  Interpolator's retry.
+- **Subclassing Chameleon's types (#9).** `tales.PythonExpr` is a `TalesExpr` with Chameleon's
+  `translate`, and `NotExpr`, `ExistsExpr`, `ImportExpr` and `StructureExpr` have Chameleon's
+  `__call__` (`StringExpr` and `ProxyExpr` delegate to the engine). A template that names the
+  class itself compiles it natively (`native_types` matches the exact class); a subclass is a
+  custom type and goes through the bridge, as z3c.pt's types do (Zope, Plone: its suite runs
+  in `make test-integration`). A z3c.pt template's `python:` expressions are therefore at
+  bridge speed; compiling its `PythonExpr` natively is a possible later optimization.
+  `PageTemplate.engine` and `expression_parser` are Chameleon's (z3c.pt's `tales` builtin is
+  an `ExpressionEvaluator(self.engine, ...)`).
 - **`Scope`, two fixes found by the fuzzer:** iteration is lazy, like Chameleon's generator
   (`[q for q in econtext]` raises `RuntimeError: dictionary changed size during iteration`;
   ours iterated a snapshot), and `KeyError`/`NameError` carry the key as their one argument

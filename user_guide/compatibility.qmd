@@ -15,7 +15,7 @@ Each level is a check that runs on every change:
 | **Chameleon's own test suite.** All 233 tests, vendored unmodified, run against chameleon-rs. | Every test that passes on Chameleon passes on chameleon-rs: 227 of 227. The other 6 depend on the test environment and are skipped on both engines. |
 | **Fixture renders.** Every input template in Chameleon's test suite, rendered by both engines. | All 122 byte-identical. |
 | **Differential fuzzing.** Generated templates, models and expressions, rendered by both engines and compared. | No differences in 20,000 examples per generator. |
-| **Integration suites.** The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials, litestar-chameleon and pyramid_chameleon, unmodified, on chameleon-rs. | All pass. |
+| **Integration suites.** The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials, litestar-chameleon, pyramid_chameleon and z3c.pt (Zope and Plone's page templates), unmodified, on chameleon-rs. | All pass. |
 | **Real sites.** Every page of two production Flask/Quart apps, crawled with both engines: anonymous and signed in, with all their partials and layouts. | Every page byte-identical. |
 
 The upstream suite and the fuzzers compare output byte for byte, and they also compare the
@@ -42,7 +42,7 @@ to Python source code.
 | Area | Chameleon | chameleon-rs |
 |---|---|---|
 | `template.source` | The generated Python module's code. | With `keep_source=True`, a readable dump of the compiled program. It isn't Python. |
-| Custom expression types | A class whose compiler returns Python AST statements. | Supported through a bridge that wraps the AST in a Python function, at the speed of an ordinary Python call. Types that depend on Chameleon's compiler internals beyond that interface aren't supported. See [Custom expression types](../language/expressions.qmd#custom-expression-types). |
+| Custom expression types | A class whose compiler returns Python AST statements. | Supported through a bridge that wraps the AST in a Python function, at the speed of an ordinary Python call. Subclasses of Chameleon's own types (`PythonExpr`, `ExistsExpr`, ..., as z3c.pt has) work the same way. Types that depend on Chameleon's compiler internals beyond that interface aren't supported. See [Custom expression types](../language/expressions.qmd#custom-expression-types). |
 | `CHAMELEON_CACHE` | Writes the generated modules to disk and loads them on the next start. | Checks the directory but writes nothing. Compiling is about 70x faster than Chameleon, so there's little to cache. |
 | Code-generation modules | `chameleon.nodes`, `chameleon.program`, `chameleon.zpt.program`, `chameleon.benchmark`. | Not provided, since chameleon-rs doesn't generate code. Importing them raises `ModuleNotFoundError`. |
 

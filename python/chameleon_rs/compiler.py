@@ -92,6 +92,10 @@ def _attribute_text(expression: str) -> str:
     return expression.replace(';', ';;').replace('&', '&amp;').replace('"', '&quot;').replace('<', '&lt;')
 
 
+# The prefix `ExpressionEvaluator` passes its result out with.
+_RESULT = 'chameleon-rs-result'
+
+
 class ExpressionEvaluator:
     """Evaluates dynamic expression.
 
@@ -179,11 +183,13 @@ class ExpressionEvaluator:
         parser = getattr(engine, '_parser', None)
         factories = getattr(parser, 'factories', _DEFAULT_TYPES)
         default = getattr(parser, 'default', 'python')
-        source = f'<tal:block define="_result {_attribute_text(expression)}" replace="__result(_result)" />'
+        # `__result` is called with Python under a prefix of our own, whatever types the
+        # parser has (z3c.pt's path-only evaluator has no `python`).
+        source = f'<tal:block define="_result {_attribute_text(expression)}" replace="{_RESULT}:__result(_result)" />'
         return Program(
             source,
             '<string>',
-            expression_types=native_types(factories),
+            expression_types=native_types({**factories, _RESULT: PythonExpr}),
             default_expression=default,
             builtins=sorted({*self._names, '__result'}),
         )

@@ -76,7 +76,12 @@ class Rewriter(ast.NodeTransformer):
         own: Callable[[str], bool] | None = None,
         local_names: set[str] | None = None,
         code_block: bool = False,
+        attributes: bool = True,
     ) -> None:
+        # Whether `obj.name` falls back to `obj['name']` (`transform_attribute`): a part of
+        # Chameleon's `PythonExpr`, not of its compiler, so not done for a custom type's
+        # statements (a type that wants it applies it itself, as `PythonExpr.translate` does).
+        self.attributes = attributes
         # A `<?python ?>` block: Python's builtins are called directly, as in Chameleon's
         # generated code (`econtext['y'] = len(...)`), never looked up in the scope first, so
         # render data named `len` or `str` can't replace them there (expressions do look
@@ -119,6 +124,8 @@ class Rewriter(ast.NodeTransformer):
             self.scopes.pop()
 
     def visit_Attribute(self, node: ast.Attribute) -> ast.AST:
+        if not self.attributes:
+            return self.generic_visit(node)
         # The object is visited; the `__lookup_attr` name is ours and stays as it is.
         return ast.Call(
             func=ast.Name(id='__lookup_attr', ctx=ast.Load()),

@@ -64,12 +64,32 @@ class _Compiler:
 
 class _Lower(ast.NodeTransformer):
     """Chameleon's own node types, by class name (they may come from Chameleon's or our
-    ``astutil``): a ``Symbol`` becomes a global bound to its value, a ``Builtin`` the builtin
-    itself (not rewritten), a ``Static`` a global evaluated once (codegen hoists it to module
-    level); ``Comment`` and ``TokenRef`` statements are dropped."""
+    ``astutil``): a ``Symbol`` becomes a global bound to its value, a ``Builtin`` what that
+    name is in Chameleon's render function (see ``_builtin``), a ``Static`` a global evaluated
+    once (codegen hoists it to module level); ``Comment`` and ``TokenRef`` statements are
+    dropped."""
 
-    def __init__(self, env: dict[str, Any]) -> None:
+    def __init__(self, env: dict[str, Any], template_builtins: Iterable[str] = ()) -> None:
         self.env = env
+        self.template_builtins = frozenset(template_builtins)
+
+    def _builtin(self, name: str) -> ast.expr:
+        """A ``Builtin`` is a bare name in Chameleon's generated code, not rewritten: one of
+        the render function's locals (``econtext``, ``rcontext``, ``get``, ``getname``), a
+        template builtin (z3c.pt's ``tales``), or a Python builtin. Any other name is left to
+        the name rewriting (``translate`` and the other render defaults)."""
+        if name in ('econtext', 'rcontext'):
+            return ast.Name(id=name, ctx=ast.Load())
+        if name in ('get', 'getname'):
+            attr = 'get' if name == 'get' else 'get_name'
+            return ast.Attribute(value=ast.Name(id='econtext', ctx=ast.Load()), attr=attr, ctx=ast.Load())
+        if name in self.template_builtins:
+            return ast.Subscript(
+                value=ast.Name(id='__rs_tpl', ctx=ast.Load()), slice=ast.Constant(name), ctx=ast.Load()
+            )
+        if hasattr(builtins, name):
+            return self._bind(getattr(builtins, name))
+        return ast.Name(id=name, ctx=ast.Load())
 
     def _bind(self, value: Any) -> ast.Name:
         name = f'__rs_symbol_{len(self.env)}'
@@ -81,7 +101,7 @@ class _Lower(ast.NodeTransformer):
         if kind == 'Symbol' and hasattr(node, 'value'):
             return self._bind(node.value)
         if kind == 'Builtin' and hasattr(node, 'id'):
-            return self._bind(getattr(builtins, cast('str', node.id)))
+            return self._builtin(cast('str', node.id))
         if kind == 'Static' and hasattr(node, 'value'):
             value = self.visit(cast('ast.AST', node.value))
             expression = ast.Expression(body=value)
@@ -96,7 +116,7 @@ class _Lower(ast.NodeTransformer):
 def _bridge_name(name: str) -> bool:
     """The names the bridge's own statements use (not reachable from template text, whose
     expressions are compiled by the native compiler)."""
-    return name in ('__rs_sub', '__rs_result') or name.startswith('__rs_symbol_')
+    return name in ('__rs_sub', '__rs_result', '__rs_tpl') or name.startswith('__rs_symbol_')
 
 
 def build(
@@ -119,9 +139,9 @@ def build(
     target = ast.Name(id='__rs_result', ctx=ast.Store())
     statements = list(factory(expression)(target, engine))
     env: dict[str, Any] = {'__lookup_attr': lookup_attr, '__rs_attrs': attrs}
-    lower = _Lower(env)
+    lower = _Lower(env, template_builtins)
     lowered = [s for s in (lower.visit(stmt) for stmt in statements) if s is not None]
-    rewriter = Rewriter(aliases_for(default_is_marker, attrs), template_builtins, own=_bridge_name)
+    rewriter = Rewriter(aliases_for(default_is_marker, attrs), template_builtins, own=_bridge_name, attributes=False)
     body = [rewriter.visit(stmt) for stmt in lowered]
     body.append(ast.Return(value=ast.Name(id='__rs_result', ctx=ast.Load())))
     # Chameleon generates source from these statements, so contexts do not matter there (a

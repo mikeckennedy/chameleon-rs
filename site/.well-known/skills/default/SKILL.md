@@ -54,6 +54,8 @@ Compile and render templates from strings, files and folders.
 Methods for the PageTemplate class
 
 - `PageTemplate.__getitem__`
+- `PageTemplate.engine`
+- `PageTemplate.expression_parser`
 - `PageTemplate.builtins`
 - `PageTemplate.parse`
 - `PageTemplate.include`

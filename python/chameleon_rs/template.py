@@ -51,6 +51,7 @@ from chameleon_rs._native import (
 )
 from chameleon_rs.astutil import Symbol
 from chameleon_rs.codegen import reverse_builtin_map
+from chameleon_rs.compiler import ExpressionEngine
 from chameleon_rs.config import AUTO_RELOAD, CACHE_DIRECTORY, DEBUG_MODE, EAGER_PARSING, STRICT_TAGS
 from chameleon_rs.exc import ExceptionFormatter, RenderError, TemplateError, UnsupportedError
 from chameleon_rs.i18n import simple_translate
@@ -59,6 +60,7 @@ from chameleon_rs.partials import PartialRenderer
 from chameleon_rs.tal import RepeatDict
 from chameleon_rs.tales import (
     ExistsExpr,
+    ExpressionParser,
     ImportExpr,
     NotExpr,
     ProxyExpr,
@@ -649,6 +651,20 @@ class PageTemplate(BaseTemplate):
 
     def __getitem__(self, name: str) -> Macro:
         return self.macros[name]
+
+    @property
+    def engine(self) -> Callable[[], ExpressionEngine]:  # ty: ignore[invalid-property-type-override]
+        """Chameleon's expression engine factory, for code that evaluates expressions with
+        this template's types: ``ExpressionEvaluator(template.engine, builtins)``, as z3c.pt
+        does for ``path()`` and ``exists()`` in ``python:`` expressions. chameleon-rs compiles
+        the template itself natively and doesn't use it."""
+        return partial(ExpressionEngine, self.expression_parser, default_marker=self.default_marker)
+
+    @property
+    def expression_parser(self) -> ExpressionParser:
+        """Chameleon's parser for this template's ``expression_types`` and
+        ``default_expression``: which type an expression's prefix selects."""
+        return ExpressionParser(self.expression_types, self.default_expression)
 
     # Read-only here, a writable class attribute in BaseTemplate: as in Chameleon.
     @property

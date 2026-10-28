@@ -19,6 +19,8 @@
 > Methods for the PageTemplate class
 
 - [PageTemplate.__getitem__](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.__getitem__.html)
+- [PageTemplate.engine](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.engine.html)
+- [PageTemplate.expression_parser](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.expression_parser.html)
 - [PageTemplate.builtins](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.builtins.html)
 - [PageTemplate.parse](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.parse.html)
 - [PageTemplate.include](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.include.html)

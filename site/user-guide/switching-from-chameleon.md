@@ -41,7 +41,9 @@ print(PageTemplate('<p>${1 + 1}</p>')())
     <p>2</p>
 
 
-Stock Chameleon doesn't need to be installed, and chameleon-rs never imports it. Libraries that use Chameleon internally (litestar-chameleon, pyramid_chameleon, …) get chameleon-rs the same way. Their own test suites pass on it unmodified. Each framework's guide is listed in [Web frameworks](frameworks.md).
+Stock Chameleon doesn't need to be installed, and chameleon-rs never imports it. Libraries that use Chameleon internally (litestar-chameleon, pyramid_chameleon, …) get chameleon-rs the same way. Their own test suites pass on it unmodified.
+
+That includes libraries that subclass Chameleon's expression types, such as [z3c.pt](https://pypi.org/project/z3c.pt/), the page template layer of Zope and Plone. Its suite passes unmodified too. A template that names `PythonExpr` or another of Chameleon's types directly gets the native compiler; a subclass compiles the way Chameleon compiles it, through the bridge for [custom expression types](../language/expressions.md#custom-expression-types), so its expressions run at the speed of an ordinary Python call. Each framework's guide is listed in [Web frameworks](frameworks.md).
 
 > **Warning: Install before the first import**
 >
