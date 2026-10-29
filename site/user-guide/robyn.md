@@ -14,14 +14,14 @@
 ``` python
 from robyn import Robyn
 
-import chameleon_rs.robyn as chameleon_robyn
+import chameleon_rs.robyn as chameleon
 
 app = Robyn(__file__)
-chameleon_robyn.configure(template_folder='templates', auto_reload=dev_mode, app=app)
+chameleon.configure(template_folder='templates', auto_reload=dev_mode, app=app)
 
 
 @app.get('/')
-@chameleon_robyn.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index(query_params):
     videos = ['intro', 'partials', 'async']
     return {'message': 'Hello', 'videos': videos[: int(query_params.get('limit', '2'))]}
@@ -40,7 +40,7 @@ The handler returns the template's model, and `@template` renders it into a `rob
 `@template` goes below the route decorator. Written above it, Robyn registers the bare handler, the template never renders and the route quietly returns the handler's dict as JSON. An app given to `configure(..., app=app)` checks this when it starts:
 
 ``` python
-@chameleon_robyn.template('home/about.pt')   # wrong: above the route
+@chameleon.template('home/about.pt')   # wrong: above the route
 @app.get('/about')
 def about():
     return {'message': 'About'}
@@ -55,7 +55,7 @@ app.start(port=8080)
 
 The check runs in `app.start()`, in the main process before the server starts, so a misordered app fails to start. Robyn's own startup hook was not used: an app has one startup handler (a second `startup_handler` replaces the first) and Robyn runs it inside each server process. Robyn's in-process test client (`robyn.testing.TestClient(app)`) never calls `start()`, so the check also runs whenever the app's route table is read with routes added since the last check, which the test client does when it is built: a misordered app fails there too. Reading the table early (a route listing built at import time) does not end the check: routes added afterwards are checked at the next read and in `start()`. Once `start()` passed the check, both hooks remove themselves.
 
-Routes of a `SubRouter` included with `app.include_router(...)` are checked with the app. `chameleon_robyn.check_views(app)` (or a `SubRouter`) runs the same check on demand. A function registered raw on purpose (JSON on one route) and also decorated on another route is not flagged. One pattern can't be told from the mistake: a function routed raw on this app whose `@template` wrapper is used somewhere else (called from another handler, or routed on another app). For such an app, pass `check_order=False` to [configure()](../reference/configure.md#chameleon_rs.configure) and keep the check in a test with `chameleon_robyn.check_views(app, ignore=[that_function])`.
+Routes of a `SubRouter` included with `app.include_router(...)` are checked with the app. `chameleon.check_views(app)` (or a `SubRouter`) runs the same check on demand. A function registered raw on purpose (JSON on one route) and also decorated on another route is not flagged. One pattern can't be told from the mistake: a function routed raw on this app whose `@template` wrapper is used somewhere else (called from another handler, or routed on another app). For such an app, pass `check_order=False` to [configure()](../reference/configure.md#chameleon_rs.configure) and keep the check in a test with `chameleon.check_views(app, ignore=[that_function])`.
 
 
 # Sync and async handlers
@@ -80,7 +80,7 @@ def remember(response):
     response.set_cookie('session', session_id)
 
 @app.post('/login')
-@chameleon_robyn.template('account/welcome.pt')
+@chameleon.template('account/welcome.pt')
 def login(request):
     return {'user': user, '__response_callback__': remember}
 ```
@@ -89,10 +89,10 @@ def login(request):
 # The `@template` decorator
 
 ``` python
-@chameleon_robyn.template('home/index.pt')                       # a template path
-@chameleon_robyn.template('feed.pt', 'application/xml')          # content_type=, or mimetype=
-@chameleon_robyn.template('home/created.pt', status_code=201)
-@chameleon_robyn.template                                        # no arguments
+@chameleon.template('home/index.pt')                       # a template path
+@chameleon.template('feed.pt', 'application/xml')          # content_type=, or mimetype=
+@chameleon.template('home/created.pt', status_code=201)
+@chameleon.template                                        # no arguments
 ```
 
 With no path, it renders `{module}/{function}.html`, where `{module}` is the last part of the handler's module name; if there's no `.html` file in the template folder, it uses `{module}/{function}.pt`. As in chameleon-robyn, the choice is made at the first request, once a template folder is configured, so handlers can be decorated at import time and [global_init()](../reference/flask.global_init.md#chameleon_rs.flask.global_init) called later from `main()`.
@@ -104,10 +104,10 @@ Inside a decorated handler, [not_found()](../reference/flask.not_found.md#chamel
 
 ``` python
 @app.get('/videos/:name')
-@chameleon_robyn.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def video(name):
     if name not in videos:
-        chameleon_robyn.not_found(name=name)   # renders errors/404.pt with status 404
+        chameleon.not_found(name=name)   # renders errors/404.pt with status 404
     return {'message': name, 'videos': [name]}
 ```
 
@@ -123,10 +123,10 @@ async def video(name):
 # Rendering without the decorator
 
 ``` python
-html = chameleon_robyn.render('emails/welcome.pt', user=user)        # a str
-html = await chameleon_robyn.render_async('emails/welcome.pt', user=user)
-resp = chameleon_robyn.response('feed.pt', 'application/xml', items=items)
-resp = await chameleon_robyn.response_async('feed.pt', status_code=201, items=items)
+html = chameleon.render('emails/welcome.pt', user=user)        # a str
+html = await chameleon.render_async('emails/welcome.pt', user=user)
+resp = chameleon.response('feed.pt', 'application/xml', items=items)
+resp = await chameleon.response_async('feed.pt', status_code=201, items=items)
 ```
 
 Both raise `ChameleonRobynException` if nothing has been configured.

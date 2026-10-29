@@ -80,7 +80,7 @@ import chameleon_flask
 # After
 from chameleon_rs import PageTemplate, PageTemplateFile, PageTemplateLoader
 import chameleon_rs.partials as chameleon_partials
-import chameleon_rs.flask as chameleon_flask
+import chameleon_rs.flask as chameleon  # or: as chameleon_flask
 ```
 
 The submodules mirror Chameleon's (`chameleon_rs.zpt.template`, `chameleon_rs.tales`,

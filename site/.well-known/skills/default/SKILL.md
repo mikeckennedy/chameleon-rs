@@ -281,17 +281,17 @@ configured folder, then next to the calling template and in the folders above it
 ## Flask and Quart
 
 ```python
-import chameleon_rs.flask as chameleon_flask
+import chameleon_rs.flask as chameleon
 
-chameleon_flask.configure(template_folder=folder, auto_reload=dev_mode)
+chameleon.configure(template_folder=folder, auto_reload=dev_mode)
 
 @app.get('/')
-@chameleon_flask.template('home/index.pt')
+@chameleon.template('home/index.pt')
 def index():
     return {'message': 'Hello'}   # a dict, mapping, dataclass or Pydantic model
 ```
 
-`chameleon_flask.not_found()` and `chameleon_flask.error(template, status_code)` end a
+`chameleon.not_found()` and `chameleon.error(template, status_code)` end a
 decorated view with an error page. `chameleon_rs.render_partial(path, **model).html_text`
 returns a fragment as a string, for HTMX responses.
 

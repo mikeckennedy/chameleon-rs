@@ -144,9 +144,9 @@ API below, which renders with `render_async`.
 ```{python}
 import asyncio
 
-import chameleon_rs.litestar as chameleon_litestar
+import chameleon_rs.litestar as chameleon
 
-chameleon_litestar.configure(template_folder=template_folder)
+chameleon.configure(template_folder=template_folder)
 
 
 async def latest_videos():
@@ -155,22 +155,22 @@ async def latest_videos():
 
 
 @get('/latest')
-@chameleon_litestar.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def latest() -> dict:
     # Unawaited: the template awaits it where it uses it.
     return {'title': 'Latest', 'videos': latest_videos()}
 
 
 @get('/v/{name:str}')
-@chameleon_litestar.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def listing(name: str, request: Request) -> dict:
     if name == 'missing':
-        chameleon_litestar.not_found(path=request.url.path)   # renders errors/404.pt
+        chameleon.not_found(path=request.url.path)   # renders errors/404.pt
     return {'title': name, 'videos': [name]}
 
 
 app = Litestar([latest, listing, video])
-chameleon_litestar.configure(app=app)   # the decorator-order check at startup
+chameleon.configure(app=app)   # the decorator-order check at startup
 
 with TestClient(app) as client:
     print(client.get('/latest').text)

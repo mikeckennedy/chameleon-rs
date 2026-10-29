@@ -67,17 +67,17 @@ In a web app, point chameleon-rs at a template folder and decorate your views. W
 
 ```python
 import fastapi
-import chameleon_rs.fastapi as fastapi_chameleon
+import chameleon_rs.fastapi as chameleon
 
 app = fastapi.FastAPI()
-fastapi_chameleon.configure(template_folder='templates', app=app)
+chameleon.configure(template_folder='templates', app=app)
 
-@app.get('/episodes/{number}')                      # the route decorator first...
-@fastapi_chameleon.template('episodes/detail.pt')   # ...then @template
+@app.get('/episodes/{number}')              # the route decorator first...
+@chameleon.template('episodes/detail.pt')   # ...then @template
 async def detail(number: int):
     episode = await db.episode(number)
     if episode is None:
-        fastapi_chameleon.not_found()
+        chameleon.not_found()
     return {'episode': episode}
 ```
 

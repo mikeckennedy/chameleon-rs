@@ -9,13 +9,13 @@ Importing this module imports FastAPI (it is not imported by ``import chameleon_
 is fastapi-chameleon's, so moving over is an import change (or none:
 ``chameleon_rs.compat.install()`` makes ``import fastapi_chameleon`` give this module)::
 
-    import chameleon_rs.fastapi as fastapi_chameleon
+    import chameleon_rs.fastapi as chameleon
 
     app = fastapi.FastAPI()
-    fastapi_chameleon.configure(template_folder='templates', auto_reload=dev_mode, app=app)
+    chameleon.configure(template_folder='templates', auto_reload=dev_mode, app=app)
 
     @app.get('/')
-    @fastapi_chameleon.template('home/index.pt')
+    @chameleon.template('home/index.pt')
     async def index():
         return {'message': 'Hello'}
 

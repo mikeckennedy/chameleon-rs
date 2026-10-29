@@ -150,14 +150,14 @@ In a web app you rarely call templates yourself. The framework integrations conf
 ``` python
 import fastapi
 
-import chameleon_rs.fastapi as fastapi_chameleon
+import chameleon_rs.fastapi as chameleon
 
 app = fastapi.FastAPI()
-fastapi_chameleon.configure(template_folder=template_folder, auto_reload=dev_mode, app=app)
+chameleon.configure(template_folder=template_folder, auto_reload=dev_mode, app=app)
 
 
 @app.get('/')
-@fastapi_chameleon.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index():
     return {'title': 'Latest videos', 'videos': await load_videos()}
 ```

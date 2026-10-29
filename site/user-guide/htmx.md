@@ -35,10 +35,10 @@ HTMX sends an `HX-Request: true` header with every request it makes. One view ca
 ``` python
 import fastapi
 
-import chameleon_rs.fastapi as fastapi_chameleon
+import chameleon_rs.fastapi as chameleon
 
 app = fastapi.FastAPI()
-fastapi_chameleon.configure(template_folder=template_folder, app=app)
+chameleon.configure(template_folder=template_folder, app=app)
 
 EPISODES = ['Python 3.14', 'Rust for Pythonistas', 'HTMX in practice']
 
@@ -56,8 +56,8 @@ def wants_fragment(request: fastapi.Request) -> bool:
 async def search(request: fastapi.Request, q: str = ''):
     results = await find(q)
     if wants_fragment(request):
-        return await fastapi_chameleon.response_async('search/results.pt', results=results)
-    return await fastapi_chameleon.response_async('search/index.pt', q=q, results=results)
+        return await chameleon.response_async('search/results.pt', results=results)
+    return await chameleon.response_async('search/index.pt', q=q, results=results)
 ```
 
 
@@ -85,8 +85,8 @@ Every integration has the same [response()](../reference/flask.response.md#chame
 When a route exists only for HTMX, such as an `hx-post` that adds a row, put `@template` on the fragment itself:
 
 ``` python
-@app.post('/todos')                          # the route decorator first...
-@fastapi_chameleon.template('todos/list.pt') # ...then @template, naming the fragment
+@app.post('/todos')                  # the route decorator first...
+@chameleon.template('todos/list.pt') # ...then @template, naming the fragment
 async def add(title: str = fastapi.Form()):
     await db.add_todo(title)
     return {'todos': await db.todos()}

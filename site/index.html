@@ -285,18 +285,18 @@ section.level2:first-of-type > h2:first-child,
 <p>Chameleon templates are HTML with <code>tal:</code> attributes and <code>${...}</code> expressions, so a template is still valid HTML that an editor or browser opens as-is. Point chameleon-rs at a folder and decorate your views. With FastAPI:</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> fastapi</span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.fastapi <span class="im">as</span> fastapi_chameleon</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.fastapi <span class="im">as</span> chameleon</span>
 <span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> fastapi.FastAPI()</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>fastapi_chameleon.configure(template_folder<span class="op">=</span><span class="st">'templates'</span>, app<span class="op">=</span>app)</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>chameleon.configure(template_folder<span class="op">=</span><span class="st">'templates'</span>, app<span class="op">=</span>app)</span>
 <span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/episodes/</span><span class="sc">{number}</span><span class="st">'</span>)                      <span class="co"># the route decorator first...</span></span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="at">@fastapi_chameleon.template</span>(<span class="st">'episodes/detail.pt'</span>)   <span class="co"># ...then @template</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/episodes/</span><span class="sc">{number}</span><span class="st">'</span>)              <span class="co"># the route decorator first...</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon.template</span>(<span class="st">'episodes/detail.pt'</span>)   <span class="co"># ...then @template</span></span>
 <span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> detail(number: <span class="bu">int</span>):</span>
 <span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>    episode <span class="op">=</span> <span class="cf">await</span> db.episode(number)</span>
 <span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> episode <span class="kw">is</span> <span class="va">None</span>:</span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>        fastapi_chameleon.not_found()</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>        chameleon.not_found()</span>
 <span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'episode'</span>: episode}</span></code></pre></div>
 <p><a href="./user-guide/getting-started.html">Getting started</a> walks through it, and <a href="./user-guide/frameworks.html">Web frameworks</a> shows the same page in every framework.</p>
 </section>

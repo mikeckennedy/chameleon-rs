@@ -151,21 +151,21 @@ moving an endpoint over is `await templates.TemplateResponse_async(...)` in plac
 ## The decorator API
 
 ```{python}
-import chameleon_rs.starlette as chameleon_starlette
+import chameleon_rs.starlette as chameleon
 
-chameleon_starlette.configure(template_folder=template_folder)
+chameleon.configure(template_folder=template_folder)
 
 
-@chameleon_starlette.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def listing(request):
     name = request.path_params['name']
     if name == 'missing':
-        chameleon_starlette.not_found(path=request.url.path)   # renders errors/404.pt
+        chameleon.not_found(path=request.url.path)   # renders errors/404.pt
     return {'title': name, 'videos': [name], 'site': 'TP'}
 
 
 app = Starlette(routes=[Route('/v/{name}', listing), Route('/videos/{name}', video, name='video')])
-chameleon_starlette.configure(app=app)   # the decorator-order check at startup
+chameleon.configure(app=app)   # the decorator-order check at startup
 
 with TestClient(app) as client:
     print(client.get('/v/intro').text)

@@ -41,7 +41,7 @@ with TestClient(app) as client:
 ```
 
 
-    INFO - 2026-10-28 19:13:47,909 - httpx - _client - HTTP Request: GET http://testserver.local/ "HTTP/1.1 200 OK"
+    INFO - 2026-10-28 19:29:10,435 - httpx - _client - HTTP Request: GET http://testserver.local/ "HTTP/1.1 200 OK"
 
 
     text/html; charset=utf-8
@@ -87,8 +87,8 @@ with TestClient(app) as client:
 ```
 
 
-    INFO - 2026-10-28 19:13:47,932 - httpx - _client - HTTP Request: GET http://testserver.local/ "HTTP/1.1 200 OK"
-    INFO - 2026-10-28 19:13:47,935 - httpx - _client - HTTP Request: GET http://testserver.local/stock "HTTP/1.1 200 OK"
+    INFO - 2026-10-28 19:29:10,480 - httpx - _client - HTTP Request: GET http://testserver.local/ "HTTP/1.1 200 OK"
+    INFO - 2026-10-28 19:29:10,482 - httpx - _client - HTTP Request: GET http://testserver.local/stock "HTTP/1.1 200 OK"
 
 
     ours:  text/html; charset=utf-8
@@ -111,9 +111,9 @@ Litestar's template protocol is synchronous: its [Template](../reference/litesta
 ``` python
 import asyncio
 
-import chameleon_rs.litestar as chameleon_litestar
+import chameleon_rs.litestar as chameleon
 
-chameleon_litestar.configure(template_folder=template_folder)
+chameleon.configure(template_folder=template_folder)
 
 
 async def latest_videos():
@@ -122,22 +122,22 @@ async def latest_videos():
 
 
 @get('/latest')
-@chameleon_litestar.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def latest() -> dict:
     # Unawaited: the template awaits it where it uses it.
     return {'title': 'Latest', 'videos': latest_videos()}
 
 
 @get('/v/{name:str}')
-@chameleon_litestar.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def listing(name: str, request: Request) -> dict:
     if name == 'missing':
-        chameleon_litestar.not_found(path=request.url.path)   # renders errors/404.pt
+        chameleon.not_found(path=request.url.path)   # renders errors/404.pt
     return {'title': name, 'videos': [name]}
 
 
 app = Litestar([latest, listing, video])
-chameleon_litestar.configure(app=app)   # the decorator-order check at startup
+chameleon.configure(app=app)   # the decorator-order check at startup
 
 with TestClient(app) as client:
     print(client.get('/latest').text)
@@ -145,8 +145,8 @@ with TestClient(app) as client:
 ```
 
 
-    INFO - 2026-10-28 19:13:47,960 - httpx - _client - HTTP Request: GET http://testserver.local/latest "HTTP/1.1 200 OK"
-    INFO - 2026-10-28 19:13:47,962 - httpx - _client - HTTP Request: GET http://testserver.local/v/missing "HTTP/1.1 404 Not Found"
+    INFO - 2026-10-28 19:29:10,523 - httpx - _client - HTTP Request: GET http://testserver.local/latest "HTTP/1.1 200 OK"
+    INFO - 2026-10-28 19:29:10,528 - httpx - _client - HTTP Request: GET http://testserver.local/v/missing "HTTP/1.1 404 Not Found"
 
 
     <h1>Latest</h1>

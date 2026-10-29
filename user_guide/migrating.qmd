@@ -17,9 +17,9 @@ longer needed.
 | `chameleon_partials.register_extensions(folder, auto_reload=dev)` and `chameleon_flask.global_init(folder, auto_reload=dev)` | One call: `chameleon_rs.configure(template_folder=folder, auto_reload=dev)` |
 | `return chameleon_partials.extend_model(model)` in every view | `return model`: `render_partial` is in every template |
 | A Pyramid `BeforeRender` subscriber that adds `render_partial` | Remove it |
-| `import chameleon_flask` | `import chameleon_rs.flask as chameleon_flask` |
-| `import fastapi_chameleon` | `import chameleon_rs.fastapi as fastapi_chameleon` |
-| `import chameleon_robyn` | `import chameleon_rs.robyn as chameleon_robyn` |
+| `import chameleon_flask` | `import chameleon_rs.flask as chameleon` (or `as chameleon_flask`) |
+| `import fastapi_chameleon` | `import chameleon_rs.fastapi as chameleon` (or `as fastapi_chameleon`) |
+| `import chameleon_robyn` | `import chameleon_rs.robyn as chameleon` (or `as chameleon_robyn`) |
 | `from litestar_chameleon import ChameleonTemplateEngine` | `from chameleon_rs.litestar import ChameleonEngine`, and return `chameleon_rs.litestar.Template` |
 | `chameleon_partials.render_partial(path, **m).html_text` | `chameleon_rs.render_partial(path, **m).html_text` |
 | `except chameleon_partials.PartialsException`, `except chameleon_flask.exceptions.FlaskChameleonException` | Still work. `except chameleon_rs.web.TemplateError` catches both |
@@ -75,12 +75,12 @@ chameleon_flask.global_init(template_folder, auto_reload=dev_mode)
 
 ```python
 # After
-import chameleon_rs.flask as chameleon_flask
+import chameleon_rs.flask as chameleon
 
-chameleon_flask.configure(template_folder=template_folder, auto_reload=dev_mode)
+chameleon.configure(template_folder=template_folder, auto_reload=dev_mode)
 ```
 
-Views, `@template`, `render`, `response` and `not_found` stay the same. New in chameleon-rs:
+Views, `@template`, `render`, `response` and `not_found` stay the same (use `as chameleon_flask` if you want to leave existing call sites unchanged). New in chameleon-rs:
 
 - `configure()` also sets the partials folder, so you need only one setup call.
 - `error(template_file, status_code=500, **data)` renders any error page.
@@ -98,10 +98,10 @@ import fastapi_chameleon
 becomes
 
 ```python
-import chameleon_rs.fastapi as fastapi_chameleon
+import chameleon_rs.fastapi as chameleon
 ```
 
-or stays as it is with `chameleon_rs.compat.install()`. Every name keeps working
+(or `as fastapi_chameleon` to keep existing call sites unchanged, or stays as `import fastapi_chameleon` with `chameleon_rs.compat.install()`). Every name keeps working
 (`global_init`, `@template`, `render`, `response`, `not_found`, `generic_error`, `clear`, the
 exception classes), and its test suite passes unmodified on the built-in. Differences:
 
@@ -122,10 +122,10 @@ import chameleon_robyn
 becomes
 
 ```python
-import chameleon_rs.robyn as chameleon_robyn
+import chameleon_rs.robyn as chameleon
 ```
 
-or stays as it is with `chameleon_rs.compat.install()`. Every name keeps working
+(or `as chameleon_robyn` to keep existing call sites unchanged, or stays as `import chameleon_robyn` with `chameleon_rs.compat.install()`). Every name keeps working
 (`global_init`, `@template`, `render`, `response`, `not_found`, `clear`, `ChameleonTemplate`,
 `__response_callback__`, the exception classes), and its test suite passes unmodified on the
 built-in. Differences:

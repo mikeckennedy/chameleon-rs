@@ -22,14 +22,14 @@ when the docs are built, as the other framework pages are.
 ```python
 from robyn import Robyn
 
-import chameleon_rs.robyn as chameleon_robyn
+import chameleon_rs.robyn as chameleon
 
 app = Robyn(__file__)
-chameleon_robyn.configure(template_folder='templates', auto_reload=dev_mode, app=app)
+chameleon.configure(template_folder='templates', auto_reload=dev_mode, app=app)
 
 
 @app.get('/')
-@chameleon_robyn.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index(query_params):
     videos = ['intro', 'partials', 'async']
     return {'message': 'Hello', 'videos': videos[: int(query_params.get('limit', '2'))]}
@@ -55,7 +55,7 @@ handler, the template never renders and the route quietly returns the handler's 
 An app given to `configure(..., app=app)` checks this when it starts:
 
 ```python
-@chameleon_robyn.template('home/about.pt')   # wrong: above the route
+@chameleon.template('home/about.pt')   # wrong: above the route
 @app.get('/about')
 def about():
     return {'message': 'About'}
@@ -79,12 +79,12 @@ check: routes added afterwards are checked at the next read and in `start()`. On
 passed the check, both hooks remove themselves.
 
 Routes of a `SubRouter` included with `app.include_router(...)` are checked with the app.
-`chameleon_robyn.check_views(app)` (or a `SubRouter`) runs the same check on demand. A
+`chameleon.check_views(app)` (or a `SubRouter`) runs the same check on demand. A
 function registered raw on purpose (JSON on one route) and also decorated on another route is
 not flagged. One pattern can't be told from the mistake: a function routed raw on this app
 whose `@template` wrapper is used somewhere else (called from another handler, or routed on
 another app). For such an app, pass `check_order=False` to `configure()` and keep the check in
-a test with `chameleon_robyn.check_views(app, ignore=[that_function])`.
+a test with `chameleon.check_views(app, ignore=[that_function])`.
 
 ## Sync and async handlers
 
@@ -117,7 +117,7 @@ def remember(response):
     response.set_cookie('session', session_id)
 
 @app.post('/login')
-@chameleon_robyn.template('account/welcome.pt')
+@chameleon.template('account/welcome.pt')
 def login(request):
     return {'user': user, '__response_callback__': remember}
 ```
@@ -125,10 +125,10 @@ def login(request):
 ## The `@template` decorator
 
 ```python
-@chameleon_robyn.template('home/index.pt')                       # a template path
-@chameleon_robyn.template('feed.pt', 'application/xml')          # content_type=, or mimetype=
-@chameleon_robyn.template('home/created.pt', status_code=201)
-@chameleon_robyn.template                                        # no arguments
+@chameleon.template('home/index.pt')                       # a template path
+@chameleon.template('feed.pt', 'application/xml')          # content_type=, or mimetype=
+@chameleon.template('home/created.pt', status_code=201)
+@chameleon.template                                        # no arguments
 ```
 
 With no path, it renders `{module}/{function}.html`, where `{module}` is the last part of the
@@ -145,10 +145,10 @@ page as `text/html`. The template gets `message` (`'The URL resulted in a 404 re
 
 ```python
 @app.get('/videos/:name')
-@chameleon_robyn.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def video(name):
     if name not in videos:
-        chameleon_robyn.not_found(name=name)   # renders errors/404.pt with status 404
+        chameleon.not_found(name=name)   # renders errors/404.pt with status 404
     return {'message': name, 'videos': [name]}
 ```
 
@@ -170,10 +170,10 @@ build one from a request (a path or query parameter, a header).
 ## Rendering without the decorator
 
 ```python
-html = chameleon_robyn.render('emails/welcome.pt', user=user)        # a str
-html = await chameleon_robyn.render_async('emails/welcome.pt', user=user)
-resp = chameleon_robyn.response('feed.pt', 'application/xml', items=items)
-resp = await chameleon_robyn.response_async('feed.pt', status_code=201, items=items)
+html = chameleon.render('emails/welcome.pt', user=user)        # a str
+html = await chameleon.render_async('emails/welcome.pt', user=user)
+resp = chameleon.response('feed.pt', 'application/xml', items=items)
+resp = await chameleon.response_async('feed.pt', status_code=201, items=items)
 ```
 
 Both raise `ChameleonRobynException` if nothing has been configured.

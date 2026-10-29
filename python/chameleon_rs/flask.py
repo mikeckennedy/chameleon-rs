@@ -8,12 +8,12 @@ Importing this module imports Flask (it is not imported by ``import chameleon_rs
 chameleon-flask's, so moving over is an import change (or none: ``chameleon_rs.compat.install()``
 makes ``import chameleon_flask`` give this module)::
 
-    import chameleon_rs.flask as chameleon_flask
+    import chameleon_rs.flask as chameleon
 
-    chameleon_flask.configure(template_folder='templates', auto_reload=dev_mode)
+    chameleon.configure(template_folder='templates', auto_reload=dev_mode)
 
     @app.get('/')
-    @chameleon_flask.template('home/index.pt')
+    @chameleon.template('home/index.pt')
     def index():
         return {'message': 'Hello'}
 

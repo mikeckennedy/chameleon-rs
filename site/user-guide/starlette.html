@@ -405,7 +405,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p><code>import chameleon_rs</code> doesn’t import Starlette. Only <code>import chameleon_rs.starlette</code> does, and it uses the Starlette your app already has (1.x, and 0.46 or later).</p>
 <section id="templates-jinja2templates-for-chameleon-rs" class="level1">
 <h1>Templates: Jinja2Templates for chameleon-rs</h1>
-<div id="bea1f0f2" class="cell" data-execution_count="2">
+<div id="489c614f" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> starlette.applications <span class="im">import</span> Starlette</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> starlette.routing <span class="im">import</span> Route</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> starlette.testclient <span class="im">import</span> TestClient</span>
@@ -465,7 +465,7 @@ home/index.pt ['request', 'site', 'title', 'videos']</code></pre>
 <section id="rendering-without-blocking-the-event-loop" class="level1">
 <h1>Rendering without blocking the event loop</h1>
 <p>Jinja’s <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates.TemplateResponse" class="gdls-link gdls-code">TemplateResponse</a> renders on the event loop: while a big page renders, nothing else runs. <a href="../reference/starlette.Templates.html#chameleon_rs.starlette.Templates.TemplateResponse_async" class="gdls-link gdls-code">TemplateResponse_async</a> takes the same arguments and renders with <a href="../reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a>:</p>
-<div id="f972eed3" class="cell" data-execution_count="3">
+<div id="f48ff14c" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> asyncio</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -496,22 +496,22 @@ home/index.pt ['request', 'site', 'title', 'videos']</code></pre>
 </section>
 <section id="the-decorator-api" class="level1">
 <h1>The decorator API</h1>
-<div id="5244c5cc" class="cell" data-execution_count="4">
-<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.starlette <span class="im">as</span> chameleon_starlette</span>
+<div id="5d1a3ae9" class="cell" data-execution_count="4">
+<div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.starlette <span class="im">as</span> chameleon</span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>chameleon_starlette.configure(template_folder<span class="op">=</span>template_folder)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>chameleon.configure(template_folder<span class="op">=</span>template_folder)</span>
 <span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_starlette.template</span>(<span class="st">'home/index.pt'</span>)</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon.template</span>(<span class="st">'home/index.pt'</span>)</span>
 <span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> listing(request):</span>
 <span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    name <span class="op">=</span> request.path_params[<span class="st">'name'</span>]</span>
 <span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> name <span class="op">==</span> <span class="st">'missing'</span>:</span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>        chameleon_starlette.not_found(path<span class="op">=</span>request.url.path)   <span class="co"># renders errors/404.pt</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>        chameleon.not_found(path<span class="op">=</span>request.url.path)   <span class="co"># renders errors/404.pt</span></span>
 <span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'title'</span>: name, <span class="st">'videos'</span>: [name], <span class="st">'site'</span>: <span class="st">'TP'</span>}</span>
 <span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> Starlette(routes<span class="op">=</span>[Route(<span class="st">'/v/</span><span class="sc">{name}</span><span class="st">'</span>, listing), Route(<span class="st">'/videos/</span><span class="sc">{name}</span><span class="st">'</span>, video, name<span class="op">=</span><span class="st">'video'</span>)])</span>
-<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>chameleon_starlette.configure(app<span class="op">=</span>app)   <span class="co"># the decorator-order check at startup</span></span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>chameleon.configure(app<span class="op">=</span>app)   <span class="co"># the decorator-order check at startup</span></span>
 <span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> TestClient(app) <span class="im">as</span> client:</span>
 <span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(client.get(<span class="st">'/v/intro'</span>).text)</span>

@@ -33,14 +33,14 @@ original libraries do: template names must come from code, never from a request.
 
 The decorator API, the same as ``chameleon_rs.flask`` and ``chameleon_rs.fastapi``::
 
-    import chameleon_rs.starlette as chameleon_starlette
+    import chameleon_rs.starlette as chameleon
 
-    @chameleon_starlette.template('home/index.pt')
+    @chameleon.template('home/index.pt')
     async def homepage(request):
         return {'title': 'Home'}
 
     app = Starlette(routes=[Route('/', homepage)])
-    chameleon_starlette.configure(template_folder='templates', app=app)
+    chameleon.configure(template_folder='templates', app=app)
 
 - ``configure(template_folder=..., auto_reload=..., restricted_namespace=..., app=None)``: the
   process-wide configuration (the same as ``chameleon_rs.configure``: for views, ``Templates()``

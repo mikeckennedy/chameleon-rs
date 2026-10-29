@@ -280,19 +280,19 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;/</span><span class="kw">form</span><span class="dt">&gt;</span></span>
 <span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>${render_partial('todos/list.pt', todos=todos)}</span></code></pre></div>
 <p>The views render the page on <code>GET</code> and only the fragment on <code>POST</code>:</p>
-<div id="87c728a9" class="cell" data-execution_count="2">
+<div id="b2005e3d" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> flask</span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.flask <span class="im">as</span> chameleon_flask</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.flask <span class="im">as</span> chameleon</span>
 <span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> flask.Flask(<span class="va">__name__</span>)</span>
-<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>chameleon_flask.configure(template_folder<span class="op">=</span>template_folder)</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>chameleon.configure(template_folder<span class="op">=</span>template_folder)</span>
 <span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>todos <span class="op">=</span> [<span class="st">'Write docs'</span>]</span>
 <span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/todos'</span>)</span>
-<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_flask.template</span>(<span class="st">'todos/index.pt'</span>)</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon.template</span>(<span class="st">'todos/index.pt'</span>)</span>
 <span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> index():</span>
 <span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'todos'</span>: todos}</span>
 <span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a></span>
@@ -313,7 +313,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 </div>
 <p><a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">chameleon_rs.render_partial()</a> returns an <a href="../reference/partials.HTML.html#chameleon_rs.partials.HTML" class="gdls-link gdls-code">HTML</a> object. Its <code>html_text</code> is the markup. Because the fragment is one template file, the page and the HTMX response can’t drift apart.</p>
-<p><code>chameleon_flask.response('todos/list.pt', todos=todos)</code> does the same and returns a <code>flask.Response</code>, if you’d rather set a content type or status code.</p>
+<p><code>chameleon.response('todos/list.pt', todos=todos)</code> does the same and returns a <code>flask.Response</code>, if you’d rather set a content type or status code.</p>
 <p><a href="../user-guide/htmx.html">HTMX</a> covers more: one view that returns the page or the fragment from the <code>HX-Request</code> header, and <code>@template</code> on a fragment-only route.</p>
 
 

@@ -11,14 +11,14 @@
 ``` python
 import flask
 
-import chameleon_rs.flask as chameleon_flask
+import chameleon_rs.flask as chameleon
 
 app = flask.Flask(__name__)
-chameleon_flask.configure(template_folder=template_folder, auto_reload=dev_mode)
+chameleon.configure(template_folder=template_folder, auto_reload=dev_mode)
 
 
 @app.get('/')
-@chameleon_flask.template('home/index.pt')
+@chameleon.template('home/index.pt')
 def index():
     return {'message': 'Hello', 'videos': ['intro', 'partials']}
 ```
@@ -46,10 +46,10 @@ print(client.get('/').text)
 `@template` goes below the route decorator. Written above it, Flask registers the bare view, the template never renders and the route quietly returns the view's dict as JSON. Give the app to [configure()](../reference/configure.md#chameleon_rs.configure) and it checks before its first request (Quart: when it starts serving):
 
 ``` python
-chameleon_flask.configure(template_folder=template_folder, app=app)
+chameleon.configure(template_folder=template_folder, app=app)
 
 
-@chameleon_flask.template('home/index.pt')   # wrong: above the route
+@chameleon.template('home/index.pt')   # wrong: above the route
 @app.get('/about')
 def about():
     return {'message': 'About', 'videos': []}
@@ -59,9 +59,9 @@ def about():
 # @blueprint.route, ...) on about() at app.py:12 (route GET /about): ...
 ```
 
-Flask has no startup hook, so the check runs on the first request. Blueprints are included. `chameleon_flask.check_views(app)` runs the same check on demand, for example in a test. Once the check passes, the app runs without it.
+Flask has no startup hook, so the check runs on the first request. Blueprints are included. `chameleon.check_views(app)` runs the same check on demand, for example in a test. Once the check passes, the app runs without it.
 
-One pattern can't be told from the mistake: a function routed raw on this app whose `@template` wrapper is used somewhere else (called from another view, or routed on another app). For such an app, pass `check_order=False` to [configure()](../reference/configure.md#chameleon_rs.configure) and keep the check in a test with `chameleon_flask.check_views(app, ignore=[that_function])`.
+One pattern can't be told from the mistake: a function routed raw on this app whose `@template` wrapper is used somewhere else (called from another view, or routed on another app). For such an app, pass `check_order=False` to [configure()](../reference/configure.md#chameleon_rs.configure) and keep the check in a test with `chameleon.check_views(app, ignore=[that_function])`.
 
 
 # What a view can return
@@ -75,10 +75,10 @@ Anything else raises `chameleon_rs.flask.FlaskChameleonException`.
 # The `@template` decorator
 
 ``` python
-@chameleon_flask.template('home/index.pt')                            # a template path
-@chameleon_flask.template('feed.pt', content_type='application/xml')  # or mimetype=
-@chameleon_flask.template('home/created.pt', status_code=201)
-@chameleon_flask.template                                             # no arguments
+@chameleon.template('home/index.pt')                            # a template path
+@chameleon.template('feed.pt', content_type='application/xml')  # or mimetype=
+@chameleon.template('home/created.pt', status_code=201)
+@chameleon.template                                             # no arguments
 ```
 
 A text type without a charset gets `; charset=utf-8` (the default is `text/html; charset=utf-8`), as Flask's own [render_template](../reference/robyn.ChameleonTemplate.md#chameleon_rs.robyn.ChameleonTemplate.render_template) responses do. chameleon-flask sent the bare type.
@@ -98,10 +98,10 @@ app = flask.Flask(__name__)
 
 
 @app.get('/videos/<name>')
-@chameleon_flask.template('home/index.pt')
+@chameleon.template('home/index.pt')
 def video(name):
     if name != 'intro':
-        chameleon_flask.not_found(path=flask.request.path)   # renders errors/404.pt
+        chameleon.not_found(path=flask.request.path)   # renders errors/404.pt
     return {'message': name, 'videos': [name]}
 
 
@@ -127,8 +127,8 @@ They raise [chameleon_rs.web.NotFound](../reference/web.NotFound.md#chameleon_rs
 # Rendering without the decorator
 
 ``` python
-html = chameleon_flask.render('emails/welcome.pt', user=user)            # a str
-resp = chameleon_flask.response('feed.pt', content_type='application/xml', items=items)
+html = chameleon.render('emails/welcome.pt', user=user)            # a str
+resp = chameleon.response('feed.pt', content_type='application/xml', items=items)
 ```
 
 [render()](../reference/flask.render.md#chameleon_rs.flask.render) and [response()](../reference/flask.response.md#chameleon_rs.flask.response) work anywhere, such as in a view that builds its own response or in a background job. Both raise `FlaskChameleonException` if nothing has been configured.
@@ -139,7 +139,7 @@ resp = chameleon_flask.response('feed.pt', content_type='application/xml', items
 Pass `app=` to give one Flask or Quart app its own template folder. It's stored in `app.extensions['chameleon_rs']` and used while that app handles a request. Other apps, and code outside a request, use the process-wide configuration. It also turns on the decorator-order check for that app.
 
 ``` python
-chameleon_flask.configure(template_folder='admin/templates', app=admin_app)
+chameleon.configure(template_folder='admin/templates', app=admin_app)
 ```
 
 
@@ -150,14 +150,14 @@ The same module works with Quart, with no extra install:
 ``` python
 import quart
 
-import chameleon_rs.flask as chameleon_flask
+import chameleon_rs.flask as chameleon
 
 app = quart.Quart(__name__)
-chameleon_flask.configure(template_folder=template_folder)
+chameleon.configure(template_folder=template_folder)
 
 
 @app.get('/')
-@chameleon_flask.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index():
     videos = await load_videos()
     return {'message': 'Hello', 'videos': videos}

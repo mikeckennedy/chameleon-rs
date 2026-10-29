@@ -418,14 +418,14 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h1>A first handler</h1>
 <div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> robyn <span class="im">import</span> Robyn</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.robyn <span class="im">as</span> chameleon_robyn</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.robyn <span class="im">as</span> chameleon</span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>app <span class="op">=</span> Robyn(<span class="va">__file__</span>)</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>chameleon_robyn.configure(template_folder<span class="op">=</span><span class="st">'templates'</span>, auto_reload<span class="op">=</span>dev_mode, app<span class="op">=</span>app)</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>chameleon.configure(template_folder<span class="op">=</span><span class="st">'templates'</span>, auto_reload<span class="op">=</span>dev_mode, app<span class="op">=</span>app)</span>
 <span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/'</span>)</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_robyn.template</span>(<span class="st">'home/index.pt'</span>)</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon.template</span>(<span class="st">'home/index.pt'</span>)</span>
 <span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> index(query_params):</span>
 <span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    videos <span class="op">=</span> [<span class="st">'intro'</span>, <span class="st">'partials'</span>, <span class="st">'async'</span>]</span>
 <span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'message'</span>: <span class="st">'Hello'</span>, <span class="st">'videos'</span>: videos[: <span class="bu">int</span>(query_params.get(<span class="st">'limit'</span>, <span class="st">'2'</span>))]}</span>
@@ -438,7 +438,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="decorator-order" class="level1">
 <h1>Decorator order</h1>
 <p><code>@template</code> goes below the route decorator. Written above it, Robyn registers the bare handler, the template never renders and the route quietly returns the handler’s dict as JSON. An app given to <code>configure(..., app=app)</code> checks this when it starts:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_robyn.template</span>(<span class="st">'home/about.pt'</span>)   <span class="co"># wrong: above the route</span></span>
+<div class="sourceCode" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon.template</span>(<span class="st">'home/about.pt'</span>)   <span class="co"># wrong: above the route</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/about'</span>)</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> about():</span>
 <span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'message'</span>: <span class="st">'About'</span>}</span>
@@ -450,7 +450,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="co"># (route GET /about): the route was registered with the undecorated view, so its template</span></span>
 <span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="co"># never renders. Put the route decorator first (outermost) and @template under it.</span></span></code></pre></div>
 <p>The check runs in <code>app.start()</code>, in the main process before the server starts, so a misordered app fails to start. Robyn’s own startup hook was not used: an app has one startup handler (a second <code>startup_handler</code> replaces the first) and Robyn runs it inside each server process. Robyn’s in-process test client (<code>robyn.testing.TestClient(app)</code>) never calls <code>start()</code>, so the check also runs whenever the app’s route table is read with routes added since the last check, which the test client does when it is built: a misordered app fails there too. Reading the table early (a route listing built at import time) does not end the check: routes added afterwards are checked at the next read and in <code>start()</code>. Once <code>start()</code> passed the check, both hooks remove themselves.</p>
-<p>Routes of a <code>SubRouter</code> included with <code>app.include_router(...)</code> are checked with the app. <code>chameleon_robyn.check_views(app)</code> (or a <code>SubRouter</code>) runs the same check on demand. A function registered raw on purpose (JSON on one route) and also decorated on another route is not flagged. One pattern can’t be told from the mistake: a function routed raw on this app whose <code>@template</code> wrapper is used somewhere else (called from another handler, or routed on another app). For such an app, pass <code>check_order=False</code> to <a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">configure()</a> and keep the check in a test with <code>chameleon_robyn.check_views(app, ignore=[that_function])</code>.</p>
+<p>Routes of a <code>SubRouter</code> included with <code>app.include_router(...)</code> are checked with the app. <code>chameleon.check_views(app)</code> (or a <code>SubRouter</code>) runs the same check on demand. A function registered raw on purpose (JSON on one route) and also decorated on another route is not flagged. One pattern can’t be told from the mistake: a function routed raw on this app whose <code>@template</code> wrapper is used somewhere else (called from another handler, or routed on another app). For such an app, pass <code>check_order=False</code> to <a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">configure()</a> and keep the check in a test with <code>chameleon.check_views(app, ignore=[that_function])</code>.</p>
 </section>
 <section id="sync-and-async-handlers" class="level1">
 <h1>Sync and async handlers</h1>
@@ -472,26 +472,26 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    response.set_cookie(<span class="st">'session'</span>, session_id)</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="at">@app.post</span>(<span class="st">'/login'</span>)</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_robyn.template</span>(<span class="st">'account/welcome.pt'</span>)</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon.template</span>(<span class="st">'account/welcome.pt'</span>)</span>
 <span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> login(request):</span>
 <span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'user'</span>: user, <span class="st">'__response_callback__'</span>: remember}</span></code></pre></div>
 </section>
 <section id="the-template-decorator" class="level1">
 <h1>The <code>@template</code> decorator</h1>
-<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_robyn.template</span>(<span class="st">'home/index.pt'</span>)                       <span class="co"># a template path</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_robyn.template</span>(<span class="st">'feed.pt'</span>, <span class="st">'application/xml'</span>)          <span class="co"># content_type=, or mimetype=</span></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_robyn.template</span>(<span class="st">'home/created.pt'</span>, status_code<span class="op">=</span><span class="dv">201</span>)</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_robyn.template</span>                                        <span class="co"># no arguments</span></span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon.template</span>(<span class="st">'home/index.pt'</span>)                       <span class="co"># a template path</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon.template</span>(<span class="st">'feed.pt'</span>, <span class="st">'application/xml'</span>)          <span class="co"># content_type=, or mimetype=</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon.template</span>(<span class="st">'home/created.pt'</span>, status_code<span class="op">=</span><span class="dv">201</span>)</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon.template</span>                                        <span class="co"># no arguments</span></span></code></pre></div>
 <p>With no path, it renders <code>{module}/{function}.html</code>, where <code>{module}</code> is the last part of the handler’s module name; if there’s no <code>.html</code> file in the template folder, it uses <code>{module}/{function}.pt</code>. As in chameleon-robyn, the choice is made at the first request, once a template folder is configured, so handlers can be decorated at import time and <a href="../reference/flask.global_init.html#chameleon_rs.flask.global_init" class="gdls-link gdls-code">global_init()</a> called later from <code>main()</code>.</p>
 </section>
 <section id="error-pages" class="level1">
 <h1>Error pages</h1>
 <p>Inside a decorated handler, <a href="../reference/flask.not_found.html#chameleon_rs.flask.not_found" class="gdls-link gdls-code">not_found()</a> and <a href="../reference/flask.error.html#chameleon_rs.flask.error" class="gdls-link gdls-code">error()</a> stop the handler and render an error page as <code>text/html</code>. The template gets <code>message</code> (<code>'The URL resulted in a 404 response.'</code> or <code>'The URL resulted in an error.'</code>) and the data passed:</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="at">@app.get</span>(<span class="st">'/videos/:name'</span>)</span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon_robyn.template</span>(<span class="st">'home/index.pt'</span>)</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="at">@chameleon.template</span>(<span class="st">'home/index.pt'</span>)</span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="cf">async</span> <span class="kw">def</span> video(name):</span>
 <span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> name <span class="kw">not</span> <span class="kw">in</span> videos:</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>        chameleon_robyn.not_found(name<span class="op">=</span>name)   <span class="co"># renders errors/404.pt with status 404</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>        chameleon.not_found(name<span class="op">=</span>name)   <span class="co"># renders errors/404.pt with status 404</span></span>
 <span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> {<span class="st">'message'</span>: name, <span class="st">'videos'</span>: [name]}</span></code></pre></div>
 <ul>
 <li><code>not_found(template_file='errors/404.pt', **data)</code> renders the page with status 404 (<code>four04template_file=</code> is chameleon-robyn’s name for the template).</li>
@@ -514,10 +514,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="rendering-without-the-decorator" class="level1">
 <h1>Rendering without the decorator</h1>
-<div class="sourceCode" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>html <span class="op">=</span> chameleon_robyn.render(<span class="st">'emails/welcome.pt'</span>, user<span class="op">=</span>user)        <span class="co"># a str</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>html <span class="op">=</span> <span class="cf">await</span> chameleon_robyn.render_async(<span class="st">'emails/welcome.pt'</span>, user<span class="op">=</span>user)</span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>resp <span class="op">=</span> chameleon_robyn.response(<span class="st">'feed.pt'</span>, <span class="st">'application/xml'</span>, items<span class="op">=</span>items)</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>resp <span class="op">=</span> <span class="cf">await</span> chameleon_robyn.response_async(<span class="st">'feed.pt'</span>, status_code<span class="op">=</span><span class="dv">201</span>, items<span class="op">=</span>items)</span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>html <span class="op">=</span> chameleon.render(<span class="st">'emails/welcome.pt'</span>, user<span class="op">=</span>user)        <span class="co"># a str</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>html <span class="op">=</span> <span class="cf">await</span> chameleon.render_async(<span class="st">'emails/welcome.pt'</span>, user<span class="op">=</span>user)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>resp <span class="op">=</span> chameleon.response(<span class="st">'feed.pt'</span>, <span class="st">'application/xml'</span>, items<span class="op">=</span>items)</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>resp <span class="op">=</span> <span class="cf">await</span> chameleon.response_async(<span class="st">'feed.pt'</span>, status_code<span class="op">=</span><span class="dv">201</span>, items<span class="op">=</span>items)</span></code></pre></div>
 <p>Both raise <code>ChameleonRobynException</code> if nothing has been configured.</p>
 </section>
 <section id="robyns-template-interface" class="level1">

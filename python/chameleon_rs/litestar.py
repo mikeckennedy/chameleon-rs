@@ -34,15 +34,15 @@ could reach outside the folder (absolute, ``..``, ...), raises Litestar's
 
 The decorator API, the same as ``chameleon_rs.flask``, ``.fastapi``, ``.starlette`` and ``.robyn``::
 
-    import chameleon_rs.litestar as chameleon_litestar
+    import chameleon_rs.litestar as chameleon
 
     @get('/')
-    @chameleon_litestar.template('home/index.pt')
+    @chameleon.template('home/index.pt')
     async def index() -> dict:
         return {'title': 'Home'}
 
     app = Litestar([index])
-    chameleon_litestar.configure(template_folder='templates', app=app)
+    chameleon.configure(template_folder='templates', app=app)
 
 The route decorator comes first (outermost) and ``@template`` under it: written the other way
 round, ``@template`` is handed Litestar's route handler and raises

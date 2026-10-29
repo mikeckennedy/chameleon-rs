@@ -9,13 +9,13 @@ Importing this module imports Robyn (it is not imported by ``import chameleon_rs
 chameleon-robyn's, so moving over is an import change (or none: ``chameleon_rs.compat.install()``
 makes ``import chameleon_robyn`` give this module)::
 
-    import chameleon_rs.robyn as chameleon_robyn
+    import chameleon_rs.robyn as chameleon
 
     app = Robyn(__file__)
-    chameleon_robyn.configure(template_folder='templates', auto_reload=dev_mode, app=app)
+    chameleon.configure(template_folder='templates', auto_reload=dev_mode, app=app)
 
     @app.get('/')
-    @chameleon_robyn.template('home/index.pt')
+    @chameleon.template('home/index.pt')
     async def index(request):
         return {'message': 'Hello'}
 

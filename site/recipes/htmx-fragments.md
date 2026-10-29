@@ -27,15 +27,15 @@ The views render the page on `GET` and only the fragment on `POST`:
 import flask
 
 import chameleon_rs
-import chameleon_rs.flask as chameleon_flask
+import chameleon_rs.flask as chameleon
 
 app = flask.Flask(__name__)
-chameleon_flask.configure(template_folder=template_folder)
+chameleon.configure(template_folder=template_folder)
 todos = ['Write docs']
 
 
 @app.get('/todos')
-@chameleon_flask.template('todos/index.pt')
+@chameleon.template('todos/index.pt')
 def index():
     return {'todos': todos}
 
@@ -59,6 +59,6 @@ print(client.post('/todos', data={'title': 'Ship it'}).text)
 
 [chameleon_rs.render_partial()](../reference/render_partial.md#chameleon_rs.render_partial) returns an [HTML](../reference/partials.HTML.md#chameleon_rs.partials.HTML) object. Its `html_text` is the markup. Because the fragment is one template file, the page and the HTMX response can't drift apart.
 
-`chameleon_flask.response('todos/list.pt', todos=todos)` does the same and returns a `flask.Response`, if you'd rather set a content type or status code.
+`chameleon.response('todos/list.pt', todos=todos)` does the same and returns a `flask.Response`, if you'd rather set a content type or status code.
 
 [HTMX](../user-guide/htmx.md) covers more: one view that returns the page or the fragment from the `HX-Request` header, and `@template` on a fragment-only route.

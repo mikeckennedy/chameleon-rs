@@ -479,14 +479,14 @@ folder and render what your views return:
 ```python
 import fastapi
 
-import chameleon_rs.fastapi as fastapi_chameleon
+import chameleon_rs.fastapi as chameleon
 
 app = fastapi.FastAPI()
-fastapi_chameleon.configure(template_folder=template_folder, auto_reload=dev_mode, app=app)
+chameleon.configure(template_folder=template_folder, auto_reload=dev_mode, app=app)
 
 
 @app.get('/')
-@fastapi_chameleon.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index():
     return {'title': 'Latest videos', 'videos': await load_videos()}
 ```
@@ -587,7 +587,7 @@ import chameleon_flask
 # After
 from chameleon_rs import PageTemplate, PageTemplateFile, PageTemplateLoader
 import chameleon_rs.partials as chameleon_partials
-import chameleon_rs.flask as chameleon_flask
+import chameleon_rs.flask as chameleon  # or: as chameleon_flask
 ```
 
 The submodules mirror Chameleon's (`chameleon_rs.zpt.template`, `chameleon_rs.tales`,
@@ -944,10 +944,10 @@ or a shared link to a URL that `hx-push-url` put in the address bar. With FastAP
 ```{python}
 import fastapi
 
-import chameleon_rs.fastapi as fastapi_chameleon
+import chameleon_rs.fastapi as chameleon
 
 app = fastapi.FastAPI()
-fastapi_chameleon.configure(template_folder=template_folder, app=app)
+chameleon.configure(template_folder=template_folder, app=app)
 
 EPISODES = ['Python 3.14', 'Rust for Pythonistas', 'HTMX in practice']
 
@@ -965,8 +965,8 @@ def wants_fragment(request: fastapi.Request) -> bool:
 async def search(request: fastapi.Request, q: str = ''):
     results = await find(q)
     if wants_fragment(request):
-        return await fastapi_chameleon.response_async('search/results.pt', results=results)
-    return await fastapi_chameleon.response_async('search/index.pt', q=q, results=results)
+        return await chameleon.response_async('search/results.pt', results=results)
+    return await chameleon.response_async('search/index.pt', q=q, results=results)
 ```
 
 ```{python}
@@ -991,8 +991,8 @@ When a route exists only for HTMX, such as an `hx-post` that adds a row, put `@t
 the fragment itself:
 
 ```python
-@app.post('/todos')                          # the route decorator first...
-@fastapi_chameleon.template('todos/list.pt') # ...then @template, naming the fragment
+@app.post('/todos')                  # the route decorator first...
+@chameleon.template('todos/list.pt') # ...then @template, naming the fragment
 async def add(title: str = fastapi.Form()):
     await db.add_todo(title)
     return {'todos': await db.todos()}
@@ -1760,14 +1760,14 @@ Each example renders `templates/home/index.pt`:
 ```python
 import flask
 
-import chameleon_rs.flask as chameleon_flask
+import chameleon_rs.flask as chameleon
 
 app = flask.Flask(__name__)
-chameleon_flask.configure(template_folder='templates', app=app)
+chameleon.configure(template_folder='templates', app=app)
 
 
 @app.get('/')
-@chameleon_flask.template('home/index.pt')
+@chameleon.template('home/index.pt')
 def index():
     return {'title': 'Latest videos', 'videos': ['intro', 'partials']}
 ```
@@ -1777,14 +1777,14 @@ def index():
 ```python
 import quart
 
-import chameleon_rs.flask as chameleon_flask
+import chameleon_rs.flask as chameleon
 
 app = quart.Quart(__name__)
-chameleon_flask.configure(template_folder='templates', app=app)
+chameleon.configure(template_folder='templates', app=app)
 
 
 @app.get('/')
-@chameleon_flask.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index():
     return {'title': 'Latest videos', 'videos': await load_videos()}
 ```
@@ -1794,14 +1794,14 @@ async def index():
 ```python
 import fastapi
 
-import chameleon_rs.fastapi as fastapi_chameleon
+import chameleon_rs.fastapi as chameleon
 
 app = fastapi.FastAPI()
-fastapi_chameleon.configure(template_folder='templates', app=app)
+chameleon.configure(template_folder='templates', app=app)
 
 
 @app.get('/')
-@fastapi_chameleon.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index():
     return {'title': 'Latest videos', 'videos': await load_videos()}
 ```
@@ -1830,14 +1830,14 @@ app = Starlette(routes=[Route('/', index)])
 ```python
 from robyn import Robyn
 
-import chameleon_rs.robyn as chameleon_robyn
+import chameleon_rs.robyn as chameleon
 
 app = Robyn(__file__)
-chameleon_robyn.configure(template_folder='templates', app=app)
+chameleon.configure(template_folder='templates', app=app)
 
 
 @app.get('/')
-@chameleon_robyn.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index():
     return {'title': 'Latest videos', 'videos': await load_videos()}
 ```
@@ -1847,17 +1847,17 @@ async def index():
 ```python
 from litestar import Litestar, get
 
-import chameleon_rs.litestar as chameleon_litestar
+import chameleon_rs.litestar as chameleon
 
 
 @get('/')
-@chameleon_litestar.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index() -> dict:
     return {'title': 'Latest videos', 'videos': await load_videos()}
 
 
 app = Litestar([index])
-chameleon_litestar.configure(template_folder='templates', app=app)
+chameleon.configure(template_folder='templates', app=app)
 ```
 
 ## Pyramid
@@ -1928,8 +1928,8 @@ Every template also has `render_partial` built in, and `markdown:` once it's tur
 `@template` goes below the route decorator:
 
 ```python
-@app.get('/')                         # first: the route...
-@chameleon_flask.template('page.pt')  # ...then @template
+@app.get('/')                   # first: the route...
+@chameleon.template('page.pt')  # ...then @template
 def index(): ...
 ```
 
@@ -1980,14 +1980,14 @@ dev_mode = True
 ```{python}
 import flask
 
-import chameleon_rs.flask as chameleon_flask
+import chameleon_rs.flask as chameleon
 
 app = flask.Flask(__name__)
-chameleon_flask.configure(template_folder=template_folder, auto_reload=dev_mode)
+chameleon.configure(template_folder=template_folder, auto_reload=dev_mode)
 
 
 @app.get('/')
-@chameleon_flask.template('home/index.pt')
+@chameleon.template('home/index.pt')
 def index():
     return {'message': 'Hello', 'videos': ['intro', 'partials']}
 ```
@@ -2009,10 +2009,10 @@ the template never renders and the route quietly returns the view's dict as JSON
 app to `configure()` and it checks before its first request (Quart: when it starts serving):
 
 ```python
-chameleon_flask.configure(template_folder=template_folder, app=app)
+chameleon.configure(template_folder=template_folder, app=app)
 
 
-@chameleon_flask.template('home/index.pt')   # wrong: above the route
+@chameleon.template('home/index.pt')   # wrong: above the route
 @app.get('/about')
 def about():
     return {'message': 'About', 'videos': []}
@@ -2023,13 +2023,13 @@ def about():
 ```
 
 Flask has no startup hook, so the check runs on the first request. Blueprints are included.
-`chameleon_flask.check_views(app)` runs the same check on demand, for example in a test. Once
+`chameleon.check_views(app)` runs the same check on demand, for example in a test. Once
 the check passes, the app runs without it.
 
 One pattern can't be told from the mistake: a function routed raw on this app whose
 `@template` wrapper is used somewhere else (called from another view, or routed on another
 app). For such an app, pass `check_order=False` to `configure()` and keep the check in a test
-with `chameleon_flask.check_views(app, ignore=[that_function])`.
+with `chameleon.check_views(app, ignore=[that_function])`.
 
 ## What a view can return
 
@@ -2043,10 +2043,10 @@ Anything else raises `chameleon_rs.flask.FlaskChameleonException`.
 ## The `@template` decorator
 
 ```python
-@chameleon_flask.template('home/index.pt')                            # a template path
-@chameleon_flask.template('feed.pt', content_type='application/xml')  # or mimetype=
-@chameleon_flask.template('home/created.pt', status_code=201)
-@chameleon_flask.template                                             # no arguments
+@chameleon.template('home/index.pt')                            # a template path
+@chameleon.template('feed.pt', content_type='application/xml')  # or mimetype=
+@chameleon.template('home/created.pt', status_code=201)
+@chameleon.template                                             # no arguments
 ```
 
 A text type without a charset gets `; charset=utf-8` (the default is `text/html; charset=utf-8`),
@@ -2067,10 +2067,10 @@ app = flask.Flask(__name__)
 
 
 @app.get('/videos/<name>')
-@chameleon_flask.template('home/index.pt')
+@chameleon.template('home/index.pt')
 def video(name):
     if name != 'intro':
-        chameleon_flask.not_found(path=flask.request.path)   # renders errors/404.pt
+        chameleon.not_found(path=flask.request.path)   # renders errors/404.pt
     return {'message': name, 'videos': [name]}
 
 
@@ -2099,8 +2099,8 @@ reach outside its folder, as Jinja does.
 ## Rendering without the decorator
 
 ```python
-html = chameleon_flask.render('emails/welcome.pt', user=user)            # a str
-resp = chameleon_flask.response('feed.pt', content_type='application/xml', items=items)
+html = chameleon.render('emails/welcome.pt', user=user)            # a str
+resp = chameleon.response('feed.pt', content_type='application/xml', items=items)
 ```
 
 `render()` and `response()` work anywhere, such as in a view that builds its own response or
@@ -2114,7 +2114,7 @@ code outside a request, use the process-wide configuration. It also turns on the
 decorator-order check for that app.
 
 ```python
-chameleon_flask.configure(template_folder='admin/templates', app=admin_app)
+chameleon.configure(template_folder='admin/templates', app=admin_app)
 ```
 
 ## Quart
@@ -2124,14 +2124,14 @@ The same module works with Quart, with no extra install:
 ```python
 import quart
 
-import chameleon_rs.flask as chameleon_flask
+import chameleon_rs.flask as chameleon
 
 app = quart.Quart(__name__)
-chameleon_flask.configure(template_folder=template_folder)
+chameleon.configure(template_folder=template_folder)
 
 
 @app.get('/')
-@chameleon_flask.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index():
     videos = await load_videos()
     return {'message': 'Hello', 'videos': videos}
@@ -2185,14 +2185,14 @@ dev_mode = True
 import fastapi
 from fastapi.testclient import TestClient
 
-import chameleon_rs.fastapi as fastapi_chameleon
+import chameleon_rs.fastapi as chameleon
 
 app = fastapi.FastAPI()
-fastapi_chameleon.configure(template_folder=template_folder, auto_reload=dev_mode, app=app)
+chameleon.configure(template_folder=template_folder, auto_reload=dev_mode, app=app)
 
 
 @app.get('/')
-@fastapi_chameleon.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index(limit: int = 2):
     videos = ['intro', 'partials', 'async']
     return {'message': 'Hello', 'videos': videos[:limit]}
@@ -2221,11 +2221,11 @@ to `configure(..., app=app)` checks this when it starts:
 
 ```{python}
 bad = fastapi.FastAPI()
-fastapi_chameleon.configure(app=bad)
+chameleon.configure(app=bad)
 router = fastapi.APIRouter()
 
 
-@fastapi_chameleon.template('home/index.pt')   # wrong: above the route
+@chameleon.template('home/index.pt')   # wrong: above the route
 @router.get('/about')
 def about():
     return {'message': 'About', 'videos': []}
@@ -2246,12 +2246,12 @@ startup and exit. When no lifespan runs (a server with lifespan events off, a te
 without `with`, a mounted sub-application) it runs before the first request instead. Routers
 included with `include_router` and mounted apps are checked too. A function registered raw on
 purpose (say, JSON on one route) and also decorated on another route is not flagged.
-`fastapi_chameleon.check_views(app)` runs the same check on demand.
+`chameleon.check_views(app)` runs the same check on demand.
 
 One pattern can't be told from the mistake: a function routed raw on this app whose
 `@template` wrapper is used somewhere else (called from another view, or routed on another
 app). For such an app, pass `check_order=False` to `configure()` and keep the check in a
-test with `fastapi_chameleon.check_views(app, ignore=[that_function])`.
+test with `chameleon.check_views(app, ignore=[that_function])`.
 
 ## Sync and async views
 
@@ -2281,10 +2281,10 @@ Anything else raises `chameleon_rs.fastapi.FastAPIChameleonException`.
 ## The `@template` decorator
 
 ```python
-@fastapi_chameleon.template('home/index.pt')                   # a template path
-@fastapi_chameleon.template('feed.pt', 'application/xml')      # mimetype=, or content_type=
-@fastapi_chameleon.template('home/created.pt', status_code=201)
-@fastapi_chameleon.template                                    # no arguments
+@chameleon.template('home/index.pt')                   # a template path
+@chameleon.template('feed.pt', 'application/xml')      # mimetype=, or content_type=
+@chameleon.template('home/created.pt', status_code=201)
+@chameleon.template                                    # no arguments
 ```
 
 With no path, it renders `{module}/{function}.html`, where `{module}` is the last part of the
@@ -2300,10 +2300,10 @@ app = fastapi.FastAPI()
 
 
 @app.get('/videos/{name}')
-@fastapi_chameleon.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def video(name: str, request: fastapi.Request):
     if name != 'intro':
-        fastapi_chameleon.not_found(path=request.url.path)   # renders errors/404.pt
+        chameleon.not_found(path=request.url.path)   # renders errors/404.pt
     return {'message': name, 'videos': [name]}
 
 
@@ -2329,10 +2329,10 @@ reach outside its folder, as Jinja does.
 ## Rendering without the decorator
 
 ```python
-html = fastapi_chameleon.render('emails/welcome.pt', user=user)        # a str
-html = await fastapi_chameleon.render_async('emails/welcome.pt', user=user)
-resp = fastapi_chameleon.response('feed.pt', 'application/xml', items=items)
-resp = await fastapi_chameleon.response_async('feed.pt', status_code=201, items=items)
+html = chameleon.render('emails/welcome.pt', user=user)        # a str
+html = await chameleon.render_async('emails/welcome.pt', user=user)
+resp = chameleon.response('feed.pt', 'application/xml', items=items)
+resp = await chameleon.response_async('feed.pt', status_code=201, items=items)
 ```
 
 Both raise `FastAPIChameleonException` if nothing has been configured.
@@ -2503,21 +2503,21 @@ moving an endpoint over is `await templates.TemplateResponse_async(...)` in plac
 ## The decorator API
 
 ```{python}
-import chameleon_rs.starlette as chameleon_starlette
+import chameleon_rs.starlette as chameleon
 
-chameleon_starlette.configure(template_folder=template_folder)
+chameleon.configure(template_folder=template_folder)
 
 
-@chameleon_starlette.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def listing(request):
     name = request.path_params['name']
     if name == 'missing':
-        chameleon_starlette.not_found(path=request.url.path)   # renders errors/404.pt
+        chameleon.not_found(path=request.url.path)   # renders errors/404.pt
     return {'title': name, 'videos': [name], 'site': 'TP'}
 
 
 app = Starlette(routes=[Route('/v/{name}', listing), Route('/videos/{name}', video, name='video')])
-chameleon_starlette.configure(app=app)   # the decorator-order check at startup
+chameleon.configure(app=app)   # the decorator-order check at startup
 
 with TestClient(app) as client:
     print(client.get('/v/intro').text)
@@ -2593,14 +2593,14 @@ when the docs are built, as the other framework pages are.
 ```python
 from robyn import Robyn
 
-import chameleon_rs.robyn as chameleon_robyn
+import chameleon_rs.robyn as chameleon
 
 app = Robyn(__file__)
-chameleon_robyn.configure(template_folder='templates', auto_reload=dev_mode, app=app)
+chameleon.configure(template_folder='templates', auto_reload=dev_mode, app=app)
 
 
 @app.get('/')
-@chameleon_robyn.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index(query_params):
     videos = ['intro', 'partials', 'async']
     return {'message': 'Hello', 'videos': videos[: int(query_params.get('limit', '2'))]}
@@ -2626,7 +2626,7 @@ handler, the template never renders and the route quietly returns the handler's 
 An app given to `configure(..., app=app)` checks this when it starts:
 
 ```python
-@chameleon_robyn.template('home/about.pt')   # wrong: above the route
+@chameleon.template('home/about.pt')   # wrong: above the route
 @app.get('/about')
 def about():
     return {'message': 'About'}
@@ -2650,12 +2650,12 @@ check: routes added afterwards are checked at the next read and in `start()`. On
 passed the check, both hooks remove themselves.
 
 Routes of a `SubRouter` included with `app.include_router(...)` are checked with the app.
-`chameleon_robyn.check_views(app)` (or a `SubRouter`) runs the same check on demand. A
+`chameleon.check_views(app)` (or a `SubRouter`) runs the same check on demand. A
 function registered raw on purpose (JSON on one route) and also decorated on another route is
 not flagged. One pattern can't be told from the mistake: a function routed raw on this app
 whose `@template` wrapper is used somewhere else (called from another handler, or routed on
 another app). For such an app, pass `check_order=False` to `configure()` and keep the check in
-a test with `chameleon_robyn.check_views(app, ignore=[that_function])`.
+a test with `chameleon.check_views(app, ignore=[that_function])`.
 
 ## Sync and async handlers
 
@@ -2688,7 +2688,7 @@ def remember(response):
     response.set_cookie('session', session_id)
 
 @app.post('/login')
-@chameleon_robyn.template('account/welcome.pt')
+@chameleon.template('account/welcome.pt')
 def login(request):
     return {'user': user, '__response_callback__': remember}
 ```
@@ -2696,10 +2696,10 @@ def login(request):
 ## The `@template` decorator
 
 ```python
-@chameleon_robyn.template('home/index.pt')                       # a template path
-@chameleon_robyn.template('feed.pt', 'application/xml')          # content_type=, or mimetype=
-@chameleon_robyn.template('home/created.pt', status_code=201)
-@chameleon_robyn.template                                        # no arguments
+@chameleon.template('home/index.pt')                       # a template path
+@chameleon.template('feed.pt', 'application/xml')          # content_type=, or mimetype=
+@chameleon.template('home/created.pt', status_code=201)
+@chameleon.template                                        # no arguments
 ```
 
 With no path, it renders `{module}/{function}.html`, where `{module}` is the last part of the
@@ -2716,10 +2716,10 @@ page as `text/html`. The template gets `message` (`'The URL resulted in a 404 re
 
 ```python
 @app.get('/videos/:name')
-@chameleon_robyn.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def video(name):
     if name not in videos:
-        chameleon_robyn.not_found(name=name)   # renders errors/404.pt with status 404
+        chameleon.not_found(name=name)   # renders errors/404.pt with status 404
     return {'message': name, 'videos': [name]}
 ```
 
@@ -2741,10 +2741,10 @@ build one from a request (a path or query parameter, a header).
 ## Rendering without the decorator
 
 ```python
-html = chameleon_robyn.render('emails/welcome.pt', user=user)        # a str
-html = await chameleon_robyn.render_async('emails/welcome.pt', user=user)
-resp = chameleon_robyn.response('feed.pt', 'application/xml', items=items)
-resp = await chameleon_robyn.response_async('feed.pt', status_code=201, items=items)
+html = chameleon.render('emails/welcome.pt', user=user)        # a str
+html = await chameleon.render_async('emails/welcome.pt', user=user)
+resp = chameleon.response('feed.pt', 'application/xml', items=items)
+resp = await chameleon.response_async('feed.pt', status_code=201, items=items)
 ```
 
 Both raise `ChameleonRobynException` if nothing has been configured.
@@ -2928,9 +2928,9 @@ API below, which renders with `render_async`.
 ```{python}
 import asyncio
 
-import chameleon_rs.litestar as chameleon_litestar
+import chameleon_rs.litestar as chameleon
 
-chameleon_litestar.configure(template_folder=template_folder)
+chameleon.configure(template_folder=template_folder)
 
 
 async def latest_videos():
@@ -2939,22 +2939,22 @@ async def latest_videos():
 
 
 @get('/latest')
-@chameleon_litestar.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def latest() -> dict:
     # Unawaited: the template awaits it where it uses it.
     return {'title': 'Latest', 'videos': latest_videos()}
 
 
 @get('/v/{name:str}')
-@chameleon_litestar.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def listing(name: str, request: Request) -> dict:
     if name == 'missing':
-        chameleon_litestar.not_found(path=request.url.path)   # renders errors/404.pt
+        chameleon.not_found(path=request.url.path)   # renders errors/404.pt
     return {'title': name, 'videos': [name]}
 
 
 app = Litestar([latest, listing, video])
-chameleon_litestar.configure(app=app)   # the decorator-order check at startup
+chameleon.configure(app=app)   # the decorator-order check at startup
 
 with TestClient(app) as client:
     print(client.get('/latest').text)
@@ -3537,9 +3537,9 @@ longer needed.
 | `chameleon_partials.register_extensions(folder, auto_reload=dev)` and `chameleon_flask.global_init(folder, auto_reload=dev)` | One call: `chameleon_rs.configure(template_folder=folder, auto_reload=dev)` |
 | `return chameleon_partials.extend_model(model)` in every view | `return model`: `render_partial` is in every template |
 | A Pyramid `BeforeRender` subscriber that adds `render_partial` | Remove it |
-| `import chameleon_flask` | `import chameleon_rs.flask as chameleon_flask` |
-| `import fastapi_chameleon` | `import chameleon_rs.fastapi as fastapi_chameleon` |
-| `import chameleon_robyn` | `import chameleon_rs.robyn as chameleon_robyn` |
+| `import chameleon_flask` | `import chameleon_rs.flask as chameleon` (or `as chameleon_flask`) |
+| `import fastapi_chameleon` | `import chameleon_rs.fastapi as chameleon` (or `as fastapi_chameleon`) |
+| `import chameleon_robyn` | `import chameleon_rs.robyn as chameleon` (or `as chameleon_robyn`) |
 | `from litestar_chameleon import ChameleonTemplateEngine` | `from chameleon_rs.litestar import ChameleonEngine`, and return `chameleon_rs.litestar.Template` |
 | `chameleon_partials.render_partial(path, **m).html_text` | `chameleon_rs.render_partial(path, **m).html_text` |
 | `except chameleon_partials.PartialsException`, `except chameleon_flask.exceptions.FlaskChameleonException` | Still work. `except chameleon_rs.web.TemplateError` catches both |
@@ -3595,12 +3595,12 @@ chameleon_flask.global_init(template_folder, auto_reload=dev_mode)
 
 ```python
 # After
-import chameleon_rs.flask as chameleon_flask
+import chameleon_rs.flask as chameleon
 
-chameleon_flask.configure(template_folder=template_folder, auto_reload=dev_mode)
+chameleon.configure(template_folder=template_folder, auto_reload=dev_mode)
 ```
 
-Views, `@template`, `render`, `response` and `not_found` stay the same. New in chameleon-rs:
+Views, `@template`, `render`, `response` and `not_found` stay the same (use `as chameleon_flask` if you want to leave existing call sites unchanged). New in chameleon-rs:
 
 - `configure()` also sets the partials folder, so you need only one setup call.
 - `error(template_file, status_code=500, **data)` renders any error page.
@@ -3618,10 +3618,10 @@ import fastapi_chameleon
 becomes
 
 ```python
-import chameleon_rs.fastapi as fastapi_chameleon
+import chameleon_rs.fastapi as chameleon
 ```
 
-or stays as it is with `chameleon_rs.compat.install()`. Every name keeps working
+(or `as fastapi_chameleon` to keep existing call sites unchanged, or stays as `import fastapi_chameleon` with `chameleon_rs.compat.install()`). Every name keeps working
 (`global_init`, `@template`, `render`, `response`, `not_found`, `generic_error`, `clear`, the
 exception classes), and its test suite passes unmodified on the built-in. Differences:
 
@@ -3642,10 +3642,10 @@ import chameleon_robyn
 becomes
 
 ```python
-import chameleon_rs.robyn as chameleon_robyn
+import chameleon_rs.robyn as chameleon
 ```
 
-or stays as it is with `chameleon_rs.compat.install()`. Every name keeps working
+(or `as chameleon_robyn` to keep existing call sites unchanged, or stays as `import chameleon_robyn` with `chameleon_rs.compat.install()`). Every name keeps working
 (`global_init`, `@template`, `render`, `response`, `not_found`, `clear`, `ChameleonTemplate`,
 `__response_callback__`, the exception classes), and its test suite passes unmodified on the
 built-in. Differences:

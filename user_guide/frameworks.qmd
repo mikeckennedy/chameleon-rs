@@ -35,14 +35,14 @@ Each example renders `templates/home/index.pt`:
 ```python
 import flask
 
-import chameleon_rs.flask as chameleon_flask
+import chameleon_rs.flask as chameleon
 
 app = flask.Flask(__name__)
-chameleon_flask.configure(template_folder='templates', app=app)
+chameleon.configure(template_folder='templates', app=app)
 
 
 @app.get('/')
-@chameleon_flask.template('home/index.pt')
+@chameleon.template('home/index.pt')
 def index():
     return {'title': 'Latest videos', 'videos': ['intro', 'partials']}
 ```
@@ -52,14 +52,14 @@ def index():
 ```python
 import quart
 
-import chameleon_rs.flask as chameleon_flask
+import chameleon_rs.flask as chameleon
 
 app = quart.Quart(__name__)
-chameleon_flask.configure(template_folder='templates', app=app)
+chameleon.configure(template_folder='templates', app=app)
 
 
 @app.get('/')
-@chameleon_flask.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index():
     return {'title': 'Latest videos', 'videos': await load_videos()}
 ```
@@ -69,14 +69,14 @@ async def index():
 ```python
 import fastapi
 
-import chameleon_rs.fastapi as fastapi_chameleon
+import chameleon_rs.fastapi as chameleon
 
 app = fastapi.FastAPI()
-fastapi_chameleon.configure(template_folder='templates', app=app)
+chameleon.configure(template_folder='templates', app=app)
 
 
 @app.get('/')
-@fastapi_chameleon.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index():
     return {'title': 'Latest videos', 'videos': await load_videos()}
 ```
@@ -105,14 +105,14 @@ app = Starlette(routes=[Route('/', index)])
 ```python
 from robyn import Robyn
 
-import chameleon_rs.robyn as chameleon_robyn
+import chameleon_rs.robyn as chameleon
 
 app = Robyn(__file__)
-chameleon_robyn.configure(template_folder='templates', app=app)
+chameleon.configure(template_folder='templates', app=app)
 
 
 @app.get('/')
-@chameleon_robyn.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index():
     return {'title': 'Latest videos', 'videos': await load_videos()}
 ```
@@ -122,17 +122,17 @@ async def index():
 ```python
 from litestar import Litestar, get
 
-import chameleon_rs.litestar as chameleon_litestar
+import chameleon_rs.litestar as chameleon
 
 
 @get('/')
-@chameleon_litestar.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index() -> dict:
     return {'title': 'Latest videos', 'videos': await load_videos()}
 
 
 app = Litestar([index])
-chameleon_litestar.configure(template_folder='templates', app=app)
+chameleon.configure(template_folder='templates', app=app)
 ```
 
 ## Pyramid
@@ -203,8 +203,8 @@ Every template also has `render_partial` built in, and `markdown:` once it's tur
 `@template` goes below the route decorator:
 
 ```python
-@app.get('/')                         # first: the route...
-@chameleon_flask.template('page.pt')  # ...then @template
+@app.get('/')                   # first: the route...
+@chameleon.template('page.pt')  # ...then @template
 def index(): ...
 ```
 

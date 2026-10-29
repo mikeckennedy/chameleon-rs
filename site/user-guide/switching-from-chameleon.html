@@ -434,7 +434,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </tr>
 </tbody>
 </table>
-<div id="4c56af17" class="cell" data-execution_count="1">
+<div id="106e543b" class="cell" data-execution_count="1">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.compat</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>chameleon_rs.compat.install()</span>
@@ -480,7 +480,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="co"># After</span></span>
 <span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplate, PageTemplateFile, PageTemplateLoader</span>
 <span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.partials <span class="im">as</span> chameleon_partials</span>
-<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.flask <span class="im">as</span> chameleon_flask</span></code></pre></div>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.flask <span class="im">as</span> chameleon  <span class="co"># or: as chameleon_flask</span></span></code></pre></div>
 <p>The submodules mirror Chameleon’s (<code>chameleon_rs.zpt.template</code>, <code>chameleon_rs.tales</code>, <code>chameleon_rs.utils</code>, <code>chameleon_rs.exc</code>, …). Chameleon’s code-generation internals (<code>chameleon.nodes</code>, <code>chameleon.program</code>, <code>chameleon.zpt.program</code>, <code>chameleon.benchmark</code>) have no counterpart, since chameleon-rs doesn’t generate Python code. Importing them raises <code>ModuleNotFoundError</code>.</p>
 <p>After switching, you can simplify: <a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a> is in every template already, so <a href="../reference/partials.extend_model.html#chameleon_rs.partials.extend_model" class="gdls-link gdls-code">extend_model()</a> calls and Pyramid <code>BeforeRender</code> subscribers that add it can go, and one <a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">chameleon_rs.configure()</a> call replaces <a href="../reference/partials.register_extensions.html#chameleon_rs.partials.register_extensions" class="gdls-link gdls-code">register_extensions()</a> plus <a href="../reference/flask.global_init.html#chameleon_rs.flask.global_init" class="gdls-link gdls-code">global_init()</a>. See <a href="../user-guide/migrating.html">Migrating from the helper libraries</a>.</p>
 </section>

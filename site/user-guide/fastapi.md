@@ -12,14 +12,14 @@
 import fastapi
 from fastapi.testclient import TestClient
 
-import chameleon_rs.fastapi as fastapi_chameleon
+import chameleon_rs.fastapi as chameleon
 
 app = fastapi.FastAPI()
-fastapi_chameleon.configure(template_folder=template_folder, auto_reload=dev_mode, app=app)
+chameleon.configure(template_folder=template_folder, auto_reload=dev_mode, app=app)
 
 
 @app.get('/')
-@fastapi_chameleon.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def index(limit: int = 2):
     videos = ['intro', 'partials', 'async']
     return {'message': 'Hello', 'videos': videos[:limit]}
@@ -53,11 +53,11 @@ The decorated view keeps its signature, so path and query parameters, `Depends`,
 
 ``` python
 bad = fastapi.FastAPI()
-fastapi_chameleon.configure(app=bad)
+chameleon.configure(app=bad)
 router = fastapi.APIRouter()
 
 
-@fastapi_chameleon.template('home/index.pt')   # wrong: above the route
+@chameleon.template('home/index.pt')   # wrong: above the route
 @router.get('/about')
 def about():
     return {'message': 'About', 'videos': []}
@@ -78,9 +78,9 @@ except Exception as error:
     @template must be placed below the route decorator (@app.get, @router.get, @app.api_route, ...) on about()
 
 
-The check runs inside the app's lifespan startup, so Uvicorn and Granian report a failed startup and exit. When no lifespan runs (a server with lifespan events off, a test client used without `with`, a mounted sub-application) it runs before the first request instead. Routers included with `include_router` and mounted apps are checked too. A function registered raw on purpose (say, JSON on one route) and also decorated on another route is not flagged. `fastapi_chameleon.check_views(app)` runs the same check on demand.
+The check runs inside the app's lifespan startup, so Uvicorn and Granian report a failed startup and exit. When no lifespan runs (a server with lifespan events off, a test client used without `with`, a mounted sub-application) it runs before the first request instead. Routers included with `include_router` and mounted apps are checked too. A function registered raw on purpose (say, JSON on one route) and also decorated on another route is not flagged. `chameleon.check_views(app)` runs the same check on demand.
 
-One pattern can't be told from the mistake: a function routed raw on this app whose `@template` wrapper is used somewhere else (called from another view, or routed on another app). For such an app, pass `check_order=False` to [configure()](../reference/configure.md#chameleon_rs.configure) and keep the check in a test with `fastapi_chameleon.check_views(app, ignore=[that_function])`.
+One pattern can't be told from the mistake: a function routed raw on this app whose `@template` wrapper is used somewhere else (called from another view, or routed on another app). For such an app, pass `check_order=False` to [configure()](../reference/configure.md#chameleon_rs.configure) and keep the check in a test with `chameleon.check_views(app, ignore=[that_function])`.
 
 
 # Sync and async views
@@ -104,10 +104,10 @@ Anything else raises `chameleon_rs.fastapi.FastAPIChameleonException`.
 # The `@template` decorator
 
 ``` python
-@fastapi_chameleon.template('home/index.pt')                   # a template path
-@fastapi_chameleon.template('feed.pt', 'application/xml')      # mimetype=, or content_type=
-@fastapi_chameleon.template('home/created.pt', status_code=201)
-@fastapi_chameleon.template                                    # no arguments
+@chameleon.template('home/index.pt')                   # a template path
+@chameleon.template('feed.pt', 'application/xml')      # mimetype=, or content_type=
+@chameleon.template('home/created.pt', status_code=201)
+@chameleon.template                                    # no arguments
 ```
 
 With no path, it renders `{module}/{function}.html`, where `{module}` is the last part of the view's module name. If there's no `.html` file in the template folder, it uses `{module}/{function}.pt`. It checks once, when the view is decorated.
@@ -123,10 +123,10 @@ app = fastapi.FastAPI()
 
 
 @app.get('/videos/{name}')
-@fastapi_chameleon.template('home/index.pt')
+@chameleon.template('home/index.pt')
 async def video(name: str, request: fastapi.Request):
     if name != 'intro':
-        fastapi_chameleon.not_found(path=request.url.path)   # renders errors/404.pt
+        chameleon.not_found(path=request.url.path)   # renders errors/404.pt
     return {'message': name, 'videos': [name]}
 
 
@@ -150,10 +150,10 @@ print(response.status_code, response.text)
 # Rendering without the decorator
 
 ``` python
-html = fastapi_chameleon.render('emails/welcome.pt', user=user)        # a str
-html = await fastapi_chameleon.render_async('emails/welcome.pt', user=user)
-resp = fastapi_chameleon.response('feed.pt', 'application/xml', items=items)
-resp = await fastapi_chameleon.response_async('feed.pt', status_code=201, items=items)
+html = chameleon.render('emails/welcome.pt', user=user)        # a str
+html = await chameleon.render_async('emails/welcome.pt', user=user)
+resp = chameleon.response('feed.pt', 'application/xml', items=items)
+resp = await chameleon.response_async('feed.pt', status_code=201, items=items)
 ```
 
 Both raise `FastAPIChameleonException` if nothing has been configured.

@@ -11,9 +11,9 @@ chameleon-rs builds in what chameleon_partials, chameleon-flask, fastapi-chamele
 | `chameleon_partials.register_extensions(folder, auto_reload=dev)` and `chameleon_flask.global_init(folder, auto_reload=dev)` | One call: `chameleon_rs.configure(template_folder=folder, auto_reload=dev)` |
 | `return chameleon_partials.extend_model(model)` in every view | `return model`: [render_partial](../reference/render_partial.md#chameleon_rs.render_partial) is in every template |
 | A Pyramid `BeforeRender` subscriber that adds [render_partial](../reference/render_partial.md#chameleon_rs.render_partial) | Remove it |
-| `import chameleon_flask` | `import chameleon_rs.flask as chameleon_flask` |
-| `import fastapi_chameleon` | `import chameleon_rs.fastapi as fastapi_chameleon` |
-| `import chameleon_robyn` | `import chameleon_rs.robyn as chameleon_robyn` |
+| `import chameleon_flask` | `import chameleon_rs.flask as chameleon` (or `as chameleon_flask`) |
+| `import fastapi_chameleon` | `import chameleon_rs.fastapi as chameleon` (or `as fastapi_chameleon`) |
+| `import chameleon_robyn` | `import chameleon_rs.robyn as chameleon` (or `as chameleon_robyn`) |
 | `from litestar_chameleon import ChameleonTemplateEngine` | `from chameleon_rs.litestar import ChameleonEngine`, and return [chameleon_rs.litestar.Template](../reference/litestar.Template.md#chameleon_rs.litestar.Template) |
 | `chameleon_partials.render_partial(path, **m).html_text` | `chameleon_rs.render_partial(path, **m).html_text` |
 | `except chameleon_partials.PartialsException`, `except chameleon_flask.exceptions.FlaskChameleonException` | Still work. `except chameleon_rs.web.TemplateError` catches both |
@@ -65,12 +65,12 @@ chameleon_flask.global_init(template_folder, auto_reload=dev_mode)
 
 ``` python
 # After
-import chameleon_rs.flask as chameleon_flask
+import chameleon_rs.flask as chameleon
 
-chameleon_flask.configure(template_folder=template_folder, auto_reload=dev_mode)
+chameleon.configure(template_folder=template_folder, auto_reload=dev_mode)
 ```
 
-Views, `@template`, [render](../reference/flask.render.md#chameleon_rs.flask.render), [response](../reference/flask.response.md#chameleon_rs.flask.response) and [not_found](../reference/flask.not_found.md#chameleon_rs.flask.not_found) stay the same. New in chameleon-rs:
+Views, `@template`, [render](../reference/flask.render.md#chameleon_rs.flask.render), [response](../reference/flask.response.md#chameleon_rs.flask.response) and [not_found](../reference/flask.not_found.md#chameleon_rs.flask.not_found) stay the same (use `as chameleon_flask` if you want to leave existing call sites unchanged). New in chameleon-rs:
 
 - [configure()](../reference/configure.md#chameleon_rs.configure) also sets the partials folder, so you need only one setup call.
 - `error(template_file, status_code=500, **data)` renders any error page.
@@ -89,10 +89,10 @@ import fastapi_chameleon
 becomes
 
 ``` python
-import chameleon_rs.fastapi as fastapi_chameleon
+import chameleon_rs.fastapi as chameleon
 ```
 
-or stays as it is with [chameleon_rs.compat.install()](../reference/compat.install.md#chameleon_rs.compat.install). Every name keeps working ([global_init](../reference/flask.global_init.md#chameleon_rs.flask.global_init), `@template`, [render](../reference/flask.render.md#chameleon_rs.flask.render), [response](../reference/flask.response.md#chameleon_rs.flask.response), [not_found](../reference/flask.not_found.md#chameleon_rs.flask.not_found), [generic_error](../reference/robyn.generic_error.md#chameleon_rs.robyn.generic_error), [clear](../reference/flask.clear.md#chameleon_rs.flask.clear), the exception classes), and its test suite passes unmodified on the built-in. Differences:
+(or `as fastapi_chameleon` to keep existing call sites unchanged, or stays as `import fastapi_chameleon` with [chameleon_rs.compat.install()](../reference/compat.install.md#chameleon_rs.compat.install)). Every name keeps working ([global_init](../reference/flask.global_init.md#chameleon_rs.flask.global_init), `@template`, [render](../reference/flask.render.md#chameleon_rs.flask.render), [response](../reference/flask.response.md#chameleon_rs.flask.response), [not_found](../reference/flask.not_found.md#chameleon_rs.flask.not_found), [generic_error](../reference/robyn.generic_error.md#chameleon_rs.robyn.generic_error), [clear](../reference/flask.clear.md#chameleon_rs.flask.clear), the exception classes), and its test suite passes unmodified on the built-in. Differences:
 
 - Async views render with [render_async](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async): an awaitable model value is awaited where the template uses it.
 - `configure(..., app=app)` (or `global_init(..., app=app)`) checks at startup that every `@template` sits below its route decorator.
@@ -110,10 +110,10 @@ import chameleon_robyn
 becomes
 
 ``` python
-import chameleon_rs.robyn as chameleon_robyn
+import chameleon_rs.robyn as chameleon
 ```
 
-or stays as it is with [chameleon_rs.compat.install()](../reference/compat.install.md#chameleon_rs.compat.install). Every name keeps working ([global_init](../reference/flask.global_init.md#chameleon_rs.flask.global_init), `@template`, [render](../reference/flask.render.md#chameleon_rs.flask.render), [response](../reference/flask.response.md#chameleon_rs.flask.response), [not_found](../reference/flask.not_found.md#chameleon_rs.flask.not_found), [clear](../reference/flask.clear.md#chameleon_rs.flask.clear), [ChameleonTemplate](../reference/robyn.ChameleonTemplate.md#chameleon_rs.robyn.ChameleonTemplate), `__response_callback__`, the exception classes), and its test suite passes unmodified on the built-in. Differences:
+(or `as chameleon_robyn` to keep existing call sites unchanged, or stays as `import chameleon_robyn` with [chameleon_rs.compat.install()](../reference/compat.install.md#chameleon_rs.compat.install)). Every name keeps working ([global_init](../reference/flask.global_init.md#chameleon_rs.flask.global_init), `@template`, [render](../reference/flask.render.md#chameleon_rs.flask.render), [response](../reference/flask.response.md#chameleon_rs.flask.response), [not_found](../reference/flask.not_found.md#chameleon_rs.flask.not_found), [clear](../reference/flask.clear.md#chameleon_rs.flask.clear), [ChameleonTemplate](../reference/robyn.ChameleonTemplate.md#chameleon_rs.robyn.ChameleonTemplate), `__response_callback__`, the exception classes), and its test suite passes unmodified on the built-in. Differences:
 
 - Async handlers render with [render_async](../reference/robyn.render_async.md#chameleon_rs.robyn.render_async): an awaitable model value is awaited where the template uses it.
 - `configure(..., app=app)` (or `global_init(..., app=app)`) checks in `app.start()` (and when Robyn's test client is built) that every `@template` sits below its route decorator.
