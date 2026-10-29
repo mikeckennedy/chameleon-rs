@@ -5,7 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.55] - 2026-10-28
+
+Fixes from a security and stability review: templates on filesystems without inode numbers and expressions too deep for a worker thread's stack, plus smaller async, macro and compatibility fixes.
+
+### Security
+
+- **Templates on filesystems without inode numbers rendered each other's content.** Partials, sibling templates and the Jinja-shaped engines identified a file by device and inode, and filesystems without file IDs (FAT, exFAT and some network or FUSE mounts, notably on Windows) report inode 0 for every file: every template on such a volume was taken for the first one loaded. A zero inode now falls back to the file's resolved path.
+- **An expression nested deeply could crash the process on a small thread stack.** The compile's nesting limit is measured on the thread that compiles, but evaluation recurses on the thread that renders: the deepest expressions it allowed (a few hundred levels of `a + a + ...`, `not not ...` or an attribute chain) overflowed a 128 to 256 KiB worker thread's stack (SIGBUS). Expressions deeper than 64 levels now check the stack left before they are evaluated and raise `RecursionError`.
 
 ### Fixed
 
@@ -18,6 +25,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   led there; the macro's unrelated expression is gone. Errors outside slot fills are reported
   as before. This changes messages Chameleon gets wrong; see "Chameleon bugs fixed" in the
   compatibility guide.
+- **`render_async(offload=True)` lost the caller's context variables** on Python 3.12 to 3.14: the worker thread ran without the calling task's `contextvars` (a request's, a framework's current app, tracing spans). Offloaded renders now run in `asyncio.to_thread`, which copies them.
+- **A value's `__del__` that used a finished async render failed with "coroutine already executing"**: the render's state was dropped while its awaitable was still borrowed. It is now dropped after.
+- **A global changed while a macro call copied the globals back raised `InternalError`** (a value's `__del__` changing `rcontext` as the local it shadowed was replaced). It now raises Chameleon's `RuntimeError: dict mutated during update`.
+- **A suspended async render's garbage-collector traversal skipped one value** (the target language of a slot body's conversion helpers), so a reference cycle through it could not be collected.
+- **Render defaults could be paired with another settings' key on free-threaded Python**: they were cached in two attributes written one after the other, and are now one.
+- **`ExpressionEvaluator` accepts no builtins** (Chameleon raises `ValueError`, malthe/chameleon#452), and **relative dotted names go up one module per leading dot** (malthe/chameleon#451; not reachable from templates).
 
 ## [0.1.54] - 2026-10-28
 
