@@ -41,7 +41,7 @@ with TestClient(app) as client:
 ```
 
 
-    INFO - 2026-10-28 19:29:10,435 - httpx - _client - HTTP Request: GET http://testserver.local/ "HTTP/1.1 200 OK"
+    INFO - 2026-10-28 20:53:51,448 - httpx - _client - HTTP Request: GET http://testserver.local/ "HTTP/1.1 200 OK"
 
 
     text/html; charset=utf-8
@@ -87,8 +87,8 @@ with TestClient(app) as client:
 ```
 
 
-    INFO - 2026-10-28 19:29:10,480 - httpx - _client - HTTP Request: GET http://testserver.local/ "HTTP/1.1 200 OK"
-    INFO - 2026-10-28 19:29:10,482 - httpx - _client - HTTP Request: GET http://testserver.local/stock "HTTP/1.1 200 OK"
+    INFO - 2026-10-28 20:53:51,461 - httpx - _client - HTTP Request: GET http://testserver.local/ "HTTP/1.1 200 OK"
+    INFO - 2026-10-28 20:53:51,464 - httpx - _client - HTTP Request: GET http://testserver.local/stock "HTTP/1.1 200 OK"
 
 
     ours:  text/html; charset=utf-8
@@ -145,8 +145,8 @@ with TestClient(app) as client:
 ```
 
 
-    INFO - 2026-10-28 19:29:10,523 - httpx - _client - HTTP Request: GET http://testserver.local/latest "HTTP/1.1 200 OK"
-    INFO - 2026-10-28 19:29:10,528 - httpx - _client - HTTP Request: GET http://testserver.local/v/missing "HTTP/1.1 404 Not Found"
+    INFO - 2026-10-28 20:53:51,487 - httpx - _client - HTTP Request: GET http://testserver.local/latest "HTTP/1.1 200 OK"
+    INFO - 2026-10-28 20:53:51,489 - httpx - _client - HTTP Request: GET http://testserver.local/v/missing "HTTP/1.1 404 Not Found"
 
 
     <h1>Latest</h1>

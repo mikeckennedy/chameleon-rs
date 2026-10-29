@@ -409,7 +409,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p><code>import chameleon_rs</code> doesn’t import Litestar. Only <code>import chameleon_rs.litestar</code> does, and it uses the Litestar your app already has (2.x; tested with 2.25).</p>
 <section id="chameleonengine-litestars-templating" class="level1">
 <h1>ChameleonEngine: Litestar’s templating</h1>
-<div id="ed6292af" class="cell" data-execution_count="2">
+<div id="ae2fd029" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> litestar <span class="im">import</span> Litestar, Request, get</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> litestar.template <span class="im">import</span> TemplateConfig</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> litestar.testing <span class="im">import</span> TestClient</span>
@@ -437,7 +437,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(response.headers[<span class="st">'content-type'</span>])</span>
 <span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(response.text)</span></code></pre></div>
 <div class="cell-output cell-output-stderr">
-<pre><code>INFO - 2026-10-28 19:29:10,435 - httpx - _client - HTTP Request: GET http://testserver.local/ "HTTP/1.1 200 OK"</code></pre>
+<pre><code>INFO - 2026-10-28 20:53:51,448 - httpx - _client - HTTP Request: GET http://testserver.local/ "HTTP/1.1 200 OK"</code></pre>
 </div>
 <div class="cell-output cell-output-stdout">
 <pre><code>text/html; charset=utf-8
@@ -460,7 +460,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="pt-and-the-media-type" class="level2">
 <h2 class="anchored" data-anchor-id="pt-and-the-media-type"><code>.pt</code> and the media type</h2>
 <p>Litestar picks a <a href="../reference/litestar.Template.html#chameleon_rs.litestar.Template" class="gdls-link gdls-code">Template</a> response’s media type from the template name’s suffix, and Python’s <code>mimetypes</code> doesn’t know <code>.pt</code>: with <code>litestar.response.Template</code>, a <code>.pt</code> page is served as <code>text/plain</code>, and the browser shows its source. <a href="../reference/litestar.Template.html#chameleon_rs.litestar.Template" class="gdls-link gdls-code">chameleon_rs.litestar.Template</a> is a subclass that serves a name Litestar can’t guess as <code>text/html</code>:</p>
-<div id="ccdacab5" class="cell" data-execution_count="3">
+<div id="3d0da39c" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> litestar.response <span class="im">import</span> Template <span class="im">as</span> LitestarTemplate</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -477,8 +477,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">'ours: '</span>, client.get(<span class="st">'/'</span>).headers[<span class="st">'content-type'</span>])</span>
 <span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">'stock:'</span>, client.get(<span class="st">'/stock'</span>).headers[<span class="st">'content-type'</span>])</span></code></pre></div>
 <div class="cell-output cell-output-stderr">
-<pre><code>INFO - 2026-10-28 19:29:10,480 - httpx - _client - HTTP Request: GET http://testserver.local/ "HTTP/1.1 200 OK"
-INFO - 2026-10-28 19:29:10,482 - httpx - _client - HTTP Request: GET http://testserver.local/stock "HTTP/1.1 200 OK"</code></pre>
+<pre><code>INFO - 2026-10-28 20:53:51,461 - httpx - _client - HTTP Request: GET http://testserver.local/ "HTTP/1.1 200 OK"
+INFO - 2026-10-28 20:53:51,464 - httpx - _client - HTTP Request: GET http://testserver.local/stock "HTTP/1.1 200 OK"</code></pre>
 </div>
 <div class="cell-output cell-output-stdout">
 <pre><code>ours:  text/html; charset=utf-8
@@ -495,7 +495,7 @@ stock: text/plain; charset=utf-8</code></pre>
 </section>
 <section id="the-decorator-api" class="level1">
 <h1>The decorator API</h1>
-<div id="ae623a11" class="cell" data-execution_count="4">
+<div id="6765bebb" class="cell" data-execution_count="4">
 <div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> asyncio</span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.litestar <span class="im">as</span> chameleon</span>
@@ -530,8 +530,8 @@ stock: text/plain; charset=utf-8</code></pre>
 <span id="cb7-32"><a href="#cb7-32" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(client.get(<span class="st">'/latest'</span>).text)</span>
 <span id="cb7-33"><a href="#cb7-33" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(client.get(<span class="st">'/v/missing'</span>).status_code)</span></code></pre></div>
 <div class="cell-output cell-output-stderr">
-<pre><code>INFO - 2026-10-28 19:29:10,523 - httpx - _client - HTTP Request: GET http://testserver.local/latest "HTTP/1.1 200 OK"
-INFO - 2026-10-28 19:29:10,528 - httpx - _client - HTTP Request: GET http://testserver.local/v/missing "HTTP/1.1 404 Not Found"</code></pre>
+<pre><code>INFO - 2026-10-28 20:53:51,487 - httpx - _client - HTTP Request: GET http://testserver.local/latest "HTTP/1.1 200 OK"
+INFO - 2026-10-28 20:53:51,489 - httpx - _client - HTTP Request: GET http://testserver.local/v/missing "HTTP/1.1 404 Not Found"</code></pre>
 </div>
 <div class="cell-output cell-output-stdout">
 <pre><code>&lt;h1&gt;Latest&lt;/h1&gt;
