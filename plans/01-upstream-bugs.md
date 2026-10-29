@@ -4,7 +4,7 @@ Building chameleon-rs turned up bugs in Chameleon itself. This plan gathers the 
 reporting to [malthe/chameleon](https://github.com/malthe/chameleon) and tracks them through
 to an issue (and, where the fix is small, a pull request).
 
-Scope for now: the two bugs below. Quirks we reproduce for parity (the shared `attrs` dict,
+Scope for now: the four bugs below. Quirks we reproduce for parity (the shared `attrs` dict,
 the namespace pop-once-per-end-tag, slot-body text dropped under `on-error` + i18n, late
 `TypeError` from a non-`str` translation) are not in scope; they are behaviour changes, not
 crashes, and would need a separate conversation with upstream. Add new bugs here as they are
@@ -96,9 +96,21 @@ report should say so.
    pin, and for bug 1 change chameleon-rs to match the fixed behaviour (remove
    `late_error` for this case, update `FALLBACK_FILTER_ERRORS`).
 
+## Bug 3: `_resolve_dotted` treats `..x` like `.x`
+
+`_resolve_dotted('..path', 'os.sep')` tries to import `os.sep.path` instead of returning `os.path`: the loop tests `name[0]` (the string, always `'.'`) where zope.dottedname tested the list Chameleon renamed to `name_parts`. Latent: nothing in Chameleon passes a base module. Our fix: `a16d473`.
+
+## Bug 4: `ExpressionEvaluator` raises `ValueError` with no builtins
+
+`ExpressionEvaluator(engine, {})` fails to unpack `zip(*builtins.items())`. Our fix: `1a9ab5f`.
+
 ## Status
+
+Upstream `master` was still the pin (`90b9002`) on 2026-10-28; all four reproduce there (Python 3.13 and 3.15). Filed 2026-10-28; the PRs come from `mikeckennedy/chameleon` and add a CHANGES entry each (they touch the same lines, so the later merges need a trivial rebase). CI waits for the maintainer to approve workflows for a first-time contributor.
 
 | Bug | Reproduced at pin | Checked on master | Issue | PR |
 |-----|-------------------|-------------------|-------|----|
-| 1: on-error + attributes `_fields` crash | yes (2026-10-23) | | | |
-| 2: `str(exc)` fails on non-UTF-8 file | yes (2026-10-23) | | | |
+| 1: on-error + attributes `_fields` crash | yes (2026-10-23) | yes (2026-10-28) | [#449](https://github.com/malthe/chameleon/issues/449) | offered, not sent |
+| 2: `str(exc)` fails on non-UTF-8 file | yes (2026-10-23) | yes (2026-10-28) | [#450](https://github.com/malthe/chameleon/issues/450) | [#453](https://github.com/malthe/chameleon/pull/453) |
+| 3: `_resolve_dotted` multiple dots | yes (2026-10-28) | yes (2026-10-28) | [#451](https://github.com/malthe/chameleon/issues/451) | [#454](https://github.com/malthe/chameleon/pull/454) |
+| 4: `ExpressionEvaluator` empty builtins | yes (2026-10-28) | yes (2026-10-28) | [#452](https://github.com/malthe/chameleon/issues/452) | [#455](https://github.com/malthe/chameleon/pull/455) |
