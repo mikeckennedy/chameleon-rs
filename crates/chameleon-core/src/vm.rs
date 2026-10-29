@@ -1816,6 +1816,10 @@ impl<V> VmState<V> {
                 f(&mut extra.start);
             }
         }
+        // No current path moves output while a value of several parts is open; kept in step anyway.
+        if let Some((_, mark)) = &mut self.parts {
+            f(mark);
+        }
     }
 
     /// The unwind entries from `at` up are about to be dropped without closing (an error):

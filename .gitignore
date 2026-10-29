@@ -45,3 +45,4 @@ uv.lock
 
 # Release builds (`make wheels`, `make sdist`).
 /dist/
+docs/handoff-review-2026-10-29.md
