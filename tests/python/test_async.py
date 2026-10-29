@@ -925,6 +925,31 @@ def test_offload_renders_in_a_worker_thread(tmp_path: Path) -> None:
     assert run(text.render_async(offload=True, n='é')) == 'aé'.encode()
 
 
+def test_offload_keeps_the_callers_context_variables() -> None:
+    # `run_in_executor` ran the render without the caller's context: a request's context
+    # variables (Flask's `g`, tracing spans) were unset in the template's expressions.
+    import contextvars
+
+    request = contextvars.ContextVar('request', default='none')
+
+    async def main() -> list[Any]:
+        request.set('r1')
+        page = PageTemplate('<p>${request.get()}</p>')
+        text = PageTextTemplate('${request.get()}')
+
+        class Page(PageTemplate):
+            def render(self, encoding: Any = None, **kw: Any) -> str:
+                return super().render(encoding, **kw).upper()
+
+        return [
+            await page.render_async(offload=True, request=request),
+            await text.render_async(offload=True, request=request),
+            await Page('<p>${request.get()}</p>').render_async(offload=True, request=request),
+        ]
+
+    assert run(main()) == ['<p>r1</p>', 'r1', '<P>R1</P>']
+
+
 def test_partial_fan_out(tmp_path: Path, configured: Path) -> None:
     (tmp_path / 'card.pt').write_text('<li tal:define="d data">${title}:${d}${render_partial("inner.pt", v=d)}</li>')
     (tmp_path / 'inner.pt').write_text('<i>${v}</i>')

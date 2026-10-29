@@ -865,8 +865,9 @@ async def _render_async(
         # synchronous (awaitable values are not awaited).
         return await _overridden(template, encoding, kw, offload)  # type: ignore[no-any-return]
     if offload:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, partial(PageTemplate.render, template, encoding, **kw))  # type: ignore[no-any-return]
+        # `to_thread`, not `run_in_executor`: the worker sees the caller's context variables
+        # (a request's, a framework's current app, tracing).
+        return await asyncio.to_thread(PageTemplate.render, template, encoding, **kw)  # type: ignore[no-any-return]
     result = render_page_async(template, encoding, kw, bool(concurrent))
     if isinstance(result, RenderAwaitable):
         return await result  # type: ignore[no-any-return]
@@ -877,7 +878,7 @@ async def _overridden(template: PageTemplate, encoding: str | None, kw: dict[str
     """The template's own `render` (a subclass's), in a worker thread with `offload`."""
     call = partial(template.render, **kw) if encoding is None else partial(template.render, encoding, **kw)
     if offload:
-        return await asyncio.get_running_loop().run_in_executor(None, call)
+        return await asyncio.to_thread(call)
     return call()
 
 
