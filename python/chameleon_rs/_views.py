@@ -30,7 +30,7 @@ from functools import wraps
 from typing import Any
 
 from chameleon_rs import _settings
-from chameleon_rs.partials import remembered_spelling
+from chameleon_rs.partials import FileId, remembered_spelling, stat_identity
 from chameleon_rs.template import _render_async
 from chameleon_rs.web import DecoratorOrderError, ErrorPage, TemplateError, model_of
 
@@ -323,18 +323,19 @@ def spelling(loader: Any, name: str) -> str | None:
     return remembered_spelling(loader, identity, name, lambda first: _identity(loader, first))
 
 
-def _identity(loader: Any, name: str) -> tuple[int, int] | None:
+def _identity(loader: Any, name: str) -> FileId | None:
     """The file ``loader`` would load for ``name`` (device and inode), or ``None`` if it finds
     no regular file (``spelling``'s search)."""
     absolute = os.path.isabs(name)
     extension = getattr(loader, 'default_extension', None)
     filename = name + extension if extension is not None and '.' not in name else name
     for folder in [''] if absolute else loader.search_path:
+        path = os.path.join(folder, filename) if folder else filename
         try:
-            info = os.stat(os.path.join(folder, filename) if folder else filename)
+            info = os.stat(path)
         except (OSError, ValueError):
             continue
-        return (info.st_dev, info.st_ino) if stat.S_ISREG(info.st_mode) else None
+        return stat_identity(path, info) if stat.S_ISREG(info.st_mode) else None
     return None
 
 

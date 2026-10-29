@@ -696,6 +696,52 @@ def test_a_replaced_hard_link_parts_from_the_other_partial(tmp_path: Path, folde
         _settings.clear()
 
 
+@pytest.mark.parametrize('lookup', ['registered', 'caller', 'templates'])
+def test_files_without_inode_numbers_are_not_one_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lookup: str
+) -> None:
+    # Filesystems without file IDs (FAT, exFAT, some network or FUSE mounts) report inode 0 for
+    # every file: identified by device and inode, every name loaded the first file seen.
+    import os
+
+    from chameleon_rs import _settings
+    from chameleon_rs.partials import render_partial
+    from chameleon_rs.starlette import Templates
+
+    real_stat = os.stat
+
+    def stat(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        info = real_stat(path, *args, **kwargs)
+        return os.stat_result((info.st_mode, 0, *tuple(info)[2:]))
+
+    (tmp_path / 'login.pt').write_text('login')
+    (tmp_path / 'profile.pt').write_text('profile')
+    monkeypatch.setattr(os, 'stat', stat)
+    if lookup == 'registered':
+        chameleon_rs.configure(template_folder=str(tmp_path))
+
+        def render(name: str) -> str:
+            return render_partial(name).html_text
+
+    elif lookup == 'caller':
+        (tmp_path / 'page.pt').write_text('${render_partial(name)}')
+        page = PageTemplateFile(tmp_path / 'page.pt')
+
+        def render(name: str) -> str:
+            return page(name=name)
+
+    else:
+        engine = Templates(str(tmp_path))
+
+        def render(name: str) -> str:
+            return engine.get_template(name)()
+
+    try:
+        assert [render('login.pt'), render('profile.pt'), render('login.pt')] == ['login', 'profile', 'login']
+    finally:
+        _settings.clear()
+
+
 def test_a_template_subclass_that_reloads_is_not_name_cached(tmp_path: Path) -> None:
     # `get_template` remembers names only when templates don't reload: the loader's template
     # class decides (a subclass's own `auto_reload`), not the base class default.

@@ -189,7 +189,7 @@ def resolve(caller: Any, template_file: str) -> Any:
     return template
 
 
-def _same_file(template: Any, path: str, identity: tuple[int, int] | None) -> bool:
+def _same_file(template: Any, path: str, identity: FileId | None) -> bool:
     """Whether ``path`` (the file a name was found as) and ``template``'s own file are still the
     file ``identity`` they were. Hard links part when a deployment replaces one of them (a new
     file renamed over it): the name must not keep another name's template, nor the template
@@ -204,7 +204,10 @@ def _same_file(template: Any, path: str, identity: tuple[int, int] | None) -> bo
 
 
 _CACHE_LIMIT = 1024
-_GLOBAL_CACHE: dict[str, tuple[tuple[int, bool, bool], Any, tuple[str, tuple[int, int] | None] | None]] = {}
+
+# A file's identity (`stat_identity`): device and inode, or device and resolved path.
+type FileId = tuple[int, int | str]
+_GLOBAL_CACHE: dict[str, tuple[tuple[int, bool, bool], Any, tuple[str, FileId | None] | None]] = {}
 
 # Templates found on a caller's search path or folders (`partial_search='caller'`), shared by
 # every caller that finds the same file with the same template class and (hashable) settings.
@@ -260,17 +263,28 @@ def _find(caller: Any, template_file: str) -> tuple[Any, str]:
     raise _not_found(spec)
 
 
-def _file_id(path: str) -> tuple[int, int] | None:
+def _file_id(path: str) -> FileId | None:
     """The file at ``path`` (device and inode), or ``None`` if there is no regular file: one
     identity for every spelling that opens it (case, Unicode form, `..` through a symlink)."""
     try:
         info = os.stat(path)
     except (OSError, ValueError):
         return None
-    return (info.st_dev, info.st_ino) if stat.S_ISREG(info.st_mode) else None
+    return stat_identity(path, info) if stat.S_ISREG(info.st_mode) else None
 
 
-def remembered_spelling(owner: Any, identity: tuple[int, int], name: str, current: Callable[[str], Any]) -> str:
+def stat_identity(path: str, info: os.stat_result) -> FileId:
+    """The identity of the file ``path`` that ``info`` (its ``stat``) describes: device and
+    inode. An inode of 0 is no identity: filesystems without file IDs (FAT, exFAT and some
+    network or FUSE mounts, notably on Windows) report it for every file, and every template
+    there would be taken for the first one loaded. Such a file is known by its resolved path
+    instead (spellings that only differ in case then load it once each)."""
+    if info.st_ino:
+        return (info.st_dev, info.st_ino)
+    return (info.st_dev, os.path.normcase(os.path.realpath(path)))
+
+
+def remembered_spelling(owner: Any, identity: FileId, name: str, current: Callable[[str], Any]) -> str:
     """The first spelling seen of the file ``identity`` (``_rs_spellings`` on ``owner``), if it
     still names that file (``current(first)``); otherwise ``name``, remembered from now on. Two
     names of one file (hard links, or spellings on a case-insensitive filesystem) part when a
@@ -375,7 +389,7 @@ def _is_package(path: str) -> bool:
     return not os.path.isabs(path) and ':' in path
 
 
-def _sibling(caller: Any, path: str, identity: tuple[int, int]) -> Any:
+def _sibling(caller: Any, path: str, identity: FileId) -> Any:
     cls = type(caller)
     config = getattr(caller, '_partial_config', {})
     paths = getattr(caller, '_partial_paths', [])
