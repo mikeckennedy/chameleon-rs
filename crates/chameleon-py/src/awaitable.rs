@@ -743,17 +743,17 @@ fn step(slf: &Bound<'_, RenderAwaitable>, input: Input) -> PyResult<Py<PyAny>> {
     }
     // (The fill and join steps run outside `drive`'s own `catch_panics`.)
     let outcome = catch_panics(py, || Ok(running.step(py, input))).unwrap_or_else(Outcome::Raise);
-    match outcome {
-        Outcome::Yield(y) => Ok(y),
-        Outcome::Return(value) => {
-            this.running = None;
-            Err(PyStopIteration::new_err((value,)))
-        }
-        Outcome::Raise(e) => {
-            this.running = None;
-            Err(stop_iteration_raised(py, e))
-        }
-    }
+    let end = match outcome {
+        Outcome::Yield(y) => return Ok(y),
+        Outcome::Return(value) => PyStopIteration::new_err((value,)),
+        Outcome::Raise(e) => stop_iteration_raised(py, e),
+    };
+    // Dropped once the borrow is released: dropping it may run Python code (the values it
+    // held, closing the coroutines it was given), which may use this awaitable.
+    let running = this.running.take();
+    drop(this);
+    drop(running);
+    Err(end)
 }
 
 /// PEP 479, as a coroutine: a `StopIteration` raised by the render (an expression calling

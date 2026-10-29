@@ -950,6 +950,35 @@ def test_offload_keeps_the_callers_context_variables() -> None:
     assert run(main()) == ['<p>r1</p>', 'r1', '<P>R1</P>']
 
 
+def test_values_dropped_when_a_render_ends_may_use_its_awaitable() -> None:
+    # The render's state was dropped while the awaitable was still borrowed: a value's
+    # `__del__` that closed it raised "coroutine already executing" (unraisable).
+    import sys
+
+    from chameleon_rs.template import render_page_async
+
+    errors: list[BaseException | None] = []
+    held: dict[str, Any] = {}
+
+    class Value:
+        x = 'x'
+
+        def __del__(self) -> None:
+            held['awaitable'].close()
+
+    async def main() -> str:
+        page = PageTemplate('<p>${value.x}${later()}</p>')
+        held['awaitable'] = render_page_async(page, None, {'value': Value(), 'later': lambda: aw('y')}, False)
+        return await held['awaitable']  # ty: ignore[invalid-await] - this one awaits
+
+    hook, sys.unraisablehook = sys.unraisablehook, lambda u: errors.append(u.exc_value)
+    try:
+        assert run(main()) == '<p>xy</p>'
+    finally:
+        sys.unraisablehook = hook
+    assert errors == []
+
+
 def test_partial_fan_out(tmp_path: Path, configured: Path) -> None:
     (tmp_path / 'card.pt').write_text('<li tal:define="d data">${title}:${d}${render_partial("inner.pt", v=d)}</li>')
     (tmp_path / 'inner.pt').write_text('<i>${v}</i>')
