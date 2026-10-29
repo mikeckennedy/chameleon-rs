@@ -9,7 +9,7 @@ PYTEST := $(PY) -m pytest -q
 CHAMELEON_REPO := https://github.com/malthe/chameleon
 CHAMELEON_COMMIT := 90b900244abd9ce39c9a9ca70b38ed559ae2b969
 PARTIALS_REPO := https://github.com/mikeckennedy/chameleon_partials
-PARTIALS_COMMIT := f54ca1a103a3c034eaabc39b1bcb50210a8ad4d9
+PARTIALS_COMMIT := a3a95fd2c1c13f75882bed0f918bcd8555877f2c
 
 # Integration suites (level 4): projects written for Chameleon, run on chameleon-rs through
 # the compat alias (tests/integration/chameleon_compat_plugin.py) in a scratch venv that has

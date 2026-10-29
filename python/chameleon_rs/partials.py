@@ -1,5 +1,5 @@
 # Ported from chameleon_partials (https://github.com/mikeckennedy/chameleon_partials,
-# chameleon_partials/__init__.py at f54ca1a: `register_extensions`, `HTML`, `render_partial`,
+# chameleon_partials/__init__.py at a3a95fd: `register_extensions`, `HTML`, `render_partial`,
 # `extend_model`, `PartialsException`), modified: built into chameleon-rs, `render_partial`
 # is in every template without being passed in the model and renders as a native frame of the
 # caller's render; paths not in the registered folder also resolve against the calling
