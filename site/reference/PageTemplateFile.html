@@ -121,7 +121,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../theme-init.js"></script>
 
 
-  <meta name="description" content="File-based constructor: the template is read from filename (or, with">
+  <meta name="description" content="File-based page template loaded from filename when first used.">
   <script type="application/ld+json">
 [
   {
@@ -151,13 +151,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </script>
   <meta property="og:type" content="website">
   <meta property="og:title" content="PageTemplateFile – chameleon-rs | chameleon-rs">
-  <meta property="og:description" content="File-based constructor: the template is read from filename (or, with">
+  <meta property="og:description" content="File-based page template loaded from filename when first used.">
   <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplateFile.html">
   <meta property="og:site_name" content="chameleon-rs">
   <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="PageTemplateFile – chameleon-rs | chameleon-rs">
-  <meta name="twitter:description" content="File-based constructor: the template is read from filename (or, with">
+  <meta name="twitter:description" content="File-based page template loaded from filename when first used.">
   <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
 </head>
 
@@ -937,7 +937,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 <div class="doc-subject">
-<p>File-based constructor: the template is read from <code>filename</code> (or, with</p>
+<p>File-based page template loaded from <code>filename</code> when first used.</p>
 </div>
 <div class="doc-usage-source">
 <p>Usage</p>
@@ -947,8 +947,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="sig-name">PageTemplateFile</span>()</span></code></pre></div>
 </div>
 <div class="doc-text">
-<p><code>package_name</code>, from that package’s resources) when first used.</p>
-<p>File templates have the <code>load:</code> expression type, which loads templates relative to this one: <code>search_path</code> (a path or a sequence of paths; with <code>prepend_relative_search_path</code>, the default, the template’s own directory comes first) and <code>loader_class</code> (<a href="PageTemplateLoader.html#chameleon_rs.PageTemplateLoader" class="gdls-link gdls-code">TemplateLoader</a>), which gets the same configuration keywords.</p>
+<p>With <code>package_name</code>, <code>filename</code> is read from that package’s resources. File templates have the <code>load:</code> expression type, which loads templates relative to this one: <code>search_path</code> (a path or a sequence of paths; with <code>prepend_relative_search_path</code>, the default, the template’s own directory comes first) and <code>loader_class</code> (<a href="PageTemplateLoader.html#chameleon_rs.PageTemplateLoader" class="gdls-link gdls-code">TemplateLoader</a>), which gets the same configuration keywords.</p>
 </div>
 
 

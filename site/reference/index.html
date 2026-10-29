@@ -921,7 +921,7 @@ ul.task-list li input[type="checkbox"] {
 </dd>
 <dt><a href="../reference/PageTemplateFile.html#chameleon_rs.PageTemplateFile" class="doc-class doc-label doc-label-class">PageTemplateFile</a></dt>
 <dd>
-<p>File-based constructor: the template is read from <code>filename</code> (or, with</p>
+<p>File-based page template loaded from <code>filename</code> when first used.</p>
 </dd>
 <dt><a href="../reference/PageTextTemplate.html#chameleon_rs.PageTextTemplate" class="doc-class doc-label doc-label-class">PageTextTemplate</a></dt>
 <dd>
@@ -929,11 +929,11 @@ ul.task-list li input[type="checkbox"] {
 </dd>
 <dt><a href="../reference/PageTextTemplateFile.html#chameleon_rs.PageTextTemplateFile" class="doc-class doc-label doc-label-class">PageTextTemplateFile</a></dt>
 <dd>
-<p>File-based text template. Rendering returns <code>bytes</code>, encoded with the template’s</p>
+<p>File-based text template whose <code>render()</code> returns <code>bytes</code> (UTF-8 by default).</p>
 </dd>
 <dt><a href="../reference/PageTemplateLoader.html#chameleon_rs.PageTemplateLoader" class="doc-class doc-label doc-label-class">PageTemplateLoader</a></dt>
 <dd>
-
+<p>Loads and caches page templates from one or more directories by filename (<code>loader['page.pt']</code>).</p>
 </dd>
 </dl>
 </section>
@@ -989,7 +989,7 @@ ul.task-list li input[type="checkbox"] {
 <dl>
 <dt><a href="../reference/configure.html#chameleon_rs.configure" class="doc-function doc-label doc-label-function">configure()</a></dt>
 <dd>
-<p>Configures chameleon-rs for the whole process: where templates loaded by name live, for</p>
+<p>Configures chameleon-rs for the whole process (partials, framework integrations, and Markdown).</p>
 </dd>
 <dt><a href="../reference/core_version.html#chameleon_rs.core_version" class="doc-function doc-label doc-label-function">core_version()</a></dt>
 <dd>
@@ -1033,7 +1033,7 @@ ul.task-list li input[type="checkbox"] {
 </dd>
 <dt><a href="../reference/partials.PartialRenderer.html#chameleon_rs.partials.PartialRenderer" class="doc-class doc-label doc-label-class">partials.PartialRenderer</a></dt>
 <dd>
-<p>The <code>render_partial</code> callable: <code>chameleon_rs.render_partial</code> (no calling template)</p>
+<p>Renders a partial template by path and returns an <code>HTML</code> object.</p>
 </dd>
 <dt><a href="../reference/partials.HTML.html#chameleon_rs.partials.HTML" class="doc-class doc-label doc-label-class">partials.HTML</a></dt>
 <dd>
@@ -1341,7 +1341,7 @@ ul.task-list li input[type="checkbox"] {
 <dl>
 <dt><a href="../reference/TemplateError.html#chameleon_rs.TemplateError" class="doc-class doc-label doc-label-exception">TemplateError</a></dt>
 <dd>
-<p>An error raised by Chameleon.</p>
+<p>Base class for compile-time template errors (<code>ParseError</code>, <code>CompilationError</code>, <code>ExpressionError</code>).</p>
 </dd>
 <dt><a href="../reference/web.TemplateError.html#chameleon_rs.web.TemplateError" class="doc-class doc-label doc-label-exception">web.TemplateError</a></dt>
 <dd>

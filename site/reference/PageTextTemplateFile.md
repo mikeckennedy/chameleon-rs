@@ -1,7 +1,7 @@
 ## PageTextTemplateFile
 
 
-File-based text template. Rendering returns `bytes`, encoded with the template's
+File-based text template whose [render()](flask.render.md#chameleon_rs.flask.render) returns `bytes` (UTF-8 by default).
 
 
 Usage
@@ -11,4 +11,4 @@ PageTextTemplateFile()
 ```
 
 
-`encoding` (UTF-8 by default), as Chameleon's does.
+Encoded with the template's `encoding` (UTF-8 by default), as Chameleon's does.

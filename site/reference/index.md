@@ -14,15 +14,16 @@ Compile and render templates from strings, files and folders.
 Constructor for the page template language, rendered by the Rust VM.
 
 [PageTemplateFile](PageTemplateFile.md#chameleon_rs.PageTemplateFile)  
-File-based constructor: the template is read from `filename` (or, with
+File-based page template loaded from `filename` when first used.
 
 [PageTextTemplate](PageTextTemplate.md#chameleon_rs.PageTextTemplate)  
 Text-based template class: only `${...}` interpolation, no markup, nothing escaped.
 
 [PageTextTemplateFile](PageTextTemplateFile.md#chameleon_rs.PageTextTemplateFile)  
-File-based text template. Rendering returns `bytes`, encoded with the template's
+File-based text template whose `render()` returns `bytes` (UTF-8 by default).
 
 [PageTemplateLoader](PageTemplateLoader.md#chameleon_rs.PageTemplateLoader)  
+Loads and caches page templates from one or more directories by filename (`loader['page.pt']`).
 
 
 ## PageTemplate Methods
@@ -63,7 +64,7 @@ Process-wide settings for templates loaded by name, partials and Markdown.
 
 
 [configure()](configure.md#chameleon_rs.configure)  
-Configures chameleon-rs for the whole process: where templates loaded by name live, for
+Configures chameleon-rs for the whole process (partials, framework integrations, and Markdown).
 
 [core_version()](core_version.md#chameleon_rs.core_version)  
 Version of the Rust core, for bug reports and for checking which build is loaded.
@@ -97,7 +98,7 @@ Adds `render_partial` to a view model (chameleon_partials' helper; not needed wi
 Forgets the folder partials use, for tests.
 
 [partials.PartialRenderer](partials.PartialRenderer.md#chameleon_rs.partials.PartialRenderer)  
-The `render_partial` callable: `chameleon_rs.render_partial` (no calling template)
+Renders a partial template by path and returns an `HTML` object.
 
 [partials.HTML](partials.HTML.md#chameleon_rs.partials.HTML)  
 Rendered markup, as `render_partial` returns it from Python: `__html__` gives the
@@ -334,7 +335,7 @@ Exceptions, and the pieces shared by the framework integrations.
 
 
 [TemplateError](TemplateError.md#chameleon_rs.TemplateError)  
-An error raised by Chameleon.
+Base class for compile-time template errors (`ParseError`, `CompilationError`, `ExpressionError`).
 
 [web.TemplateError](web.TemplateError.md#chameleon_rs.web.TemplateError)  
 A template integration was configured or used incorrectly: no template folder

@@ -121,7 +121,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../theme-init.js"></script>
 
 
-  <meta name="description" content="Chameleon templates, modernized: a Rust engine that runs Chameleon templates unchanged, several times faster, with async rendering and built-in framework integrations.">
+  <meta name="description" content="Base class for compile-time template errors (ParseError, CompilationError, ExpressionError).">
   <script type="application/ld+json">
 [
   {
@@ -151,13 +151,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </script>
   <meta property="og:type" content="website">
   <meta property="og:title" content="TemplateError – chameleon-rs | chameleon-rs">
-  <meta property="og:description" content="Chameleon templates, modernized: a Rust engine that runs Chameleon templates unchanged, several times faster, with async rendering and built-in framework integrations.">
+  <meta property="og:description" content="Base class for compile-time template errors (ParseError, CompilationError, ExpressionError).">
   <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/reference/TemplateError.html">
   <meta property="og:site_name" content="chameleon-rs">
   <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="TemplateError – chameleon-rs | chameleon-rs">
-  <meta name="twitter:description" content="Chameleon templates, modernized: a Rust engine that runs Chameleon templates unchanged, several times faster, with async rendering and built-in framework integrations.">
+  <meta name="twitter:description" content="Base class for compile-time template errors (ParseError, CompilationError, ExpressionError).">
   <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
 </head>
 
@@ -937,39 +937,17 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 <div class="doc-subject">
-<p>An error raised by Chameleon.</p>
+<p>Base class for compile-time template errors (<code>ParseError</code>, <code>CompilationError</code>, <code>ExpressionError</code>).</p>
 </div>
 <div class="doc-usage-source">
 <p>Usage</p>
-<p><a href="https://github.com/mikeckennedy/chameleon-rs/blob/main/chameleon_rs/exc.py#L19-L102" target="_blank" rel="noopener">Source</a></p>
+<p><a href="https://github.com/mikeckennedy/chameleon-rs/blob/main/chameleon_rs/exc.py#L19-L88" target="_blank" rel="noopener">Source</a></p>
 </div>
 <div class="doc-signature doc-Kind.CLASS">
 <div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="sig-name">TemplateError</span>()</span></code></pre></div>
 </div>
 <div class="doc-text">
-<blockquote class="blockquote">
-<blockquote class="blockquote">
-<blockquote class="blockquote">
-<p>from chameleon_rs.config import SOURCE_EXPRESSION_MARKER_LENGTH from chameleon_rs.tokenize import Token token = Token(‘token’) message = ‘message’</p>
-</blockquote>
-</blockquote>
-</blockquote>
-<p>Make sure the exceptions can be copied:</p>
-<blockquote class="blockquote">
-<blockquote class="blockquote">
-<blockquote class="blockquote">
-<p>from copy import copy copy(TemplateError(message, token)) TemplateError(‘message’, ‘token’)</p>
-</blockquote>
-</blockquote>
-</blockquote>
-<p>And pickle/unpickled:</p>
-<blockquote class="blockquote">
-<blockquote class="blockquote">
-<blockquote class="blockquote">
-<p>from pickle import dumps, loads loads(dumps(TemplateError(message, token), -1)) TemplateError(‘message’, ‘token’)</p>
-</blockquote>
-</blockquote>
-</blockquote>
+<p>Carries the error message (<code>args[0]</code>) and the offending source <code>token</code> (<code>args[1]</code>), with <code>filename</code>, <code>location</code> (<code>(line, column)</code>), and <code>offset</code> properties. Render-time exceptions are mixed with <code>chameleon_rs.exc.RenderError</code> instead.</p>
 </div>
 
 

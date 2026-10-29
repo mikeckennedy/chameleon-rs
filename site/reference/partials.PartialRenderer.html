@@ -121,7 +121,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../theme-init.js"></script>
 
 
-  <meta name="description" content="The render_partial callable: chameleon_rs.render_partial (no calling template)">
+  <meta name="description" content="Renders a partial template by path and returns an HTML object.">
   <script type="application/ld+json">
 [
   {
@@ -151,13 +151,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </script>
   <meta property="og:type" content="website">
   <meta property="og:title" content="partials.PartialRenderer – chameleon-rs | chameleon-rs">
-  <meta property="og:description" content="The render_partial callable: chameleon_rs.render_partial (no calling template)">
+  <meta property="og:description" content="Renders a partial template by path and returns an HTML object.">
   <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/reference/partials.PartialRenderer.html">
   <meta property="og:site_name" content="chameleon-rs">
   <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="partials.PartialRenderer – chameleon-rs | chameleon-rs">
-  <meta name="twitter:description" content="The render_partial callable: chameleon_rs.render_partial (no calling template)">
+  <meta name="twitter:description" content="Renders a partial template by path and returns an HTML object.">
   <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
 </head>
 
@@ -946,17 +946,17 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 <div class="doc-subject">
-<p>The <a href="render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a> callable: <a href="render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">chameleon_rs.render_partial</a> (no calling template)</p>
+<p>Renders a partial template by path and returns an <a href="partials.HTML.html#chameleon_rs.partials.HTML" class="gdls-link gdls-code">HTML</a> object.</p>
 </div>
 <div class="doc-usage-source">
 <p>Usage</p>
-<p><a href="https://github.com/mikeckennedy/chameleon-rs/blob/main/chameleon_rs/partials.py#L83-L112" target="_blank" rel="noopener">Source</a></p>
+<p><a href="https://github.com/mikeckennedy/chameleon-rs/blob/main/chameleon_rs/partials.py#L83-L115" target="_blank" rel="noopener">Source</a></p>
 </div>
 <div class="doc-signature doc-Kind.CLASS">
 <div class="sourceCode" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="sig-class">partials</span><span class="op">.</span><span class="sig-name">PartialRenderer</span>()</span></code></pre></div>
 </div>
 <div class="doc-text">
-<p>or a template’s own (its <a href="render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a> builtin, the calling template for <code>partial_search='caller'</code>). Written as a whole <code>${render_partial(...)}</code> expression it is not called at all: the partial renders as a native frame.</p>
+<p>Used for <a href="render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">chameleon_rs.render_partial</a> (no calling template) and a template’s own <a href="render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a> builtin (the calling template for <code>partial_search='caller'</code>). Written as a whole <code>${render_partial(...)}</code> expression it is not called at all: the partial renders as a native frame.</p>
 </div>
 <section id="attributes" class="level2 doc-attributes">
 <h2 class="doc-attributes">Attributes</h2>
