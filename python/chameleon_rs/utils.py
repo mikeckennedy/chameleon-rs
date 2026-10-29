@@ -220,7 +220,9 @@ def _resolve_dotted(name: str, module: str | None = None) -> Any:
             raise ValueError('relative name without base module')
         module_parts = module.split('.')
         name_parts.pop(0)
-        while not name[0]:
+        # `name_parts`: Chameleon's `name[0]` (zope.dottedname's list, renamed) is never empty,
+        # so `..x` resolved as `.x`.
+        while not name_parts[0]:
             module_parts.pop()
             name_parts.pop(0)
         name_parts = module_parts + name_parts

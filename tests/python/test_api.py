@@ -650,6 +650,17 @@ def test_expression_evaluator_without_builtins() -> None:
     assert evaluator(chameleon_rs.utils.Scope({'boo': 'baz'}), {}, 'python', 'boo * 2') == 'bazbaz'
 
 
+def test_relative_dotted_names_go_up_a_module_per_dot() -> None:
+    import os.path
+
+    from chameleon_rs.utils import _resolve_dotted
+
+    assert _resolve_dotted('.path', 'os') is os.path
+    assert _resolve_dotted('..path', 'os.sep') is os.path
+    with pytest.raises(ValueError, match='relative name without base module'):
+        _resolve_dotted('.path')
+
+
 # --- tokenize and parser (native-backed compat modules) -------------------------------------
 
 
