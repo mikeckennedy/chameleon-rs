@@ -272,10 +272,10 @@ impl Program {
 /// translate = kw.get('translate')
 /// if encoding is None and translate is None:
 ///     key = (self.translate, self.encoding, self.on_error_handler)
-///     if not all(a is b for a, b in zip(key, self._defaults_key or ())):  # identity
-///         self._defaults = self._render_defaults(None, None)
-///         self._defaults_key = key
-///     defaults = self._defaults
+///     state = self._defaults_state
+///     if state is None or not all(a is b for a, b in zip(key, state[0])):  # identity
+///         state = self._defaults_state = (key, self._render_defaults(None, None))
+///     defaults = state[1]
 /// else:
 ///     defaults = self._encoded_defaults(encoding, translate)
 /// self.cook_check()
@@ -356,17 +356,21 @@ fn page<'py>(
                 template.getattr(intern!(py, "on_error_handler"))?,
             ],
         )?;
-        // By identity: equal but distinct translators (one per language) are different.
-        let old = template.getattr(intern!(py, "_defaults_key"))?;
-        let same = old
-            .cast::<PyTuple>()
-            .is_ok_and(|old| old.len() == key.len() && old.iter().zip(key.iter()).all(|(a, b)| a.is(&b)));
-        if same {
-            template.getattr(intern!(py, "_defaults"))?
+        // One attribute, `(key, defaults)`: threads rendering at once never pair one's key with
+        // another's defaults. By identity: equal but distinct translators (one per language)
+        // are different.
+        let state = template.getattr(intern!(py, "_defaults_state"))?;
+        let cached = state.cast::<PyTuple>().ok().filter(|state| state.len() == 2).and_then(|state| {
+            let old = state.get_item(0).ok()?;
+            let old = old.cast::<PyTuple>().ok()?;
+            let same = old.len() == key.len() && old.iter().zip(key.iter()).all(|(a, b)| a.is(&b));
+            if same { state.get_item(1).ok() } else { None }
+        });
+        if let Some(defaults) = cached {
+            defaults
         } else {
             let defaults = template.call_method1(intern!(py, "_render_defaults"), (py.None(), py.None()))?;
-            template.setattr(intern!(py, "_defaults"), &defaults)?;
-            template.setattr(intern!(py, "_defaults_key"), key)?;
+            template.setattr(intern!(py, "_defaults_state"), (key, &defaults))?;
             defaults
         }
     } else {

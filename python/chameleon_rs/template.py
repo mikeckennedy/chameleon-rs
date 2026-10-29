@@ -645,7 +645,7 @@ class PageTemplate(BaseTemplate):
     # argument render concurrently, each in a task of its own.
     concurrent = False
 
-    _defaults_key: tuple[Any, ...] | None = None
+    _defaults_state: tuple[tuple[Any, ...], dict[str, Any]] | None = None
     _encoded: tuple[tuple[Any, ...], dict[str, Any]] | None = None
 
     # `body` is any type: in PageTemplateFile's MRO this passes the filename on.
