@@ -62,12 +62,19 @@ _xml_decl = encode_string('<?xml')
 
 # Chameleon's, without its leading `\s*`: `search` retried it from each character of a run of
 # whitespace, consuming the rest of the run every time (64K spaces in a template took 2 s to
-# compile). Whether it matches, and what its groups capture, is the same.
+# compile). Whether it matches, and what its groups capture, is the same. Not used to search:
+# see `_search_meta`.
 RE_META = re.compile(
     r'<meta\s+http-equiv=["\']?Content-Type["\']?'
     r'\s+content=["\']?([^;]+);\s*charset=([^"\']+)["\']?\s*/?\s*>\s*',
     re.IGNORECASE,
 )
+# `RE_META` in parts. Up to `charset=` it matches one way only, wherever it starts.
+_META_HEAD = re.compile(
+    r'<meta\s+http-equiv=["\']?Content-Type["\']?\s+content=["\']?([^;]+);\s*charset=', re.IGNORECASE
+)
+_META_CHARSET = re.compile(r'[^"\']+')
+_META_END = re.compile(r'["\']?\s*/?\s*>')
 
 RE_ENCODING = re.compile(rb'encoding\s*=\s*(?:"|\')(?P<encoding>[\w\-]+)(?:"|\')', re.IGNORECASE)
 
@@ -99,12 +106,33 @@ def detect_encoding(body: str | bytes, default_encoding: str) -> tuple[str | Non
     if not isinstance(body, str):
         body = body.decode('ascii', 'ignore')
 
-    match = RE_META.search(body)
+    match = _search_meta(body)
     if match is not None:
-        content_type, encoding = match.groups()
+        content_type, encoding = match
         return content_type, encoding
 
     return None, default_encoding
+
+
+def _search_meta(body: str) -> tuple[str, str] | None:
+    r"""``RE_META.search(body).groups()``, in linear time. The regex backtracks its charset
+    (``[^"']+``) one character at a time, retrying the ``\s*/?\s*>`` after it from each: cubic
+    in a run of whitespace with no ``>`` to end it (2,000 spaces took 4.6 s). The charset it
+    settles on is the longest that end follows: the whole run (up to a quote or the end) if the
+    end matches after it, else the run up to its last ``>``."""
+    pos = 0
+    while (head := _META_HEAD.search(body, pos)) is not None:
+        start = head.end()
+        run = _META_CHARSET.match(body, start)
+        if run is not None:
+            end = run.end()
+            if _META_END.match(body, end):
+                return head.group(1), body[start:end]
+            close = body.rfind('>', start + 1, end)
+            if close != -1:
+                return head.group(1), body[start:close]
+        pos = head.start() + 1
+    return None
 
 
 def read_xml_encoding(body: bytes) -> str | None:

@@ -101,7 +101,7 @@ def test_generated(body: bytes) -> None:
 
 
 META_PIECES = [' ', '\t', '\n', '\u3000', '<meta ', '<META', 'http-equiv=', '"Content-Type" ', 'content=']
-META_PIECES += ['"text/html; ', 'charset=utf-8"', '>', '/', 'x']
+META_PIECES += ['"text/html; ', 'charset=utf-8"', '>', '/', 'x', ';', '"', "'", 'charset=', 'utf-8', ' />']
 
 
 @given(st.lists(st.sampled_from(META_PIECES), max_size=24).map(''.join))
@@ -109,3 +109,38 @@ META_PIECES += ['"text/html; ', 'charset=utf-8"', '>', '/', 'x']
 def test_meta_charset_with_whitespace_around_it(text: str) -> None:
     # `RE_META` without Chameleon's leading `\s*` (quadratic on a long run of whitespace).
     assert utils.detect_encoding(text, 'utf-8') == chameleon.utils.detect_encoding(text, 'utf-8')
+
+
+@given(st.lists(st.sampled_from(META_PIECES), max_size=24).map(''.join))
+@settings(max_examples=2000)
+def test_meta_search_is_the_regex(text: str) -> None:
+    match = utils.RE_META.search(text)
+    assert utils._search_meta(text) == (match.groups() if match else None)
+
+
+@pytest.mark.parametrize(
+    'text',
+    [
+        '<meta http-equiv="Content-Type" content="a;charset=utf-8 > b"',
+        '<meta http-equiv="Content-Type" content="a;charset=utf-8 > b > c',
+        '<meta http-equiv="Content-Type" content="a;charset=utf-8" / >',
+        '<meta http-equiv="Content-Type" content="a;charset=>',
+        '<meta http-equiv="Content-Type" content="a;charset=x"<meta http-equiv=Content-Type content=b;charset=y>',
+        "<META HTTP-EQUIV='content-type' CONTENT='a; charset=latin-1' ",
+    ],
+)
+def test_meta_search_backtracks_as_the_regex(text: str) -> None:
+    match = utils.RE_META.search(text)
+    assert utils._search_meta(text) == (match.groups() if match else None)
+
+
+@pytest.mark.parametrize('tail', [' ' * 20_000, ' x' * 10_000, ' >' * 10_000, '\n/ ' * 7_000])
+def test_meta_charset_without_an_end_is_linear(tail: str) -> None:
+    # The charset was backtracked one character at a time, its end retried from each: cubic in
+    # a run of whitespace (2,000 spaces took 4.6 s).
+    import time
+
+    text = '<meta http-equiv="Content-Type" content="text/html;charset=utf-8' + tail
+    start = time.perf_counter()
+    utils.detect_encoding(text, 'ascii')
+    assert time.perf_counter() - start < 0.5
