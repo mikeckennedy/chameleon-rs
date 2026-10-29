@@ -1597,6 +1597,9 @@ impl<V> VmState<V> {
                 if let Some(t) = &extra.i18n.target_language {
                     f(t);
                 }
+                if let Some(t) = extra.helpers.as_ref().and_then(|h| h.target_language.as_ref()) {
+                    f(t);
+                }
                 extra.slots.iter().flatten().for_each(&mut f);
             }
         }

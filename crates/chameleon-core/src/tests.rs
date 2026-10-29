@@ -959,6 +959,17 @@ fn suspend_inside_a_loop_body_with_a_frame_call() {
 }
 
 #[test]
+fn every_value_includes_the_helpers_target_language() {
+    // A slot body's helpers' settings hold a value too: a collector must see it.
+    let w = world(&["x"], &[]);
+    let helpers = I18n { domain: None, context: None, target_language: Some(V::Str("de".into())) };
+    let st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0), None).with_helpers(helpers);
+    let mut values = Vec::new();
+    st.for_each_value(|v| values.push(v.clone()));
+    assert_eq!(values, [V::Code(0), V::Scope(0), V::Str("de".into())]);
+}
+
+#[test]
 fn resume_and_run_are_checked() {
     let mut w = world(&["${wait:1}"], &[]);
     let mut st = VmState::new(Arc::clone(&w.programs[0].0), V::Code(0), V::Scope(0), None);
