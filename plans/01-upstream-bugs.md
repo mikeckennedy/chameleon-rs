@@ -4,7 +4,7 @@ Building chameleon-rs turned up bugs in Chameleon itself. This plan gathers the 
 reporting to [malthe/chameleon](https://github.com/malthe/chameleon) and tracks them through
 to an issue (and, where the fix is small, a pull request).
 
-Scope for now: the four bugs below. Quirks we reproduce for parity (the shared `attrs` dict,
+Scope for now: the five bugs below. Quirks we reproduce for parity (the shared `attrs` dict,
 the namespace pop-once-per-end-tag, slot-body text dropped under `on-error` + i18n, late
 `TypeError` from a non-`str` translation) are not in scope; they are behaviour changes, not
 crashes, and would need a separate conversation with upstream. Add new bugs here as they are
@@ -104,6 +104,10 @@ report should say so.
 
 `ExpressionEvaluator(engine, {})` fails to unpack `zip(*builtins.items())`. Our fix: `1a9ab5f`.
 
+## Bug 5: `RE_META` backtracks on whitespace after a meta charset
+
+The encoding sniffer's regex is cubic in a run of whitespace after `charset=` with no closing `>` (2,000 spaces take about 4.5 s; 20,000 never finish), and its leading `\s*` is quadratic in any long whitespace run. Reported privately to Malthe first; he was fine with it going public. Our fix (`ccec148`) keeps the regex's exact results with a linear scan; the upstream PR is a two-line regex change instead, which drops trailing whitespace from the charset and no longer matches a charset with whitespace inside it.
+
 ## Status
 
 Upstream `master` was still the pin (`90b9002`) on 2026-10-28; all four reproduce there (Python 3.13 and 3.15). Filed 2026-10-28; the PRs come from `mikeckennedy/chameleon` and add a CHANGES entry each (they touch the same lines, so the later merges need a trivial rebase). CI waits for the maintainer to approve workflows for a first-time contributor.
@@ -114,3 +118,4 @@ Upstream `master` was still the pin (`90b9002`) on 2026-10-28; all four reproduc
 | 2: `str(exc)` fails on non-UTF-8 file | yes (2026-10-23) | yes (2026-10-28) | [#450](https://github.com/malthe/chameleon/issues/450) | [#453](https://github.com/malthe/chameleon/pull/453) |
 | 3: `_resolve_dotted` multiple dots | yes (2026-10-28) | yes (2026-10-28) | [#451](https://github.com/malthe/chameleon/issues/451) | [#454](https://github.com/malthe/chameleon/pull/454) |
 | 4: `ExpressionEvaluator` empty builtins | yes (2026-10-28) | yes (2026-10-28) | [#452](https://github.com/malthe/chameleon/issues/452) | [#455](https://github.com/malthe/chameleon/pull/455) |
+| 5: `RE_META` whitespace backtracking | yes (2026-10-29) | yes (2026-10-29) | [#456](https://github.com/malthe/chameleon/issues/456) | [#457](https://github.com/malthe/chameleon/pull/457) (no CHANGES entry or test, to keep it minimal) |
