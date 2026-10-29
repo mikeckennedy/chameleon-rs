@@ -81,10 +81,13 @@ class HTML:
 
 
 class PartialRenderer:
-    """The ``render_partial`` callable: ``chameleon_rs.render_partial`` (no calling template)
-    or a template's own (its ``render_partial`` builtin, the calling template for
-    ``partial_search='caller'``). Written as a whole ``${render_partial(...)}``
-    expression it is not called at all: the partial renders as a native frame."""
+    """Renders a partial template by path and returns an ``HTML`` object.
+
+    Used for ``chameleon_rs.render_partial`` (no calling template) and a template's own
+    ``render_partial`` builtin (the calling template for ``partial_search='caller'``).
+    Written as a whole ``${render_partial(...)}`` expression it is not called at all: the
+    partial renders as a native frame.
+    """
 
     __slots__ = ('__weakref__', '_template')
 

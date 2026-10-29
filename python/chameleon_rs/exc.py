@@ -17,25 +17,11 @@ from chameleon_rs.utils import create_formatted_exception, safe_native, value_re
 
 
 class TemplateError(Exception):
-    """An error raised by Chameleon.
+    """Base class for compile-time template errors (``ParseError``, ``CompilationError``, ``ExpressionError``).
 
-        >>> from chameleon_rs.config import SOURCE_EXPRESSION_MARKER_LENGTH
-    from chameleon_rs.tokenize import Token
-        >>> token = Token('token')
-        >>> message = 'message'
-
-        Make sure the exceptions can be copied:
-
-        >>> from copy import copy
-        >>> copy(TemplateError(message, token))
-        TemplateError('message', 'token')
-
-        And pickle/unpickled:
-
-        >>> from pickle import dumps, loads
-        >>> loads(dumps(TemplateError(message, token), -1))
-        TemplateError('message', 'token')
-
+    Carries the error message (``args[0]``) and the offending source ``token`` (``args[1]``),
+    with ``filename``, ``location`` (``(line, column)``), and ``offset`` properties.
+    Render-time exceptions are mixed with ``chameleon_rs.exc.RenderError`` instead.
     """
 
     args: tuple[str, Token]  # type: ignore[assignment]

@@ -41,10 +41,88 @@ def _site_url() -> str:
     return m.group(1).strip() if m else ''
 
 
-def _postprocess(dest: Path) -> None:
-    """Work around two great-docs 0.13.0 bugs in the mirrored site.
+def _md_title(md_file: Path, fallback: str) -> str:
+    """Extract the first ``# Heading`` from a rendered ``.md`` page in ``site/``."""
+    if md_file.is_file():
+        for line in md_file.read_text(encoding='utf-8').splitlines():
+            if line.startswith('# '):
+                return line[2:].strip()
+    return fallback
 
-    Both fix generated files, so they must run on every build (a hand-edit to site/ would be
+
+def _append_llms_sections(dest: Path, base: str) -> None:
+    """Append User Guide, Language Reference, Recipes and skill links to ``llms.txt``.
+
+    great-docs 0.13.0 generates ``llms.txt`` before adding the User Guide and custom
+    sections to ``_quarto.yml``, so ``llms.txt`` only lists ``### API Reference``.
+    """
+    llms = dest / 'llms.txt'
+    quarto_yml = PKG_DIR / 'great-docs' / '_quarto.yml'
+    if not llms.is_file() or not quarto_yml.is_file():
+        return
+    text = llms.read_text(encoding='utf-8')
+    if '### User Guide' in text:
+        return
+
+    qtext = quarto_yml.read_text(encoding='utf-8')
+    extra: list[str] = []
+
+    ug_match = re.search(r'(?ms)^\s*-\s+id:\s+user-guide\b(.*?)(?=^\s*-\s+id:|\Z)', qtext)
+    if ug_match:
+        extra.extend(['### User Guide', ''])
+        for token in re.finditer(
+            r'^\s*-\s+section:\s*(.+?)\s*$|^\s*-\s+(user-guide/\S+?)\.qmd\s*$',
+            ug_match.group(1),
+            re.MULTILINE,
+        ):
+            sec, rel = token.group(1), token.group(2)
+            if sec:
+                if extra[-1] != '':
+                    extra.append('')
+                extra.extend([f'#### {sec.strip()}', ''])
+            elif rel:
+                title = _md_title(dest / f'{rel}.md', rel.rsplit('/', 1)[-1])
+                extra.append(f'- [{title}]({base}{rel}.html)')
+        extra.append('')
+
+    for sec_id, heading in (('language', 'Language Reference'), ('recipes', 'Recipes')):
+        sec_match = re.search(
+            rf'(?ms)^\s*-\s+id:\s+{sec_id}\b(.*?)(?=^\s*-\s+id:|^\s*page-footer:|\Z)',
+            qtext,
+        )
+        if not sec_match:
+            continue
+        extra.extend([f'### {heading}', ''])
+        for rel in re.findall(rf'href:\s*({sec_id}/\S+?)\.qmd\b', sec_match.group(1)):
+            if rel.endswith('/index'):
+                continue
+            title = _md_title(dest / f'{rel}.md', rel.rsplit('/', 1)[-1])
+            extra.append(f'- [{title}]({base}{rel}.html)')
+        extra.append('')
+
+    extra.extend(
+        [
+            '### Agent Skill and Full Context',
+            '',
+            (
+                f'- [Agent Skill (SKILL.md)]({base}skill.md): '
+                'Compact guide, decision table, gotchas and examples for AI coding agents'
+            ),
+            (
+                f'- [Full Documentation (llms-full.txt)]({base}llms-full.txt): '
+                'Complete API reference and User Guide in a single file'
+            ),
+            '',
+        ]
+    )
+    llms.write_text(text.rstrip() + '\n\n' + '\n'.join(extra), encoding='utf-8')
+    print('  llms.txt: appended User Guide, Language Reference, Recipes and skill links')
+
+
+def _postprocess(dest: Path) -> None:
+    """Work around great-docs 0.13.0 issues in the mirrored site.
+
+    All steps fix generated files, so they must run on every build (a hand-edit to site/ would be
     overwritten). Each step is guarded and idempotent.
 
     1. Prune dead entries from search.json. great-docs indexes a "skill" page as
@@ -55,6 +133,7 @@ def _postprocess(dest: Path) -> None:
        canonical element. We add one per page, taking the exact URL from sitemap.xml so it
        matches the sitemap (and skipping any page that already has a canonical link, which
        keeps this forward-compatible once great-docs fixes the bug).
+    3. Append User Guide, Language Reference, Recipes and skill links to ``llms.txt``.
     """
     # 1) Prune search.json entries that point at missing files.
     search = dest / 'search.json'
@@ -94,6 +173,9 @@ def _postprocess(dest: Path) -> None:
                 injected += 1
         if injected:
             print(f'  canonical: injected <link rel=canonical> into {injected} page(s)')
+
+    # 3) Append User Guide, Language Reference, Recipes and skill links to llms.txt.
+    _append_llms_sections(dest, base)
 
 
 def main() -> int:

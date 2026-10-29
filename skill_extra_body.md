@@ -31,11 +31,17 @@ import chameleon_rs
 from chameleon_rs import PageTemplateLoader
 
 folder = Path(__file__).parent / 'templates'
-chameleon_rs.configure(template_folder=folder, auto_reload=dev_mode)  # once, at startup
-templates = PageTemplateLoader(folder)
+chameleon_rs.configure(template_folder=folder, auto_reload=dev_mode, strict_tags=True)  # once, at startup
+templates = PageTemplateLoader(folder, strict_tags=True)
 
 html = templates['home/index.pt'](title='Home', videos=videos)
 ```
+
+`strict_tags=True` (or `CHAMELEON_STRICT_TAGS=1` in the environment) catches unclosed elements
+with TAL/METAL/i18n attributes and misspelled attribute names (such as `tal:deifne`) at compile
+time instead of silently ignoring them. `strict_names=True` (or `CHAMELEON_STRICT_NAMES=1`)
+makes the framework integrations' `@template`, `render` and `response` reject template names
+that could escape `template_folder`.
 
 Every template has `render_partial` built in, with no `extend_model` and no `BeforeRender`
 subscriber:
@@ -78,7 +84,8 @@ returns a fragment as a string, for HTMX responses.
   async endpoints.
 - Litestar: `TemplateConfig(engine=chameleon_rs.litestar.ChameleonEngine, directory=...)`, and
   return `chameleon_rs.litestar.Template` (serves `.pt` as `text/html`).
-- Pyramid: no module; pyramid_chameleon runs unchanged after `chameleon_rs.compat.install()`.
+- Pyramid and Zope / Plone: no module; `pyramid_chameleon`, `z3c.pt` and
+  `Products.PageTemplates` run unchanged after `chameleon_rs.compat.install()`.
 
 ## Async rendering
 
@@ -102,8 +109,14 @@ Raw HTML in the text is escaped by default; a profile such as
 `configure(markdown={'markdown': {}, 'md-trusted': {'raw_html': 'allow'}})` adds an
 `md-trusted:` prefix for trusted content.
 
-## Known differences from Chameleon
+## Known differences and additions over Chameleon
 
+- `strict_tags=True` (`CHAMELEON_STRICT_TAGS=1`) reports unclosed tags carrying TAL/METAL/i18n
+  attributes and unknown `tal:`/`metal:`/`i18n:` attributes as `ParseError` at the offending tag.
+- `chameleon_rs.template.HTML5_BOOLEAN_ATTRIBUTES` provides the full WHATWG HTML5 boolean
+  attribute set (`hidden`, `required`, `novalidate`, `inert`, ...) for `boolean_attributes=...`.
+- `repeat.item.first('attr')` and `repeat.item.last('attr')` detect group boundaries in
+  `tal:repeat` loops.
 - `template.source` is a dump of the compiled program, not Python code.
 - Custom expression types that return Python AST work through a bridge, at the speed of an
   ordinary Python call.

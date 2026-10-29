@@ -943,9 +943,9 @@ def _surrogate_error(body: str, at: int) -> UnsupportedError:
 
 
 class PageTemplateFile(PageTemplate, BaseTemplateFile):
-    """File-based constructor: the template is read from ``filename`` (or, with
-    ``package_name``, from that package's resources) when first used.
+    """File-based page template loaded from ``filename`` when first used.
 
+    With ``package_name``, ``filename`` is read from that package's resources.
     File templates have the ``load:`` expression type, which loads templates relative to
     this one: ``search_path`` (a path or a sequence of paths; with
     ``prepend_relative_search_path``, the default, the template's own directory comes first)
@@ -1021,8 +1021,10 @@ class PageTextTemplate(PageTemplate):
 
 
 class PageTextTemplateFile(PageTemplateFile):
-    """File-based text template. Rendering returns ``bytes``, encoded with the template's
-    ``encoding`` (UTF-8 by default), as Chameleon's does."""
+    """File-based text template whose ``render()`` returns ``bytes`` (UTF-8 by default).
+
+    Encoded with the template's ``encoding`` (UTF-8 by default), as Chameleon's does.
+    """
 
     mode = 'text'
 

@@ -22,7 +22,9 @@ pip install chameleon-rs
 |------|-----|
 | Run an existing Chameleon app on chameleon-rs with no code changes | `chameleon_rs.compat.install() at the top of the entry point` |
 | Render a template string | `chameleon_rs.PageTemplate(source)(**model)` |
-| Load templates by name from folders | `chameleon_rs.PageTemplateLoader([folder])['page.pt'](**model)` |
+| Load templates by name from folders | `chameleon_rs.PageTemplateLoader(folder)['page.pt'](**model)` |
+| Catch unclosed tags and misspelled TAL/METAL/i18n attributes at compile time | `chameleon_rs.configure(..., strict_tags=True), PageTemplate(..., strict_tags=True), or CHAMELEON_STRICT_TAGS=1` |
+| Reject template names that could escape the template folder | `chameleon_rs.configure(..., strict_names=True) or CHAMELEON_STRICT_NAMES=1` |
 | Insert a reusable HTML fragment | `${render_partial('shared/fragment.pt', key=value)}` |
 | Get a rendered fragment as a string from Python (HTMX, email, tests) | `chameleon_rs.render_partial(path, **model).html_text` |
 | Serve HTMX: a full page on first load, one fragment on an HTMX request | `Put the fragment in its own template, include it with ${render_partial(...)}; the view returns response('fragment.pt', ...) when the HX-Request header is set (and HX-History-Restore-Request is not), or @template('fragment.pt') on an HTMX-only route` |
@@ -33,7 +35,7 @@ pip install chameleon-rs
 | Render without blocking the event loop | `await template.render_async(**model); in the framework integrations, an async def view with @template does this` |
 | Run several slow async helpers of one page at the same time | `@chameleon_rs.concurrent on the helper, called as a whole ${helper(...)}; or PageTemplate(..., concurrent=True) / @template(..., concurrent=True) for partials with awaitable arguments` |
 | Convert Markdown to HTML in a template | `chameleon_rs.configure(markdown=True), then ${markdown: post.body}; profiles such as {'md-trusted': {'raw_html': 'allow'}} for different content` |
-| Render Chameleon templates from Pyramid views | `pyramid_chameleon unchanged (config.include('pyramid_chameleon'), renderer='templates/page.pt'), with chameleon_rs.compat.install() before it is imported` |
+| Render Chameleon templates from Pyramid or Zope / Plone (z3c.pt, Products.PageTemplates) | `pyramid_chameleon or z3c.pt unchanged, with chameleon_rs.compat.install() before they are imported` |
 | Use Chameleon templates as Litestar's template engine | `TemplateConfig(engine=chameleon_rs.litestar.ChameleonEngine, directory=folder); return chameleon_rs.litestar.Template('page.pt', context=...) (served as text/html; renders synchronously)` |
 | Render Chameleon templates from async Litestar handlers without blocking the loop | `chameleon_rs.litestar: configure(folder, app=app), then @template('page.pt') below @get` |
 
@@ -44,10 +46,10 @@ pip install chameleon-rs
 Compile and render templates from strings, files and folders.
 
 - `PageTemplate`: Constructor for the page template language, rendered by the Rust VM
-- `PageTemplateFile`: File-based constructor: the template is read from ``filename`` (or, with
+- `PageTemplateFile`: File-based page template loaded from ``filename`` when first used
 - `PageTextTemplate`: Text-based template class: only ``${...}`` interpolation, no markup, nothing escaped
-- `PageTextTemplateFile`: File-based text template. Rendering returns ``bytes``, encoded with the template's
-- `PageTemplateLoader`
+- `PageTextTemplateFile`: File-based text template whose ``render()`` returns ``bytes`` (UTF-8 by default)
+- `PageTemplateLoader`: Loads and caches page templates from one or more directories by filename (``loader['page.pt']``)
 
 ### PageTemplate Methods
 
@@ -67,7 +69,7 @@ Methods for the PageTemplate class
 
 Process-wide settings for templates loaded by name, partials and Markdown.
 
-- `configure`: Configures chameleon-rs for the whole process: where templates loaded by name live, for
+- `configure`: Configures chameleon-rs for the whole process (partials, framework integrations, and Markdown)
 - `core_version`: Version of the Rust core, for bug reports and for checking which build is loaded
 
 ### Async
@@ -80,7 +82,7 @@ Opt-in concurrency for render_async. See also PageTemplate.render_async.
 
 Render one template inside another. Also chameleon_partials' API.
 
-- `render_partial`: The ``render_partial`` callable: ``chameleon_rs.render_partial`` (no calling template)
+- `render_partial`: Renders a partial template by path and returns an ``HTML`` object
 - `partials.register_extensions`
 - `partials.extend_model`
 - `partials.clear`
@@ -179,7 +181,7 @@ Litestar's template engine interface for chameleon-rs, and the decorator API. Im
 
 Exceptions, and the pieces shared by the framework integrations.
 
-- `TemplateError`: An error raised by Chameleon
+- `TemplateError`: Base class for compile-time template errors (``ParseError``, ``CompilationError``, ``ExpressionError``)
 - `web.TemplateError`
 - `web.ErrorPage`
 - `web.NotFound`
@@ -206,11 +208,12 @@ Make `import chameleon` resolve to chameleon-rs, or check both engines side by s
 6. Custom expression types that return Python AST work through a bridge at fallback speed; types that depend on Chameleon's compiler internals are not supported.
 7. render_async awaits only an expression's final value: ${episodes} and tal:repeat="e episodes" await a coroutine, ${episodes.count} and ${len(episodes)} do not.
 8. markdown: expressions exist only after chameleon_rs.configure(markdown=True) (or a dict of profiles), called before the templates that use them compile.
-9. Pyramid has no chameleon_rs module: pyramid_chameleon runs unchanged after chameleon_rs.compat.install() at the top of the package whose main() builds the app.
+9. Pyramid and Zope (z3c.pt, Products.PageTemplates) have no chameleon_rs module: pyramid_chameleon and z3c.pt run unchanged after chameleon_rs.compat.install() at the top of the entry point.
 
 ## Best practices
 
-- Call chameleon_rs.configure(template_folder=..., auto_reload=dev_mode) once at startup, before the first render.
+- Call chameleon_rs.configure(template_folder=..., auto_reload=dev_mode, strict_tags=True) once at startup, before the first render (or set CHAMELEON_STRICT_TAGS=1 in development and CI to catch unclosed tags and attribute typos like tal:deifne).
+- Pass strict_names=True to configure() (or set CHAMELEON_STRICT_NAMES=1) if a template name passed to @template, render or response could come from request data.
 - To switch an existing app, add `import chameleon_rs.compat; chameleon_rs.compat.install()` as the first lines of the entry point, and leave the rest of the code unchanged.
 - Prefer ${render_partial('shared/card.pt', item=item)} as a whole expression: it renders as a native frame of the page, with no Python call.
 - Build template folder paths relative to your code with Path(__file__).parent / 'templates' (pathlib.Path works wherever a path string does).
@@ -251,11 +254,17 @@ import chameleon_rs
 from chameleon_rs import PageTemplateLoader
 
 folder = Path(__file__).parent / 'templates'
-chameleon_rs.configure(template_folder=folder, auto_reload=dev_mode)  # once, at startup
-templates = PageTemplateLoader(folder)
+chameleon_rs.configure(template_folder=folder, auto_reload=dev_mode, strict_tags=True)  # once, at startup
+templates = PageTemplateLoader(folder, strict_tags=True)
 
 html = templates['home/index.pt'](title='Home', videos=videos)
 ```
+
+`strict_tags=True` (or `CHAMELEON_STRICT_TAGS=1` in the environment) catches unclosed elements
+with TAL/METAL/i18n attributes and misspelled attribute names (such as `tal:deifne`) at compile
+time instead of silently ignoring them. `strict_names=True` (or `CHAMELEON_STRICT_NAMES=1`)
+makes the framework integrations' `@template`, `render` and `response` reject template names
+that could escape `template_folder`.
 
 Every template has `render_partial` built in, with no `extend_model` and no `BeforeRender`
 subscriber:
@@ -298,7 +307,8 @@ returns a fragment as a string, for HTMX responses.
   async endpoints.
 - Litestar: `TemplateConfig(engine=chameleon_rs.litestar.ChameleonEngine, directory=...)`, and
   return `chameleon_rs.litestar.Template` (serves `.pt` as `text/html`).
-- Pyramid: no module; pyramid_chameleon runs unchanged after `chameleon_rs.compat.install()`.
+- Pyramid and Zope / Plone: no module; `pyramid_chameleon`, `z3c.pt` and
+  `Products.PageTemplates` run unchanged after `chameleon_rs.compat.install()`.
 
 ## Async rendering
 
@@ -322,8 +332,14 @@ Raw HTML in the text is escaped by default; a profile such as
 `configure(markdown={'markdown': {}, 'md-trusted': {'raw_html': 'allow'}})` adds an
 `md-trusted:` prefix for trusted content.
 
-## Known differences from Chameleon
+## Known differences and additions over Chameleon
 
+- `strict_tags=True` (`CHAMELEON_STRICT_TAGS=1`) reports unclosed tags carrying TAL/METAL/i18n
+  attributes and unknown `tal:`/`metal:`/`i18n:` attributes as `ParseError` at the offending tag.
+- `chameleon_rs.template.HTML5_BOOLEAN_ATTRIBUTES` provides the full WHATWG HTML5 boolean
+  attribute set (`hidden`, `required`, `novalidate`, `inert`, ...) for `boolean_attributes=...`.
+- `repeat.item.first('attr')` and `repeat.item.last('attr')` detect group boundaries in
+  `tal:repeat` loops.
 - `template.source` is a dump of the compiled program, not Python code.
 - Custom expression types that return Python AST work through a bridge, at the speed of an
   ordinary Python call.

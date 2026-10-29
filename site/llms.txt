@@ -10,10 +10,10 @@
 > Compile and render templates from strings, files and folders.
 
 - [PageTemplate](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.html): Constructor for the page template language, rendered by the Rust VM
-- [PageTemplateFile](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplateFile.html): File-based constructor: the template is read from ``filename`` (or, with
+- [PageTemplateFile](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplateFile.html): File-based page template loaded from ``filename`` when first used
 - [PageTextTemplate](https://mkennedy.codes/docs/chameleon-rs/reference/PageTextTemplate.html): Text-based template class: only ``${...}`` interpolation, no markup, nothing escaped
-- [PageTextTemplateFile](https://mkennedy.codes/docs/chameleon-rs/reference/PageTextTemplateFile.html): File-based text template. Rendering returns ``bytes``, encoded with the template's
-- [PageTemplateLoader](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplateLoader.html)
+- [PageTextTemplateFile](https://mkennedy.codes/docs/chameleon-rs/reference/PageTextTemplateFile.html): File-based text template whose ``render()`` returns ``bytes`` (UTF-8 by default)
+- [PageTemplateLoader](https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplateLoader.html): Loads and caches page templates from one or more directories by filename (``loader['page.pt']``)
 
 #### PageTemplate Methods
 > Methods for the PageTemplate class
@@ -31,7 +31,7 @@
 #### Configuration
 > Process-wide settings for templates loaded by name, partials and Markdown.
 
-- [configure](https://mkennedy.codes/docs/chameleon-rs/reference/configure.html): Configures chameleon-rs for the whole process: where templates loaded by name live, for
+- [configure](https://mkennedy.codes/docs/chameleon-rs/reference/configure.html): Configures chameleon-rs for the whole process (partials, framework integrations, and Markdown)
 - [core_version](https://mkennedy.codes/docs/chameleon-rs/reference/core_version.html): Version of the Rust core, for bug reports and for checking which build is loaded
 
 #### Async
@@ -42,7 +42,7 @@
 #### Partials
 > Render one template inside another. Also chameleon_partials' API.
 
-- [render_partial](https://mkennedy.codes/docs/chameleon-rs/reference/render_partial.html): The ``render_partial`` callable: ``chameleon_rs.render_partial`` (no calling template)
+- [render_partial](https://mkennedy.codes/docs/chameleon-rs/reference/render_partial.html): Renders a partial template by path and returns an ``HTML`` object
 - [partials.register_extensions](https://mkennedy.codes/docs/chameleon-rs/reference/partials.register_extensions.html)
 - [partials.extend_model](https://mkennedy.codes/docs/chameleon-rs/reference/partials.extend_model.html)
 - [partials.clear](https://mkennedy.codes/docs/chameleon-rs/reference/partials.clear.html)
@@ -135,7 +135,7 @@
 #### Errors and web helpers
 > Exceptions, and the pieces shared by the framework integrations.
 
-- [TemplateError](https://mkennedy.codes/docs/chameleon-rs/reference/TemplateError.html): An error raised by Chameleon
+- [TemplateError](https://mkennedy.codes/docs/chameleon-rs/reference/TemplateError.html): Base class for compile-time template errors (``ParseError``, ``CompilationError``, ``ExpressionError``)
 - [web.TemplateError](https://mkennedy.codes/docs/chameleon-rs/reference/web.TemplateError.html)
 - [web.ErrorPage](https://mkennedy.codes/docs/chameleon-rs/reference/web.ErrorPage.html)
 - [web.NotFound](https://mkennedy.codes/docs/chameleon-rs/reference/web.NotFound.html)
@@ -150,3 +150,58 @@
 - [shadow.install](https://mkennedy.codes/docs/chameleon-rs/reference/shadow.install.html)
 - [shadow.uninstall](https://mkennedy.codes/docs/chameleon-rs/reference/shadow.uninstall.html)
 - [shadow.ShadowDifference](https://mkennedy.codes/docs/chameleon-rs/reference/shadow.ShadowDifference.html)
+
+### User Guide
+
+#### Get started
+
+- [Getting started](https://mkennedy.codes/docs/chameleon-rs/user-guide/getting-started.html)
+- [Switching from Chameleon](https://mkennedy.codes/docs/chameleon-rs/user-guide/switching-from-chameleon.html)
+
+#### Templates
+
+- [Template language](https://mkennedy.codes/docs/chameleon-rs/user-guide/template-language.html)
+- [Partials](https://mkennedy.codes/docs/chameleon-rs/user-guide/partials.html)
+- [HTMX](https://mkennedy.codes/docs/chameleon-rs/user-guide/htmx.html)
+- [Markdown](https://mkennedy.codes/docs/chameleon-rs/user-guide/markdown.html)
+- [Async rendering](https://mkennedy.codes/docs/chameleon-rs/user-guide/async.html)
+- [Catching unclosed tags](https://mkennedy.codes/docs/chameleon-rs/user-guide/strict-tags.html)
+- [Configuration](https://mkennedy.codes/docs/chameleon-rs/user-guide/configuration.html)
+
+#### Web frameworks
+
+- [Web frameworks](https://mkennedy.codes/docs/chameleon-rs/user-guide/frameworks.html)
+- [Flask and Quart](https://mkennedy.codes/docs/chameleon-rs/user-guide/flask.html)
+- [FastAPI](https://mkennedy.codes/docs/chameleon-rs/user-guide/fastapi.html)
+- [Starlette](https://mkennedy.codes/docs/chameleon-rs/user-guide/starlette.html)
+- [Robyn](https://mkennedy.codes/docs/chameleon-rs/user-guide/robyn.html)
+- [Litestar](https://mkennedy.codes/docs/chameleon-rs/user-guide/litestar.html)
+- [Pyramid](https://mkennedy.codes/docs/chameleon-rs/user-guide/pyramid.html)
+
+#### Background
+
+- [Compatibility](https://mkennedy.codes/docs/chameleon-rs/user-guide/compatibility.html)
+- [Security](https://mkennedy.codes/docs/chameleon-rs/user-guide/security.html)
+- [Performance](https://mkennedy.codes/docs/chameleon-rs/user-guide/performance.html)
+- [Migrating from the helper libraries](https://mkennedy.codes/docs/chameleon-rs/user-guide/migrating.html)
+
+### Language Reference
+
+- [Basics (TAL)](https://mkennedy.codes/docs/chameleon-rs/language/tal.html)
+- [Expressions (TALES)](https://mkennedy.codes/docs/chameleon-rs/language/expressions.html)
+- [Macros (METAL)](https://mkennedy.codes/docs/chameleon-rs/language/macros.html)
+- [Translation (I18N)](https://mkennedy.codes/docs/chameleon-rs/language/i18n.html)
+- [Inline syntax](https://mkennedy.codes/docs/chameleon-rs/language/syntax.html)
+- [Extensions and differences](https://mkennedy.codes/docs/chameleon-rs/language/extensions.html)
+
+### Recipes
+
+- [Email bodies](https://mkennedy.codes/docs/chameleon-rs/recipes/email-bodies.html)
+- [HTMX fragments](https://mkennedy.codes/docs/chameleon-rs/recipes/htmx-fragments.html)
+- [A shared layout](https://mkennedy.codes/docs/chameleon-rs/recipes/shared-layout.html)
+- [Testing templates with pytest](https://mkennedy.codes/docs/chameleon-rs/recipes/testing-templates.html)
+
+### Agent Skill and Full Context
+
+- [Agent Skill (SKILL.md)](https://mkennedy.codes/docs/chameleon-rs/skill.md): Compact guide, decision table, gotchas and examples for AI coding agents
+- [Full Documentation (llms-full.txt)](https://mkennedy.codes/docs/chameleon-rs/llms-full.txt): Complete API reference and User Guide in a single file

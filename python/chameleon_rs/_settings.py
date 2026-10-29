@@ -295,10 +295,12 @@ def configure(
     markdown: MarkdownSetting | None = None,
     markdown_cache: int | None = None,
 ) -> Settings | None:
-    """Configures chameleon-rs for the whole process: where templates loaded by name live, for
-    ``render_partial`` and the framework integrations (``chameleon_rs.flask``,
-    ``chameleon_rs.starlette``, ``chameleon_rs.fastapi``, ``chameleon_rs.robyn``,
-    ``chameleon_rs.litestar``), and how they load.
+    """Configures chameleon-rs for the whole process (partials, framework integrations, and Markdown).
+
+    Sets where templates loaded by name live for ``render_partial`` and the framework
+    integrations (``chameleon_rs.flask``, ``chameleon_rs.starlette``,
+    ``chameleon_rs.fastapi``, ``chameleon_rs.robyn``, ``chameleon_rs.litestar``), and how
+    they load.
 
     ``template_folder``: an existing directory. ``auto_reload``: recompile a template when its
     file changes (checked at most once per file per render for partials). ``restricted_namespace``:

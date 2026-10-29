@@ -24,9 +24,9 @@ name overrides.
 
 PageTemplateFile(filename: 'str | os.PathLike[str]', loader_class: 'type[TemplateLoader]' = <class 'chameleon_rs.loader.TemplateLoader'>, package_name: 'str | None' = None, search_path: 'Iterable[str | os.PathLike[str]] | str | os.PathLike[str] | None' = None, **config: 'Any') -> 'None'
 
-File-based constructor: the template is read from ``filename`` (or, with
-``package_name``, from that package's resources) when first used.
+File-based page template loaded from ``filename`` when first used.
 
+With ``package_name``, ``filename`` is read from that package's resources.
 File templates have the ``load:`` expression type, which loads templates relative to
 this one: ``search_path`` (a path or a sequence of paths; with
 ``prepend_relative_search_path``, the default, the template's own directory comes first)
@@ -42,10 +42,17 @@ Takes a non-XML input::
 
 PageTextTemplateFile(filename: 'str | os.PathLike[str]', loader_class: 'type[TemplateLoader]' = <class 'chameleon_rs.loader.TemplateLoader'>, package_name: 'str | None' = None, search_path: 'Iterable[str | os.PathLike[str]] | str | os.PathLike[str] | None' = None, **config: 'Any') -> 'None'
 
-File-based text template. Rendering returns ``bytes``, encoded with the template's
-``encoding`` (UTF-8 by default), as Chameleon's does.
+File-based text template whose ``render()`` returns ``bytes`` (UTF-8 by default).
+
+Encoded with the template's ``encoding`` (UTF-8 by default), as Chameleon's does.
 
 TemplateLoader(search_path: 'Iterable[str | os.PathLike[str]] | str | os.PathLike[str] | None' = None, default_extension: 'str | None' = None, *, formats: 'Mapping[str, type[PageTemplateFile]] | None' = None, **kwargs: 'Any') -> 'None'
+
+Loads and caches page templates from one or more directories by filename (``loader['page.pt']``).
+
+Accepts a single directory path (``str`` or ``os.PathLike``) or an iterable of paths as
+``search_path``, and passes extra keyword arguments (such as ``auto_reload`` or
+``strict_tags``) to each template it constructs.
 
 
 ## PageTemplate Methods
@@ -123,10 +130,12 @@ Process-wide settings for templates loaded by name, partials and Markdown.
 
 configure(template_folder: 'str | os.PathLike[str] | None' = None, *, auto_reload: 'bool | None' = None, restricted_namespace: 'bool | None' = None, strict_tags: 'bool | None' = None, strict_names: 'bool | None' = None, partial_search: 'str | None' = None, markdown: 'MarkdownSetting | None' = None, markdown_cache: 'int | None' = None) -> 'Settings | None'
 
-Configures chameleon-rs for the whole process: where templates loaded by name live, for
-``render_partial`` and the framework integrations (``chameleon_rs.flask``,
-``chameleon_rs.starlette``, ``chameleon_rs.fastapi``, ``chameleon_rs.robyn``,
-``chameleon_rs.litestar``), and how they load.
+Configures chameleon-rs for the whole process (partials, framework integrations, and Markdown).
+
+Sets where templates loaded by name live for ``render_partial`` and the framework
+integrations (``chameleon_rs.flask``, ``chameleon_rs.starlette``,
+``chameleon_rs.fastapi``, ``chameleon_rs.robyn``, ``chameleon_rs.litestar``), and how
+they load.
 
 ``template_folder``: an existing directory. ``auto_reload``: recompile a template when its
 file changes (checked at most once per file per render for partials). ``restricted_namespace``:
@@ -177,10 +186,12 @@ Render one template inside another. Also chameleon_partials' API.
 
 render_partial(template_file: 'str', **template_data: 'Any') -> 'HTML'
 
-The ``render_partial`` callable: ``chameleon_rs.render_partial`` (no calling template)
-or a template's own (its ``render_partial`` builtin, the calling template for
-``partial_search='caller'``). Written as a whole ``${render_partial(...)}``
-expression it is not called at all: the partial renders as a native frame.
+Renders a partial template by path and returns an ``HTML`` object.
+
+Used for ``chameleon_rs.render_partial`` (no calling template) and a template's own
+``render_partial`` builtin (the calling template for ``partial_search='caller'``).
+Written as a whole ``${render_partial(...)}`` expression it is not called at all: the
+partial renders as a native frame.
 
 register_extensions(template_folder: 'str', auto_reload: 'bool' = False, cache_init: 'bool' = True) -> 'None'
 
@@ -200,10 +211,12 @@ Forgets the folder partials use, for tests.
 
 function(template: 'Any' = None) -> 'None'
 
-The ``render_partial`` callable: ``chameleon_rs.render_partial`` (no calling template)
-or a template's own (its ``render_partial`` builtin, the calling template for
-``partial_search='caller'``). Written as a whole ``${render_partial(...)}``
-expression it is not called at all: the partial renders as a native frame.
+Renders a partial template by path and returns an ``HTML`` object.
+
+Used for ``chameleon_rs.render_partial`` (no calling template) and a template's own
+``render_partial`` builtin (the calling template for ``partial_search='caller'``).
+Written as a whole ``${render_partial(...)}`` expression it is not called at all: the
+partial renders as a native frame.
 
 HTML(html_text: 'str') -> 'None'
 
@@ -254,24 +267,11 @@ Exceptions, and the pieces shared by the framework integrations.
 
 TemplateError(msg: 'str', token: 'str' = '') -> 'None'
 
-An error raised by Chameleon.
+Base class for compile-time template errors (``ParseError``, ``CompilationError``, ``ExpressionError``).
 
-    >>> from chameleon_rs.config import SOURCE_EXPRESSION_MARKER_LENGTH
-from chameleon_rs.tokenize import Token
-    >>> token = Token('token')
-    >>> message = 'message'
-
-    Make sure the exceptions can be copied:
-
-    >>> from copy import copy
-    >>> copy(TemplateError(message, token))
-    TemplateError('message', 'token')
-
-    And pickle/unpickled:
-
-    >>> from pickle import dumps, loads
-    >>> loads(dumps(TemplateError(message, token), -1))
-    TemplateError('message', 'token')
+Carries the error message (``args[0]``) and the offending source ``token`` (``args[1]``),
+with ``filename``, ``location`` (``(line, column)``), and ``offset`` properties.
+Render-time exceptions are mixed with ``chameleon_rs.exc.RenderError`` instead.
 
 TemplateError
 
