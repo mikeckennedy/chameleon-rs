@@ -3600,7 +3600,8 @@ import chameleon_rs.flask as chameleon
 chameleon.configure(template_folder=template_folder, auto_reload=dev_mode)
 ```
 
-Views, `@template`, `render`, `response` and `not_found` stay the same (use `as chameleon_flask` if you want to leave existing call sites unchanged). New in chameleon-rs:
+Views, `@template`, `render`, `response` and `not_found` stay the same. To leave existing
+call sites as they are, import it `as chameleon_flask` instead. New in chameleon-rs:
 
 - `configure()` also sets the partials folder, so you need only one setup call.
 - `error(template_file, status_code=500, **data)` renders any error page.
@@ -3621,7 +3622,8 @@ becomes
 import chameleon_rs.fastapi as chameleon
 ```
 
-(or `as fastapi_chameleon` to keep existing call sites unchanged, or stays as `import fastapi_chameleon` with `chameleon_rs.compat.install()`). Every name keeps working
+Import it `as fastapi_chameleon` to leave existing call sites as they are, or keep
+`import fastapi_chameleon` unchanged with `chameleon_rs.compat.install()`. Every name keeps working
 (`global_init`, `@template`, `render`, `response`, `not_found`, `generic_error`, `clear`, the
 exception classes), and its test suite passes unmodified on the built-in. Differences:
 
@@ -3645,7 +3647,8 @@ becomes
 import chameleon_rs.robyn as chameleon
 ```
 
-(or `as chameleon_robyn` to keep existing call sites unchanged, or stays as `import chameleon_robyn` with `chameleon_rs.compat.install()`). Every name keeps working
+Import it `as chameleon_robyn` to leave existing call sites as they are, or keep
+`import chameleon_robyn` unchanged with `chameleon_rs.compat.install()`. Every name keeps working
 (`global_init`, `@template`, `render`, `response`, `not_found`, `clear`, `ChameleonTemplate`,
 `__response_callback__`, the exception classes), and its test suite passes unmodified on the
 built-in. Differences:
