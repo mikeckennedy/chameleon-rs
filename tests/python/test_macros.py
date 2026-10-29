@@ -341,6 +341,27 @@ def test_a_local_that_shadows_a_global_survives_a_macro_call(call: str, chameleo
     assert results == [f'{chameleons}|g2</div', f'{ours}|g2</div']
 
 
+@pytest.mark.parametrize('engine', [chameleon, chameleon_rs])
+def test_globals_changed_while_a_macro_call_copies_them_are_an_error(engine: Any) -> None:
+    # The local `g` shadows a global the macro changes: copying the globals back replaces it,
+    # and its `__del__` adds a global. Chameleon's `econtext.update(rcontext)` raises; iterating
+    # `rcontext` itself panicked (an `InternalError`).
+    class Value:
+        def __init__(self, rcontext: Any) -> None:
+            self.rcontext = rcontext
+
+        def __del__(self) -> None:
+            self.rcontext['added'] = 1
+
+    page = engine.PageTemplate(
+        '<tal:m metal:define-macro="m"><tal:d define="global g 2"/></tal:m>'
+        '<tal:o define="global g 1; global h 3"><tal:l define="g make(rcontext)">'
+        """<tal:u metal:use-macro="template.macros['m']"/>${g}</tal:l></tal:o>"""
+    )
+    with pytest.raises(RuntimeError, match='dict mutated during update'):
+        page.render(make=Value)
+
+
 def test_macro_lookup() -> None:
     body = '<a metal:define-macro="a-b"/><b metal:define-macro="a_b"/><c metal:define-macro="x.y"/><d metal:define-macro="ü"/>'
     for engine in (chameleon, chameleon_rs):

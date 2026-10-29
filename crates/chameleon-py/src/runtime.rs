@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use pyo3::exceptions::{PyException, PyKeyError, PyNameError, PyRecursionError, PyValueError};
+use pyo3::exceptions::{PyException, PyKeyError, PyNameError, PyRecursionError, PyRuntimeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pyclass::CompareOp;
@@ -838,9 +838,17 @@ impl<const ASYNC: bool> Macros for PyRuntime<'_, '_, ASYNC> {
         let Some(shadowed) = shadowed else { return self.scope.as_super().update(rcontext.as_mapping()) };
         let shadowed = shadowed.bind(self.py).cast::<PyDict>()?;
         let scope = self.scope.as_super();
-        for (key, global) in rcontext.iter() {
+        // Over a copy of the items: a value `set_item` replaces may run code (its `__del__`)
+        // that changes `rcontext`, which `dict.update` reports as this error (iterating the dict
+        // itself panics in PyO3).
+        let size = rcontext.len();
+        for item in rcontext.items() {
+            let (key, global) = item.extract::<(Bound<'_, PyAny>, Bound<'_, PyAny>)>()?;
             if !shadowed.get_item(&key)?.is_some_and(|before| before.is(&global)) {
                 scope.set_item(key, global)?;
+                if rcontext.len() != size {
+                    return Err(PyRuntimeError::new_err("dict mutated during update"));
+                }
             }
         }
         Ok(())
