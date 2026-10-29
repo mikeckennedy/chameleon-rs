@@ -641,6 +641,15 @@ def test_expression_evaluator_curries() -> None:
     assert python('foo + boo') == 'barbaz'
 
 
+def test_expression_evaluator_without_builtins() -> None:
+    # Chameleon's `zip(*builtins.items())` failed to unpack an empty mapping (`ValueError`).
+    parser = chameleon_rs.tales.ExpressionParser({'python': chameleon_rs.tales.PythonExpr}, 'python')
+    evaluator = chameleon_rs.compiler.ExpressionEvaluator(
+        functools.partial(chameleon_rs.compiler.ExpressionEngine, parser), {}
+    )
+    assert evaluator(chameleon_rs.utils.Scope({'boo': 'baz'}), {}, 'python', 'boo * 2') == 'bazbaz'
+
+
 # --- tokenize and parser (native-backed compat modules) -------------------------------------
 
 

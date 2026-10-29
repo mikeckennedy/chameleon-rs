@@ -142,7 +142,8 @@ class ExpressionEvaluator:
 
     def __init__(self, engine: Callable[[], Any], builtins: Mapping[str, Any]) -> None:
         self._engine = engine
-        self._names, self._builtins = zip(*builtins.items(), strict=True)
+        # Not Chameleon's `zip(*builtins.items())`, which fails to unpack for no builtins.
+        self._names, self._builtins = tuple(builtins), tuple(builtins.values())
         self._cache: dict[str, Program] = {}
 
     def __call__(
