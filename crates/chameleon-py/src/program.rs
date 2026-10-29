@@ -194,7 +194,7 @@ impl Program {
                     .into_iter()
                     .zip(compiler.tokens)
                     .zip(compiler.has_nested)
-                    .map(|((expr, token), nested)| Site { expr, token, nested })
+                    .map(|((expr, token), nested)| Site { depth: expr.depth(), expr, token, nested })
                     .collect(),
                 names,
                 token_table: compiler.token_table,

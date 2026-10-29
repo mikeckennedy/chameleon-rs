@@ -289,6 +289,9 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
         if site.nested {
             self.render.nested.set((0, 0));
         }
+        if site.depth > chameleon_core::stack::SHALLOW_EXPR {
+            crate::errors::eval_room(site.depth)?;
+        }
         let e = &site.expr;
         if ASYNC {
             return self.eval_async(e, emitted);

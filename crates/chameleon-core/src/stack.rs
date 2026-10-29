@@ -104,6 +104,27 @@ pub fn render_room() -> Result<(), TooDeep> {
     Ok(())
 }
 
+/// Expressions nested at most this deep are evaluated without a check ([`eval_room`]): their
+/// recursion (under 30 KiB, measured) fits in the room [`render_room`] left.
+pub const SHALLOW_EXPR: u32 = 64;
+
+/// Stack a level of an expression's evaluation may take: about twice the most measured (440
+/// bytes a level for arithmetic, 200 for an attribute chain).
+const EVAL_LEVEL: usize = 1024;
+
+/// Whether an expression nested `depth` levels deep may be evaluated on this thread's stack:
+/// `Err(TooDeep)` unless its recursion and [`RENDER_RESERVE`] fit in what is left. The compile's
+/// budget is measured on the compiling thread; a render can run on another with a smaller
+/// stack, where the deepest expressions it allows (a few hundred levels of `a + a + ...`) once
+/// overflowed 256 KiB, killing the process.
+pub fn eval_room(depth: u32) -> Result<(), TooDeep> {
+    let need = usize::try_from(depth).map_or(usize::MAX, |depth| depth.saturating_mul(EVAL_LEVEL));
+    if stacker::remaining_stack().is_some_and(|left| left < need.saturating_add(RENDER_RESERVE)) {
+        return Err(TooDeep);
+    }
+    Ok(())
+}
+
 /// The address of a local in the caller's frame: how far the stack has grown.
 #[inline(never)]
 fn address() -> usize {

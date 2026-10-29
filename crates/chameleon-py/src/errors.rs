@@ -38,6 +38,13 @@ pub(crate) fn render_room() -> PyResult<()> {
         .map_err(|_| PyRecursionError::new_err("maximum recursion depth exceeded while rendering the template"))
 }
 
+/// `RecursionError` if an expression nested `depth` deep can't be evaluated on what is left of
+/// this thread's stack ([`chameleon_core::stack::eval_room`]).
+pub(crate) fn eval_room(depth: u32) -> PyResult<()> {
+    chameleon_core::stack::eval_room(depth)
+        .map_err(|_| PyRecursionError::new_err("maximum recursion depth exceeded while rendering the template"))
+}
+
 pub(crate) fn compile_error(py: Python<'_>, err: CompileError<PyErr>, src: &str, filename: &str) -> PyErr {
     compile_error_mapped(py, err, src, filename, None)
 }

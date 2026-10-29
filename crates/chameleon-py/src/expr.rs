@@ -154,6 +154,8 @@ pub(crate) struct Site {
     /// The expression contains [`Expr::Token`] nodes: evaluating it clears
     /// [`RenderCtx::nested`] first.
     pub(crate) nested: bool,
+    /// How deeply its evaluation recurses ([`Expr::depth`]).
+    pub(crate) depth: u32,
 }
 
 /// A `<?python ?>` block (`exec`), or a fallback expression that reads a name a code block
@@ -269,6 +271,53 @@ impl Expr {
                     v.traverse(visit)
                 })?;
                 call.traverse(visit)
+            }
+        }
+    }
+
+    /// How deeply evaluating it recurses on the native stack: 1 for a leaf, else one more than
+    /// its deepest part (the parts of a sequence are evaluated one after another).
+    pub(crate) fn depth(&self) -> u32 {
+        fn deepest<'a>(parts: impl IntoIterator<Item = &'a Expr>) -> u32 {
+            parts.into_iter().map(Expr::depth).max().unwrap_or(0)
+        }
+        1 + match self {
+            Self::Name(_)
+            | Self::ScopeKey(_)
+            | Self::TemplateBuiltin(_)
+            | Self::RenderBuiltin(_)
+            | Self::Import(_)
+            | Self::Builtin(..)
+            | Self::Const(_)
+            | Self::Folded(_)
+            | Self::Raise(_)
+            | Self::Ns(_)
+            | Self::Fallback(_)
+            | Self::Econtext
+            | Self::Rcontext => 0,
+            Self::Custom(c) => deepest(c.subs.iter().map(|sub| &sub.expr)),
+            Self::Attr(e, _)
+            | Self::Not(e)
+            | Self::Unary(_, e)
+            | Self::Exists(e)
+            | Self::Structure(e)
+            | Self::Markdown(_, e)
+            | Self::Token(_, _, e) => e.depth(),
+            Self::Call { func, args, kwargs } => {
+                deepest(std::iter::once(&**func).chain(args).chain(kwargs.iter().map(|(_, v)| v)))
+            }
+            Self::Binary(_, a, b) | Self::Subscript(a, b) => a.depth().max(b.depth()),
+            Self::Slice(parts) => deepest(parts.iter().flatten()),
+            Self::And(v) | Self::Or(v) | Self::Tuple(v) | Self::List(v) | Self::Pipe(v) => deepest(v),
+            Self::Compare(left, ops) => deepest(std::iter::once(&**left).chain(ops.iter().map(|(_, e)| e))),
+            Self::IfExp(a, b, c) => a.depth().max(b.depth()).max(c.depth()),
+            Self::Dict(items) => deepest(items.iter().flat_map(|(k, v)| [k, v])),
+            Self::Interp(s) => deepest(s.parts.iter().filter_map(|part| match part {
+                StrPart::Expr(e) => Some(e),
+                StrPart::Text(_) => None,
+            })),
+            Self::Partial { path, kwargs, call } => {
+                deepest(std::iter::once(&**path).chain(kwargs.iter().map(|(_, v)| v)).chain(std::iter::once(&**call)))
             }
         }
     }

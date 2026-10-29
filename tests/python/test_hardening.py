@@ -153,6 +153,40 @@ def test_a_deep_fill_slot_body_compiles_or_raises_on_a_small_stack(stack_kib: in
     assert result.stdout.strip() == 'done'
 
 
+@pytest.mark.parametrize('shape', ['a + ', 'not ', '-'])
+@pytest.mark.parametrize('stack_kib', [192, 256, 384])
+def test_an_expression_compiled_elsewhere_raises_on_a_small_stack(shape: str, stack_kib: int) -> None:
+    # The compile's nesting budget is measured on the thread that compiles: the deepest
+    # expression it allowed, rendered on a worker thread with a smaller stack, overflowed it
+    # (SIGBUS) instead of raising.
+    result = run_python(f"""
+        import threading
+        from chameleon_rs import PageTemplate
+
+        pages = []
+        for depth in range(50, 2000, 50):
+            try:
+                pages.append(PageTemplate('<p>${{' + {shape!r} * depth + 'a}}</p>'))
+            except RecursionError:
+                break
+
+        def main():
+            for page in pages:
+                try:
+                    page.render(a=1)
+                except RecursionError:
+                    pass
+            print('done')
+
+        threading.stack_size({stack_kib} * 1024)
+        thread = threading.Thread(target=main)
+        thread.start()
+        thread.join()
+    """)
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert result.stdout.strip() == 'done'
+
+
 # -- Code-block namespaces -------------------------------------------------------------------
 
 
