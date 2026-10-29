@@ -136,7 +136,7 @@ from pathlib import Path
 
 import chameleon_rs
 
-template_folder = (Path(__file__).parent / 'templates').as_posix()
+template_folder = Path(__file__).parent / 'templates'
 chameleon_rs.configure(template_folder=template_folder, auto_reload=dev_mode)
 ```
 

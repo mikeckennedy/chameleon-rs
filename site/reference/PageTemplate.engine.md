@@ -1,10 +1,10 @@
 ## PageTemplate.engine
 
 
-Chameleon's expression engine factory, for code that evaluates expressions with
+Chameleon's expression engine factory for this template's expression types.
 
 
 `PageTemplate.engine: Callable[[], ExpressionEngine]`
 
 
-this template's types: `ExpressionEvaluator(template.engine, builtins)`, as z3c.pt does for `path()` and `exists()` in `python:` expressions. chameleon-rs compiles the template itself natively and doesn't use it.
+Used by code that evaluates expressions dynamically, such as `ExpressionEvaluator(template.engine, builtins)` in z3c.pt for `path()` and `exists()` inside `python:` expressions. chameleon-rs compiles the template itself natively and doesn't use it.

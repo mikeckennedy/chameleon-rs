@@ -12,7 +12,7 @@ Each level is a check that runs on every change:
 | **Chameleon's own test suite.** All 233 tests, vendored unmodified, run against chameleon-rs. | Every test that passes on Chameleon passes on chameleon-rs: 227 of 227. The other 6 depend on the test environment and are skipped on both engines. |
 | **Fixture renders.** Every input template in Chameleon's test suite, rendered by both engines. | All 122 byte-identical. |
 | **Differential fuzzing.** Generated templates, models and expressions, rendered by both engines and compared. | No differences in 20,000 examples per generator. |
-| **Integration suites.** The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials, litestar-chameleon, pyramid_chameleon and z3c.pt (Zope and Plone's page templates), unmodified, on chameleon-rs. | All pass. |
+| **Integration suites.** The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials, litestar-chameleon, pyramid_chameleon, z3c.pt (Zope and Plone's page templates) and Zope 6.3 (`Products.PageTemplates`, `Products.Five`), unmodified, on chameleon-rs. | All pass. |
 | **Real sites.** Every page of two production Flask/Quart apps, crawled with both engines: anonymous and signed in, with all their partials and layouts. | Every page byte-identical. |
 
 The upstream suite and the fuzzers compare output byte for byte, and they also compare the type and message of any error a template raises.
@@ -54,10 +54,11 @@ With chameleon_partials, [render_partial](../reference/render_partial.md#chamele
 
 ## Corner cases in slot bodies
 
-Three cases, all involving the slot fills of a macro call together with `tal:on-error` or i18n settings, render differently. No real template we've seen does this; each is pinned by a test that fails if the behaviour changes.
+Four cases, all involving the slot fills of a macro call together with `tal:on-error` or i18n settings, render differently. No real template we've seen does this; each is pinned by a test that fails if the behaviour changes.
 
 - **A failing expression under a handler in a slot body** whose slot sits inside `i18n:translate` or `i18n:name`. Chameleon writes a text node and its expressions as one piece, so when an expression fails, the text before it in the same node is dropped with it. chameleon-rs writes that text first, so it stays (`<q>Q` where Chameleon gives `<q>`).
 - **A handler on an `i18n:name` element** whose content calls a macro that fails partway: the same difference, for the text of the failing node inside the macro.
+- **A handler around a nested macro call in a slot body** whose slot sits inside `i18n:translate` or `i18n:name`, when the nested call's own fill fails. Chameleon keeps the start tag of the failed fill and never closes it (`T <u>E U`). chameleon-rs takes the failed fill's output back (`T E U`).
 - **A fill no macro took**, used by a later macro call while the calling template has different `i18n:domain`, `i18n:context` or `i18n:target` settings: values converted by that fill use the settings where it was defined. Chameleon uses the settings at the later call.
 
 
@@ -84,6 +85,7 @@ Where Chameleon's output is clearly broken, chameleon-rs writes what the templat
 | A valueless attribute given a value: `<input disabled tal:attributes="disabled True">` or `<img alt i18n:attributes="alt">` ([\#429](https://github.com/malthe/chameleon/issues/429)) | `<input disableddisabled>`, `<img altAlt>` | `<input disabled="disabled">`, `<img alt="Alt">` |
 | A loop inside a loop of the same name, as in a recursive macro ([\#177](https://github.com/malthe/chameleon/issues/177)) | After the inner loop ends, `repeat.item` is still the inner loop's, so the outer loop's next items get its `index` and `length` (often `-1` and `0`). | `repeat.item` is the outer loop's again. |
 | A local variable with the same name as a global, then a macro call inside it ([\#445](https://github.com/malthe/chameleon/issues/445)) | The macro call resets the local to the global's value. | The local keeps its value, unless the macro sets the global. |
+| An error inside a `metal:fill-slot` body ([\#447](https://github.com/malthe/chameleon/issues/447), [\#291](https://github.com/malthe/chameleon/issues/291), [\#259](https://github.com/malthe/chameleon/issues/259)) | The error message points at the page's `metal:use-macro`, often after the macro's last expression, which didn't fail. | The message leads with the fill's failing expression, then the `metal:use-macro`. |
 
 
 # Found a difference?

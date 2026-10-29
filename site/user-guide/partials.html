@@ -3,7 +3,7 @@
 <link rel="canonical" href="https://mkennedy.codes/docs/chameleon-rs/user-guide/partials.html">
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.38">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -13,10 +13,13 @@
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
-code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -78,10 +81,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-aa1552726bdd3cb78d40c93fdbd5382a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-24f143a4d927ff4703881c50cf2b77ac.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -426,7 +429,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 └── admin/users/
     ├── list.pt      ${render_partial('row.pt', user=user)}
     └── row.pt       ${render_partial('shared/badge.pt', label='admin')}</code></pre>
-<div id="a106e9ca" class="cell" data-execution_count="2">
+<div id="2a1e9ebf" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplateLoader</span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -458,7 +461,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="calling-it-from-python" class="level1">
 <h1>Calling it from Python</h1>
 <p><a href="../reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">chameleon_rs.render_partial</a> renders a partial from Python code: in a view that returns an HTMX fragment, in an email builder, or in a test. It returns an <a href="../reference/partials.HTML.html#chameleon_rs.partials.HTML" class="gdls-link gdls-code">HTML</a> object. Its <code>html_text</code> attribute is the markup, and its <code>__html__</code> method means a template inserts it without escaping:</p>
-<div id="492ac0cc" class="cell" data-execution_count="3">
+<div id="974b2a1e" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>fragment <span class="op">=</span> chameleon_rs.render_partial(<span class="st">'shared/badge.pt'</span>, label<span class="op">=</span><span class="st">'new'</span>)</span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="bu">type</span>(fragment).<span class="va">__name__</span>, <span class="bu">repr</span>(fragment.html_text))</span></code></pre></div>
 <div class="cell-output cell-output-stdout">

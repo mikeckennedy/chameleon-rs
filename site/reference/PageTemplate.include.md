@@ -1,10 +1,10 @@
 ## PageTemplate.include
 
 
-The whole template as a macro (`metal:use-macro="template"`): Chameleon's
+The whole template as a macro (`metal:use-macro="template"`).
 
 
 `PageTemplate.include: MacroInclude`
 
 
-`include(stream, econtext, rcontext, ...)`, which renders the main function into `stream`.
+Chameleon's `include(stream, econtext, rcontext, ...)`, which renders the main function into `stream`.

@@ -3,7 +3,7 @@
 <link rel="canonical" href="https://mkennedy.codes/docs/chameleon-rs/skills.html">
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.38">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -13,10 +13,13 @@
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
-code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -76,10 +79,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="site_libs/quarto-html/anchor.min.js"></script>
 <link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="site_libs/bootstrap/bootstrap-aa1552726bdd3cb78d40c93fdbd5382a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="site_libs/bootstrap/bootstrap-24f143a4d927ff4703881c50cf2b77ac.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -456,7 +459,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-213"><a href="#cb1-213" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Call chameleon_rs.configure(template_folder=..., auto_reload=dev_mode) once at startup, before the first render.</span>
 <span id="cb1-214"><a href="#cb1-214" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>To switch an existing app, add <span class="in">`import chameleon_rs.compat; chameleon_rs.compat.install()`</span> as the first lines of the entry point, and leave the rest of the code unchanged.</span>
 <span id="cb1-215"><a href="#cb1-215" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Prefer ${render_partial('shared/card.pt', item=item)} as a whole expression: it renders as a native frame of the page, with no Python call.</span>
-<span id="cb1-216"><a href="#cb1-216" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Build template folder paths with (Path(__file__).parent / 'templates').as_posix().</span>
+<span id="cb1-216"><a href="#cb1-216" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Build template folder paths relative to your code with Path(__file__).parent / 'templates' (pathlib.Path works wherever a path string does).</span>
 <span id="cb1-217"><a href="#cb1-217" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>In tests, reset with chameleon_rs.partials.clear() (or chameleon_rs.flask.clear(), chameleon_rs.fastapi.clear(), chameleon_rs.starlette.clear(), chameleon_rs.robyn.clear(), chameleon_rs.litestar.clear()) between configurations.</span>
 <span id="cb1-218"><a href="#cb1-218" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Put @template below the route decorator (@app.get, @router.get, @app.route, Litestar's @get); pass app= to configure() so a misordered view fails at startup with DecoratorOrderError.</span>
 <span id="cb1-219"><a href="#cb1-219" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>With Litestar, return chameleon_rs.litestar.Template (not litestar.response.Template) for .pt templates: Litestar guesses the media type from the suffix and serves .pt as text/plain.</span>
@@ -493,9 +496,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-250"><a href="#cb1-250" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
 <span id="cb1-251"><a href="#cb1-251" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplateLoader</span>
 <span id="cb1-252"><a href="#cb1-252" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-253"><a href="#cb1-253" aria-hidden="true" tabindex="-1"></a>folder <span class="op">=</span> (Path(<span class="va">__file__</span>).parent <span class="op">/</span> <span class="st">'templates'</span>).as_posix()</span>
+<span id="cb1-253"><a href="#cb1-253" aria-hidden="true" tabindex="-1"></a>folder <span class="op">=</span> Path(<span class="va">__file__</span>).parent <span class="op">/</span> <span class="st">'templates'</span></span>
 <span id="cb1-254"><a href="#cb1-254" aria-hidden="true" tabindex="-1"></a>chameleon_rs.configure(template_folder<span class="op">=</span>folder, auto_reload<span class="op">=</span>dev_mode)  <span class="co"># once, at startup</span></span>
-<span id="cb1-255"><a href="#cb1-255" aria-hidden="true" tabindex="-1"></a>templates <span class="op">=</span> PageTemplateLoader([folder])</span>
+<span id="cb1-255"><a href="#cb1-255" aria-hidden="true" tabindex="-1"></a>templates <span class="op">=</span> PageTemplateLoader(folder)</span>
 <span id="cb1-256"><a href="#cb1-256" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-257"><a href="#cb1-257" aria-hidden="true" tabindex="-1"></a>html <span class="op">=</span> templates[<span class="st">'home/index.pt'</span>](title<span class="op">=</span><span class="st">'Home'</span>, videos<span class="op">=</span>videos)</span>
 <span id="cb1-258"><a href="#cb1-258" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>

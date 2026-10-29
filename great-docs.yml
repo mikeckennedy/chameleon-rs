@@ -121,7 +121,7 @@ skill:
     - "Call chameleon_rs.configure(template_folder=..., auto_reload=dev_mode) once at startup, before the first render."
     - "To switch an existing app, add `import chameleon_rs.compat; chameleon_rs.compat.install()` as the first lines of the entry point, and leave the rest of the code unchanged."
     - "Prefer ${render_partial('shared/card.pt', item=item)} as a whole expression: it renders as a native frame of the page, with no Python call."
-    - "Build template folder paths with (Path(__file__).parent / 'templates').as_posix()."
+    - "Build template folder paths relative to your code with Path(__file__).parent / 'templates' (pathlib.Path works wherever a path string does)."
     - "In tests, reset with chameleon_rs.partials.clear() (or chameleon_rs.flask.clear(), chameleon_rs.fastapi.clear(), chameleon_rs.starlette.clear(), chameleon_rs.robyn.clear(), chameleon_rs.litestar.clear()) between configurations."
     - "Put @template below the route decorator (@app.get, @router.get, @app.route, Litestar's @get); pass app= to configure() so a misordered view fails at startup with DecoratorOrderError."
     - "With Litestar, return chameleon_rs.litestar.Template (not litestar.response.Template) for .pt templates: Litestar guesses the media type from the suffix and serves .pt as text/plain."

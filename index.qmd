@@ -97,7 +97,7 @@ async def detail(number: int):
   settings run helpers and partials concurrently.
 - **[Web frameworks](user-guide/frameworks.qmd).** Flask and Quart, FastAPI, Starlette (a
   drop-in for `Jinja2Templates`), Robyn and Litestar (a template engine for `TemplateConfig`)
-  are built in; Pyramid's pyramid_chameleon runs unchanged.
+  are built in; Pyramid's pyramid_chameleon and Zope/Plone's z3c.pt run unchanged.
 - **[Partials](user-guide/partials.qmd).** `${render_partial('shared/card.pt', item=item)}`
   works in every template and renders natively, about 10x faster than Chameleon with
   chameleon_partials.
@@ -109,6 +109,12 @@ async def detail(number: int):
 - **[One place for settings](user-guide/configuration.qmd).** `chameleon_rs.configure()` sets
   the template folder, reloading, partial lookup and Markdown for the whole process.
 - **Free-threaded Python.** Wheels for 3.14t and 3.15t that keep the GIL off.
+- **[Long-standing Chameleon issues fixed](user-guide/compatibility.qmd#chameleon-bugs-fixed).**
+  `pathlib.Path` works wherever a path string does, Zope's `repeat.item.first('category')` and
+  `last('category')` group a sorted sequence, valueless attributes given a value render
+  `disabled="disabled"`, `repeat.item` stays right in a recursive macro, a macro call no longer
+  resets a local that shadows a global, and errors inside `metal:fill-slot` point at the fill's
+  failing expression.
 - **Typed.** Type information for the whole API, checked with `ty`.
 
 ## Fast

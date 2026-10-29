@@ -3,7 +3,7 @@
 <link rel="canonical" href="https://mkennedy.codes/docs/chameleon-rs/">
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.38">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -13,10 +13,13 @@
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
-code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -76,10 +79,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="site_libs/quarto-html/anchor.min.js"></script>
 <link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="site_libs/bootstrap/bootstrap-aa1552726bdd3cb78d40c93fdbd5382a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="site_libs/bootstrap/bootstrap-24f143a4d927ff4703881c50cf2b77ac.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -302,12 +305,13 @@ section.level2:first-of-type > h2:first-child,
 <ul>
 <li><strong><a href="./user-guide/strict-tags.html">Errors where the mistake is</a>.</strong> An unclosed tag carrying <code>tal:</code> attributes makes Chameleon render what a condition should hide, or fail lines away with an unrelated <code>NameError</code>. With <code>strict_tags=True</code> it’s a <code>ParseError</code> pointing at that tag and naming the missing end tag. Opt-in.</li>
 <li><strong><a href="./user-guide/async.html">Async rendering</a>.</strong> <code>await template.render_async(**model)</code> awaits awaitable model values where the template uses them, without blocking the event loop. Opt-in settings run helpers and partials concurrently.</li>
-<li><strong><a href="./user-guide/frameworks.html">Web frameworks</a>.</strong> Flask and Quart, FastAPI, Starlette (a drop-in for <code>Jinja2Templates</code>), Robyn and Litestar (a template engine for <code>TemplateConfig</code>) are built in; Pyramid’s pyramid_chameleon runs unchanged.</li>
+<li><strong><a href="./user-guide/frameworks.html">Web frameworks</a>.</strong> Flask and Quart, FastAPI, Starlette (a drop-in for <code>Jinja2Templates</code>), Robyn and Litestar (a template engine for <code>TemplateConfig</code>) are built in; Pyramid’s pyramid_chameleon and Zope/Plone’s z3c.pt run unchanged.</li>
 <li><strong><a href="./user-guide/partials.html">Partials</a>.</strong> <code>${render_partial('shared/card.pt', item=item)}</code> works in every template and renders natively, about 10x faster than Chameleon with chameleon_partials.</li>
 <li><strong><a href="./user-guide/htmx.html">HTMX</a>.</strong> Built-in partials are HTMX fragments: the page includes one with <a href="reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a>, and the HTMX view returns the same template on its own.</li>
 <li><strong><a href="./user-guide/markdown.html">Markdown</a>.</strong> <code>${markdown: post.body}</code> converts CommonMark plus the GitHub extensions while the page renders, in Rust, with raw HTML escaped by default: about 26x faster than mistune, a pure-Python converter.</li>
 <li><strong><a href="./user-guide/configuration.html">One place for settings</a>.</strong> <a href="reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">chameleon_rs.configure()</a> sets the template folder, reloading, partial lookup and Markdown for the whole process.</li>
 <li><strong>Free-threaded Python.</strong> Wheels for 3.14t and 3.15t that keep the GIL off.</li>
+<li><strong><a href="./user-guide/compatibility.html#chameleon-bugs-fixed">Long-standing Chameleon issues fixed</a>.</strong> <code>pathlib.Path</code> works wherever a path string does, Zope’s <code>repeat.item.first('category')</code> and <code>last('category')</code> group a sorted sequence, valueless attributes given a value render <code>disabled="disabled"</code>, <code>repeat.item</code> stays right in a recursive macro, a macro call no longer resets a local that shadows a global, and errors inside <code>metal:fill-slot</code> point at the fill’s failing expression.</li>
 <li><strong>Typed.</strong> Type information for the whole API, checked with <code>ty</code>.</li>
 </ul>
 </section>

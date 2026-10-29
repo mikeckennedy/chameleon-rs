@@ -659,23 +659,24 @@ class PageTemplate(BaseTemplate):
 
     @property
     def engine(self) -> Callable[[], ExpressionEngine]:  # ty: ignore[invalid-property-type-override]
-        """Chameleon's expression engine factory, for code that evaluates expressions with
-        this template's types: ``ExpressionEvaluator(template.engine, builtins)``, as z3c.pt
-        does for ``path()`` and ``exists()`` in ``python:`` expressions. chameleon-rs compiles
-        the template itself natively and doesn't use it."""
+        """Chameleon's expression engine factory for this template's expression types.
+
+        Used by code that evaluates expressions dynamically, such as
+        ``ExpressionEvaluator(template.engine, builtins)`` in z3c.pt for ``path()`` and
+        ``exists()`` inside ``python:`` expressions. chameleon-rs compiles the template itself
+        natively and doesn't use it.
+        """
         return partial(ExpressionEngine, self.expression_parser, default_marker=self.default_marker)
 
     @property
     def expression_parser(self) -> ExpressionParser:
-        """Chameleon's parser for this template's ``expression_types`` and
-        ``default_expression``: which type an expression's prefix selects."""
+        """Chameleon's parser for this template's ``expression_types`` and ``default_expression``."""
         return ExpressionParser(self.expression_types, self.default_expression)
 
     # Read-only here, a writable class attribute in BaseTemplate: as in Chameleon.
     @property
     def builtins(self) -> dict[str, Any]:  # ty: ignore[invalid-property-type-override]
-        """The template builtins: names every expression can use (a render keyword of the
-        same name overrides them)."""
+        """The template builtins: names every expression can use (overridden by render keywords)."""
         return self._builtins()
 
     def _builtins(self) -> dict[str, Any]:
@@ -726,9 +727,11 @@ class PageTemplate(BaseTemplate):
 
     @property
     def include(self) -> MacroInclude:
-        """The whole template as a macro (``metal:use-macro="template"``): Chameleon's
-        ``include(stream, econtext, rcontext, ...)``, which renders the main function into
-        ``stream``."""
+        """The whole template as a macro (``metal:use-macro="template"``).
+
+        Chameleon's ``include(stream, econtext, rcontext, ...)``, which renders the main
+        function into ``stream``.
+        """
         self.cook_check()
         program, builtins = self._compiled
         return Macro(program, None, builtins).include

@@ -3,7 +3,7 @@
 <link rel="canonical" href="https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.expression_parser.html">
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.38">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -13,10 +13,13 @@
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
-code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -41,10 +44,10 @@ ul.task-list li input[type="checkbox"] {
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-aa1552726bdd3cb78d40c93fdbd5382a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-24f143a4d927ff4703881c50cf2b77ac.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -83,7 +86,7 @@ ul.task-list li input[type="checkbox"] {
 <script src="../theme-init.js"></script>
 
 
-  <meta name="description" content="Chameleon’s parser for this template’s expression_types and">
+  <meta name="description" content="Chameleon’s parser for this template’s expression_types and default_expression.">
   <script type="application/ld+json">
 [
   {
@@ -113,13 +116,13 @@ ul.task-list li input[type="checkbox"] {
 </script>
   <meta property="og:type" content="website">
   <meta property="og:title" content="PageTemplate.expression_parser – chameleon-rs | chameleon-rs">
-  <meta property="og:description" content="Chameleon’s parser for this template’s expression_types and">
+  <meta property="og:description" content="Chameleon’s parser for this template’s expression_types and default_expression.">
   <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/reference/PageTemplate.expression_parser.html">
   <meta property="og:site_name" content="chameleon-rs">
   <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="PageTemplate.expression_parser – chameleon-rs | chameleon-rs">
-  <meta name="twitter:description" content="Chameleon’s parser for this template’s expression_types and">
+  <meta name="twitter:description" content="Chameleon’s parser for this template’s expression_types and default_expression.">
   <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
 </head>
 
@@ -899,13 +902,10 @@ ul.task-list li input[type="checkbox"] {
 
 
 <div class="doc-subject">
-<p>Chameleon’s parser for this template’s <code>expression_types</code> and</p>
+<p>Chameleon’s parser for this template’s <code>expression_types</code> and <code>default_expression</code>.</p>
 </div>
 <div class="doc-signature doc-attribute">
 <p><code><span class="doc-parameter-name">PageTemplate.expression_parser</span><span class="doc-parameter-annotation-sep">:</span> <span class="doc-parameter-annotation">ExpressionParser</span></code></p>
-</div>
-<div class="doc-text">
-<p><code>default_expression</code>: which type an expression’s prefix selects.</p>
 </div>
 
 

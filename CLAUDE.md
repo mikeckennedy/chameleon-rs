@@ -4,9 +4,7 @@ A Rust re-implementation of Python's Chameleon page template engine, shipped as 
 package `chameleon-rs` (import `chameleon_rs`). Goal: drop-in compatible with Chameleon
 (95%+ of its test suite, byte-identical output on real sites) and much faster.
 
-- Decisions: `docs/architecture.md`. Build plan and current phase: `docs/plan.md`. Speculative
-  ideas not yet designed (partials settings, Flask/FastAPI integrations, async extras, memory saver, post-release
-  optimisation, docs, logo): `docs/vision.md`.
+- Decisions: `docs/architecture.md`. Build plan and completed phases: `docs/plan.md`. Current feature plans (`plans/01-upstream-bugs.md`, `plans/02-zope-integration.md`): `plans/`. Historical feature notes: `docs/vision.md`.
 - Reference implementation: `temp/chameleon` (gitignored clone of malthe/chameleon at
   `90b9002`, installed editable in `venv`). When behavior is unclear, read it and run it.
 - Chameleon's test suite is vendored unmodified in `tests/upstream/chameleon_tests`. Never
@@ -36,6 +34,8 @@ package `chameleon-rs` (import `chameleon_rs`). Goal: drop-in compatible with Ch
   litestar-chameleon, pyramid_chameleon and z3c.pt (Zope/Plone), unmodified, on chameleon_rs via `compat.install()`,
   plus the first four again against the built-in modules (`chameleon_rs.fastapi`, `.flask`, `.robyn`, `.partials`).
 - `make bench`: baseline benchmarks.
+- `make docs`: build the Great Docs documentation site into `site/` (`make docs-serve` to preview).
+- `make release-local`: build macOS/Linux release wheels and sdist into `dist/`.
 
 ## Conventions
 

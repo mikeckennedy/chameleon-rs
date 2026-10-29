@@ -3,7 +3,7 @@
 <link rel="canonical" href="https://mkennedy.codes/docs/chameleon-rs/user-guide/markdown.html">
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.38">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -13,10 +13,13 @@
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
-code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -78,10 +81,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-aa1552726bdd3cb78d40c93fdbd5382a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-24f143a4d927ff4703881c50cf2b77ac.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -403,7 +406,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>It’s opt-in: Chameleon has nothing like it, so you turn it on with <a href="../reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">configure()</a> and use it in new templates. The converter is built into chameleon-rs (comrak, in Rust), so there’s no Markdown package to install.</p>
 <section id="turn-it-on" class="level1">
 <h1>Turn it on</h1>
-<div id="341f4ba8" class="cell" data-execution_count="1">
+<div id="bc440258" class="cell" data-execution_count="1">
 <div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplate</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -422,7 +425,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="what-it-supports" class="level1">
 <h1>What it supports</h1>
 <p><a href="https://commonmark.org/">CommonMark</a> plus the GitHub extensions: tables, strikethrough, task lists, autolinks for bare URLs, and footnotes.</p>
-<div id="a039f7bc" class="cell" data-execution_count="2">
+<div id="3aa65713" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>notes <span class="op">=</span> <span class="st">"""</span><span class="op">\</span></span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="st">| Engine | Speed |</span></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="st">|---|---|</span></span>
@@ -453,7 +456,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 </div>
 <p>Fenced code blocks get a <code>language-…</code> class, so a client-side highlighter such as highlight.js or Prism can color them:</p>
-<div id="5714a40b" class="cell" data-execution_count="3">
+<div id="3f652113" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb6"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(page(notes<span class="op">=</span><span class="st">'```python</span><span class="ch">\n</span><span class="st">print("hi")</span><span class="ch">\n</span><span class="st">```'</span>))</span></code></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>&lt;article&gt;&lt;pre&gt;&lt;code class="language-python"&gt;print(&amp;quot;hi&amp;quot;)
@@ -471,7 +474,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li>The result is markup, like <code>structure:</code>, so it isn’t escaped again in element content.</li>
 <li>In an attribute value (<code>alt="${markdown: x}"</code>, <code>tal:attributes</code>), the result is escaped like any string. Markdown’s HTML has quoted attributes of its own (<code>&lt;a href="..."&gt;</code>), which would otherwise close the surrounding attribute and let the text add new ones, such as an event handler. Use Markdown in element content; <code>${structure: markdown: x}</code> writes it raw anyway.</li>
 </ul>
-<div id="fd7fc210" class="cell" data-execution_count="4">
+<div id="ccc10ab1" class="cell" data-execution_count="4">
 <div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(PageTemplate(<span class="st">'&lt;div&gt;${markdown: missing.notes | "*Coming soon*"}&lt;/div&gt;'</span>)())</span>
 <span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(PageTemplate(<span class="st">'&lt;p&gt;[${markdown: notes}]&lt;/p&gt;'</span>)(notes<span class="op">=</span><span class="va">None</span>))</span></code></pre></div>
 <div class="cell-output cell-output-stdout">
@@ -484,7 +487,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="safe-by-default" class="level1">
 <h1>Safe by default</h1>
 <p>Raw HTML in the Markdown is shown as text, not passed through. That’s the right default for text you don’t fully control, such as user comments:</p>
-<div id="169781b1" class="cell" data-execution_count="5">
+<div id="6b236afb" class="cell" data-execution_count="5">
 <div class="sourceCode cell-code" id="cb10"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(page(notes<span class="op">=</span><span class="st">'Nice post! &lt;script&gt;alert("hi")&lt;/script&gt;'</span>))</span></code></pre></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>&lt;article&gt;&lt;p&gt;Nice post! &amp;lt;script&amp;gt;alert(&amp;quot;hi&amp;quot;)&amp;lt;/script&amp;gt;&lt;/p&gt;
@@ -499,7 +502,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="profiles-one-prefix-per-kind-of-content" class="level1">
 <h1>Profiles: one prefix per kind of content</h1>
 <p>Different content needs different settings: your own articles may allow HTML, while comments shouldn’t even load images. Each profile is its own expression prefix:</p>
-<div id="ebc5704c" class="cell" data-execution_count="6">
+<div id="18b1a168" class="cell" data-execution_count="6">
 <div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>chameleon_rs.configure(markdown<span class="op">=</span>{</span>
 <span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>    <span class="st">'markdown'</span>: {},                                     <span class="co"># the defaults</span></span>
 <span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">'md-trusted'</span>: {<span class="st">'raw_html'</span>: <span class="st">'allow'</span>, <span class="st">'heading_ids'</span>: <span class="va">True</span>},</span>
@@ -575,7 +578,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </tr>
 </tbody>
 </table>
-<div id="3d82f949" class="cell" data-execution_count="7">
+<div id="66eed23a" class="cell" data-execution_count="7">
 <div class="sourceCode cell-code" id="cb14"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>chameleon_rs.configure(markdown<span class="op">=</span>{<span class="st">'markdown'</span>: {<span class="st">'classes'</span>: {<span class="st">'table'</span>: <span class="st">'table is-striped'</span>, <span class="st">'blockquote'</span>: <span class="st">'note'</span>}}})</span>
 <span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(PageTemplate(<span class="st">'$</span><span class="sc">{markdown: s}</span><span class="st">'</span>)(s<span class="op">=</span><span class="st">'&gt; Tip</span><span class="ch">\n\n</span><span class="st">| a |</span><span class="ch">\n</span><span class="st">|---|</span><span class="ch">\n</span><span class="st">| 1 |'</span>))</span></code></pre></div>
 <div class="cell-output cell-output-stdout">

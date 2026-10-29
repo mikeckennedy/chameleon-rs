@@ -30,9 +30,9 @@ from pathlib import Path
 import chameleon_rs
 from chameleon_rs import PageTemplateLoader
 
-folder = (Path(__file__).parent / 'templates').as_posix()
+folder = Path(__file__).parent / 'templates'
 chameleon_rs.configure(template_folder=folder, auto_reload=dev_mode)  # once, at startup
-templates = PageTemplateLoader([folder])
+templates = PageTemplateLoader(folder)
 
 html = templates['home/index.pt'](title='Home', videos=videos)
 ```

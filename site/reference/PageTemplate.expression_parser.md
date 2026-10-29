@@ -1,10 +1,7 @@
 ## PageTemplate.expression_parser
 
 
-Chameleon's parser for this template's `expression_types` and
+Chameleon's parser for this template's `expression_types` and `default_expression`.
 
 
 `PageTemplate.expression_parser: ExpressionParser`
-
-
-`default_expression`: which type an expression's prefix selects.

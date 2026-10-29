@@ -3,7 +3,7 @@
 <link rel="canonical" href="https://mkennedy.codes/docs/chameleon-rs/user-guide/litestar.html">
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.38">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -13,10 +13,13 @@
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
-code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -78,10 +81,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-aa1552726bdd3cb78d40c93fdbd5382a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-24f143a4d927ff4703881c50cf2b77ac.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -406,7 +409,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p><code>import chameleon_rs</code> doesn’t import Litestar. Only <code>import chameleon_rs.litestar</code> does, and it uses the Litestar your app already has (2.x; tested with 2.25).</p>
 <section id="chameleonengine-litestars-templating" class="level1">
 <h1>ChameleonEngine: Litestar’s templating</h1>
-<div id="6a3e8820" class="cell" data-execution_count="2">
+<div id="291c459c" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> litestar <span class="im">import</span> Litestar, Request, get</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> litestar.template <span class="im">import</span> TemplateConfig</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> litestar.testing <span class="im">import</span> TestClient</span>
@@ -434,7 +437,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(response.headers[<span class="st">'content-type'</span>])</span>
 <span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(response.text)</span></code></pre></div>
 <div class="cell-output cell-output-stderr">
-<pre><code>INFO - 2026-10-28 08:38:22,504 - httpx - _client - HTTP Request: GET http://testserver.local/ "HTTP/1.1 200 OK"</code></pre>
+<pre><code>INFO - 2026-10-28 18:33:32,032 - httpx - _client - HTTP Request: GET http://testserver.local/ "HTTP/1.1 200 OK"</code></pre>
 </div>
 <div class="cell-output cell-output-stdout">
 <pre><code>text/html; charset=utf-8
@@ -457,7 +460,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="pt-and-the-media-type" class="level2">
 <h2 class="anchored" data-anchor-id="pt-and-the-media-type"><code>.pt</code> and the media type</h2>
 <p>Litestar picks a <a href="../reference/litestar.Template.html#chameleon_rs.litestar.Template" class="gdls-link gdls-code">Template</a> response’s media type from the template name’s suffix, and Python’s <code>mimetypes</code> doesn’t know <code>.pt</code>: with <code>litestar.response.Template</code>, a <code>.pt</code> page is served as <code>text/plain</code>, and the browser shows its source. <a href="../reference/litestar.Template.html#chameleon_rs.litestar.Template" class="gdls-link gdls-code">chameleon_rs.litestar.Template</a> is a subclass that serves a name Litestar can’t guess as <code>text/html</code>:</p>
-<div id="e1248c5c" class="cell" data-execution_count="3">
+<div id="706827c3" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> litestar.response <span class="im">import</span> Template <span class="im">as</span> LitestarTemplate</span>
 <span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -474,8 +477,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">'ours: '</span>, client.get(<span class="st">'/'</span>).headers[<span class="st">'content-type'</span>])</span>
 <span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(<span class="st">'stock:'</span>, client.get(<span class="st">'/stock'</span>).headers[<span class="st">'content-type'</span>])</span></code></pre></div>
 <div class="cell-output cell-output-stderr">
-<pre><code>INFO - 2026-10-28 08:38:22,513 - httpx - _client - HTTP Request: GET http://testserver.local/ "HTTP/1.1 200 OK"
-INFO - 2026-10-28 08:38:22,514 - httpx - _client - HTTP Request: GET http://testserver.local/stock "HTTP/1.1 200 OK"</code></pre>
+<pre><code>INFO - 2026-10-28 18:33:32,047 - httpx - _client - HTTP Request: GET http://testserver.local/ "HTTP/1.1 200 OK"
+INFO - 2026-10-28 18:33:32,050 - httpx - _client - HTTP Request: GET http://testserver.local/stock "HTTP/1.1 200 OK"</code></pre>
 </div>
 <div class="cell-output cell-output-stdout">
 <pre><code>ours:  text/html; charset=utf-8
@@ -492,7 +495,7 @@ stock: text/plain; charset=utf-8</code></pre>
 </section>
 <section id="the-decorator-api" class="level1">
 <h1>The decorator API</h1>
-<div id="1357b543" class="cell" data-execution_count="4">
+<div id="adf12b12" class="cell" data-execution_count="4">
 <div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> asyncio</span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> chameleon_rs.litestar <span class="im">as</span> chameleon_litestar</span>
@@ -527,8 +530,8 @@ stock: text/plain; charset=utf-8</code></pre>
 <span id="cb7-32"><a href="#cb7-32" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(client.get(<span class="st">'/latest'</span>).text)</span>
 <span id="cb7-33"><a href="#cb7-33" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(client.get(<span class="st">'/v/missing'</span>).status_code)</span></code></pre></div>
 <div class="cell-output cell-output-stderr">
-<pre><code>INFO - 2026-10-28 08:38:22,535 - httpx - _client - HTTP Request: GET http://testserver.local/latest "HTTP/1.1 200 OK"
-INFO - 2026-10-28 08:38:22,536 - httpx - _client - HTTP Request: GET http://testserver.local/v/missing "HTTP/1.1 404 Not Found"</code></pre>
+<pre><code>INFO - 2026-10-28 18:33:32,074 - httpx - _client - HTTP Request: GET http://testserver.local/latest "HTTP/1.1 200 OK"
+INFO - 2026-10-28 18:33:32,078 - httpx - _client - HTTP Request: GET http://testserver.local/v/missing "HTTP/1.1 404 Not Found"</code></pre>
 </div>
 <div class="cell-output cell-output-stdout">
 <pre><code>&lt;h1&gt;Latest&lt;/h1&gt;

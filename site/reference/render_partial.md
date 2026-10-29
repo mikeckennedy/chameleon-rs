@@ -1,4 +1,4 @@
 ## render_partial
 
 
-`render_partial=PartialRenderer()`
+`render_partial=PartialRenderer()`\

@@ -15,7 +15,7 @@ Each level is a check that runs on every change:
 | **Chameleon's own test suite.** All 233 tests, vendored unmodified, run against chameleon-rs. | Every test that passes on Chameleon passes on chameleon-rs: 227 of 227. The other 6 depend on the test environment and are skipped on both engines. |
 | **Fixture renders.** Every input template in Chameleon's test suite, rendered by both engines. | All 122 byte-identical. |
 | **Differential fuzzing.** Generated templates, models and expressions, rendered by both engines and compared. | No differences in 20,000 examples per generator. |
-| **Integration suites.** The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials, litestar-chameleon, pyramid_chameleon and z3c.pt (Zope and Plone's page templates), unmodified, on chameleon-rs. | All pass. |
+| **Integration suites.** The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials, litestar-chameleon, pyramid_chameleon, z3c.pt (Zope and Plone's page templates) and Zope 6.3 (`Products.PageTemplates`, `Products.Five`), unmodified, on chameleon-rs. | All pass. |
 | **Real sites.** Every page of two production Flask/Quart apps, crawled with both engines: anonymous and signed in, with all their partials and layouts. | Every page byte-identical. |
 
 The upstream suite and the fuzzers compare output byte for byte, and they also compare the

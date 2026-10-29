@@ -18,7 +18,7 @@ TEMPLATES = Path(__file__).parent.parent / 'myapp' / 'templates'
 
 @pytest.mark.parametrize('path', sorted(TEMPLATES.rglob('*.pt')), ids=str)
 def test_template_compiles(path):
-    PageTemplateFile(str(path)).cook_check()
+    PageTemplateFile(path).cook_check()
 ```
 
 `cook_check()` compiles without rendering, so the test needs no model. chameleon-rs compiles in about 0.05 ms per template, so even a few hundred templates take well under a second.
@@ -36,7 +36,7 @@ import chameleon_rs
 
 @pytest.fixture(autouse=True)
 def templates():
-    chameleon_rs.configure(template_folder=str(TEMPLATES))
+    chameleon_rs.configure(template_folder=TEMPLATES)
     yield
     chameleon_rs.partials.clear()
 

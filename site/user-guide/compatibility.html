@@ -3,7 +3,7 @@
 <link rel="canonical" href="https://mkennedy.codes/docs/chameleon-rs/user-guide/compatibility.html">
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.38">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -13,10 +13,13 @@
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
-code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -43,10 +46,10 @@ ul.task-list li input[type="checkbox"] {
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-aa1552726bdd3cb78d40c93fdbd5382a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-24f143a4d927ff4703881c50cf2b77ac.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -389,7 +392,7 @@ ul.task-list li input[type="checkbox"] {
 <td>No differences in 20,000 examples per generator.</td>
 </tr>
 <tr class="even">
-<td><strong>Integration suites.</strong> The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials, litestar-chameleon, pyramid_chameleon and z3c.pt (Zope and Plone’s page templates), unmodified, on chameleon-rs.</td>
+<td><strong>Integration suites.</strong> The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials, litestar-chameleon, pyramid_chameleon, z3c.pt (Zope and Plone’s page templates) and Zope 6.3 (<code>Products.PageTemplates</code>, <code>Products.Five</code>), unmodified, on chameleon-rs.</td>
 <td>All pass.</td>
 </tr>
 <tr class="odd">
@@ -458,10 +461,11 @@ ul.task-list li input[type="checkbox"] {
 </section>
 <section id="corner-cases-in-slot-bodies" class="level2">
 <h2 class="anchored" data-anchor-id="corner-cases-in-slot-bodies">Corner cases in slot bodies</h2>
-<p>Three cases, all involving the slot fills of a macro call together with <code>tal:on-error</code> or i18n settings, render differently. No real template we’ve seen does this; each is pinned by a test that fails if the behaviour changes.</p>
+<p>Four cases, all involving the slot fills of a macro call together with <code>tal:on-error</code> or i18n settings, render differently. No real template we’ve seen does this; each is pinned by a test that fails if the behaviour changes.</p>
 <ul>
 <li><strong>A failing expression under a handler in a slot body</strong> whose slot sits inside <code>i18n:translate</code> or <code>i18n:name</code>. Chameleon writes a text node and its expressions as one piece, so when an expression fails, the text before it in the same node is dropped with it. chameleon-rs writes that text first, so it stays (<code>&lt;q&gt;Q</code> where Chameleon gives <code>&lt;q&gt;</code>).</li>
 <li><strong>A handler on an <code>i18n:name</code> element</strong> whose content calls a macro that fails partway: the same difference, for the text of the failing node inside the macro.</li>
+<li><strong>A handler around a nested macro call in a slot body</strong> whose slot sits inside <code>i18n:translate</code> or <code>i18n:name</code>, when the nested call’s own fill fails. Chameleon keeps the start tag of the failed fill and never closes it (<code>T &lt;u&gt;E U</code>). chameleon-rs takes the failed fill’s output back (<code>T E U</code>).</li>
 <li><strong>A fill no macro took</strong>, used by a later macro call while the calling template has different <code>i18n:domain</code>, <code>i18n:context</code> or <code>i18n:target</code> settings: values converted by that fill use the settings where it was defined. Chameleon uses the settings at the later call.</li>
 </ul>
 </section>
@@ -504,6 +508,11 @@ ul.task-list li input[type="checkbox"] {
 <td>A local variable with the same name as a global, then a macro call inside it (<a href="https://github.com/malthe/chameleon/issues/445">#445</a>)</td>
 <td>The macro call resets the local to the global’s value.</td>
 <td>The local keeps its value, unless the macro sets the global.</td>
+</tr>
+<tr class="even">
+<td>An error inside a <code>metal:fill-slot</code> body (<a href="https://github.com/malthe/chameleon/issues/447">#447</a>, <a href="https://github.com/malthe/chameleon/issues/291">#291</a>, <a href="https://github.com/malthe/chameleon/issues/259">#259</a>)</td>
+<td>The error message points at the page’s <code>metal:use-macro</code>, often after the macro’s last expression, which didn’t fail.</td>
+<td>The message leads with the fill’s failing expression, then the <code>metal:use-macro</code>.</td>
 </tr>
 </tbody>
 </table>

@@ -3,7 +3,7 @@
 <link rel="canonical" href="https://mkennedy.codes/docs/chameleon-rs/reference/">
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.38">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -13,10 +13,13 @@
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
-code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -41,10 +44,10 @@ ul.task-list li input[type="checkbox"] {
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-aa1552726bdd3cb78d40c93fdbd5382a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-24f143a4d927ff4703881c50cf2b77ac.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -946,15 +949,15 @@ ul.task-list li input[type="checkbox"] {
 </dd>
 <dt><a href="../reference/PageTemplate.engine.html#chameleon_rs.PageTemplate.engine" class="doc-attribute doc-label doc-label-property">PageTemplate.engine</a></dt>
 <dd>
-<p>Chameleon’s expression engine factory, for code that evaluates expressions with</p>
+<p>Chameleon’s expression engine factory for this template’s expression types.</p>
 </dd>
 <dt><a href="../reference/PageTemplate.expression_parser.html#chameleon_rs.PageTemplate.expression_parser" class="doc-attribute doc-label doc-label-property">PageTemplate.expression_parser</a></dt>
 <dd>
-<p>Chameleon’s parser for this template’s <code>expression_types</code> and</p>
+<p>Chameleon’s parser for this template’s <code>expression_types</code> and <code>default_expression</code>.</p>
 </dd>
 <dt><a href="../reference/PageTemplate.builtins.html#chameleon_rs.PageTemplate.builtins" class="doc-attribute doc-label doc-label-property">PageTemplate.builtins</a></dt>
 <dd>
-<p>The template builtins: names every expression can use (a render keyword of the</p>
+<p>The template builtins: names every expression can use (overridden by render keywords).</p>
 </dd>
 <dt><a href="../reference/PageTemplate.parse.html#chameleon_rs.PageTemplate.parse" class="doc-function doc-label doc-label-method">PageTemplate.parse()</a></dt>
 <dd>
@@ -962,7 +965,7 @@ ul.task-list li input[type="checkbox"] {
 </dd>
 <dt><a href="../reference/PageTemplate.include.html#chameleon_rs.PageTemplate.include" class="doc-attribute doc-label doc-label-property">PageTemplate.include</a></dt>
 <dd>
-<p>The whole template as a macro (<code>metal:use-macro="template"</code>): Chameleon’s</p>
+<p>The whole template as a macro (<code>metal:use-macro="template"</code>).</p>
 </dd>
 <dt><a href="../reference/PageTemplate.render.html#chameleon_rs.PageTemplate.render" class="doc-function doc-label doc-label-method">PageTemplate.render()</a></dt>
 <dd>

@@ -108,7 +108,7 @@ from pathlib import Path
 
 import chameleon_rs
 
-chameleon_rs.configure(template_folder=(Path(__file__).parent / 'templates').as_posix())
+chameleon_rs.configure(template_folder=Path(__file__).parent / 'templates')
 ```
 
 Then `chameleon_rs.render_partial('shared/video.pt', video=v).html_text` returns the markup.

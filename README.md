@@ -100,8 +100,9 @@ OpenAPI docs work as without `@template`.
   `render()`'s. Opt-in concurrency: `@chameleon_rs.concurrent` helpers and
   `concurrent=True` partials run at the same time as the rest of the page.
   [Async rendering](https://mkennedy.codes/docs/chameleon-rs/user-guide/async.html).
-- **Framework integrations.** Built in, with nothing extra to install (table below), and
-  Pyramid's pyramid_chameleon runs unchanged. Async
+- **Framework integrations.** Built in, with nothing extra to install (table below). Pyramid's
+  pyramid_chameleon and Zope/Plone's z3c.pt and `Products.PageTemplates` run unchanged through
+  `compat.install()`. Async
   views render with `render_async`, and a `@template` written above its route decorator raises
   an error naming the fix instead of quietly returning JSON.
 - **Partials.** Any template can call `${render_partial('shared/card.pt', item=item)}`; the
@@ -124,14 +125,18 @@ OpenAPI docs work as without `@template`.
   `render_async(..., offload=True)` (experimental) renders in a worker thread, in parallel
   with the event loop on a free-threaded build.
 - **Long-standing Chameleon issues fixed.** `pathlib.Path` works wherever a path string does
-  ([#342](https://github.com/malthe/chameleon/issues/342)), and Zope's
-  `repeat.item.first('category')` / `last('category')` group a sorted sequence
-  ([#144](https://github.com/malthe/chameleon/issues/144)), and
+  ([#342](https://github.com/malthe/chameleon/issues/342)); Zope's
+  `repeat.item.first('category')` and `last('category')` group a sorted sequence
+  ([#144](https://github.com/malthe/chameleon/issues/144));
   `<input disabled tal:attributes="disabled True">` renders `disabled="disabled"`, not
-  `disableddisabled` ([#429](https://github.com/malthe/chameleon/issues/429)), and
+  `disableddisabled` ([#429](https://github.com/malthe/chameleon/issues/429));
   `repeat.item` stays right in a recursive macro
-  ([#177](https://github.com/malthe/chameleon/issues/177)), and a macro call no longer resets
-  a local that shadows a global ([#445](https://github.com/malthe/chameleon/issues/445)).
+  ([#177](https://github.com/malthe/chameleon/issues/177)); a macro call no longer resets
+  a local that shadows a global ([#445](https://github.com/malthe/chameleon/issues/445)); and
+  errors inside `metal:fill-slot` point at the failing expression in the fill, not the page's
+  `metal:use-macro` ([#447](https://github.com/malthe/chameleon/issues/447),
+  [#291](https://github.com/malthe/chameleon/issues/291),
+  [#259](https://github.com/malthe/chameleon/issues/259)).
 - **Typed.** PEP 561 type information for the whole API, including the native module.
 - **No runtime dependencies.** The engine, the Markdown converter and the integrations are in
   the wheel; each integration imports its framework only when you import it.

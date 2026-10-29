@@ -3,7 +3,7 @@
 <link rel="canonical" href="https://mkennedy.codes/docs/chameleon-rs/user-guide/strict-tags.html">
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.38">
+<meta name="generator" content="quarto-1.10.19">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -13,10 +13,13 @@
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
-code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -78,10 +81,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-15634bcf2e68342d4ad2dfa704d543f6.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-bf27225e3a48a9273f3daa8f8e829971.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-aa1552726bdd3cb78d40c93fdbd5382a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-24f143a4d927ff4703881c50cf2b77ac.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -396,7 +399,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h1>The problem</h1>
 <p>When Chameleon finds a start tag with no matching end tag, it treats the tag as an empty element and carries on. Any <code>tal:</code>, <code>metal:</code> or <code>i18n:</code> attribute on that tag then applies to the tag alone, not to the content you meant it to cover. The template compiles without complaint, and one of two things happens.</p>
 <p><strong>It renders the wrong thing, with no error.</strong> Here the missing <code>&lt;/div&gt;</code> means <code>tal:condition</code> hides an empty <code>&lt;div&gt;</code>, and the “secret” paragraph shows anyway:</p>
-<div id="89813f6f" class="cell" data-execution_count="1">
+<div id="1f177681" class="cell" data-execution_count="1">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplate</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>page <span class="op">=</span> PageTemplate(<span class="st">"""</span></span>
@@ -420,7 +423,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 </div>
 <p><strong>Or it fails somewhere else.</strong> Here the missing <code>&lt;/ul&gt;</code> is on line 3, but the error names a variable on line 4. In a real page the symptom can be dozens of lines from the cause.</p>
-<div id="c945b873" class="cell" data-execution_count="2">
+<div id="0ec781a3" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>page <span class="op">=</span> PageTemplate(<span class="st">"""</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="st">&lt;main&gt;</span></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="st">  &lt;ul tal:repeat="episode episodes"&gt;</span></span>
@@ -443,7 +446,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="the-fix-strict_tags" class="level1">
 <h1>The fix: <code>strict_tags</code></h1>
 <p>With <code>strict_tags=True</code>, the unclosed tag is a <code>ParseError</code> when the template compiles. The error points at the tag that’s missing its end tag, and says what to add:</p>
-<div id="3730a089" class="cell" data-execution_count="3">
+<div id="5d5e2cda" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs.exc <span class="im">import</span> ParseError</span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>source <span class="op">=</span> <span class="st">"""</span></span>
