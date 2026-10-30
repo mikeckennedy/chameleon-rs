@@ -2,3 +2,11 @@
 # is generated, and Chameleon's test suite is vendored unmodified.
 site/** linguist-generated
 tests/upstream/** linguist-vendored
+
+# Tests and benchmarks aren't the product: the Python tests outweigh the Python package, so
+# counting them makes a mostly-Rust engine read as mostly Python. The Rust ones are left out
+# too, to measure both languages alike (inline `#[cfg(test)]` modules still count).
+tests/** linguist-detectable=false
+crates/*/tests/** linguist-detectable=false
+crates/*/benches/** linguist-detectable=false
+crates/chameleon-core/src/tests.rs linguist-detectable=false
