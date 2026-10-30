@@ -72,5 +72,7 @@ chameleon-rs keeps the cost of a render in proportion to its input:
 - Wide Markdown tables convert in linear time.
 - The Markdown cache has a limit in entries and in bytes.
 - A template nested too deeply to compile raises `RecursionError` instead of crashing the process.
+- Markdown text longer than a profile's `max_length` (a million characters by default) raises `ValueError`: converting takes a few hundred bytes of memory per character. See [Markdown](markdown.md#profile-options).
+- Rendering, and freeing a compiled template, are safe on threads with small stacks. On Python 3.12 and 3.13, compiling is only as safe as CPython's own parser, which can overflow a thread stack of 256 KiB or less on an expression nested a hundred levels deep; Python 3.14 raises an error instead. Compile templates (and let `auto_reload` recompile them) on threads with the default stack size there.
 
 A large input still costs time in proportion to its size, so limit the size of what users can submit (a comment's length, say) in your application, as you would anyway.

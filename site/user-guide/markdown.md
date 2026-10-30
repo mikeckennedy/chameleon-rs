@@ -176,6 +176,7 @@ A profile name is a prefix, so it uses lowercase letters, digits, `-` and `_`, a
 | `heading_ids` | `False` | `True` gives headings GitHub-style ids and anchor links. A string adds a prefix to each id, such as `'doc-'` (letters, digits, `-` and `_`). |
 | `classes` | `{}` | A class attribute per element, such as `{'table': 'table is-striped', 'pre': 'code'}`. Elements: `p`, `h1`-`h6`, `blockquote`, `ul`, `ol`, `li`, `pre`, `code`, `table`, `a`, `img`, `hr`. See the notes below. |
 | `extensions` | all on | Switch GFM extensions off: `{'table': False}`. Keys: `table`, `strikethrough`, `tasklist`, `autolink`, `footnotes`. |
+| `max_length` | `1_000_000` | The longest text converted, in characters; longer text raises `ValueError`. Converting takes a few hundred bytes of memory per character of text, so a megabyte of Markdown from a request can cost hundreds of megabytes. `None` removes the limit, for trusted text only. |
 
 
 ``` python

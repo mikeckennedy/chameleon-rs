@@ -91,7 +91,7 @@ Async iterables (an `async def` generator) aren't supported in `tal:repeat`, as 
 Everything in the language works across a wait:
 
 - **Macros and slots.** A layout's macro and the page's slot fills can await values.
-- **Partials.** `${render_partial('shared/card.pt', item=item)}` renders natively, and the partial can await values of its own.
+- **Partials.** `${render_partial('shared/card.pt', item=item)}` renders natively, and the partial can await values of its own. An awaitable passed as a keyword argument is awaited where the partial first uses it, and keeps that value for its later uses. That holds where the call is a whole `${...}`, `tal:content`, `tal:replace` or attribute value. Anywhere else (`structure:`, `tal:define`, `tal:condition`, or inside a larger expression) the partial renders synchronously, as chameleon_partials does, so await the value first with a `tal:define`.
 - **`tal:on-error`.** An exception raised by an awaited value is raised where the expression is, so the nearest `tal:on-error` handles it, as for any other error.
 - **Cancellation.** Cancelling the task that runs the render cancels the value being awaited.
 

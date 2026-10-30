@@ -399,7 +399,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h1>The problem</h1>
 <p>When Chameleon finds a start tag with no matching end tag, it treats the tag as an empty element and carries on. Any <code>tal:</code>, <code>metal:</code> or <code>i18n:</code> attribute on that tag then applies to the tag alone, not to the content you meant it to cover. The template compiles without complaint, and one of two things happens.</p>
 <p><strong>It renders the wrong thing, with no error.</strong> Here the missing <code>&lt;/div&gt;</code> means <code>tal:condition</code> hides an empty <code>&lt;div&gt;</code>, and the “secret” paragraph shows anyway:</p>
-<div id="289c8204" class="cell" data-execution_count="1">
+<div id="b19c6f23" class="cell" data-execution_count="1">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs <span class="im">import</span> PageTemplate</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>page <span class="op">=</span> PageTemplate(<span class="st">"""</span></span>
@@ -423,7 +423,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 </div>
 <p><strong>Or it fails somewhere else.</strong> Here the missing <code>&lt;/ul&gt;</code> is on line 3, but the error names a variable on line 4. In a real page the symptom can be dozens of lines from the cause.</p>
-<div id="768a6425" class="cell" data-execution_count="2">
+<div id="28ee8bca" class="cell" data-execution_count="2">
 <div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>page <span class="op">=</span> PageTemplate(<span class="st">"""</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="st">&lt;main&gt;</span></span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="st">  &lt;ul tal:repeat="episode episodes"&gt;</span></span>
@@ -446,7 +446,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="the-fix-strict_tags" class="level1">
 <h1>The fix: <code>strict_tags</code></h1>
 <p>With <code>strict_tags=True</code>, the unclosed tag is a <code>ParseError</code> when the template compiles. The error points at the tag that’s missing its end tag, and says what to add:</p>
-<div id="a8d57a7a" class="cell" data-execution_count="3">
+<div id="69ade709" class="cell" data-execution_count="3">
 <div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> chameleon_rs.exc <span class="im">import</span> ParseError</span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>source <span class="op">=</span> <span class="st">"""</span></span>

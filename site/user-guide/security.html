@@ -449,6 +449,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li>Wide Markdown tables convert in linear time.</li>
 <li>The Markdown cache has a limit in entries and in bytes.</li>
 <li>A template nested too deeply to compile raises <code>RecursionError</code> instead of crashing the process.</li>
+<li>Markdown text longer than a profile’s <code>max_length</code> (a million characters by default) raises <code>ValueError</code>: converting takes a few hundred bytes of memory per character. See <a href="../user-guide/markdown.html#profile-options">Markdown</a>.</li>
+<li>Rendering, and freeing a compiled template, are safe on threads with small stacks. On Python 3.12 and 3.13, compiling is only as safe as CPython’s own parser, which can overflow a thread stack of 256 KiB or less on an expression nested a hundred levels deep; Python 3.14 raises an error instead. Compile templates (and let <code>auto_reload</code> recompile them) on threads with the default stack size there.</li>
 </ul>
 <p>A large input still costs time in proportion to its size, so limit the size of what users can submit (a comment’s length, say) in your application, as you would anyway.</p>
 

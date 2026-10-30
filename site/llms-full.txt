@@ -1158,6 +1158,7 @@ prefix itself in `expression_types` keeps its own.
 | `heading_ids` | `False` | `True` gives headings GitHub-style ids and anchor links. A string adds a prefix to each id, such as `'doc-'` (letters, digits, `-` and `_`). |
 | `classes` | `{}` | A class attribute per element, such as `{'table': 'table is-striped', 'pre': 'code'}`. Elements: `p`, `h1`–`h6`, `blockquote`, `ul`, `ol`, `li`, `pre`, `code`, `table`, `a`, `img`, `hr`. See the notes below. |
 | `extensions` | all on | Switch GFM extensions off: `{'table': False}`. Keys: `table`, `strikethrough`, `tasklist`, `autolink`, `footnotes`. |
+| `max_length` | `1_000_000` | The longest text converted, in characters; longer text raises `ValueError`. Converting takes a few hundred bytes of memory per character of text, so a megabyte of Markdown from a request can cost hundreds of megabytes. `None` removes the limit, for trusted text only. |
 
 ```{python}
 chameleon_rs.configure(markdown={'markdown': {'classes': {'table': 'table is-striped', 'blockquote': 'note'}}})
@@ -1309,8 +1310,7 @@ iterable in a sync render either. Collect them in a helper first:
 Everything in the language works across a wait:
 
 - **Macros and slots.** A layout's macro and the page's slot fills can await values.
-- **Partials.** `${render_partial('shared/card.pt', item=item)}` renders natively, and the
-  partial can await values of its own.
+- **Partials.** `${render_partial('shared/card.pt', item=item)}` renders natively, and the partial can await values of its own. An awaitable passed as a keyword argument is awaited where the partial first uses it, and keeps that value for its later uses. That holds where the call is a whole `${...}`, `tal:content`, `tal:replace` or attribute value. Anywhere else (`structure:`, `tal:define`, `tal:condition`, or inside a larger expression) the partial renders synchronously, as chameleon_partials does, so await the value first with a `tal:define`.
 - **`tal:on-error`.** An exception raised by an awaited value is raised where the expression
   is, so the nearest `tal:on-error` handles it, as for any other error.
 - **Cancellation.** Cancelling the task that runs the render cancels the value being awaited.
@@ -3434,6 +3434,8 @@ chameleon-rs keeps the cost of a render in proportion to its input:
 - The Markdown cache has a limit in entries and in bytes.
 - A template nested too deeply to compile raises `RecursionError` instead of crashing the
   process.
+- Markdown text longer than a profile's `max_length` (a million characters by default) raises `ValueError`: converting takes a few hundred bytes of memory per character. See [Markdown](markdown.qmd#profile-options).
+- Rendering, and freeing a compiled template, are safe on threads with small stacks. On Python 3.12 and 3.13, compiling is only as safe as CPython's own parser, which can overflow a thread stack of 256 KiB or less on an expression nested a hundred levels deep; Python 3.14 raises an error instead. Compile templates (and let `auto_reload` recompile them) on threads with the default stack size there.
 
 A large input still costs time in proportion to its size, so limit the size of what users
 can submit (a comment's length, say) in your application, as you would anyway.
