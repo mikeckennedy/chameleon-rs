@@ -1,0 +1,4 @@
+# GitHub's language statistics (Linguist) skip these: the Great Docs build output (`make docs`)
+# is generated, and Chameleon's test suite is vendored unmodified.
+site/** linguist-generated
+tests/upstream/** linguist-vendored
