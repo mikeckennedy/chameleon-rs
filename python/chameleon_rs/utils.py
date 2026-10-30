@@ -70,9 +70,8 @@ RE_META = re.compile(
     re.IGNORECASE,
 )
 # `RE_META` in parts. Up to `charset=` it matches one way only, wherever it starts.
-_META_HEAD = re.compile(
-    r'<meta\s+http-equiv=["\']?Content-Type["\']?\s+content=["\']?([^;]+);\s*charset=', re.IGNORECASE
-)
+_META_HEAD = re.compile(r'<meta\s+http-equiv=["\']?Content-Type["\']?\s+content=(["\']?)', re.IGNORECASE)
+_META_CHARSET_KEY = re.compile(r'\s*charset=', re.IGNORECASE)
 _META_CHARSET = re.compile(r'[^"\']+')
 _META_END = re.compile(r'["\']?\s*/?\s*>')
 
@@ -119,19 +118,48 @@ def _search_meta(body: str) -> tuple[str, str] | None:
     (``[^"']+``) one character at a time, retrying the ``\s*/?\s*>`` after it from each: cubic
     in a run of whitespace with no ``>`` to end it (2,000 spaces took 4.6 s). The charset it
     settles on is the longest that end follows: the whole run (up to a quote or the end) if the
-    end matches after it, else the run up to its last ``>``."""
+    end matches after it, else the run up to its last ``>``.
+
+    Its content (``[^;]+``) runs to the first ``;`` after the head, so every head before one
+    ``;`` shares what follows it: that is worked out once per ``;``, not once per head (a page
+    of heads with no ``;`` was quadratic, 600 KB took 20 s)."""
     pos = 0
+    semi = -2  # the `;` last worked out, and the charset after it (`None`: no match)
+    charset: str | None = None
     while (head := _META_HEAD.search(body, pos)) is not None:
-        start = head.end()
-        run = _META_CHARSET.match(body, start)
-        if run is not None:
-            end = run.end()
-            if _META_END.match(body, end):
-                return head.group(1), body[start:end]
-            close = body.rfind('>', start + 1, end)
-            if close != -1:
-                return head.group(1), body[start:close]
+        content = head.end()
+        # The first `;` after an earlier head is the first after this one too, if not passed.
+        found = semi if content <= semi else body.find(';', content)
+        if found == -1:
+            # No `;` after this head, so none after any later one.
+            return None
+        if found != semi:
+            semi, charset = found, _charset_after(body, found)
+        if charset is not None:
+            if found > content:
+                return body[content:found], charset
+            if head.group(1):
+                # `content=";`: the optional quote is given back to `[^;]+`.
+                return head.group(1), charset
         pos = head.start() + 1
+    return None
+
+
+def _charset_after(body: str, semi: int) -> str | None:
+    r"""What ``;\s*charset=([^"']+)["']?\s*/?\s*>`` captures at ``semi``, or ``None``."""
+    key = _META_CHARSET_KEY.match(body, semi + 1)
+    if key is None:
+        return None
+    start = key.end()
+    run = _META_CHARSET.match(body, start)
+    if run is None:
+        return None
+    end = run.end()
+    if _META_END.match(body, end):
+        return body[start:end]
+    close = body.rfind('>', start + 1, end)
+    if close != -1:
+        return body[start:close]
     return None
 
 
@@ -265,6 +293,9 @@ def safe_native(s: str | bytes, encoding: str = 'utf-8') -> str:
     return s
 
 
+_NUMBERS = (int, float, bool)
+
+
 def limit_string(s: str, max_length: int = 53) -> str:
     if len(s) > max_length:
         return s[: max_length - 3] + '...'
@@ -275,10 +306,16 @@ def limit_string(s: str, max_length: int = 53) -> str:
 def value_repr(value: object) -> str | int | float:
     """How a template's arguments are shown in a render error (``BaseTemplate.value_repr``)."""
     if isinstance(value, str):
-        short = limit_string(value)
+        # A subclass by its characters: its `__len__` or slicing could make the cut keep all
+        # of a long value (the characters are what Chameleon shows of one).
+        short = limit_string(value if type(value) is str else str.__str__(value))
         return short.replace('\n', '\\n')
-    if isinstance(value, (int, float)):
+    if isinstance(value, (int, float)) and type(value) in _NUMBERS:
         return value  # a number as is, as in Chameleon
+    if isinstance(value, (int, float)):
+        # A subclass shows as it formats, which it decides: the same text, cut as a string is
+        # (Chameleon printed a subclass's `__str__` of any length).
+        return limit_string(format(value, ''))
     if isinstance(value, dict):
         return '{...} (%d)' % len(value)  # noqa: UP031 - Chameleon's formatting
 

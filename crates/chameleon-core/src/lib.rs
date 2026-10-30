@@ -62,6 +62,7 @@ pub mod testing {
         parse,
     };
     pub use crate::pychars::Class;
+    pub use crate::source::check_len;
     pub use crate::tokenize::{pattern, tokenize, tokenize_text};
 
     /// [`parse`] with its error converted the way [`crate::compile`] converts it.

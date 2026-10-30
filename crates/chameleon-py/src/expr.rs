@@ -158,6 +158,17 @@ pub(crate) struct Site {
     pub(crate) depth: u32,
 }
 
+/// Iterative: the default drop of an expression tree recurses once per level, on whatever
+/// thread drops the last reference to the program, whose stack may be far smaller than the
+/// compiling thread's (a 546-level `string:` nesting killed a 64 KiB thread). Each node's
+/// sub-expressions move to a heap stack before it drops. Values are released on this thread's
+/// own stack, as the default drop would release them.
+impl Drop for Site {
+    fn drop(&mut self) {
+        self.expr.dismantle();
+    }
+}
+
 /// A `<?python ?>` block (`exec`), or a fallback expression that reads a name a code block
 /// defined (`eval`): Chameleon inlines both into the render function, whose locals they
 /// share. They run with the namespace of the frame running them (one per frame: each macro
@@ -205,7 +216,21 @@ pub(crate) enum StrPart {
 }
 
 impl Expr {
+    /// Visits every reference the tree holds. Iterative: an expression tree is as deep as the
+    /// compile allowed on the thread that compiled it, and the collector traverses it on any
+    /// thread, whose stack may be far smaller (recursing, a 546-level `string:` nesting killed
+    /// a 64 KiB thread).
     pub(crate) fn traverse(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
+        let mut pending = vec![self];
+        while let Some(e) = pending.pop() {
+            e.traverse_own(visit)?;
+            e.for_each_child(&mut |child| pending.push(child));
+        }
+        Ok(())
+    }
+
+    /// The references this node holds itself, not those of its sub-expressions.
+    fn traverse_own(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
         match self {
             Self::Name(n) | Self::ScopeKey(n) | Self::TemplateBuiltin(n) | Self::RenderBuiltin(n) | Self::Import(n) => {
                 visit.call(n)
@@ -222,55 +247,176 @@ impl Expr {
                 n.attrs.as_ref().map_or(Ok(()), |a| visit.call(a))
             }
             Self::Fallback(f) => visit.call(&f.func),
-            Self::Custom(c) => c.traverse(visit),
-            Self::Econtext | Self::Rcontext => Ok(()),
-            Self::Attr(e, n) => {
-                e.traverse(visit)?;
-                visit.call(n)
+            Self::Custom(c) => c.traverse_own(visit),
+            Self::Attr(_, n) => visit.call(n),
+            Self::Call { kwargs, .. } | Self::Partial { kwargs, .. } => {
+                kwargs.iter().try_for_each(|(k, _)| visit.call(k))
             }
-            Self::Call { func, args, kwargs } => {
-                func.traverse(visit)?;
-                args.iter().try_for_each(|a| a.traverse(visit))?;
-                kwargs.iter().try_for_each(|(k, v)| {
-                    visit.call(k)?;
-                    v.traverse(visit)
-                })
-            }
-            Self::Not(e)
+            Self::Interp(s) => s.traverse_own(visit),
+            Self::Econtext
+            | Self::Rcontext
+            | Self::Not(_)
+            | Self::Unary(..)
+            | Self::Exists(_)
+            | Self::Structure(_)
+            | Self::Markdown(..)
+            | Self::Token(..)
+            | Self::Binary(..)
+            | Self::Subscript(..)
+            | Self::Slice(_)
+            | Self::And(_)
+            | Self::Or(_)
+            | Self::Tuple(_)
+            | Self::List(_)
+            | Self::Pipe(_)
+            | Self::Compare(..)
+            | Self::IfExp(..)
+            | Self::Dict(_) => Ok(()),
+        }
+    }
+
+    /// Calls `f` on each direct sub-expression (a `string:`'s parts and a custom type's
+    /// sub-expressions included).
+    fn for_each_child<'a>(&'a self, f: &mut impl FnMut(&'a Expr)) {
+        match self {
+            Self::Name(_)
+            | Self::ScopeKey(_)
+            | Self::TemplateBuiltin(_)
+            | Self::RenderBuiltin(_)
+            | Self::Import(_)
+            | Self::Builtin(..)
+            | Self::Const(_)
+            | Self::Folded(_)
+            | Self::Raise(_)
+            | Self::Ns(_)
+            | Self::Fallback(_)
+            | Self::Econtext
+            | Self::Rcontext => {}
+            Self::Custom(c) => c.subs.iter().for_each(|sub| f(&sub.expr)),
+            Self::Attr(e, _)
+            | Self::Not(e)
             | Self::Unary(_, e)
             | Self::Exists(e)
             | Self::Structure(e)
             | Self::Markdown(_, e)
-            | Self::Token(_, _, e) => e.traverse(visit),
+            | Self::Token(_, _, e) => f(e),
+            Self::Call { func, args, kwargs } => {
+                f(func);
+                args.iter().for_each(&mut *f);
+                for (_, v) in kwargs {
+                    f(v);
+                }
+            }
             Self::Binary(_, a, b) | Self::Subscript(a, b) => {
-                a.traverse(visit)?;
-                b.traverse(visit)
+                f(a);
+                f(b);
             }
-            Self::Slice(parts) => parts.iter().flatten().try_for_each(|e| e.traverse(visit)),
-            Self::And(v) | Self::Or(v) | Self::Tuple(v) | Self::List(v) | Self::Pipe(v) => {
-                v.iter().try_for_each(|e| e.traverse(visit))
-            }
+            Self::Slice(parts) => parts.iter().flatten().for_each(f),
+            Self::And(v) | Self::Or(v) | Self::Tuple(v) | Self::List(v) | Self::Pipe(v) => v.iter().for_each(f),
             Self::Compare(left, ops) => {
-                left.traverse(visit)?;
-                ops.iter().try_for_each(|(_, e)| e.traverse(visit))
+                f(left);
+                for (_, e) in ops {
+                    f(e);
+                }
             }
             Self::IfExp(a, b, c) => {
-                a.traverse(visit)?;
-                b.traverse(visit)?;
-                c.traverse(visit)
+                f(a);
+                f(b);
+                f(c);
             }
-            Self::Dict(items) => items.iter().try_for_each(|(k, v)| {
-                k.traverse(visit)?;
-                v.traverse(visit)
+            Self::Dict(items) => items.iter().for_each(|(k, v)| {
+                f(k);
+                f(v);
             }),
-            Self::Interp(s) => s.traverse(visit),
+            Self::Interp(s) => s.parts.iter().for_each(|part| {
+                if let StrPart::Expr(e) = part {
+                    f(e);
+                }
+            }),
             Self::Partial { path, kwargs, call } => {
-                path.traverse(visit)?;
-                kwargs.iter().try_for_each(|(k, v)| {
-                    visit.call(k)?;
-                    v.traverse(visit)
-                })?;
-                call.traverse(visit)
+                f(path);
+                for (_, v) in kwargs {
+                    f(v);
+                }
+                f(call);
+            }
+        }
+    }
+
+    /// Drops its sub-expressions without recursing (see [`Site`]'s `Drop`), leaving a leaf.
+    pub(crate) fn dismantle(&mut self) {
+        let mut pending = Vec::new();
+        self.take_children(&mut pending);
+        while let Some(mut e) = pending.pop() {
+            e.take_children(&mut pending);
+        }
+    }
+
+    /// Moves each direct sub-expression into `out` (leaving a leaf in its place), so that
+    /// dropping this node no longer recurses into them (see [`Site`]'s `Drop`). A custom
+    /// type's sub-expressions are taken only from its last owner.
+    fn take_children(&mut self, out: &mut Vec<Expr>) {
+        let take = |e: &mut Box<Expr>| std::mem::replace(&mut **e, Self::Econtext);
+        match self {
+            Self::Name(_)
+            | Self::ScopeKey(_)
+            | Self::TemplateBuiltin(_)
+            | Self::RenderBuiltin(_)
+            | Self::Import(_)
+            | Self::Builtin(..)
+            | Self::Const(_)
+            | Self::Folded(_)
+            | Self::Raise(_)
+            | Self::Ns(_)
+            | Self::Fallback(_)
+            | Self::Econtext
+            | Self::Rcontext => {}
+            Self::Custom(c) => {
+                if let Some(subs) = std::sync::Arc::get_mut(&mut c.subs) {
+                    out.extend(subs.iter_mut().map(|sub| std::mem::replace(&mut sub.expr, Self::Econtext)));
+                }
+            }
+            Self::Attr(e, _)
+            | Self::Not(e)
+            | Self::Unary(_, e)
+            | Self::Exists(e)
+            | Self::Structure(e)
+            | Self::Markdown(_, e)
+            | Self::Token(_, _, e) => out.push(take(e)),
+            Self::Call { func, args, kwargs } => {
+                out.push(take(func));
+                out.append(args);
+                out.extend(kwargs.drain(..).map(|(_, v)| v));
+            }
+            Self::Binary(_, a, b) | Self::Subscript(a, b) => {
+                out.push(take(a));
+                out.push(take(b));
+            }
+            Self::Slice(parts) => out.extend(parts.iter_mut().filter_map(Option::take)),
+            Self::And(v) | Self::Or(v) | Self::Tuple(v) | Self::List(v) | Self::Pipe(v) => out.append(v),
+            Self::Compare(left, ops) => {
+                out.push(take(left));
+                out.extend(ops.drain(..).map(|(_, e)| e));
+            }
+            Self::IfExp(a, b, c) => {
+                out.push(take(a));
+                out.push(take(b));
+                out.push(take(c));
+            }
+            Self::Dict(items) => {
+                for (k, v) in items.drain(..) {
+                    out.push(k);
+                    out.push(v);
+                }
+            }
+            Self::Interp(s) => out.extend(s.parts.drain(..).filter_map(|part| match part {
+                StrPart::Expr(e) => Some(e),
+                StrPart::Text(_) => None,
+            })),
+            Self::Partial { path, kwargs, call } => {
+                out.push(take(path));
+                out.extend(kwargs.drain(..).map(|(_, v)| v));
+                out.push(take(call));
             }
         }
     }
@@ -452,13 +598,15 @@ impl Expr {
 }
 
 impl StrInterp {
-    fn traverse(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
+    /// Its own references: the default and the text parts (the expression parts are visited
+    /// as sub-expressions, see [`Expr::traverse`]).
+    fn traverse_own(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
         if let Some(d) = &self.conv.default {
             visit.call(d)?;
         }
         self.parts.iter().try_for_each(|p| match p {
             StrPart::Text(t) => visit.call(t),
-            StrPart::Expr(e) => e.traverse(visit),
+            StrPart::Expr(_) => Ok(()),
         })
     }
 }
@@ -536,7 +684,8 @@ pub(crate) struct RenderCtx<'py> {
     pub(crate) defer_next: Cell<bool>,
     /// Tasks started for placeholders, in document order, and the placeholders' nonce.
     pub(crate) deferred: RefCell<Vec<crate::deferred::Deferred>>,
-    pub(crate) nonce: u128,
+    /// Drawn at the first placeholder (`0`: none yet), see [`RenderCtx::nonce`].
+    pub(crate) nonce: Cell<u128>,
     /// An asynchronous render's answers to "is this type awaitable".
     pub(crate) await_types: crate::awaitable::AwaitTypes<'py>,
 }
@@ -654,7 +803,7 @@ impl<'py> RenderCtx<'py> {
             concurrent: false,
             defer_next: Cell::new(false),
             deferred: RefCell::new(Vec::new()),
-            nonce: 0,
+            nonce: Cell::new(0),
             await_types: RefCell::new(Vec::new()),
         }
     }
@@ -681,8 +830,19 @@ impl<'py> RenderCtx<'py> {
             awaits: self.awaits,
             concurrent: self.concurrent,
             deferred: self.deferred.into_inner(),
-            nonce: self.nonce,
+            nonce: self.nonce.get(),
         }
+    }
+
+    /// The render's placeholder nonce, drawn when its first placeholder is written: most
+    /// renders write none and never ask the operating system for it.
+    pub(crate) fn nonce(&self) -> u128 {
+        let mut nonce = self.nonce.get();
+        if nonce == 0 {
+            nonce = crate::deferred::nonce();
+            self.nonce.set(nonce);
+        }
+        nonce
     }
 
     /// The state [`RenderCtx::save`] kept, bound again.
@@ -703,7 +863,7 @@ impl<'py> RenderCtx<'py> {
             concurrent: saved.concurrent,
             defer_next: Cell::new(false),
             deferred: RefCell::new(saved.deferred),
-            nonce: saved.nonce,
+            nonce: Cell::new(saved.nonce),
             await_types: RefCell::new(Vec::new()),
         }
     }

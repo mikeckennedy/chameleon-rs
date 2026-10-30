@@ -9,7 +9,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
 use chameleon_core::Source;
-use chameleon_core::testing::{Class, ParseOptions, parse_tokens, pattern, tokenize};
+use chameleon_core::testing::{Class, ParseOptions, check_len, parse_tokens, pattern, tokenize};
 
 use crate::elements::{Conv, parse_spans, spans};
 use crate::errors::compile_error;
@@ -119,6 +119,7 @@ pub(crate) fn char_class(name: &str) -> PyResult<String> {
 /// items, without building Python objects: for timing the tokenizer and parser alone.
 #[pyfunction]
 pub(crate) fn parse_count(py: Python<'_>, body: &str) -> PyResult<usize> {
+    too_large(py, body)?;
     let tokens = tokenize(body);
     let items =
         parse_tokens(body, &tokens, &ParseOptions::default()).map_err(|e| compile_error(py, e, body, "<string>"))?;
@@ -127,8 +128,18 @@ pub(crate) fn parse_count(py: Python<'_>, body: &str) -> PyResult<usize> {
 
 /// The number of tokens in `body`, for timing the tokenizer alone.
 #[pyfunction]
-pub(crate) fn token_count(body: &str) -> usize {
-    tokenize(body).len()
+pub(crate) fn token_count(py: Python<'_>, body: &str) -> PyResult<usize> {
+    too_large(py, body)?;
+    Ok(tokenize(body).len())
+}
+
+/// The error compiling raises for a source too long for `u32` spans (what the tokenizer's
+/// spans are), checked first as every other entry does.
+fn too_large(py: Python<'_>, body: &str) -> PyResult<()> {
+    if check_len(body) {
+        return Ok(());
+    }
+    Err(compile_error(py, chameleon_core::CompileError::TooLarge, body, "<string>"))
 }
 
 /// `[(text, reads, writes), ...]`: each expression site of `body` in tree order with the

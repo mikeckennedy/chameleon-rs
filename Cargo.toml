@@ -24,6 +24,8 @@ comrak = { version = "0.57", default-features = false }
 rustc-hash = "2"
 # The stack left to a deep compile (`chameleon_core::stack`), read without unsafe code of ours.
 stacker = "0.1"
+# Placeholder nonces (`chameleon-py`'s `deferred`); already in the tree through tempfile.
+getrandom = "0.4"
 insta = "1"
 proptest = "1"
 # Micro-benchmarks only (no plots, no rayon).

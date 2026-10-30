@@ -23,6 +23,7 @@ from __future__ import annotations
 import ast
 import functools
 import re
+import sys
 from collections.abc import Mapping
 from typing import Any
 
@@ -367,8 +368,12 @@ _CHAMELEON = {'PythonExpr', 'StringExpr', 'NotExpr', 'ExistsExpr', 'ImportExpr',
 
 
 def _ours(cls: Any) -> Any:
+    """Our class for Chameleon's own ``cls`` (the very class: one that only names itself after
+    it is another class, kept on the bridge), else ``cls``."""
     if isinstance(cls, type) and cls.__module__ == 'chameleon.tales' and cls.__qualname__ in _CHAMELEON:
-        return globals()[cls.__qualname__]
+        tales = sys.modules.get('chameleon.tales')
+        if tales is not None and getattr(tales, cls.__qualname__, None) is cls:
+            return globals()[cls.__qualname__]
     return cls
 
 
@@ -378,7 +383,8 @@ def _spec(factory: Any) -> tuple[Any, ...]:
         return _SIMPLE[cls]
     if cls is StringExpr:
         return ('string', False)
-    if isinstance(factory, functools.partial):
+    # Exactly a partial: a subclass may change what calling it does.
+    if type(factory) is functools.partial:
         func = _ours(factory.func)
         keywords = factory.keywords or {}
         if func is StringExpr and not factory.args and set(keywords) <= {'braces_required'}:

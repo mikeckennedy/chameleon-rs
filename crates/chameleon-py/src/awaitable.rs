@@ -197,7 +197,6 @@ impl RenderAwaitable {
         render.model = model;
         render.awaits = true;
         render.concurrent = concurrent;
-        render.nonce = crate::deferred::nonce();
         let target_language =
             Scope::lookup(scope, intern!(py, "target_language").as_any())?.filter(|t| !t.is_none()).map(Bound::unbind);
         let st = VmState::new(
@@ -232,13 +231,14 @@ enum Outcome {
 
 /// The error a render raises once the tasks it cancelled are done: its own, unless the join
 /// itself was interrupted by something that is not an `Exception` (the render's task
-/// cancelled, a `KeyboardInterrupt`): that passes through, with the render's error as its
-/// context, so cancellation is never lost (`asyncio.timeout`, `TaskGroup` and a client
-/// disconnect rely on the `CancelledError` coming back).
-fn joined(py: Python<'_>, error: Option<Py<PyBaseException>>, event: Event) -> PyErr {
+/// cancelled, a `KeyboardInterrupt`), or by any exception thrown in (`throw()`): that passes
+/// through, with the render's error as its context, so cancellation is never lost
+/// (`asyncio.timeout`, `TaskGroup` and a client disconnect rely on the `CancelledError` coming
+/// back) and a thrown exception surfaces where the render waits, as in a coroutine.
+fn joined(py: Python<'_>, error: Option<Py<PyBaseException>>, event: Event, thrown: bool) -> PyErr {
     let error = error.map(|e| PyErr::from_value(e.into_bound(py).into_any()));
     if let Event::Awaited(Err(interrupt)) = event
-        && !interrupt.is_instance_of::<pyo3::exceptions::PyException>(py)
+        && (thrown || !interrupt.is_instance_of::<pyo3::exceptions::PyException>(py))
     {
         if let Some(error) = error
             && interrupt.value(py).getattr(intern!(py, "__context__")).is_ok_and(|c| c.is_none())
@@ -292,6 +292,8 @@ fn delegate(py: Python<'_>, inner: &Bound<'_, PyAny>, input: Input) -> Result<Py
 impl Running {
     /// Drives the render until it yields to the event loop or ends.
     fn step(&mut self, py: Python<'_>, input: Input) -> Outcome {
+        // Whether the first event is what `throw()` raised (in the awaited value, or here).
+        let mut thrown = matches!(input, Input::Throw(_));
         let mut event = if let Some(inner) = self.inner.take() {
             match delegate(py, inner.bind(py), input) {
                 Ok(y) => {
@@ -317,11 +319,18 @@ impl Running {
             self.started = true;
             let next = match &mut self.phase {
                 Phase::Vm => self.vm_event(py, event),
-                Phase::Fill { .. } => self.fill_event(py, event),
-                Phase::Joining { error } => Err(Outcome::Raise(joined(py, error.take(), event))),
+                Phase::Fill { .. } => self.fill_event(py, event, thrown),
+                Phase::Joining { error } => Err(Outcome::Raise(joined(py, error.take(), event, thrown))),
             };
+            thrown = false;
             let awaitable = match next {
                 Ok(awaitable) => awaitable,
+                // Closed (`GeneratorExit` thrown in): a closing coroutine may not yield, so the
+                // tasks are cancelled without waiting for them, as `close()` does.
+                Err(Outcome::Raise(error)) if error.is_instance_of::<PyGeneratorExit>(py) => {
+                    self.cancel_deferred(py);
+                    return Outcome::Raise(error);
+                }
                 Err(Outcome::Raise(error)) if self.has_deferred() => match self.begin_join(py, error) {
                     Ok(awaitable) => awaitable,
                     Err(outcome) => return outcome,
@@ -376,11 +385,12 @@ impl Running {
     }
 
     /// What was awaited for the placeholders' tasks ended: what to await next, or the result.
-    fn fill_event(&mut self, py: Python<'_>, event: Event) -> Result<Py<PyAny>, Outcome> {
+    fn fill_event(&mut self, py: Python<'_>, event: Event, thrown: bool) -> Result<Py<PyAny>, Outcome> {
         match event {
             Event::Start => Err(Outcome::Raise(PyRuntimeError::new_err("render restarted"))),
-            // The wait itself interrupted (the render's task cancelled): raised as it is.
-            Event::Awaited(Err(error)) if !error.is_instance_of::<pyo3::exceptions::PyException>(py) => {
+            // The wait itself interrupted (the render's task cancelled), or an exception thrown
+            // in: raised as it is (the other tasks are then cancelled and joined).
+            Event::Awaited(Err(error)) if thrown || !error.is_instance_of::<pyo3::exceptions::PyException>(py) => {
                 Err(Outcome::Raise(error))
             }
             // A task's own result or error: read from the task, with those of the others done.
@@ -593,17 +603,53 @@ impl Drop for Running {
 }
 
 static CORO_STATE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+static ONCE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+static COROUTINE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+
+/// `chameleon_rs._async._Once`: a coroutine argument of a native partial, awaited at most once.
+pub(crate) fn once(py: Python<'_>) -> PyResult<&Bound<'_, PyType>> {
+    ONCE.get_or_try_init(py, || {
+        Ok::<_, PyErr>(
+            py.import(intern!(py, "chameleon_rs._async"))?
+                .getattr(intern!(py, "_Once"))?
+                .cast_into::<PyType>()?
+                .unbind(),
+        )
+    })
+    .map(|t| t.bind(py))
+}
+
+/// Whether `value` is a coroutine object (`types.CoroutineType`), which can be awaited once.
+pub(crate) fn is_coroutine(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let py = value.py();
+    let coroutine = COROUTINE.get_or_try_init(py, || {
+        Ok::<_, PyErr>(
+            py.import(intern!(py, "types"))?.getattr(intern!(py, "CoroutineType"))?.cast_into::<PyType>()?.unbind(),
+        )
+    })?;
+    Ok(value.is_exact_instance(coroutine.bind(py)))
+}
 
 /// Closes each coroutine in `scope`'s own dict that never started (`inspect.getcoroutinestate`
 /// is `CORO_CREATED`), as dropping one the render would have awaited (see `Running::owns_args`).
-fn close_unstarted(py: Python<'_>, scope: &Bound<'_, Scope>) {
+pub(crate) fn close_unstarted(py: Python<'_>, scope: &Bound<'_, Scope>) {
     let Ok(state) = CORO_STATE.get_or_try_init(py, || {
         Ok::<_, PyErr>(py.import(intern!(py, "inspect"))?.getattr(intern!(py, "getcoroutinestate"))?.unbind())
     }) else {
         return;
     };
     // A list of the values (iterating the dict itself panics in PyO3 if it changes size).
+    let once = once(py).ok();
     for value in scope.as_super().values().iter() {
+        // A partial's argument, wrapped to be awaited once (see `once`): its coroutine, unless
+        // already awaited.
+        let value = match &once {
+            Some(once) if value.is_exact_instance(once) => match value.getattr(intern!(py, "awaitable")) {
+                Ok(inner) if !inner.is_none() => inner,
+                _ => continue,
+            },
+            _ => value,
+        };
         if !value.hasattr(intern!(py, "cr_frame")).unwrap_or(false) {
             continue;
         }

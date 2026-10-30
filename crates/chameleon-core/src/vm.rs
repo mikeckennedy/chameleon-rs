@@ -1499,9 +1499,11 @@ pub struct VmState<V> {
     helpers_any: bool,
     /// No i18n settings (what a frame without `extra` has).
     none: I18n<V>,
-    /// The slot body frame (its serial) writing a value of several parts, and where the
-    /// value starts in the output (see [`Op::PartsBegin`]).
-    parts: Option<(u64, Mark)>,
+    /// The values of several parts being written, innermost last: the frame (its serial)
+    /// writing each, and where it starts in the output (see [`Op::PartsBegin`]). A stack, not
+    /// one slot: a part can call a native partial whose own slot bodies write values of
+    /// several parts while the outer one is still open.
+    parts: Vec<(u64, Mark)>,
     /// Boxes of popped frames' `extra`, for reuse (an allocation and a free per macro call
     /// cost more than the rest of the call on macOS's allocator).
     spare: Vec<Box<Extra<V>>>,
@@ -1553,7 +1555,7 @@ impl<V> VmState<V> {
             helpers_on: false,
             helpers_any: false,
             none: I18n { domain: None, context: None, target_language: None },
-            parts: None,
+            parts: Vec::new(),
             spare: Vec::new(),
             out,
         }
@@ -1817,7 +1819,7 @@ impl<V> VmState<V> {
             }
         }
         // No current path moves output while a value of several parts is open; kept in step anyway.
-        if let Some((_, mark)) = &mut self.parts {
+        for (_, mark) in &mut self.parts {
             f(mark);
         }
     }
@@ -2378,8 +2380,12 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
                 _ => None,
             });
             st.unwind.truncate(at);
-            // Whatever value of several parts was being written ends here.
-            let parts = st.parts.take();
+            // Whatever values of several parts the handler's frame, and the frames the error
+            // left, were writing end here; the handler's own one (if any) is taken back below.
+            // Serials grow with depth, so those are the entries from the frame's serial up.
+            let serial = st.frames.last().map_or(0, |f| f.serial);
+            let keep = st.parts.iter().position(|&(s, _)| s >= serial).unwrap_or(st.parts.len());
+            let parts = st.parts.drain(keep..).find(|&(s, _)| s == serial);
             if let Some(frame) = st.frames.last_mut() {
                 frame.pc = handler;
             }
@@ -2571,7 +2577,7 @@ fn execute<R: Runtime>(
                 // fetches the next item. The countdown is computed first (it is what can raise
                 // first), but nothing is changed until the fetch has succeeded.
                 let countdown = match index {
-                    Countdown::Int(n) => Countdown::Int(*n - 1),
+                    Countdown::Int(n) => Countdown::Int(n.saturating_sub(1)),
                     Countdown::Value(v) => Countdown::Value(rt.countdown(v).map_err(rt_err)?),
                 };
                 let item = rt.next(iterator).map_err(rt_err)?;
@@ -2760,13 +2766,20 @@ fn execute<R: Runtime>(
                     *pc = no_match as usize;
                     continue;
                 }
+                // Whether the value is an awaited one (the render suspended for it).
+                let awaited = st.resume.is_some();
                 let value = eval_or_leave!(st, rt, pc, expr, false, no_call);
                 let Some(Unwind::Switch(Some(switch))) = st.unwind.get(at) else {
                     return Err(VmError::Internal("case without its switch"));
                 };
                 let equal = rt.case_compare(&value, Some(switch)).map_err(rt_err)?;
                 if rt.is_false(&equal) {
-                    // `__condition is False`: try `value == default`.
+                    // `__condition is False`: try `value == default`, which evaluates the
+                    // expression again (as Chameleon does). An awaited value is awaited once:
+                    // the next instruction (that `CaseDefault`) takes it as its result.
+                    if awaited {
+                        st.resume = Some(value);
+                    }
                 } else if rt.truthy(&equal).map_err(rt_err)? {
                     st.unwind[at] = Unwind::Switch(None);
                     *pc = matched as usize;
@@ -3190,9 +3203,11 @@ fn execute_rare<R: Runtime>(
         }
         Op::PartsBegin => {
             let serial = st.frames.last().map_or(0, |f| f.serial);
-            st.parts = Some((serial, st.out.mark()));
+            st.parts.push((serial, st.out.mark()));
         }
-        Op::PartsEnd => st.parts = None,
+        Op::PartsEnd => {
+            st.parts.pop();
+        }
         Op::CaptureBegin => st.unwind.push(Unwind::Capture(st.out.mark())),
         Op::CaptureEnd { boolean } => {
             let Some(Unwind::Capture(mark)) = st.unwind.pop() else {

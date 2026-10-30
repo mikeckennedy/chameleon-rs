@@ -409,7 +409,10 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         if cx.candidate && obviously_invalid(&string) {
             return Err(invalid("invalid syntax".to_owned()));
         }
-        if SCOPE_NAMES.iter().any(|name| string.contains(name)) {
+        // Inside `i18n:target`, `default` reads `target_language` (an alias).
+        if SCOPE_NAMES.iter().any(|name| string.contains(name))
+            || (cx.default == DefaultAlias::TargetLanguage && string.contains("default"))
+        {
             self.mentions.scope = true;
         }
         if string.contains("repeat") {

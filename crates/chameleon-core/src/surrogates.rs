@@ -19,7 +19,7 @@ const PUA: std::ops::Range<u32> = 0xE000..0xF900;
 /// Whether the 2,048 code points from `base` lie in the BMP Private Use Area.
 #[must_use]
 pub fn is_block(base: u32) -> bool {
-    PUA.start <= base && base + SPAN <= PUA.end
+    PUA.start <= base && base.checked_add(SPAN).is_some_and(|end| end <= PUA.end)
 }
 
 const SURROGATE_START: u32 = 0xD800;

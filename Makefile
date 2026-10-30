@@ -240,6 +240,10 @@ lint: temp/robyn-typing
 	cargo fmt --all -- --check
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 	cargo deny check -A license-not-encountered
+	@# fancy-regex (a fixed backtracking stack that once failed silently on 1 MB tokens) is a
+	@# test reference only: never in what the wheel links.
+	@if cargo tree -q -e normal,build -p chameleon-py | grep -q fancy-regex; then \
+		echo "lint: fancy-regex is a normal dependency of the extension"; exit 1; fi
 	ruff check python tests/python tests/upstream/conftest.py tests/integration bench scripts
 	ruff format --check python tests/python tests/upstream/conftest.py tests/integration scripts
 	ty check

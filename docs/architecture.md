@@ -1111,6 +1111,7 @@ value position and compares with Chameleon's render where `aw(v)` is `v`.
   attributes, on-error handlers. Values computed inside an expression are not awaited
   (`coro().title` is the coroutine's attribute), nor is a native partial's keyword argument
   until the partial writes it. A value is awaited once: an awaitable result is a value.
+  *(Amended 2026-10-29:)* a coroutine argument of a native partial is wrapped in `_async._Once`, which awaits it at the first use and gives that result (or error) at every later one, so `${v}${v}` in the partial works; a `tal:case` whose test value was awaited hands it to the default comparison instead of awaiting the re-evaluated expression again.
 - **Delegation (PEP 380).** `await_iter`: `type(v).__await__(v)` (a non-iterator result is
   `TypeError("__await__() returned non-iterator of type ...")`), or the iterable coroutine
   itself. `send(None)` calls the delegate's `__next__`, other values its `send`; `throw`

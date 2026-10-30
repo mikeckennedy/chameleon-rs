@@ -89,15 +89,17 @@ impl<'a, 'py, const ASYNC: bool> PyRuntime<'a, 'py, ASYNC> {
 
     /// Records a task started for a placeholder and returns the placeholder.
     /// The render started as many tasks as it may (`crate::deferred::limit`).
-    fn at_limit(&self) -> bool {
-        self.render.deferred.borrow().len() >= crate::deferred::limit(self.py)
+    fn at_limit(&self) -> PyResult<bool> {
+        // The limit first: reading it may run Python, which must not find `deferred` borrowed.
+        let limit = crate::deferred::limit(self.py)?;
+        Ok(self.render.deferred.borrow().len() >= limit)
     }
 
     fn register(&self, task: Bound<'py, PyAny>, kind: crate::deferred::DeferKind) -> Vec<u8> {
         let mut deferred = self.render.deferred.borrow_mut();
         let id = deferred.len() as u64;
         deferred.push(crate::deferred::Deferred { id, task: task.unbind(), kind });
-        crate::deferred::placeholder(self.render.nonce, id)
+        crate::deferred::placeholder(self.render.nonce(), id)
     }
 
     fn cx(&self) -> Cx<'_, 'py> {
@@ -334,7 +336,7 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
     /// The pending partial as a render of its own, in a task (`crate::deferred`).
     fn defer_partial(&mut self) -> PyResult<Option<Vec<u8>>> {
         let py = self.py;
-        if self.at_limit() {
+        if self.at_limit()? {
             return Ok(None);
         }
         let Some(event_loop) = crate::deferred::running_loop(py) else { return Ok(None) };
@@ -362,7 +364,8 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
         at: ErrorSite,
     ) -> PyResult<Result<Vec<u8>, Py<PyAny>>> {
         let py = self.py;
-        if self.render.partials.top() != 0 || self.at_limit() || !crate::deferred::is_concurrent_call(value.bind(py))? {
+        if self.render.partials.top() != 0 || self.at_limit()? || !crate::deferred::is_concurrent_call(value.bind(py))?
+        {
             return Ok(Err(value));
         }
         let Some(event_loop) = crate::deferred::running_loop(py) else { return Ok(Err(value)) };
@@ -815,7 +818,10 @@ impl<const ASYNC: bool> Macros for PyRuntime<'_, '_, ASYNC> {
         let Some(rcontext) = self.cx().rcontext_made() else { return Ok(None) };
         let scope = self.scope.as_super();
         let mut shadowed: Option<Bound<'_, PyDict>> = None;
-        for (key, global) in rcontext.iter() {
+        // Over a copy of the items: a key's `__hash__` or `__eq__` (run by the lookup) may
+        // change `rcontext`, and iterating the dict itself panics in PyO3 when it does.
+        for item in rcontext.items() {
+            let (key, global) = item.extract::<(Bound<'_, PyAny>, Bound<'_, PyAny>)>()?;
             if let Some(local) = scope.get_item(&key)?
                 && !local.is(&global)
             {

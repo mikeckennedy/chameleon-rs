@@ -38,6 +38,7 @@ import os
 import posixpath
 import stat
 import types
+import unicodedata
 import weakref
 from collections.abc import Callable
 from typing import Any
@@ -205,8 +206,9 @@ def _same_file(template: Any, path: str, identity: FileId | None) -> bool:
 
 _CACHE_LIMIT = 1024
 
-# A file's identity (`stat_identity`): device and inode, or device and resolved path.
-type FileId = tuple[int, int | str]
+# A file's identity (`stat_identity`): device and inode, plus the folded resolved path of a
+# file with one link; device and resolved path where there are no inodes.
+type FileId = tuple[int, int | str] | tuple[int, int, str]
 _GLOBAL_CACHE: dict[str, tuple[tuple[int, bool, bool], Any, tuple[str, FileId | None] | None]] = {}
 
 # Templates found on a caller's search path or folders (`partial_search='caller'`), shared by
@@ -278,10 +280,19 @@ def stat_identity(path: str, info: os.stat_result) -> FileId:
     inode. An inode of 0 is no identity: filesystems without file IDs (FAT, exFAT and some
     network or FUSE mounts, notably on Windows) report it for every file, and every template
     there would be taken for the first one loaded. Such a file is known by its resolved path
-    instead (spellings that only differ in case then load it once each)."""
-    if info.st_ino:
+    instead (spellings that only differ in case then load it once each).
+
+    Nor is an inode alone, for a file with one link: some FUSE, overlay and network mounts give
+    different files the same nonzero inode. Such a file has one name, so every spelling of it
+    resolves to one path, up to case and Unicode form on a filesystem that ignores them: that
+    folded path is part of its identity too. A hard-linked file (several links) is known by
+    device and inode, so its names share a template; filesystems without file IDs don't have
+    hard links."""
+    if not info.st_ino:
+        return (info.st_dev, os.path.normcase(os.path.realpath(path)))
+    if info.st_nlink > 1:
         return (info.st_dev, info.st_ino)
-    return (info.st_dev, os.path.normcase(os.path.realpath(path)))
+    return (info.st_dev, info.st_ino, unicodedata.normalize('NFC', os.path.realpath(path)).casefold())
 
 
 def remembered_spelling(owner: Any, identity: FileId, name: str, current: Callable[[str], Any]) -> str:
@@ -303,7 +314,13 @@ def remembered_spelling(owner: Any, identity: FileId, name: str, current: Callab
                 if current(spelled) != key:
                     spellings.pop(key, None)
             owner.__dict__['_rs_spellings_limit'] = max(_CACHE_LIMIT, 2 * len(spellings))
-        spellings[identity] = first = name
+        if first is None:
+            # Threads meeting a file under different spellings at once all take the first one
+            # stored (`setdefault` is atomic, free-threaded builds included), so the loader
+            # compiles it once.
+            first = spellings.setdefault(identity, name)
+        else:
+            spellings[identity] = first = name
     return first  # type: ignore[no-any-return]
 
 

@@ -43,6 +43,9 @@ pub(crate) struct MarkdownProfile {
     /// Identifies the profile in cache keys (names repeat across configurations).
     id: u64,
     profile: Profile,
+    /// The longest text converted, in characters (`None`: any): converting takes a few hundred
+    /// bytes of memory per byte of text, so text from a request must be bounded.
+    max_length: Option<usize>,
 }
 
 #[pymethods]
@@ -50,7 +53,7 @@ impl MarkdownProfile {
     /// Arguments as `chameleon_rs._settings` normalizes them: `raw_html` is `'escape'` or
     /// `'allow'`, `heading_ids` a prefix or `None`, `classes` `(tag, class)` pairs.
     #[new]
-    #[pyo3(signature = (name, *, raw_html, images, inline, heading_ids, classes, table, strikethrough, tasklist, autolink, footnotes))]
+    #[pyo3(signature = (name, *, raw_html, images, inline, heading_ids, classes, table, strikethrough, tasklist, autolink, footnotes, max_length = None))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn new(
         name: String,
@@ -64,6 +67,7 @@ impl MarkdownProfile {
         tasklist: bool,
         autolink: bool,
         footnotes: bool,
+        max_length: Option<usize>,
     ) -> PyResult<Self> {
         let raw_html = match raw_html {
             "escape" => RawHtml::Escape,
@@ -92,7 +96,7 @@ impl MarkdownProfile {
             classes,
             extensions: Extensions { table, strikethrough, tasklist, autolink, footnotes },
         };
-        Ok(Self { name, id: NEXT_ID.fetch_add(1, Ordering::Relaxed), profile: Profile::new(settings) })
+        Ok(Self { name, id: NEXT_ID.fetch_add(1, Ordering::Relaxed), profile: Profile::new(settings), max_length })
     }
 
     #[getter]
@@ -137,6 +141,15 @@ pub(crate) fn to_markup<'py>(
         Ok(s) => s.clone(),
         Err(_) => value.str()?,
     };
+    if let Some(max) = profile.max_length {
+        let length = text.len()?;
+        if length > max {
+            return Err(PyValueError::new_err(format!(
+                "markdown: the text is {length} characters long, more than the {:?} profile's max_length of {max}",
+                profile.name
+            )));
+        }
+    }
     let s = match text.to_str() {
         Ok(s) => Cow::Borrowed(s),
         Err(_) => Cow::Owned(replace_surrogates(&text)?),

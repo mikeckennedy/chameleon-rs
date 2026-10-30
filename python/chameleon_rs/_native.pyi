@@ -171,6 +171,7 @@ class MarkdownProfile:
         tasklist: bool,
         autolink: bool,
         footnotes: bool,
+        max_length: int | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...

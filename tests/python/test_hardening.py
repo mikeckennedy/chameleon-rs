@@ -15,6 +15,11 @@ wedge a request, or keep memory.
   fan-out is bounded; a `StopIteration` raised by the template is a `RuntimeError` (PEP 479),
   not the render's result; a second awaiter of a suspended render is an error; cancelled
   concurrent calls and partial arguments leave no "never awaited" warnings.
+- Third review (2026-10-29): deep expression trees are freed and collected on small stacks; a
+  value of several parts stays whole around a partial; loop countdowns don't wrap; a case and a
+  partial's argument await a value once; thrown exceptions reach a render waiting for its
+  calls; file identities survive shared inode numbers and package folders; the meta charset
+  search is linear; error listings cut subclasses' values; cache directories never run.
 """
 
 from __future__ import annotations
@@ -812,3 +817,413 @@ def test_more_files_than_the_name_caches_hold_compile_once_per_file(tmp_path: Pa
         for i in range(count):
             assert engine.get_template(pattern.format(i))() == 'x'
         assert len(engine.loader.registry) == count
+
+
+# -- Third review (2026-10-29) ---------------------------------------------------------------
+
+
+def test_a_deep_expression_tree_is_freed_and_collected_on_a_small_stack() -> None:
+    # An expression tree as deep as the compile allows was dropped, and traversed by the
+    # collector, recursively on whatever thread did it: a 64 KiB thread died (SIGBUS).
+    for mode in ('drop', 'collect'):
+        result = run_python(f"""
+            import gc, threading
+            from chameleon_rs._native import Program
+            depth = 1
+            while True:
+                try:
+                    Program('<p>${{%s}}</p>' % ('string:${{' * (depth * 2) + 'x' + '}}' * (depth * 2)))
+                except RecursionError:
+                    break
+                depth *= 2
+            low, high = depth // 2, depth * 2
+            while high - low > 1:
+                mid = (low + high) // 2
+                try:
+                    Program('<p>${{%s}}</p>' % ('string:${{' * mid + 'x' + '}}' * mid))
+                    low = mid
+                except RecursionError:
+                    high = mid
+            holder = [Program('<p>${{%s}}</p>' % ('string:${{' * low + 'x' + '}}' * low))]
+            threading.stack_size(64 * 1024)
+            def work():
+                holder.clear() if {mode!r} == 'drop' else gc.collect()
+            thread = threading.Thread(target=work)
+            thread.start()
+            thread.join()
+            print('ok', low)
+        """)
+        assert result.returncode == 0, (mode, result.returncode, result.stderr)
+        assert result.stdout.startswith('ok'), result.stdout
+
+
+_MACRO = '<div metal:define-macro="m"><p i18n:translate="">Hi <h1 metal:define-slot="s">def</h1>!</p></div>'
+_USE = (
+    '<i metal:use-macro="template.macros[\'m\']"><b metal:fill-slot="s"><u tal:on-error="string:ERR">{body}</u></b></i>'
+)
+# A partial whose own slot body writes a value of several parts.
+_INNER = (
+    '<div metal:define-macro="m2"><h1 metal:define-slot="s2">def</h1></div>'
+    '<i metal:use-macro="template.macros[\'m2\']"><b metal:fill-slot="s2">${1} ${2}</b></i>'
+)
+
+
+def _boom() -> None:
+    raise ValueError('boom')
+
+
+@pytest.mark.parametrize(
+    ('body', 'expected'),
+    [
+        ('${a} ${render_partial("inner.pt")} ${boom()}', '<u>ERR</u>'),
+        ('<a href="${a} ${render_partial(\'inner.pt\')} ${boom()}">x</a>', '<a<u>ERR</u>'),
+    ],
+)
+def test_a_partial_inside_a_value_of_several_parts_leaves_it_whole(configured: Path, body: str, expected: str) -> None:
+    # A slot body's value of several parts that fails is taken back whole (Chameleon writes it
+    # once all parts are evaluated). A native partial in one of the parts whose own slot body
+    # had a value of several parts cleared the record of the outer one, and the parts written
+    # before the error stayed. The expected outputs are Chameleon's (with chameleon_partials).
+    (configured / 'page.pt').write_text(_MACRO + _USE.format(body=body))
+    (configured / 'inner.pt').write_text(_INNER)
+    page = PageTemplateFile(configured / 'page.pt')
+    assert page(a='A', boom=_boom) == f'<div><p>Hi <h1>def</h1>!</p></div><div><p><b><u>{expected}</b>Hi !</p></div>'
+
+
+def test_a_loop_length_of_the_smallest_int64_does_not_wrap() -> None:
+    # `index -= 1; if index > 0` on Python's ints: the countdown never becomes positive. It was
+    # an `i64` decremented with wrapping in release builds, so `-2**63` turned into `2**63 - 1`.
+    source = '<ul><li tal:repeat="x xs">${x}</li></ul>'
+
+    def repeat(key: str, iterable: Any) -> Any:
+        return iter(iterable), -(2**63)
+
+    expected = chameleon.PageTemplate(source).render(xs=[1, 2, 3], repeat=repeat)
+    assert (
+        PageTemplate(source).render(xs=[1, 2, 3], repeat=repeat)
+        == expected
+        == '<ul><li>1</li><li>2</li><li>3</li></ul>'
+    )
+
+
+async def _value(value: Any) -> Any:
+    return value
+
+
+def test_a_case_awaits_its_value_once() -> None:
+    # `tal:case` evaluates its expression again for the `default` comparison (Chameleon's
+    # `__condition is False` retry): a coroutine passed in was awaited twice.
+    page = PageTemplate('<div tal:switch="2"><b tal:case="v">one</b><i tal:case="default">d</i></div>')
+    assert run(page.render_async(v=_value(1))) == page.render(v=1) == '<div><i>d</i></div>'
+    page = PageTemplate('<div tal:switch="1"><b tal:case="v">one</b><i tal:case="default">d</i></div>')
+    assert run(page.render_async(v=_value(1))) == '<div><b>one</b></div>'
+
+
+@pytest.mark.parametrize('concurrent', [False, True])
+def test_a_partials_awaitable_argument_can_be_used_twice(configured: Path, concurrent: bool) -> None:
+    # A coroutine passed to a native partial was bound as it is: the partial's second use of it
+    # raised "cannot reuse already awaited coroutine".
+    (configured / 'card.pt').write_text('<i>${v}${v}</i>')
+    page = PageTemplate('<p>${render_partial("card.pt", v=v)}</p>', concurrent=concurrent)
+    assert run(page.render_async(v=_value(1))) == '<p><i>11</i></p>'
+
+
+def test_a_partial_not_found_leaves_no_argument_unawaited(configured: Path) -> None:
+    page = PageTemplate('<p>${render_partial("missing.pt", v=v)}</p>')
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        with pytest.raises(ValueError, match='not found'):
+            run(page.render_async(v=_value(1)))
+        gc.collect()
+    assert not [w for w in caught if 'never awaited' in str(w.message)]
+
+
+def test_an_exception_thrown_into_the_placeholder_wait_is_raised() -> None:
+    # `throw()` of an `Exception` while the render waited for its concurrent calls was dropped,
+    # and the render went on waiting; `GeneratorExit` with calls pending yielded again, which a
+    # closing coroutine may not do.
+    @concurrent
+    async def slow() -> str:
+        await asyncio.sleep(10)
+        return 'never'
+
+    async def drive(error: BaseException) -> BaseException | None:
+        awaitable = render_page_async(PageTemplate('${slow()}${slow()}'), None, {'slow': slow}, False)
+        assert not isinstance(awaitable, str)
+        iterator = awaitable.__await__()
+        next(iterator)
+        try:
+            yielded = iterator.throw(error)
+        except BaseException as e:  # noqa: BLE001 - what the render raised
+            return e
+        # The other tasks are cancelled and joined first: the error comes after.
+        try:
+            iterator.send(None)
+        except BaseException as e:  # noqa: BLE001
+            return e
+        del yielded
+        return None
+
+    raised = run(drive(ValueError('thrown')))
+    assert isinstance(raised, ValueError), raised
+    assert str(raised) == 'thrown'
+    assert isinstance(run(drive(GeneratorExit())), GeneratorExit)
+
+
+def test_a_key_that_changes_rcontext_while_a_macro_is_called_is_no_internal_error() -> None:
+    # `before_macro` iterated `rcontext` itself while hashing each key against the scope: a key
+    # whose `__hash__` added an entry made PyO3's iterator panic (`InternalError`).
+    class Growing:
+        rcontext: Any = None
+
+        def __hash__(self) -> int:
+            if Growing.rcontext is not None and 'grown' not in Growing.rcontext:
+                Growing.rcontext['grown'] = 1
+            return 1
+
+    library = PageTemplate('<b metal:define-macro="m">m</b>')
+    page = PageTemplate(
+        '<p tal:define="global g 1; dummy python: rcontext.__setitem__(k, 2) or setattr(type(k), \'rcontext\', rcontext)">'
+        '<i metal:use-macro="library.macros[\'m\']"/></p>'
+    )
+    assert page(library=library, k=Growing()) == '<p><b>m</b></p>'
+
+
+def test_a_default_inside_i18n_target_reads_the_render_default() -> None:
+    # `default` inside `i18n:target` is `target_language`; with none passed it is the render
+    # default (`None`), as in Chameleon. It raised `NameError`: the alias was not counted as a
+    # mention of the name, so the render's scope lacked the defaults.
+    for source in ('<div i18n:target="x">${default}</div>', '<div i18n:target="x">${python: default}</div>'):
+        assert PageTemplate(source)(x=1) == chameleon.PageTemplate(source)(x=1) == '<div></div>'
+        assert PageTemplate(source)(x=1, target_language='de') == '<div>de</div>'
+
+
+def test_an_out_of_range_surrogate_block_is_refused() -> None:
+    from chameleon_rs import _native
+
+    for base in (0xF101, 0xFFFFF800, 0xFFFFFFFF):
+        with pytest.raises(ValueError, match='private-use block'):
+            _native.Program('<p/>', surrogate_base=base)
+
+
+def test_the_meta_charset_search_is_linear_in_the_number_of_heads() -> None:
+    from chameleon.utils import RE_META
+    from chameleon_rs.utils import _search_meta
+
+    body = '<meta http-equiv=Content-Type content=' * 50_000 + ';x'
+    start = time.perf_counter()
+    assert _search_meta(body) is None
+    assert time.perf_counter() - start < 1  # was minutes
+    for text in (
+        '<meta http-equiv="Content-Type" content="text/html; charset=latin-1" />',
+        '<META HTTP-EQUIV=Content-Type CONTENT="a<meta http-equiv=Content-Type content=b; charset=x>',
+        "<meta http-equiv='Content-Type' content=';charset=utf-8'>",
+        '<meta http-equiv=Content-Type content=a; charset=b <meta http-equiv=Content-Type content=c; charset=d>',
+    ):
+        match = RE_META.search(text)
+        assert _search_meta(text) == (match.groups() if match else None)
+
+
+def test_long_values_of_subclasses_are_cut_in_render_errors() -> None:
+    # The 53-character cut of the error's argument listing trusted `len()` of a `str` subclass
+    # and left numbers to their own formatting, so a subclass could print any length.
+    from chameleon_rs.utils import value_repr
+
+    class Lying(str):
+        def __len__(self) -> int:
+            return 1
+
+    class Big(int):
+        def __str__(self) -> str:
+            return 'X' * 100_000
+
+    assert value_repr(Lying('S' * 1000)) == 'S' * 50 + '...'
+    assert value_repr(Big(1)) == 'X' * 50 + '...'
+    assert value_repr(True) is True
+    assert value_repr(12) == 12
+    with pytest.raises(NameError) as error:
+        PageTemplate('${missing}')(big=Big(1), lying=Lying('S' * 100_000))
+    assert len(str(error.value)) < 1000
+
+
+def test_a_cache_directory_is_never_executed(tmp_path: Path) -> None:
+    # `CHAMELEON_CACHE` makes templates carry Chameleon's `ModuleLoader` (its tests check
+    # that), but chameleon-rs compiles natively and never loads a module from the directory: a
+    # file planted there must not run.
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    for name in ('__init__.py', 'hello.py', 'f00000.py'):
+        (cache / name).write_text('raise SystemExit("executed")\n')
+    (tmp_path / 'hello.pt').write_text('<p>${1}</p>')
+    result = subprocess.run(
+        [
+            sys.executable,
+            '-c',
+            textwrap.dedent(f"""
+                from chameleon_rs import PageTemplate, PageTemplateFile
+                print(PageTemplateFile({str(tmp_path / 'hello.pt')!r})(), PageTemplate('<i/>', debug=True)())
+            """),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**__import__('os').environ, 'CHAMELEON_CACHE': str(cache), 'CHAMELEON_DEBUG': '1'},
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ['<p>1</p>', '<i/>']
+    assert sorted(p.name for p in cache.iterdir()) == ['__init__.py', 'f00000.py', 'hello.py']
+
+
+def test_files_with_one_shared_inode_number_are_not_one_file(tmp_path: Path, monkeypatch: Any) -> None:
+    # Some FUSE, overlay and network mounts give different files the same nonzero inode: every
+    # template was taken for the first one loaded.
+    import os
+
+    from chameleon_rs import partials
+    from chameleon_rs.starlette import Templates
+
+    (tmp_path / 'login.pt').write_text('login')
+    (tmp_path / 'profile.pt').write_text('profile')
+    real = os.stat
+
+    def stat(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        info = real(path, *args, **kwargs)
+        return os.stat_result((info.st_mode, 12345, 1, *tuple(info)[3:]))
+
+    monkeypatch.setattr(os, 'stat', stat)
+    engine = Templates(str(tmp_path))
+    assert (engine.get_template('login.pt')(), engine.get_template('profile.pt')()) == ('login', 'profile')
+    chameleon_rs.configure(template_folder=str(tmp_path))
+    try:
+        assert partials.render_partial('profile.pt').html_text == 'profile'
+        assert partials.render_partial('login.pt').html_text == 'login'
+    finally:
+        chameleon_rs._settings.clear()
+
+
+def test_a_package_folder_first_in_the_search_path_is_not_shadowed(tmp_path: Path, monkeypatch: Any) -> None:
+    # The name cache identified a name by the first file found in the search path's directories,
+    # skipping its package folders, which the loader tries in order: a hard link in the directory
+    # to a file the package also has was served the package's file.
+    import os
+
+    from chameleon_rs.starlette import Templates
+
+    package = tmp_path / 'mixpkg'
+    (package / 'tpl').mkdir(parents=True)
+    (package / '__init__.py').write_text('')
+    (package / 'tpl' / 'a.pt').write_text('package a')
+    directory = tmp_path / 'dir'
+    directory.mkdir()
+    (directory / 'a.pt').write_text('directory a')
+    os.link(directory / 'a.pt', directory / 'b.pt')
+    monkeypatch.syspath_prepend(str(tmp_path))
+    engine = Templates(['mixpkg:tpl', str(directory)])
+    assert engine.get_template('a.pt')() == 'package a'
+    assert engine.get_template('b.pt')() == 'directory a'
+
+
+def test_a_registered_partial_subclass_or_a_lookalike_class_is_not_lowered_natively() -> None:
+    # Only Chameleon's very classes, and exact partials of them, take the native fast path: a
+    # `functools.partial` subclass and a class that only names itself after Chameleon's went
+    # native, ignoring what they do.
+    import functools
+
+    import chameleon.tales
+    from chameleon_rs.tales import _spec
+
+    class Partial(functools.partial):  # type: ignore[type-arg]
+        pass
+
+    class Lookalike:
+        __module__ = 'chameleon.tales'
+        __qualname__ = 'PythonExpr'
+
+    assert _spec(Partial(chameleon.tales.StringExpr))[0] == 'custom'
+    assert _spec(Lookalike)[0] == 'custom'
+    assert _spec(chameleon.tales.PythonExpr) == ('python',)
+    assert _spec(functools.partial(chameleon.tales.StringExpr, braces_required=True)) == ('string', True)
+
+
+def test_markdown_longer_than_the_profiles_limit_is_refused() -> None:
+    chameleon_rs.configure(markdown={'markdown': True, 'md-short': {'max_length': 10}, 'md-any': {'max_length': None}})
+    try:
+        page = PageTemplate('${markdown: t}')
+        assert page(t='*hi*') == '<p><em>hi</em></p>\n'
+        with pytest.raises(ValueError, match='max_length of 1000000'):
+            page(t='x' * 1_000_001)
+        with pytest.raises(ValueError, match='max_length of 10'):
+            PageTemplate('${md-short: t}')(t='x' * 11)
+        assert len(PageTemplate('${md-any: t}')(t='x' * 1_000_001)) > 1_000_000
+        with pytest.raises(TypeError, match='max_length'):
+            chameleon_rs.configure(markdown={'markdown': {'max_length': -1}})
+    finally:
+        chameleon_rs._settings.clear()
+
+
+@pytest.mark.skipif(not getattr(sys, '_is_gil_enabled', lambda: True)(), reason='functions defer refcounts here')
+def test_a_reloaded_programs_fallback_functions_are_freed_without_the_collector(tmp_path: Path) -> None:
+    # Each fallback function's globals held the function itself, a cycle: a reload left the old
+    # program's functions for the collector. (Free-threaded builds give functions deferred
+    # reference counts, so only the collector frees them there, whatever holds them.)
+    import os
+    import types
+
+    def functions() -> int:
+        return sum(isinstance(o, types.FunctionType) and '__rs_attrs' in o.__globals__ for o in gc.get_objects())
+
+    path = tmp_path / 'page.pt'
+    stamp = time.time_ns()
+    path.write_text('<p>${(lambda: 0)()}</p>')
+    os.utime(path, ns=(stamp, stamp))
+    page = PageTemplateFile(path, auto_reload=True)
+    page()
+    gc.collect()
+    before = functions()
+    gc.disable()
+    try:
+        for i in range(1, 6):
+            stamp += 1_000_000_000
+            path.write_text('<p>${(lambda: ' + str(i) + ')()}</p>')
+            os.utime(path, ns=(stamp, stamp))
+            assert page() == f'<p>{i}</p>'
+        assert functions() == before
+    finally:
+        gc.enable()
+
+
+@pytest.mark.parametrize('case', ['limit', 'formatter'])
+def test_a_helper_module_failing_to_import_is_raised_and_retried(case: str) -> None:
+    # The concurrency limit fell back to 64 for good when its module failed to import (and was
+    # never read again); a render error whose formatter failed to import raised that import
+    # error instead of its own.
+    result = run_python(f"""
+        import asyncio, sys
+        import chameleon_rs, chameleon_rs.config, chameleon_rs.exc
+        from chameleon_rs import PageTemplate, concurrent
+
+        @concurrent
+        async def load():
+            return 1
+
+        name = 'chameleon_rs.config' if {case!r} == 'limit' else 'chameleon_rs.exc'
+        page = PageTemplate('${{load()}}' if {case!r} == 'limit' else '${{1 // 0}}')
+        render = (lambda: asyncio.run(page.render_async(load=load))) if {case!r} == 'limit' else page
+        real = sys.modules[name]
+        sys.modules[name] = None
+        try:
+            render()
+        except BaseException as e:
+            print(type(e).__name__)
+        sys.modules[name] = real
+        try:
+            print(render())
+        except BaseException as e:
+            print(type(e).__name__, 'Expression' in str(e))
+    """)
+    assert result.returncode == 0, result.stderr
+    if case == 'limit':
+        assert result.stdout.split() == ['ModuleNotFoundError', '1']
+    else:
+        assert result.stdout.split() == ['ZeroDivisionError', 'ZeroDivisionError', 'True']

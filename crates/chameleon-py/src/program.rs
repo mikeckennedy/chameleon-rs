@@ -461,7 +461,8 @@ pub(crate) fn render_error(py: Python<'_>, error: PyErr, econtext: &Bound<'_, Sc
         (Some(model), Some(defaults)) => {
             match completed_econtext(econtext.as_super(), model.initial, model.added.as_ref(), defaults) {
                 Ok(full) => full.into_any(),
-                Err(e) => return e,
+                // Formatting is best effort: the render's own error is what is raised.
+                Err(_) => return error,
             }
         }
         _ => econtext.clone().into_any(),
@@ -473,7 +474,9 @@ pub(crate) fn render_error(py: Python<'_>, error: PyErr, econtext: &Bound<'_, Sc
         .and_then(|f| f.bind(py).call1((error.value(py), errors, econtext, rcontext, &render.builtins)));
     match formatted {
         Ok(exc) => PyErr::from_value(exc),
-        Err(e) => e,
+        // The formatter could not run (its module failed to import): the error unformatted,
+        // not the formatter's own, which would hide what went wrong in the template.
+        Err(_) => error,
     }
 }
 

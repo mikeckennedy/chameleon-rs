@@ -185,6 +185,7 @@ name = "chameleon-py"
 version = "0.1.55"
 dependencies = [
  "chameleon-core",
+ "getrandom",
  "pyo3",
  "rustc-hash",
 ]

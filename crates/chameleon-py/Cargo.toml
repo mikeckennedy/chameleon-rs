@@ -15,6 +15,7 @@ crate-type = ["cdylib", "rlib"]
 chameleon-core = { workspace = true, features = ["markdown"] }
 pyo3.workspace = true
 rustc-hash.workspace = true
+getrandom.workspace = true
 
 [lints]
 workspace = true

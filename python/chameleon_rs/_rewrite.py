@@ -299,7 +299,9 @@ def function(
     # Like the namespace Chameleon execs its generated module in: `__builtins__` is the dict.
     namespace: dict[str, Any] = {'__builtins__': builtins.__dict__, **MODULE_GLOBALS, **env}
     exec(code, namespace)  # noqa: S102 - code built from the template's own expressions
-    return namespace[name]
+    # Taken out of its globals: left there, the function would reach itself through
+    # `__globals__`, a cycle only the collector frees once a reload drops the program.
+    return namespace.pop(name)
 
 
 def compile_expression(

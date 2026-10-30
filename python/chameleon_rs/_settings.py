@@ -43,6 +43,7 @@ class MarkdownOptions(TypedDict, total=False):
     heading_ids: bool | str
     classes: Mapping[str, str]
     extensions: MarkdownExtensions
+    max_length: int | None
 
 
 type MarkdownSetting = bool | Mapping[str, Literal[True] | MarkdownOptions]
@@ -128,7 +129,10 @@ markdown_cache_size = DEFAULT_MARKDOWN_CACHE
 _PREFIX = re.compile(r'[a-z][a-z0-9\-_]*')
 _ID_PREFIX = re.compile(r'[A-Za-z0-9_-]*')
 _RESERVED = frozenset({'python', 'string', 'not', 'exists', 'import', 'structure', 'load'})
-_MARKDOWN_OPTIONS = frozenset({'raw_html', 'images', 'inline', 'heading_ids', 'classes', 'extensions'})
+_MARKDOWN_OPTIONS = frozenset({'raw_html', 'images', 'inline', 'heading_ids', 'classes', 'extensions', 'max_length'})
+# A profile's default `max_length`, in characters: far above a comment or a page of
+# documentation, below what costs a request gigabytes (a few hundred bytes a character).
+MARKDOWN_MAX_LENGTH = 1_000_000
 _EXTENSIONS = ('table', 'strikethrough', 'tasklist', 'autolink', 'footnotes')
 
 
@@ -189,6 +193,10 @@ def _markdown_profile(name: object, options: Any) -> _native.MarkdownProfile:
             msg = f'markdown: extensions[{key!r}] for {name!r} must be True or False, not {value!r}'
             raise TypeError(msg)
         switches[key] = value
+    max_length = options.get('max_length', MARKDOWN_MAX_LENGTH)
+    if max_length is not None and (type(max_length) is not int or max_length < 0):
+        msg = f'markdown: max_length for {name!r} must be a count of characters or None, not {max_length!r}'
+        raise TypeError(msg)
     return _native.MarkdownProfile(
         name,
         raw_html=options.get('raw_html', 'escape'),
@@ -196,6 +204,7 @@ def _markdown_profile(name: object, options: Any) -> _native.MarkdownProfile:
         inline=flag('inline', False),
         heading_ids=heading_ids,
         classes=list(classes.items()),
+        max_length=max_length,
         **switches,
     )
 

@@ -67,7 +67,7 @@ pub(crate) const MAX_SOURCE_LEN: usize = u32::MAX as usize;
 
 /// Whether `src` is small enough for `u32` spans.
 #[must_use]
-pub(crate) fn check_len(src: &str) -> bool {
+pub fn check_len(src: &str) -> bool {
     src.len() <= MAX_SOURCE_LEN
 }
 

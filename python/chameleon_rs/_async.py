@@ -94,6 +94,34 @@ async def _wait_failed(tasks: list[asyncio.Future[Any]]) -> None:
             task.remove_done_callback(done)
 
 
+class _Once:
+    """A coroutine passed to a native partial in an asynchronous render (``partials.rs``):
+    awaited the first time the partial uses it, its result (or error) is the value of every
+    later use too, as a ``tal:define`` of it would be. A coroutine itself can be awaited only
+    once, so ``<i>${v}${v}</i>`` in the partial would fail on the second ``${v}``."""
+
+    __slots__ = ('awaitable', 'error', 'result')
+
+    def __init__(self, awaitable: Any) -> None:
+        # Kept until awaited (`None` after), so an unstarted one can still be closed.
+        self.awaitable: Any = awaitable
+        self.result: Any = None
+        self.error: BaseException | None = None
+
+    def __await__(self) -> Generator[Any, Any, Any]:
+        awaitable = self.awaitable
+        if awaitable is not None:
+            self.awaitable = None
+            try:
+                inner = awaitable.__await__() if hasattr(type(awaitable), '__await__') else awaitable
+                self.result = yield from inner
+            except BaseException as e:  # noqa: BLE001 - kept for every later use, then raised
+                self.error = e
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
 async def _await[T](awaitable: Awaitable[T]) -> T:
     # A coroutine around a native awaitable (`asyncio.ensure_future` takes it as is).
     return await awaitable

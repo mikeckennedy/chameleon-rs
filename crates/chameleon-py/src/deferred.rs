@@ -38,11 +38,22 @@ static AWAIT: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static GET_RUNNING_LOOP: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static NONCES: AtomicU64 = AtomicU64::new(0);
 
-/// A per-render nonce for placeholder keys: 128 bits from two `SipHash` states with random keys
-/// (`RandomState` is seeded from the operating system), over a process-wide counter. Text in
+/// A per-render nonce for placeholder keys: 128 random bits from the operating system. Text in
 /// the output cannot be made to match a placeholder without knowing it (a predictable nonce
-/// would let a value equal to a placeholder be replaced by deferred content).
+/// would let a value equal to a placeholder be replaced by deferred content). Never `0` (the
+/// render's "none drawn yet").
 pub(crate) fn nonce() -> u128 {
+    let mut bytes = [0u8; 16];
+    let nonce = match getrandom::fill(&mut bytes) {
+        Ok(()) => u128::from_le_bytes(bytes),
+        // Should the system fail to give any: SipHash with its own random keys (`RandomState`
+        // is seeded from the operating system once per thread), not predictable either.
+        Err(_) => hashed_nonce(),
+    };
+    nonce.max(1)
+}
+
+fn hashed_nonce() -> u128 {
     use std::hash::{BuildHasher, Hasher};
     let n = NONCES.fetch_add(1, Ordering::Relaxed);
     let half = || {
@@ -90,12 +101,14 @@ static COROUTINE_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
 
 /// How many tasks one render starts (`chameleon_rs.config.CONCURRENT_LIMIT`): past it, a call
 /// is awaited where it stands, so the fan-out stays bounded however many calls the data makes.
-pub(crate) fn limit(py: Python<'_>) -> usize {
-    *LIMIT.get_or_init(py, || {
-        py.import(intern!(py, "chameleon_rs.config"))
-            .and_then(|c| c.getattr(intern!(py, "CONCURRENT_LIMIT"))?.extract::<usize>())
-            .unwrap_or(64)
-    })
+/// Read once; an error reading it (the module failing to import, a value that is not a
+/// count) is raised, and the next call tries again.
+pub(crate) fn limit(py: Python<'_>) -> PyResult<usize> {
+    LIMIT
+        .get_or_try_init(py, || {
+            py.import(intern!(py, "chameleon_rs.config"))?.getattr(intern!(py, "CONCURRENT_LIMIT"))?.extract::<usize>()
+        })
+        .copied()
 }
 
 /// `loop.create_task(...)` for `awaitable`: a `@concurrent` call's coroutine itself (so a task

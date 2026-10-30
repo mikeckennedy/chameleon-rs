@@ -30,6 +30,7 @@ from functools import wraps
 from typing import Any
 
 from chameleon_rs import _settings
+from chameleon_rs.loader import import_package_resource
 from chameleon_rs.partials import FileId, remembered_spelling, stat_identity
 from chameleon_rs.template import _render_async
 from chameleon_rs.web import DecoratorOrderError, ErrorPage, TemplateError, model_of
@@ -320,7 +321,13 @@ def spelling(loader: Any, name: str) -> str | None:
     identity = _identity(loader, name)
     if identity is None:
         return None
+    if identity is _PACKAGED:
+        return name
     return remembered_spelling(loader, identity, name, lambda first: _identity(loader, first))
+
+
+# `_identity` of a name a package folder of the search path has: loaded as it is spelled.
+_PACKAGED: Any = object()
 
 
 def _identity(loader: Any, name: str) -> FileId | None:
@@ -330,6 +337,12 @@ def _identity(loader: Any, name: str) -> FileId | None:
     extension = getattr(loader, 'default_extension', None)
     filename = name + extension if extension is not None and '.' not in name else name
     for folder in [''] if absolute else loader.search_path:
+        if folder and not os.path.isabs(folder) and ':' in folder:
+            # A package's folder (`pkg:dir`), which the loader tries in this order: if it has
+            # the file, that is what loads, and it has no identity here (not shared).
+            if _in_package(folder, filename):
+                return _PACKAGED
+            continue
         path = os.path.join(folder, filename) if folder else filename
         try:
             info = os.stat(path)
@@ -337,6 +350,17 @@ def _identity(loader: Any, name: str) -> FileId | None:
             continue
         return stat_identity(path, info) if stat.S_ISREG(info.st_mode) else None
     return None
+
+
+def _in_package(folder: str, filename: str) -> bool:
+    """Whether the package folder ``folder`` (``pkg:dir``) has ``filename``, as
+    ``TemplateLoader.load`` checks it."""
+    package, path = folder.split(':', 1)
+    try:
+        with import_package_resource(package) as files:
+            return bool(files.joinpath(path).joinpath(filename).exists())  # ty: ignore[unresolved-attribute]
+    except Exception:  # noqa: BLE001 - the loader's own lookup raises it, when it loads
+        return False
 
 
 # At most this many names are remembered per loader by `view_spelling` (then they start over):

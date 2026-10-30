@@ -329,9 +329,30 @@ pub(crate) fn partial_step(
         locals.set_item(key.bind(py), value)?;
     }
     let site_key = std::ptr::from_ref(site) as usize;
-    let Some(target) = cx.render.partials.target(site_key, &func, &path)? else {
+    let target = match cx.render.partials.target(site_key, &func, &path) {
+        Ok(target) => target,
+        Err(e) => {
+            // Not found (or failed to load): the arguments the partial would have awaited
+            // are dropped unawaited, which Python warns about.
+            crate::awaitable::close_unstarted(py, &scope);
+            return Err(e);
+        }
+    };
+    let Some(target) = target else {
         return Ok(Step::Ready(func.call((path,), Some(locals))?.unbind()));
     };
+    if cx.render.awaits {
+        // A coroutine argument is awaited where the partial first uses it, and that result is
+        // its value from then on (`chameleon_rs._async._Once`).
+        for (key, _) in kwargs {
+            let key = key.bind(py);
+            if let Some(value) = locals.get_item(key)?
+                && crate::awaitable::is_coroutine(&value)?
+            {
+                locals.set_item(key, crate::awaitable::once(py)?.call1((value,))?)?;
+            }
+        }
+    }
     // chameleon_partials: `template_data['render_partial'] = render_partial` unless given (the
     // built-in passes the partial template's own, which resolves relative to it).
     let initial = kwargs.len();
@@ -396,7 +417,8 @@ pub(crate) fn partial_error<'py>(unit: &Unit<'py>, error: PyErr) -> PyErr {
     })();
     match formatted {
         Ok(exc) => PyErr::from_value(exc),
-        Err(e) => e,
+        // As for a page (`program::render_error`): the error unformatted.
+        Err(_) => error,
     }
 }
 

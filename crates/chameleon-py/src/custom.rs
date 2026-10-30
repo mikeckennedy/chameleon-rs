@@ -37,6 +37,14 @@ pub(crate) struct Sub {
     pub(crate) kind: SubKind,
 }
 
+/// Without recursing, as a site (`Site`'s `Drop`): the last owner of shared sub-expressions
+/// may be another site's.
+impl Drop for Sub {
+    fn drop(&mut self) {
+        self.expr.dismantle();
+    }
+}
+
 /// A compiled custom expression.
 #[derive(Debug)]
 pub(crate) struct Custom {
@@ -46,10 +54,11 @@ pub(crate) struct Custom {
 }
 
 impl Custom {
-    pub(crate) fn traverse(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
+    /// Its own references: the function and each sub-expression's conversion settings (the
+    /// sub-expressions are visited as such, see `Expr::traverse`).
+    pub(crate) fn traverse_own(&self, visit: &PyVisit<'_>) -> Result<(), PyTraverseError> {
         visit.call(&self.func)?;
         for sub in self.subs.iter() {
-            sub.expr.traverse(visit)?;
             match &sub.kind {
                 SubKind::Value => {}
                 SubKind::Text(conv) => {

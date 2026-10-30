@@ -5,6 +5,35 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Fixes from a third reliability, security and memory review: a crash freeing deeply nested expressions on a small thread stack, output and async fixes in the VM and partials, a bound on Markdown input, and smaller hygiene fixes.
+
+### Security
+
+- **Freeing a deeply nested expression could crash the process on a small thread stack.** The compile's nesting limit is measured on the thread that compiles, but a compiled template's expressions were freed, and traversed by the garbage collector, recursively on whatever thread released them: the deepest `string:${...}` nesting the compile allowed killed a 64 KiB thread (SIGBUS). Both are iterative now.
+- **Markdown text has a length limit.** Converting takes a few hundred bytes of memory per character, so a megabyte of Markdown from a request could cost hundreds of megabytes. A profile's new `max_length` option (a million characters by default, `None` for no limit) refuses longer text with `ValueError`.
+- **Placeholder nonces for concurrent renders come from the operating system's random source**, rather than from SipHash keys over a counter. Both were unpredictable; the new source needs no argument for it.
+
+### Fixed
+
+- **A value of several parts in a slot body kept the parts written before an error** when one part rendered a native partial whose own slot body had such a value: the inner value cleared the record of the outer one, so a `tal:on-error` around it kept output Chameleon never writes.
+- **`tal:case` awaited a coroutine passed to `render_async` twice** (`RuntimeError: cannot reuse already awaited coroutine`) when the case did not match: the `default` comparison evaluates the expression again, as in Chameleon, and now reuses the awaited value.
+- **A coroutine passed to a native partial could be used only once in it.** It is awaited at the partial's first use and keeps that value. A partial that is not found no longer leaves its arguments "never awaited".
+- **`${default}` inside an `i18n:target` element raised `NameError`** when no `target_language` was passed; it is the render default (`None`), as in Chameleon.
+- **Templates on filesystems that give different files one inode number rendered each other's content** (some FUSE, overlay and network mounts). A file with a single link is now also known by its resolved path.
+- **The Jinja-shaped engines could serve a package folder's file for another name** when the search path mixed package folders (`pkg:dir`) and directories: the name cache skipped the package folders the loader tries first.
+- **A loop length of `-2**63` from a custom `repeat` wrapped around** in release builds and wrote repeat whitespace where Chameleon writes none.
+- **`throw()` into a render waiting for its concurrent calls** dropped an `Exception` and kept waiting, and `GeneratorExit` yielded again; the first is now raised once the other calls are cancelled, the second at once.
+- **A key whose `__hash__` changed `rcontext` while a macro was called raised `InternalError`.**
+- **The `<meta>` charset search was quadratic in the number of `<meta http-equiv=Content-Type content=` prefixes** without a `;` (600 KB took 20 s); it is linear.
+- **A render error's argument listing could print a subclass's value at any length** (a `str` subclass whose `__len__` lies, an `int` subclass with a long `__str__`); every value is cut to 53 characters.
+- **A failed import of the concurrency limit's or the error formatter's module** pinned the limit at 64 for good, or replaced the render's error with the import error; it is raised and retried, or the render's own error is raised.
+- **Fallback expression functions referred to themselves through their globals**, so on GIL builds a reloaded template's old functions waited for the garbage collector.
+- **Threads meeting one file under two spellings at once compiled it twice.**
+- `_native.Program` refuses an out-of-range `surrogate_base`, and the `_testing` tokenizer helpers check the source length as every other entry does.
+- `make lint` fails if `fancy-regex` (a test reference) ever becomes a dependency of the extension.
+
 ## [0.1.55] - 2026-10-28
 
 Fixes from a security and stability review: templates on filesystems without inode numbers and expressions too deep for a worker thread's stack, plus smaller async, macro and compatibility fixes.
