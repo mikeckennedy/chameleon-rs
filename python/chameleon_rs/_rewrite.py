@@ -169,8 +169,15 @@ class Rewriter(ast.NodeTransformer):
         # The names bound in the body of each class being visited (see `visit_ClassDef`);
         # `None` while inside a function or lambda in it, which doesn't see them.
         self.class_names: list[Optional[set[str]]] = []
-        # The names each of those class bodies declares `global`.
-        self.class_globals: list[set[str]] = []
+        # The names each function and class body being visited declares `global`, innermost
+        # last, and the ones of them a `def`, a `class` or an import bound: plain names of
+        # the template that outlive the function they were bound in.
+        self.declared: list[set[str]] = []
+        self.global_names: set[str] = set()
+        # How many functions deep the code is, and the classes being defined outside every
+        # function: their names, which the functions in them see (see `visit_ClassDef`).
+        self.functions = 0
+        self.defining: set[str] = set()
         # Whether a pattern of the `match` being visited reads a name from the scope.
         self.scope_names = False
 
@@ -193,7 +200,9 @@ class Rewriter(ast.NodeTransformer):
         # `def f`, or `def f(x=f)`, with `f` in the render data doesn't read it (an
         # `UnboundLocalError` there). It has no `async def` to copy: that one is Python's,
         # its name bound after its decorators, defaults and annotations are evaluated.
-        late = isinstance(node, ast.AsyncFunctionDef)
+        # So is a function in a class body, which Chameleon can't run (its name is the
+        # template's there only if the body declares it `global`).
+        late = isinstance(node, ast.AsyncFunctionDef) or self.in_class_body()
         if not late:
             self.bind(node.name)
         # Decorators, defaults and annotations are evaluated where the function is defined;
@@ -213,18 +222,23 @@ class Rewriter(ast.NodeTransformer):
                 self.generic_visit(node.args)
             if node.returns is not None:
                 node.returns = self.visit(node.returns)
-            if late:
-                self.bind(node.name)
-                before.update(scope & {node.name})
+            if late and self.bind(node.name):
+                before.add(node.name)
             node.type_params = [self.visit(param) for param in node.type_params]
             self.class_names.append(None)
+            self.declared.append(_bindings(node.body)[1])
+            self.functions += 1
             try:
-                node.body = self.statements(node.body)
+                # The function runs once a class being defined around it is bound.
+                with self.plain(self.defining):
+                    node.body = self.statements(node.body)
             finally:
+                self.functions -= 1
+                self.declared.pop()
                 self.class_names.pop()
         finally:
             if python:
-                scope.intersection_update(before)
+                scope.intersection_update(before | self.global_names)
         return node
 
     def visit_ClassDef(self, node: ast.ClassDef) -> ast.AST:
@@ -238,23 +252,49 @@ class Rewriter(ast.NodeTransformer):
         node.decorator_list = [self.visit(decorator) for decorator in node.decorator_list]
         node.bases = [self.visit(base) for base in node.bases]
         node.keywords = [self.visit(keyword) for keyword in node.keywords]
-        self.bind(node.name)
-        node.type_params = [self.visit(param) for param in node.type_params]
-        names, global_names = _bindings(node.body, class_body=True)
-        self.class_names.append(names - global_names)
-        self.class_globals.append(global_names)
+        # Nor is it bound while its body runs: outside a function `class Base: b = Base` reads
+        # the scope's `Base` (a class's own earlier value, if a block already defined one).
+        # Its methods run later and read the class. Inside a function the name is that
+        # function's local, unbound in the body, as in Python.
+        scope = self.scopes[-1]
+        binds = not self.in_class_body() or self.is_global(node.name)
+        deferred = binds and self.functions == 0 and node.name not in scope | self.defining
+        if deferred:
+            self.defining.add(node.name)
+        else:
+            self.bind(node.name)
         try:
-            node.body = self.statements(node.body)
+            node.type_params = [self.visit(param) for param in node.type_params]
+            names, global_names = _bindings(node.body, class_body=True)
+            self.class_names.append(names - global_names)
+            self.declared.append(global_names)
+            try:
+                node.body = self.statements(node.body)
+            finally:
+                self.class_names.pop()
+                self.declared.pop()
         finally:
-            self.class_names.pop()
-            self.class_globals.pop()
+            if deferred:
+                self.defining.discard(node.name)
+        if deferred:
+            self.bind(node.name)
         return node
 
-    def bind(self, name: str) -> None:
-        """A `def`, a `class` or an import makes ``name`` a plain name of the template. In a
-        class body the name is the class's instead, unless the body declares it `global`."""
-        if not self.in_class_body() or name in self.class_globals[-1]:
-            self.scopes[-1].add(name)
+    def bind(self, name: str) -> bool:
+        """A `def`, a `class` or an import makes ``name`` a plain name of the template, and
+        this returns whether it did: in a class body the name is the class's instead, unless
+        the body declares it `global`."""
+        declared = self.is_global(name)
+        if self.in_class_body() and not declared:
+            return False
+        self.scopes[-1].add(name)
+        if declared:
+            self.global_names.add(name)
+        return True
+
+    def is_global(self, name: str) -> bool:
+        """Whether the function or class body being visited declares ``name`` `global`."""
+        return bool(self.declared) and name in self.declared[-1]
 
     def in_class_body(self) -> bool:
         return bool(self.class_names) and self.class_names[-1] is not None
@@ -446,10 +486,10 @@ class Rewriter(ast.NodeTransformer):
     def visit_Name(self, node: ast.Name) -> ast.AST:
         if not self.class_name(node.id):
             visited = self.lookup(node)
-            declared = self.in_class_body() and node.id in self.class_globals[-1]
+            declared = self.in_class() and self.is_global(node.id)
             if declared and isinstance(node.ctx, ast.Del) and not isinstance(visited, ast.Name):
-                # `del` of a name the class body declares `global`: the template's, where the
-                # body's assignment to it went (outside a class Chameleon can't compile one).
+                # `del` of a name a class body or a method declares `global`: the template's,
+                # where its assignment to it went (outside a class Chameleon can't compile one).
                 return ast.Subscript(value=_econtext(), slice=ast.Constant(node.id), ctx=ast.Del())
             return visited
         if not isinstance(node.ctx, ast.Load):

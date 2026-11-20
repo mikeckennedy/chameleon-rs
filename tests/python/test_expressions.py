@@ -1024,6 +1024,40 @@ CLASS_BODIES = [
         'class C:\n    def m(self):\n        async def g(x=1):\n            return x\n        return g.__name__\n'
         'res = C().m()'
     ),
+    # A parameter named like its `async def` method doesn't make that name the template's.
+    'class C:\n    async def a(self, a=1):\n        return a\nres = a',
+    (
+        'class C:\n    async def a(self, *, a=1):\n        return a\n    y = a\n    def g(self):\n        return a\n'
+        'res = (C.y is C.a, C().g())'
+    ),
+    # `global` in a method, or in a class inside one: the name outlives the method.
+    (
+        'class C:\n    def m(self):\n        class D:\n            global a\n            def a():\n                return 42\n'
+        'C().m()\nres = a()'
+    ),
+    'class C:\n    def m(self):\n        global a\n        def a():\n            return 42\nC().m()\nres = a()',
+    'class C:\n    def m(self):\n        global a\n        class a:\n            v = 7\nC().m()\nres = a.v',
+    'class C:\n    def m(self):\n        global a\n        import math as a\nC().m()\nres = a.pi',
+    'class C:\n    def m(self):\n        global a\n        a = 42\n        del a\nC().m()\nres = "ok"',
+    # A `global` function's decorators and defaults are evaluated before its name is bound.
+    'class C:\n    global a\n    def a(x=a):\n        return x\nres = a()',
+    'class C:\n    global deco\n    @deco\n    def deco():\n        return 7\nres = deco()',
+    # A class's name isn't bound while its body runs; its methods run later and read it.
+    (
+        'class Point:\n    b = Point\n    def m(self):\n        return Point\n'
+        'res = (Point.b.__name__, Point().m() is Point)'
+    ),
+    'class Point:\n    class Point(Point):\n        pass\nres = Point.Point.__mro__[1].__name__',
+    'class Point:\n    def m(self, x=Point):\n        return x\nres = Point().m().__name__',
+    'class Point:\n    xs = [Point for _ in [1]]\nres = Point.xs[0].__name__',
+    'class K:\n    v = 1\nclass K:\n    old = K.v\n    v = 2\nres = (K.old, K.v)',
+    'class Zed:\n    b = Zed\nres = 1',
+    'def f():\n    class Point:\n        b = Point\n    return Point.b\nres = f()',
+    'class C:\n    class D:\n        def m(self):\n            return D\nres = C.D().m()',
+    (
+        'class Point:\n    def m(self):\n        class Inner:\n            b = Point\n        return Inner.b\n'
+        'res = Point().m() is Point'
+    ),
 ]
 
 
