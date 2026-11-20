@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Optional
 
 from chameleon_rs.exc import CompilationError
 
@@ -37,11 +37,11 @@ _interp_regex = re.compile(r'(?<!\$)(\$(?:(%(n)s)|{(%(n)s)}))' % ({'n': NAME_RE}
 
 def simple_translate(
     msgid: str,
-    domain: str | None = None,
-    mapping: Mapping[str, object] | None = None,
-    context: str | None = None,
-    target_language: str | None = None,
-    default: str | None = None,
+    domain: Optional[str] = None,
+    mapping: Optional[Mapping[str, object]] = None,
+    context: Optional[str] = None,
+    target_language: Optional[str] = None,
+    default: Optional[str] = None,
 ) -> str:
     if default is None:
         default = getattr(msgid, 'default', msgid)
@@ -74,13 +74,13 @@ except ImportError:  # pragma: no cover
 else:  # pragma: no cover
 
     def fast_translate(
-        msgid: str | None,
-        domain: str | None = None,
-        mapping: Mapping[str, object] | None = None,
-        context: str | None = None,
-        target_language: str | None = None,
-        default: str | None = None,
-    ) -> str | None:
+        msgid: Optional[str],
+        domain: Optional[str] = None,
+        mapping: Optional[Mapping[str, object]] = None,
+        context: Optional[str] = None,
+        target_language: Optional[str] = None,
+        default: Optional[str] = None,
+    ) -> Optional[str]:
         if msgid is None:
             return None
 
@@ -109,8 +109,8 @@ else:  # pragma: no cover
         return interpolate(default, mapping)  # type: ignore[no-any-return]
 
 
-def parse_attributes(attrs: str, xml: bool = True) -> dict[str, str | None]:
-    d: dict[str, str | None] = {}
+def parse_attributes(attrs: str, xml: bool = True) -> dict[str, Optional[str]]:
+    d: dict[str, Optional[str]] = {}
 
     specs = [spec for spec in attrs.split(';') if spec]
 
@@ -118,7 +118,7 @@ def parse_attributes(attrs: str, xml: bool = True) -> dict[str, str | None]:
         if ',' in spec:
             raise CompilationError('Attribute must not contain comma. Use semicolon to list multiple attributes', spec)
         parts = spec.split()
-        msgid: str | None
+        msgid: Optional[str]
         if len(parts) == 2:
             attr, msgid = parts
         elif len(parts) == 1:

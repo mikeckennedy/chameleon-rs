@@ -18,7 +18,7 @@ import re
 import sys
 import unicodedata
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import chameleon.exc
 import pytest
@@ -35,14 +35,14 @@ from test_corpus import FILES as CORPUS
 
 FIXTURES = sorted((Path(__file__).parent.parent / 'upstream' / 'chameleon_tests' / 'inputs').iterdir())
 
-ZPT_NAMESPACES: dict[str | None, str] = {**MacroProgram.DEFAULT_NAMESPACES}
-ELEMENT_NAMESPACES: dict[str | None, str] = {'xmlns': XMLNS_NS, 'xml': XML_NS}
-PARSER_TEST_NAMESPACES: dict[str | None, str] = {'xmlns': XMLNS_NS, 'xml': XML_NS, 'py': PY_NS}
+ZPT_NAMESPACES: dict[Optional[str], str] = {**MacroProgram.DEFAULT_NAMESPACES}
+ELEMENT_NAMESPACES: dict[Optional[str], str] = {'xmlns': XMLNS_NS, 'xml': XML_NS}
+PARSER_TEST_NAMESPACES: dict[Optional[str], str] = {'xmlns': XMLNS_NS, 'xml': XML_NS, 'py': PY_NS}
 
 TAG_KEYS = {'prefix', 'name', 'suffix', 'space', 'attrs', 'namespace', 'ns_attrs', 'ns_map'}
 ATTR_KEYS = ('space', 'name', 'eq', 'quote', 'value')
 
-Tok = tuple[str, int | None] | None
+Tok = Optional[tuple[str, Optional[int]]]
 
 
 def tok(t: object) -> Tok:
@@ -101,7 +101,7 @@ def reference_tokens(body: str, mode: str) -> list[Tok]:
     return [tok(t) for t in stream]
 
 
-def reference_parse(body: str, namespaces: dict[str | None, str], restricted: bool, mode: str) -> Any:
+def reference_parse(body: str, namespaces: dict[Optional[str], str], restricted: bool, mode: str) -> Any:
     stream = iter_text(body) if mode == 'text' else iter_xml(body)
     try:
         return [item(*i) for i in ElementParser(stream, namespaces, restricted)]
@@ -109,7 +109,7 @@ def reference_parse(body: str, namespaces: dict[str | None, str], restricted: bo
         return error(e)
 
 
-def our_parse(body: str, namespaces: dict[str | None, str], restricted: bool, mode: str) -> Any:
+def our_parse(body: str, namespaces: dict[Optional[str], str], restricted: bool, mode: str) -> Any:
     try:
         return _testing.parse(body, namespaces, restricted, mode)
     except Exception as e:  # noqa: BLE001 - every exception type is part of the comparison
@@ -118,7 +118,7 @@ def our_parse(body: str, namespaces: dict[str | None, str], restricted: bool, mo
 
 def check(
     body: str,
-    namespaces: dict[str | None, str] = ZPT_NAMESPACES,
+    namespaces: dict[Optional[str], str] = ZPT_NAMESPACES,
     restricted: bool = True,
     mode: str = 'xml',
 ) -> None:
@@ -127,7 +127,7 @@ def check(
     assert our_parse(body, namespaces, restricted, mode) == reference_parse(body, namespaces, restricted, mode)
 
 
-def read(path: Path) -> str | None:
+def read(path: Path) -> Optional[str]:
     try:
         return read_encoded(path.read_bytes())
     except (UnicodeDecodeError, LookupError):
@@ -424,6 +424,6 @@ CONFIGS = st.sampled_from(
     suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large],
 )
 @given(body=MARKUP_TEXT, config=CONFIGS)
-def test_generated_markup(body: str, config: tuple[dict[str | None, str], bool, str]) -> None:
+def test_generated_markup(body: str, config: tuple[dict[Optional[str], str], bool, str]) -> None:
     namespaces, restricted, mode = config
     check(body, namespaces, restricted, mode)

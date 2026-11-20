@@ -39,6 +39,7 @@ import sys
 import warnings
 from collections.abc import Sequence
 from types import ModuleType
+from typing import Optional
 
 # Chameleon modules that are code-generation internals with no counterpart in chameleon-rs.
 NOT_PROVIDED = frozenset({'nodes', 'program', 'zpt.program', 'benchmark'})
@@ -79,8 +80,8 @@ class _Unprovided(importlib.abc.MetaPathFinder):
     extension): it is a ``ModuleNotFoundError``."""
 
     def find_spec(
-        self, fullname: str, path: Sequence[str] | None = None, target: ModuleType | None = None
-    ) -> importlib.machinery.ModuleSpec | None:
+        self, fullname: str, path: Optional[Sequence[str]] = None, target: Optional[ModuleType] = None
+    ) -> Optional[importlib.machinery.ModuleSpec]:
         if fullname.startswith('chameleon.') and installed():
             relative = fullname.removeprefix('chameleon.')
             reason = 'a Chameleon internal with no counterpart' if relative in NOT_PROVIDED else 'not provided'
@@ -99,8 +100,8 @@ class _Alias(importlib.abc.MetaPathFinder, importlib.abc.Loader):
     enabled = False
 
     def find_spec(
-        self, fullname: str, path: Sequence[str] | None = None, target: ModuleType | None = None
-    ) -> importlib.machinery.ModuleSpec | None:
+        self, fullname: str, path: Optional[Sequence[str]] = None, target: Optional[ModuleType] = None
+    ) -> Optional[importlib.machinery.ModuleSpec]:
         if self.enabled and fullname in INTEGRATIONS:
             return importlib.machinery.ModuleSpec(fullname, self)
         return None

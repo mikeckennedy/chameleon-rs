@@ -37,7 +37,7 @@ import types
 from collections.abc import Callable, Collection, Iterable, Mapping
 from functools import partial
 from operator import is_
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Optional
 
 from chameleon_rs._native import (
     DEFAULT_MARKER,
@@ -141,7 +141,7 @@ PROGRAM_OPTIONS = (
 )
 
 
-def safe_get_package_version(name: str) -> str | None:
+def safe_get_package_version(name: str) -> Optional[str]:
     import importlib.metadata  # imported when used: ~6 ms at startup
 
     try:
@@ -196,7 +196,7 @@ class BaseTemplate:
     """
 
     default_encoding = 'utf-8'
-    default_content_type: str | None = None
+    default_content_type: Optional[str] = None
 
     # Strictly informational: used in exception formatting.
     filename: Any = '<string>'
@@ -233,9 +233,9 @@ class BaseTemplate:
     # How values are shown in a formatted render error.
     value_repr: ClassVar[Callable[[object], object]] = staticmethod(value_repr)
 
-    source: str | None
+    source: Optional[str]
 
-    def __init__(self, body: str | bytes | None = None, **config: Any) -> None:
+    def __init__(self, body: Optional[str | bytes] = None, **config: Any) -> None:
         self.__dict__.update(config)
 
         if body is not None:
@@ -319,7 +319,7 @@ class BaseTemplate:
         self.parse(body)
         raise NotImplementedError('Must be implemented by subclass.')
 
-    def cook_check(self) -> bool | None:
+    def cook_check(self) -> Optional[bool]:
         assert self._cooked
         return None
 
@@ -368,7 +368,7 @@ class BaseTemplate:
         return self.render(**__kw)
 
     def write(self, body: str | bytes) -> None:
-        encoding: str | None
+        encoding: Optional[str]
         if isinstance(body, bytes):
             body, encoding, content_type = read_bytes(body, self.default_encoding)
         elif body.startswith('<?xml'):
@@ -410,14 +410,14 @@ class BaseTemplateFile(BaseTemplate):
     # Guards compiling; an instance gets its own in `__init__`.
     _lock = threading.RLock()
 
-    _v_last_read: float | None = None
+    _v_last_read: Optional[float] = None
 
     def __init__(
         self,
         filename: str | os.PathLike[str],
-        auto_reload: bool | None = None,
-        package_name: str | None = None,
-        post_init_hook: Callable[[], object] | None = None,
+        auto_reload: Optional[bool] = None,
+        package_name: Optional[str] = None,
+        post_init_hook: Optional[Callable[[], object]] = None,
         **config: Any,
     ) -> None:
         self._lock = threading.RLock()
@@ -612,9 +612,9 @@ class PageTemplate(BaseTemplate):
 
     translate: Any = staticmethod(simple_translate)
 
-    encoding: str | None = None
+    encoding: Optional[str] = None
 
-    boolean_attributes: Collection[str] | None = None
+    boolean_attributes: Optional[Collection[str]] = None
 
     mode = 'xml'
 
@@ -628,7 +628,7 @@ class PageTemplate(BaseTemplate):
 
     enable_comment_interpolation = True
 
-    on_error_handler: Callable[[BaseException], object] | None = None
+    on_error_handler: Optional[Callable[[BaseException], object]] = None
 
     restricted_namespace = True
 
@@ -637,7 +637,7 @@ class PageTemplate(BaseTemplate):
     # attributes miss the content after it. Default: ``CHAMELEON_STRICT_TAGS``.
     strict_tags = STRICT_TAGS
 
-    tokenizer: Callable[..., Iterable[str]] | None = None
+    tokenizer: Optional[Callable[..., Iterable[str]]] = None
 
     default_marker: Any = Symbol(DEFAULT_MARKER)
 
@@ -645,8 +645,8 @@ class PageTemplate(BaseTemplate):
     # argument render concurrently, each in a task of its own.
     concurrent = False
 
-    _defaults_state: tuple[tuple[Any, ...], dict[str, Any]] | None = None
-    _encoded: tuple[tuple[Any, ...], dict[str, Any]] | None = None
+    _defaults_state: Optional[tuple[tuple[Any, ...], dict[str, Any]]] = None
+    _encoded: Optional[tuple[tuple[Any, ...], dict[str, Any]]] = None
 
     # `body` is any type: in PageTemplateFile's MRO this passes the filename on.
     def __init__(self, body: Any, **config: Any) -> None:
@@ -741,7 +741,7 @@ class PageTemplate(BaseTemplate):
         # context=None, target_language=None)`.
         self.include(*args, **kwargs)
 
-    def _render_defaults(self, encoding: str | None, translate: Callable[..., Any] | None) -> dict[str, Any]:
+    def _render_defaults(self, encoding: Optional[str], translate: Optional[Callable[..., Any]]) -> dict[str, Any]:
         if translate is None:
             translate = self.translate
 
@@ -780,7 +780,7 @@ class PageTemplate(BaseTemplate):
             'target_language': None,
         }
 
-    def render(self, encoding: str | None = None, **kw: Any) -> str:
+    def render(self, encoding: Optional[str] = None, **kw: Any) -> str:
         """Render template to string.
 
         If provided, the ``encoding`` argument overrides the template default value.
@@ -796,7 +796,7 @@ class PageTemplate(BaseTemplate):
         # the keywords, the defaults they lack and a fresh `repeat`.
         return render_page(self, encoding, kw)  # type: ignore[no-any-return]
 
-    async def render_async(self, encoding: str | None = None, *, offload: bool = False, **kw: Any) -> str:
+    async def render_async(self, encoding: Optional[str] = None, *, offload: bool = False, **kw: Any) -> str:
         """Render template to string, awaiting awaitable values (D9).
 
         The same as ``render``, except that when an expression's final value is awaitable (a
@@ -820,7 +820,7 @@ class PageTemplate(BaseTemplate):
         """
         return await _render_async(self, encoding, kw, self.concurrent, offload)
 
-    def _encoded_defaults(self, encoding: str | None, translate: Callable[..., Any] | None) -> dict[str, Any]:
+    def _encoded_defaults(self, encoding: Optional[str], translate: Optional[Callable[..., Any]]) -> dict[str, Any]:
         """The defaults for an `encoding` or `translate` argument, kept while the arguments and
         the settings they depend on are the same (chameleon_partials passes `encoding`)."""
         key = (encoding, translate, self.translate, self.encoding, self.on_error_handler)
@@ -856,7 +856,7 @@ class PageTemplate(BaseTemplate):
 
 
 async def _render_async(
-    template: PageTemplate, encoding: str | None, kw: dict[str, Any], concurrent: bool, offload: bool = False
+    template: PageTemplate, encoding: Optional[str], kw: dict[str, Any], concurrent: bool, offload: bool = False
 ) -> str:
     """``PageTemplate.render_async`` with ``concurrent`` and ``offload`` given (the
     integrations' per-view settings)."""
@@ -874,7 +874,7 @@ async def _render_async(
     return result  # type: ignore[no-any-return]
 
 
-async def _overridden(template: PageTemplate, encoding: str | None, kw: dict[str, Any], offload: bool) -> Any:
+async def _overridden(template: PageTemplate, encoding: Optional[str], kw: dict[str, Any], offload: bool) -> Any:
     """The template's own `render` (a subclass's), in a worker thread with `offload`."""
     call = partial(template.render, **kw) if encoding is None else partial(template.render, encoding, **kw)
     if offload:
@@ -901,7 +901,7 @@ def _reference_codes(body: str) -> list[int]:
     return codes
 
 
-def _map_surrogates(body: str) -> tuple[str, int | None]:
+def _map_surrogates(body: str) -> tuple[str, Optional[int]]:
     """A source's lone surrogates, which the Rust core's UTF-8 text cannot hold, mapped one
     to one onto 2,048 code points of the Private Use Area (U+E000-U+F8FF) that the source
     (its characters and its numeric character references) does not use; the native program
@@ -967,8 +967,8 @@ class PageTemplateFile(PageTemplate, BaseTemplateFile):
         self,
         filename: str | os.PathLike[str],
         loader_class: type[TemplateLoader] = TemplateLoader,
-        package_name: str | None = None,
-        search_path: Iterable[str | os.PathLike[str]] | str | os.PathLike[str] | None = None,
+        package_name: Optional[str] = None,
+        search_path: Optional[Iterable[str | os.PathLike[str]] | str | os.PathLike[str]] = None,
         **config: Any,
     ) -> None:
         paths = search_paths(search_path)
@@ -1030,13 +1030,13 @@ class PageTextTemplateFile(PageTemplateFile):
     mode = 'text'
 
     # `bytes` where the base class returns `str`, as Chameleon's PageTextTemplateFile does.
-    def render(self, encoding: str | None = None, **kw: Any) -> bytes:  # ty: ignore[invalid-method-override]
+    def render(self, encoding: Optional[str] = None, **kw: Any) -> bytes:  # ty: ignore[invalid-method-override]
         result = super().render(encoding, **kw)
         return result.encode(self.encoding or 'utf-8')
 
     # `bytes`, as `render`.
     async def render_async(  # ty: ignore[invalid-method-override]
-        self, encoding: str | None = None, *, offload: bool = False, **kw: Any
+        self, encoding: Optional[str] = None, *, offload: bool = False, **kw: Any
     ) -> bytes:
         if type(self).render is not PageTextTemplateFile.render:
             return await _overridden(self, encoding, kw, offload)  # type: ignore[no-any-return]

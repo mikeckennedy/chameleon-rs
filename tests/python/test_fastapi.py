@@ -19,7 +19,7 @@ import warnings
 from collections.abc import Callable, Coroutine
 from pathlib import Path
 from types import ModuleType
-from typing import Any, assert_type
+from typing import Any, Optional, assert_type
 
 import pytest
 
@@ -40,7 +40,7 @@ with warnings.catch_warnings():
 ORIGINAL = Path(__file__).resolve().parents[2] / 'temp' / 'fastapi-chameleon'
 
 
-def load_original() -> ModuleType | None:
+def load_original() -> Optional[ModuleType]:
     if not (ORIGINAL / 'fastapi_chameleon').is_dir():
         return None
     sys.path.insert(0, str(ORIGINAL))

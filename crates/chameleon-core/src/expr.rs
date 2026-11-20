@@ -142,6 +142,28 @@ pub trait ExprCompiler {
     /// entity decoding, with Chameleon's position (for error messages).
     fn compile(&mut self, source: &Tok, cx: ExprContext<'_>) -> Result<ExprId, ExprCompileError<Self::Error>>;
 
+    /// Whether [`candidate_bound`](Self::candidate_bound) may be asked about the `${...}` of
+    /// `text` (an interpolated text, whole): asked once per text, so a check of all of it
+    /// costs nothing per expression.
+    fn bounds_candidates(&self, text: &str) -> bool {
+        let _ = text;
+        false
+    }
+
+    /// For the longest candidate of a `${` (`candidate`: the text after it, up to the text's
+    /// last `}`), an offset into it that no valid expression reaches: every candidate
+    /// ending after that offset is certain to be rejected by [`compile`](Self::compile) as
+    /// [`ExprCompileError::Invalid`], with no other effect. The interpolation then starts at
+    /// the longest candidate that ends at or before it. `None`: nothing is known, every
+    /// candidate is tried.
+    ///
+    /// Without it a text of n interpolations compiles n candidates for each, every one as
+    /// long as the text: 2,000 `${a}` in one text node took 6 s (54 s in Chameleon).
+    fn candidate_bound(&self, candidate: &str, cx: ExprContext<'_>) -> Option<usize> {
+        let _ = (candidate, cx);
+        None
+    }
+
     /// Parses and registers a `<?python ... ?>` code block (statements, not an expression).
     fn compile_code(&mut self, source: &Tok) -> Result<ExprId, ExprCompileError<Self::Error>>;
 

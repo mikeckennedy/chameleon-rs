@@ -51,19 +51,26 @@ fn search(s: &str, braces_required: bool) -> Option<Match> {
     None
 }
 
-/// Splits `expression` into text and compiled sub-expressions. `compile(source, candidate)`
-/// compiles one sub-expression (`candidate`: a cheap structural rejection is fine, because
-/// the last failure is compiled again without it for the parser's own message).
-pub(crate) fn interpolate<F>(
+/// What [`interpolate`] asks of the expression compiler.
+pub(crate) trait SubExprs {
+    /// Compiles one sub-expression (`candidate`: a cheap structural rejection is fine, because
+    /// the last failure is compiled again without it for the parser's own message).
+    fn compile(&mut self, source: &Tok, candidate: bool) -> CompileResult<Expr>;
+
+    /// `chameleon_core::ExprCompiler::candidate_bound` for a `${` of a text that is
+    /// `crate::compiler::plain_text`.
+    fn bound(&self, candidate: &str) -> Option<usize>;
+}
+
+/// Splits `expression` into text and compiled sub-expressions.
+pub(crate) fn interpolate<C: SubExprs>(
     py: Python<'_>,
     expression: &Tok,
     braces_required: bool,
     surrogate_base: Option<u32>,
-    mut compile: F,
-) -> CompileResult<Vec<StrPart>>
-where
-    F: FnMut(&Tok, bool) -> CompileResult<Expr>,
-{
+    compiler: &mut C,
+) -> CompileResult<Vec<StrPart>> {
+    let bounded = crate::compiler::plain_text(&expression.text);
     let mut parts = Vec::new();
     // Static text, its lone surrogates (mapped to the private-use block) mapped back.
     let text_part = |parts: &mut Vec<StrPart>, s: &str| -> CompileResult<()> {
@@ -89,6 +96,18 @@ where
                 continue;
             }
         }
+        // A `${` whose longest candidates can't be valid: start at the first that can (the
+        // match found on the text cut there is the one the retries below would reach).
+        if bounded
+            && matched.text.as_bytes().get(m.start + 1) == Some(&b'{')
+            && let Some(bound) = matched.text.get(m.group.0..m.group.1).and_then(|c| compiler.bound(c))
+            && let Some(close) = bounded_close(&matched.text, m.group.0, bound)
+        {
+            matched = matched.slice(0, close + 1);
+            if let Some(next) = search(&matched.text, braces_required) {
+                m = next;
+            }
+        }
         loop {
             let string = matched.slice(m.group.0, m.group.1);
             if string.is_empty() {
@@ -96,7 +115,7 @@ where
                 text_part(&mut parts, matched.text.get(m.start..m.end).unwrap_or_default())?;
                 break;
             }
-            match compile(&string, true) {
+            match compiler.compile(&string, true) {
                 Ok(expr) => {
                     parts.push(StrPart::Expr(expr));
                     break;
@@ -109,7 +128,7 @@ where
                     }
                     // The last candidate failed: compile it once more without the structural
                     // shortcut, for the parser's own message.
-                    return Err(match compile(&string, false) {
+                    return Err(match compiler.compile(&string, false) {
                         Err(e) => e,
                         Ok(_) => ExprCompileError::Invalid { message, token },
                     });
@@ -120,6 +139,15 @@ where
         text = text.slice_from(m.end - m.start);
     }
     Ok(merge(py, parts))
+}
+
+/// Where the first candidate to try closes: the last `}` at or before `bound` (an offset from
+/// `from`), else the first one after (the shortest candidate, whose error is the one reported).
+fn bounded_close(text: &str, from: usize, bound: usize) -> Option<usize> {
+    let rest = text.get(from..)?;
+    let within = rest.as_bytes().get(..=bound)?;
+    let close = within.iter().rposition(|&b| b == b'}').or_else(|| rest.find('}'))?;
+    Some(from + close)
 }
 
 /// Adjacent text parts joined (the result is the same: a single text node and a joined

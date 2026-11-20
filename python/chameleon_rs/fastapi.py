@@ -59,7 +59,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable, Coroutine, Iterable, Mapping
-from typing import Any, NoReturn, Protocol, overload
+from typing import Any, NoReturn, Optional, Protocol, overload
 
 import fastapi
 
@@ -87,7 +87,7 @@ __all__ = [
 
 # fastapi-chameleon's module state: the configured folder (or 'templates', which a bare
 # `@template` falls back to when nothing was configured before the view was decorated).
-template_path: str | None = None
+template_path: Optional[str] = None
 
 
 class FastAPIChameleonException(TemplateError):
@@ -100,9 +100,9 @@ class FastAPIChameleonNotFoundException(NotFound, FastAPIChameleonException):
 
     def __init__(
         self,
-        message: str | None = None,
+        message: Optional[str] = None,
         four04template_file: str = 'errors/404.pt',
-        template_data: Mapping[str, Any] | None = None,
+        template_data: Optional[Mapping[str, Any]] = None,
     ) -> None:
         super().__init__(message, four04template_file, template_data)
 
@@ -137,8 +137,8 @@ _fastapi = _FastAPI()
 def configure(
     template_folder: Any = None,
     *,
-    auto_reload: bool | None = None,
-    restricted_namespace: bool | None = None,
+    auto_reload: Optional[bool] = None,
+    restricted_namespace: Optional[bool] = None,
     app: Any = None,
     check_order: bool = True,
 ) -> None:
@@ -277,21 +277,21 @@ def template[**P](
 def template[**P](template_file: Callable[P, Any], /) -> Callable[P, fastapi.Response]: ...
 @overload
 def template(
-    template_file: str | None = None,
+    template_file: Optional[str] = None,
     mimetype: str = 'text/html',
     status_code: int = 200,
     *,
-    content_type: str | None = None,
-    concurrent: bool | None = None,
+    content_type: Optional[str] = None,
+    concurrent: Optional[bool] = None,
     offload: bool = False,
 ) -> TemplateDecorator: ...
 def template(
-    template_file: Callable[..., Any] | str | None = None,
+    template_file: Optional[Callable[..., Any] | str] = None,
     mimetype: str = 'text/html',
     status_code: int = 200,
     *,
-    content_type: str | None = None,
-    concurrent: bool | None = None,
+    content_type: Optional[str] = None,
+    concurrent: Optional[bool] = None,
     offload: bool = False,
 ) -> Callable[..., Any]:
     """Decorates a FastAPI view (sync or async) to render a template with what it returns:
@@ -321,7 +321,7 @@ def template(
 
 
 def not_found(
-    template_file: str | None = None, *, four04template_file: str | None = None, **template_data: Any
+    template_file: Optional[str] = None, *, four04template_file: Optional[str] = None, **template_data: Any
 ) -> NoReturn:
     """Ends the current ``@template`` view with a 404 page: ``template_file``
     (``errors/404.pt`` by default; ``four04template_file=`` is fastapi-chameleon's name for it)
@@ -345,7 +345,7 @@ def error(template_file: str, status_code: int = 500, **template_data: Any) -> N
     raise FastAPIChameleonGenericException(template_file, status_code, msg, template_data or None)
 
 
-def generic_error(template_file: str, status_code: int, template_data: Mapping[str, Any] | None = None) -> NoReturn:
+def generic_error(template_file: str, status_code: int, template_data: Optional[Mapping[str, Any]] = None) -> NoReturn:
     """fastapi-chameleon's name and signature for ``error()``."""
     msg = 'The URL resulted in an error.'
     raise FastAPIChameleonGenericException(template_file, status_code, msg, template_data=template_data)

@@ -680,6 +680,10 @@ pub(crate) struct RenderCtx<'py> {
     /// Native partials called with an awaitable argument render concurrently (opt-in, see
     /// `crate::deferred`).
     pub(crate) concurrent: bool,
+    /// The render is a native partial's, started for a concurrent placeholder: itself a task
+    /// of the page's render, it starts none (a `@concurrent` call in it is awaited in place,
+    /// as in any partial, and the page's task limit holds).
+    pub(crate) fanned_out: bool,
     /// The partial just returned as `Step::Call` is to render concurrently.
     pub(crate) defer_next: Cell<bool>,
     /// Tasks started for placeholders, in document order, and the placeholders' nonce.
@@ -801,6 +805,7 @@ impl<'py> RenderCtx<'py> {
             simple_wrapper: Cell::new((0, false)),
             awaits: false,
             concurrent: false,
+            fanned_out: false,
             defer_next: Cell::new(false),
             deferred: RefCell::new(Vec::new()),
             nonce: Cell::new(0),
@@ -829,6 +834,7 @@ impl<'py> RenderCtx<'py> {
             simple_wrapper: self.simple_wrapper.get(),
             awaits: self.awaits,
             concurrent: self.concurrent,
+            fanned_out: self.fanned_out,
             deferred: self.deferred.into_inner(),
             nonce: self.nonce.get(),
         }
@@ -861,6 +867,7 @@ impl<'py> RenderCtx<'py> {
             simple_wrapper: Cell::new(saved.simple_wrapper),
             awaits: saved.awaits,
             concurrent: saved.concurrent,
+            fanned_out: saved.fanned_out,
             defer_next: Cell::new(false),
             deferred: RefCell::new(saved.deferred),
             nonce: Cell::new(saved.nonce),
@@ -872,6 +879,7 @@ impl<'py> RenderCtx<'py> {
 /// [`RenderCtx`] without the GIL lifetime: what a suspended render keeps between the calls that
 /// drive it (each has its own `Python` token). Converting is a move of references, done once
 /// per suspension.
+#[allow(clippy::struct_excessive_bools)] // the render's independent flags, as `RenderCtx` has them
 pub(crate) struct SavedRender {
     marker: Py<PyAny>,
     partials: crate::partials::SavedPartials,
@@ -886,6 +894,7 @@ pub(crate) struct SavedRender {
     simple_wrapper: (usize, bool),
     awaits: bool,
     concurrent: bool,
+    fanned_out: bool,
     pub(crate) deferred: Vec<crate::deferred::Deferred>,
     nonce: u128,
 }

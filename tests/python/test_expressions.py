@@ -8,6 +8,7 @@ import ast
 import functools
 import itertools
 import os
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -579,6 +580,13 @@ CUSTOM_RENDERS = [
     ('<p>${symbol: a/b/cd}</p>', {}),
     ('<p>${brace: x} y}</p>', {}),
     ('<p tal:content="exists: name: missing">t</p>', {}),
+    # A sub-expression reads what a code block defined (a `def`, an import), in a macro too.
+    ("<p><?python\ndef f(a):\n    return a * 2\n?>${upper: f('ab')}</p>", {}),
+    ('<p><?python import os.path as osp ?>${upper: osp.basename(x)}</p>', {'x': 'a/b'}),
+    (
+        '<p metal:define-macro="m"><?python\ndef f(a):\n    return a * 2\n?>${upper: f(x)}</p><i metal:use-macro="m"/>',
+        {'x': 'ab'},
+    ),
 ]
 
 
@@ -765,6 +773,68 @@ def test_render_data_cannot_replace_builtins_in_code_blocks(source: str, data: d
     assert 'HIJACK' not in outcome(chameleon_rs) or '${len(' in source
 
 
+CODE_BLOCK_BINDINGS = [
+    ('<?python\ntry:\n    1 / 0\nexcept Exception as err:\n    x = str(err)\n?>${x}', {}, 'division by zero'),
+    # After the handler the name is unbound, as in Python: the scope's again.
+    (
+        '<?python\ntry:\n    1 / 0\nexcept Exception as err:\n    x = type(err)\n?>${x.__name__} ${err}',
+        {'err': 'data'},
+        'ZeroDivisionError data',
+    ),
+    ('<?python\ntry:\n    1 / 0\nexcept* ZeroDivisionError as group:\n    x = len(group.exceptions)\n?>${x}', {}, '1'),
+    (
+        '<?python\nclass Greeter:\n    def hello(self, name):\n        return "hi " + name\n?>${Greeter().hello("a")}',
+        {},
+        'hi a',
+    ),
+    ('<?python\nasync def later():\n    return 1\n?>${later.__name__}', {}, 'later'),
+    (
+        '<?python\nmatch [1, 2, 3]:\n    case [a, *rest]:\n        y = a + len(rest)\n?>${y} ${a} ${rest}',
+        {},
+        '3 1 [2, 3]',
+    ),
+    ('<?python\nmatch 5:\n    case int() as n if n > 3:\n        y = n + 1\n?>${y} ${n}', {}, '6 5'),
+    (
+        '<?python\nmatch {"k": 1, "z": 2}:\n    case {"k": v, **others}:\n        pass\n?>${v} ${others}',
+        {},
+        "1 {'z': 2}",
+    ),
+    # Chameleon renders `7`: its `NameError` for `C` is what the `|` falls back from.
+    ('<?python class C: pass ?>${C.__name__ | 7}', {}, 'C'),
+    # A case that doesn't match binds nothing: the name is still the scope's.
+    (
+        '<?python\nmatch 5:\n    case str() as n:\n        pass\n    case _:\n        pass\n?>${n}',
+        {'n': 'data'},
+        'data',
+    ),
+    # A capture assigned in the body is the scope's name, as any assignment.
+    ('<?python\nmatch 5:\n    case n:\n        n = n * 2\n?>${n}', {}, '10'),
+]
+
+
+@pytest.mark.parametrize(('source', 'data', 'expected'), CODE_BLOCK_BINDINGS)
+def test_code_block_names_bound_without_an_assignment(source: str, data: dict[str, Any], expected: str) -> None:
+    # `except ... as`, `class`, `async def` and a `match` capture bind a name that Chameleon's
+    # name rewriting misses: reading it there is a `NameError` (unless render data has the
+    # name, which is then read instead). Here the name is the one the block bound.
+    assert chameleon_rs.PageTemplate(source)(**data) == expected
+
+
+@pytest.mark.parametrize(
+    'source',
+    [
+        '<?python\ntry:\n    x = 1\nexcept Exception as err:\n    x = 2\n?>${x}',
+        '<?python\ntry:\n    1 / 0\nexcept Exception as err:\n    x = 2\n?>${x} ${err}',
+        '<?python\nclass C:\n    v = 3\n?>${v}',
+        '<?python\nmatch 5:\n    case 5:\n        y = "five"\n    case _:\n        y = "other"\n?>${y}',
+        '<?python\nmatch 5:\n    case int() as n:\n        y = 1\n?>${y}',
+    ],
+)
+def test_code_blocks_chameleon_renders_are_unchanged(source: str) -> None:
+    data = {'err': 'data'}
+    assert chameleon_rs.PageTemplate(source)(**data) == chameleon.PageTemplate(source)(**data)
+
+
 class _HtmlNone:
     __html__ = None
 
@@ -807,3 +877,58 @@ def test_an_html_attribute_of_none_falls_back_to_str(source: str, value: Any) ->
         assert outcome(chameleon_rs) == '<p title=""/>'
         return
     assert outcome(chameleon_rs) == outcome(chameleon)
+
+
+# -- Where an interpolation ends -------------------------------------------------------------
+
+# Pieces that decide where a `${` ends, and what makes the compiler try every candidate.
+BOUNDARY_PIECES = (
+    ['${'] * 3
+    + ['}'] * 3
+    + ['{', '(', ')', '[', ']', "'", '"', 'a', 'b', ' ', '|', ':', '$', '$$', '$a', '1', '+', ',', '.', '\n']
+    + ['structure:', 'string:', 'not:', 'exists:', 'python:', 'load:', 'zz:', 'lambda:', 'if', 'else', 'for q in']
+    + ['#', '\\', '&amp;', '&#125;', '&quot;', 'é', 'x.y', "''", '"""', 'f"', '{}', '==']
+)
+
+
+@pytest.mark.parametrize('seed', range(0, 1500, 100))
+def test_interpolations_end_where_chameleons_do(seed: int) -> None:
+    # The longest candidate that compiles wins (`Interpolator`). Candidates that can't
+    # compile are skipped unseen (`candidate_bound`), which must never change the answer.
+    import random
+
+    def outcome(engine: Any, source: str, template: str) -> str:
+        try:
+            return getattr(engine, template)(source)(a='A', b=[1, '<i>'], d={'k': 1, 1: 2})  # type: ignore[no-any-return]
+        except Exception as e:  # noqa: BLE001 - comparing exceptions across engines
+            return f'{type(e).__name__}: {str(e).splitlines()[0]}'
+
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')  # the parser's, about the generated expressions
+        for case in range(seed, seed + 100):
+            pick = random.Random(case)
+            body = ''.join(pick.choice(BOUNDARY_PIECES) for _ in range(pick.randint(1, 14)))
+            quoted = body.replace('"', '&quot;')
+            sources = [
+                (f'<p>{body}</p>', 'PageTemplate'),
+                (f'<p title="{quoted}"/>', 'PageTemplate'),
+                (f'<p tal:content="string:{quoted}"/>', 'PageTemplate'),
+                (body, 'PageTextTemplate'),
+            ]
+            for source, template in sources:
+                assert outcome(chameleon_rs, source, template) == outcome(chameleon, source, template), source
+
+
+@pytest.mark.parametrize('expression', ['a', 'a.real', 'structure: a', "d['k']", '(a, {1: 2})'])
+@pytest.mark.parametrize('wrap', ['<p>{}</p>', '<p title="{}"/>', '<p tal:content="string:{}"/>'])
+def test_many_interpolations_in_one_text_compile_fast(expression: str, wrap: str) -> None:
+    # Every `${` once tried each `}` after it, each candidate as long as the text: 2,000 in
+    # one text node took 6 s to compile (54 s in Chameleon). Now a fraction of a second; the
+    # limit only tells the two apart.
+    import time
+
+    source = wrap.format(('${' + expression + '} ') * 3000)
+    start = time.perf_counter()
+    page = chameleon_rs.PageTemplate(source)
+    assert time.perf_counter() - start < 5
+    assert page(a=1, d={'k': 1}).count('1') >= 3000

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Optional
 
 import chameleon_rs
 import chameleon_rs._settings
@@ -92,13 +92,13 @@ def test_in_an_attribute_the_result_is_escaped(source: str) -> None:
     assert '<a href=' in (tags[0][1][0][1] or ''), out
 
 
-def _tags(html: str) -> list[tuple[str, list[tuple[str, str | None]]]]:
+def _tags(html: str) -> list[tuple[str, list[tuple[str, Optional[str]]]]]:
     from html.parser import HTMLParser
 
-    found: list[tuple[str, list[tuple[str, str | None]]]] = []
+    found: list[tuple[str, list[tuple[str, Optional[str]]]]] = []
 
     class Parser(HTMLParser):
-        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
             found.append((tag, attrs))
 
     Parser().feed(html)

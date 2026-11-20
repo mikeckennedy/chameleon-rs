@@ -24,7 +24,7 @@ from collections.abc import Callable, Generator, Iterable, Sequence
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 from threading import RLock
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 if TYPE_CHECKING:
     from importlib.resources.abc import Traversable
@@ -37,7 +37,7 @@ del lock
 log = logging.getLogger('chameleon.loader')
 
 
-def search_paths(search_path: Iterable[str | os.PathLike[str]] | str | os.PathLike[str] | None) -> list[str]:
+def search_paths(search_path: Optional[Iterable[str | os.PathLike[str]] | str | os.PathLike[str]]) -> list[str]:
     """A search path argument as a list of strings: one path or a sequence of them, each a
     string or an ``os.PathLike`` (malthe/chameleon#342; Chameleon accepts only strings)."""
     if search_path is None:
@@ -53,10 +53,35 @@ def cache[F: Callable[..., Any]](func: F) -> F:
         if template is None:
             # Threads loading the same spec at once may each create a template; `setdefault`
             # (atomic on a dict, free-threaded builds included) makes them all use the first.
-            template = self.registry.setdefault(args, func(self, *args, **kwargs))
+            template = func(self, *args, **kwargs)
+            if _missing(template):
+                # Not kept: an absolute path or a package spec is taken as it is, so a name
+                # with no file behind it would stay in the registry, one entry per name
+                # (names built from request data grew it without bound). The template is
+                # what it always was: reading it raises.
+                return template
+            template = self.registry.setdefault(args, template)
         return template
 
     return cast('F', load)
+
+
+def _missing(template: Any) -> bool:
+    """Whether a file template's file does not exist (``False`` for any other template)."""
+    filename = getattr(template, 'filename', None)
+    if not isinstance(filename, str):
+        return False
+    package = getattr(template, 'package_name', None)
+    if package is None:
+        return not os.path.exists(filename)
+    # A package that can't be looked in has no file to read either.
+    found = False
+    try:
+        with import_package_resource(package) as files:
+            found = bool(files.joinpath(filename).exists())  # ty: ignore[unresolved-attribute]
+    except Exception:  # noqa: BLE001, S110 - the template's own read raises it, when it loads
+        pass
+    return not found
 
 
 @contextlib.contextmanager
@@ -84,13 +109,13 @@ class TemplateLoader:
     Additional keyword-arguments will be passed on to the template constructor.
     """
 
-    default_extension: str | None = None
+    default_extension: Optional[str] = None
     registry: dict[tuple[Any, ...], Any]
 
     def __init__(
         self,
-        search_path: Iterable[str | os.PathLike[str]] | str | os.PathLike[str] | None = None,
-        default_extension: str | None = None,
+        search_path: Optional[Iterable[str | os.PathLike[str]] | str | os.PathLike[str]] = None,
+        default_extension: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         # A list or tuple of strings is kept as is, as in Chameleon (code may append to
@@ -171,7 +196,7 @@ class ModuleLoader:
         except BaseException:  # noqa: BLE001 - as in Chameleon
             warnings.warn(f'Could not clean up temporary file path: {self.path}', stacklevel=1)
 
-    def get(self, filename: str) -> dict[str, Any] | None:
+    def get(self, filename: str) -> Optional[dict[str, Any]]:
         path = os.path.join(self.path, filename)
         if os.path.exists(path):
             log.debug('loading module from cache: %s.', filename)

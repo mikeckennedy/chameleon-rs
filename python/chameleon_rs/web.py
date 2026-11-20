@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Optional
 
 
 class TemplateError(Exception):
@@ -29,14 +29,14 @@ class ErrorPage(TemplateError):
         self,
         template_file: str,
         status_code: int,
-        message: str | None = None,
-        template_data: Mapping[str, Any] | None = None,
+        message: Optional[str] = None,
+        template_data: Optional[Mapping[str, Any]] = None,
     ) -> None:
         super().__init__(message)
         self.template_file: str = template_file
         self.status_code: int = status_code
-        self.message: str | None = message
-        self.template_data: Mapping[str, Any] | None = template_data
+        self.message: Optional[str] = message
+        self.template_data: Optional[Mapping[str, Any]] = template_data
 
 
 class NotFound(ErrorPage):
@@ -45,9 +45,9 @@ class NotFound(ErrorPage):
 
     def __init__(
         self,
-        message: str | None = None,
+        message: Optional[str] = None,
         template_file: str = 'errors/404.pt',
-        template_data: Mapping[str, Any] | None = None,
+        template_data: Optional[Mapping[str, Any]] = None,
     ) -> None:
         super().__init__(template_file, 404, message, template_data)
 
@@ -70,7 +70,7 @@ class DecoratorOrderError(TemplateError):
     ``check_views(app)``."""
 
 
-def model_of(value: Any) -> dict[str, Any] | None:
+def model_of(value: Any) -> Optional[dict[str, Any]]:
     """The template model a view returned: a ``dict`` as is; any other ``Mapping`` as a
     ``dict``; a dataclass instance as its fields (shallow: field values are not converted);
     an object with a callable ``model_dump()`` (Pydantic, duck-typed) as what it returns.

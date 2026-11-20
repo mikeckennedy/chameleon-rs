@@ -56,7 +56,7 @@ import threading
 import time
 import weakref
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Optional
 
 __all__ = ['ShadowDifference', 'install', 'installed', 'uninstall']
 
@@ -230,7 +230,7 @@ class _Installed:
         return value
 
     def report_difference(
-        self, template: Any, outcomes: dict[str, tuple[bool, Any]], served: str | None = None
+        self, template: Any, outcomes: dict[str, tuple[bool, Any]], served: Optional[str] = None
     ) -> None:
         try:
             texts = {engine: _text(outcome) for engine, outcome in outcomes.items()}
@@ -248,8 +248,8 @@ class _Installed:
             log.exception('chameleon_rs.shadow: reporting a difference failed')
 
 
-_STATE: contextvars.ContextVar[str | None] = contextvars.ContextVar('chameleon_rs_shadow', default=None)
-_installed: _Installed | None = None
+_STATE: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar('chameleon_rs_shadow', default=None)
+_installed: Optional[_Installed] = None
 _install_lock = threading.Lock()
 
 
@@ -337,7 +337,7 @@ def install(
     *,
     serve: str = 'chameleon',
     sample_rate: float = 1.0,
-    report: Callable[[ShadowDifference], None] | None = None,
+    report: Optional[Callable[[ShadowDifference], None]] = None,
     log_interval: float = 600.0,
 ) -> None:
     """Starts shadow mode: from now on, a ``sample_rate`` share of the outermost renders of

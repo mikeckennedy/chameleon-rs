@@ -32,7 +32,7 @@ import textwrap
 import time
 import warnings
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import chameleon
 import chameleon_rs
@@ -156,6 +156,44 @@ def test_a_deep_fill_slot_body_compiles_or_raises_on_a_small_stack(stack_kib: in
     """)
     assert result.returncode == 0, result.stderr[-2000:]
     assert result.stdout.strip() == 'done'
+
+
+@pytest.mark.parametrize('stack_kib', [256, 512, 1024])
+def test_elements_with_many_attributes_compile_or_raise_on_a_small_stack(stack_kib: int) -> None:
+    # An element with many attributes is a dozen nodes deep in the compiled tree, and the
+    # stages after the build walked it with no guard: 90 such elements, which the build
+    # allows on a 512 KiB stack, overflowed it in the lowering (SIGBUS).
+    result = run_python(f"""
+        import threading
+        from chameleon_rs import PageTemplate
+
+        attributes = (
+            'tal:define="a 1" tal:condition="a" tal:repeat="i [1]" tal:attributes="x a" '
+            'tal:omit-tag="not a" tal:on-error="string:e" i18n:domain="d" i18n:context="c" '
+            'i18n:target="string:en" tal:switch="a" i18n:translate="" title="${{a}}"'
+        )
+
+        def main():
+            outcomes = set()
+            for depth in range(10, 280, 3):
+                body = f'<div {{attributes}}>' * depth + 'x' + '</div>' * depth
+                try:
+                    PageTemplate(body).render()
+                    outcomes.add('rendered')
+                except RecursionError:
+                    outcomes.add('too deep')
+                except MemoryError:
+                    # CPython's own guard, with little stack left: "Parser stack overflowed".
+                    outcomes.add('too deep')
+            print(sorted(outcomes))
+
+        threading.stack_size({stack_kib} * 1024)
+        thread = threading.Thread(target=main)
+        thread.start()
+        thread.join()
+    """)
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert result.stdout.strip() == "['rendered', 'too deep']"
 
 
 @pytest.mark.parametrize('shape', ['a + ', 'not ', '-'])
@@ -947,7 +985,7 @@ def test_an_exception_thrown_into_the_placeholder_wait_is_raised() -> None:
         await asyncio.sleep(10)
         return 'never'
 
-    async def drive(error: BaseException) -> BaseException | None:
+    async def drive(error: BaseException) -> Optional[BaseException]:
         awaitable = render_page_async(PageTemplate('${slow()}${slow()}'), None, {'slow': slow}, False)
         assert not isinstance(awaitable, str)
         iterator = awaitable.__await__()

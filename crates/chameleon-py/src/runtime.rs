@@ -324,6 +324,14 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
         self.render.partials.entered();
     }
 
+    fn partial_refused(&mut self) {
+        // The arguments the partial would have awaited are dropped unawaited, which Python
+        // warns about (as for a partial that is not found).
+        if let Some(scope) = self.render.partials.drop_pending() {
+            crate::awaitable::close_unstarted(self.py, &scope);
+        }
+    }
+
     fn partial_returned(&mut self) {
         self.render.partials.left();
     }
@@ -350,7 +358,7 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
             false,
             true,
         )?;
-        let task = crate::deferred::start_task(&event_loop, Bound::new(py, render)?.as_any())?;
+        let (task, _) = crate::deferred::start_task(&event_loop, Bound::new(py, render)?.as_any())?;
         Ok(Some(self.register(task, crate::deferred::DeferKind::Partial)))
     }
 
@@ -364,12 +372,15 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
         at: ErrorSite,
     ) -> PyResult<Result<Vec<u8>, Py<PyAny>>> {
         let py = self.py;
-        if self.render.partials.top() != 0 || self.at_limit()? || !crate::deferred::is_concurrent_call(value.bind(py))?
+        if self.render.fanned_out
+            || self.render.partials.top() != 0
+            || self.at_limit()?
+            || !crate::deferred::is_concurrent_call(value.bind(py))?
         {
             return Ok(Err(value));
         }
         let Some(event_loop) = crate::deferred::running_loop(py) else { return Ok(Err(value)) };
-        let task = crate::deferred::start_task(&event_loop, value.bind(py))?;
+        let (task, convert) = crate::deferred::start_task(&event_loop, value.bind(py))?;
         let program = self.program();
         let token = program.token_at(at, self.render.nested.get());
         let site = crate::deferred::ValueSite {
@@ -385,6 +396,7 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
             helpers: self.frame.helpers.as_ref().map(|h| h.unbind()),
             program: self.codes[self.code].clone().unbind(),
             token,
+            convert,
         };
         Ok(Ok(self.register(task, crate::deferred::DeferKind::Value(Box::new(site)))))
     }

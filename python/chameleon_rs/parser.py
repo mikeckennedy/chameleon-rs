@@ -12,6 +12,7 @@ import re
 from collections import OrderedDict
 from collections.abc import Iterable, Iterator, Mapping
 from typing import Any, cast
+from typing import Optional
 
 from chameleon_rs._native import parse_elements
 from chameleon_rs.exc import ParseError, TemplateError
@@ -187,7 +188,7 @@ class ElementParser:
     """
 
     def __init__(
-        self, stream: Iterable[str], default_namespaces: Mapping[str | None, str], restricted_namespace: bool = True
+        self, stream: Iterable[str], default_namespaces: Mapping[Optional[str], str], restricted_namespace: bool = True
     ) -> None:
         self.stream = stream
         self.queue: list[tuple[str, tuple[Any, ...]]] = []
@@ -236,7 +237,7 @@ class _Convert:
             return text
         return Token(text, token.pos + pos - self.starts[i], token.source, token.filename)
 
-    def tag(self, tag: dict[str, Any] | None) -> dict[str, Any] | None:
+    def tag(self, tag: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
         if tag is None:
             return None
         tok = self.tok

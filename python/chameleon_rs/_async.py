@@ -28,21 +28,32 @@ from __future__ import annotations
 import asyncio
 import functools
 from collections.abc import Awaitable, Callable, Generator
-from typing import Any
+from typing import Any, Optional
 
 __all__ = ['ConcurrentCall', 'concurrent']
 
 
 class ConcurrentCall:
-    """What a ``@concurrent`` helper returns: its awaitable, marked for concurrent awaiting."""
+    """What a ``@concurrent`` helper returns: its awaitable, marked for concurrent awaiting.
+    ``convert``, if set, is applied to the awaited value (``structure:`` / ``markdown:`` of the
+    call, see ``_then``): kept beside the awaitable, not wrapped around it, so a task is made
+    from the helper's own coroutine and cancelling the task before it starts closes that
+    coroutine (wrapped in another, it was left never awaited, which Python warns about)."""
 
-    __slots__ = ('awaitable',)
+    __slots__ = ('awaitable', 'convert')
 
-    def __init__(self, awaitable: Awaitable[Any]) -> None:
+    def __init__(self, awaitable: Awaitable[Any], convert: Optional[Callable[[Any], Any]] = None) -> None:
         self.awaitable = awaitable
+        self.convert = convert
 
     def __await__(self) -> Generator[Any, None, Any]:
-        return self.awaitable.__await__()
+        if self.convert is None:
+            return self.awaitable.__await__()
+        return self._converted(self.convert)
+
+    def _converted(self, convert: Callable[[Any], Any]) -> Generator[Any, None, Any]:
+        value = yield from self.awaitable.__await__()
+        return convert(value)
 
     def __repr__(self) -> str:
         return f'<ConcurrentCall {self.awaitable!r}>'
@@ -64,7 +75,8 @@ def _then(awaitable: Awaitable[Any], convert: Callable[[Any], Any]) -> Awaitable
     # final value, which the render awaits like any other (the value awaited, then converted).
     # A `@concurrent` call stays one, so it still runs alongside the others.
     if isinstance(awaitable, ConcurrentCall):
-        return ConcurrentCall(_convert(awaitable.awaitable, convert))
+        first = awaitable.convert
+        return ConcurrentCall(awaitable.awaitable, convert if first is None else lambda value: convert(first(value)))
     return _convert(awaitable, convert)
 
 
@@ -106,7 +118,7 @@ class _Once:
         # Kept until awaited (`None` after), so an unstarted one can still be closed.
         self.awaitable: Any = awaitable
         self.result: Any = None
-        self.error: BaseException | None = None
+        self.error: Optional[BaseException] = None
 
     def __await__(self) -> Generator[Any, Any, Any]:
         awaitable = self.awaitable

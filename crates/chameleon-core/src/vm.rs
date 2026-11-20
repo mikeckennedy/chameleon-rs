@@ -1031,6 +1031,9 @@ pub trait Eval: Values {
     /// `rcontext`, builtins and defaults, until [`Eval::partial_returned`] or
     /// [`Errors::partial_failed`]). Not called when the call failed to nest (too deep).
     fn partial_entered(&mut self) {}
+    /// The call of a [`Step::Call`] failed to nest (too deep): its frame is never pushed, so
+    /// what the runtime holds for it is dropped.
+    fn partial_refused(&mut self) {}
     /// A native partial's frame returned.
     fn partial_returned(&mut self) {}
     /// Whether the native partial just returned as [`Step::Call`] should render on its own,
@@ -2234,8 +2237,12 @@ fn push_partial<R: Runtime>(
     caller.pc = return_pc;
     caller.recent = recent;
     let depth = caller.depth + usize::from(PARTIAL_COST);
-    if !check_depth(st, rt, depth)? {
-        return Ok(());
+    match check_depth(st, rt, depth) {
+        Ok(true) => {}
+        refused => {
+            rt.partial_refused();
+            return refused.map(|_| ());
+        }
     }
     let serial = st.next_serial();
     st.frames.push(Frame {

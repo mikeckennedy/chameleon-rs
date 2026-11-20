@@ -15,7 +15,7 @@ import threading
 import time
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import chameleon
 import chameleon.astutil
@@ -123,7 +123,7 @@ def test_lone_surrogates_in_the_source_render() -> None:
 # --- configuration -----------------------------------------------------------------------
 
 
-def both(source: str, kwargs: dict[str, Any] | None = None, **config: Any) -> None:
+def both(source: str, kwargs: Optional[dict[str, Any]] = None, **config: Any) -> None:
     kwargs = kwargs or {}
 
     def render(engine: Any) -> Any:
@@ -166,7 +166,7 @@ def test_default_marker_attribute() -> None:
 def doubled_tokenizer(module: Any) -> Any:
     """A tokenizer whose tokens are not the body's: it tokenizes a changed text."""
 
-    def tokenize(body: str, filename: str | None = None) -> Any:
+    def tokenize(body: str, filename: Optional[str] = None) -> Any:
         return module.iter_xml(body.replace('[[', '${').replace(']]', '}'), filename)
 
     return tokenize
@@ -682,7 +682,7 @@ FILES = sorted(p for p in INPUTS.iterdir() if p.suffix in {'.pt', '.html', '.xml
 @pytest.mark.parametrize('path', FILES, ids=lambda p: p.name)
 def test_iter_xml_and_element_parser(path: Path) -> None:
     body = chameleon.utils.read_encoded(path.read_bytes())
-    namespaces: dict[str | None, str] = {
+    namespaces: dict[Optional[str], str] = {
         'xmlns': 'http://www.w3.org/2000/xmlns/',
         'xml': 'http://www.w3.org/XML/1998/namespace',
     }

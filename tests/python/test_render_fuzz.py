@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import re
 from html.parser import HTMLParser
-from typing import Any
+from typing import Any, Optional
 
 import chameleon
 import chameleon_rs
@@ -465,7 +465,7 @@ class _NestedFillUnderAHandler(HTMLParser):
         self.stack: list[tuple[str, set[str]]] = []
         self.found = False
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
         names = {name for name, _ in attrs}
         if 'metal:fill-slot' in names:
             # Each element's role from the root: fill, handler, call, in that order.
@@ -476,7 +476,7 @@ class _NestedFillUnderAHandler(HTMLParser):
             self.found = self.found or not want
         self.stack.append((tag, names))
 
-    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
         self.handle_starttag(tag, attrs)
         self.stack.pop()
 
@@ -506,7 +506,7 @@ def nested_fill_under_a_handler(body: str) -> bool:
     mode=st.sampled_from(['show', 'show', 'empty', 'short', 'non-ascii', 'objects']),
 )
 def test_generated_macro_and_i18n_templates_render_like_chameleon(
-    body: str, implicit: bool, language: str | None, mode: str
+    body: str, implicit: bool, language: Optional[str], mode: str
 ) -> None:
     assume(not nested_fill_under_a_handler(body))
     options = {'implicit_i18n_translate': implicit, 'implicit_i18n_attributes': {'title', 'a'} if implicit else ()}

@@ -26,7 +26,7 @@ import warnings
 import weakref
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import chameleon
 import chameleon_rs
@@ -84,7 +84,7 @@ def same_outcome(want: Any, got: Any, body: str) -> None:
 # -- No awaitable values: render_async == render == Chameleon -------------------------------
 
 
-def render_fixture_async(filename: str, language: str | None) -> Any:
+def render_fixture_async(filename: str, language: Optional[str]) -> Any:
     """`test_fixtures.render` for chameleon_rs, through `render_async`."""
     path = os.path.join(fixtures_mod.INPUTS, filename)
     text = filename.endswith('.txt')
@@ -112,7 +112,7 @@ def render_fixture_async(filename: str, language: str | None) -> Any:
 
 
 @pytest.mark.parametrize(('filename', 'language'), fixtures_mod.fixtures(), ids=lambda v: str(v))
-def test_fixture_renders_async_like_chameleon(filename: str, language: str | None) -> None:
+def test_fixture_renders_async_like_chameleon(filename: str, language: Optional[str]) -> None:
     want = fixtures_mod.render('chameleon', filename, language)
     got = render_fixture_async(filename, language)
     assert type(got) is type(want)
@@ -141,7 +141,7 @@ def test_generated_templates_render_async_like_chameleon(body: str) -> None:
     mode=st.sampled_from(['show', 'empty', 'short', 'non-ascii']),
 )
 def test_generated_macro_and_i18n_templates_render_async_like_chameleon(
-    body: str, implicit: bool, language: str | None, mode: str
+    body: str, implicit: bool, language: Optional[str], mode: str
 ) -> None:
     assume(not fuzz.nested_fill_under_a_handler(body))
     options: dict[str, Any] = {
@@ -720,6 +720,53 @@ def test_cancellation_mid_render_cleans_up(tmp_path: Path, configured: Path) -> 
     assert finally_ran == [True]
 
 
+def test_a_partial_nested_too_deep_closes_its_coroutine_arguments(tmp_path: Path, configured: Path) -> None:
+    # The call that hits the recursion limit never renders, so the coroutine it was passed
+    # (which the partial would have awaited) is closed, not left to warn when collected.
+    (tmp_path / 'loop.pt').write_text('${v}${render_partial("loop.pt", v=aw(1), aw=aw)}')
+    page = PageTemplate('<p tal:on-error="error.type.__name__">${render_partial("loop.pt", v=aw(1), aw=aw)}</p>')
+    with _no_unawaited_coroutines():
+        assert run(page.render_async(aw=aw)) == '<p>RecursionError</p>'
+
+
+@pytest.mark.parametrize('fan_out', [False, True])
+def test_a_concurrent_call_passed_to_a_partial_is_awaited_once(tmp_path: Path, configured: Path, fan_out: bool) -> None:
+    # As a coroutine argument: the partial's first use awaits it, later uses get that result.
+    # Unwrapped, the second `${v}` failed ("cannot reuse already awaited coroutine"), or
+    # silently rendered a `tal:on-error` fallback.
+    (tmp_path / 'p.pt').write_text('<i>${v}|<b tal:on-error="string:failed">${v}</b></i>')
+
+    @chameleon_rs.concurrent
+    async def helper(value: Any) -> Any:
+        return await aw(value)
+
+    page = PageTemplate('<p>${render_partial("p.pt", v=helper(1))}</p>', concurrent=fan_out)
+    assert run(page.render_async(helper=helper)) == '<p><i>1|<b>1</b></i></p>'
+
+
+def test_a_fanned_out_partial_starts_no_tasks_of_its_own(tmp_path: Path, configured: Path) -> None:
+    # A `@concurrent` call inside a native partial is awaited in place, also when the partial
+    # itself renders in a task: otherwise each of a page's partials could start as many tasks
+    # as the page may (`CONCURRENT_LIMIT`), the count set by render data.
+    (tmp_path / 'row.pt').write_text('<li tal:repeat="j range(5)">${v}${helper(j)}</li>')
+    running = peak = 0
+
+    @chameleon_rs.concurrent
+    async def helper(value: Any) -> Any:
+        nonlocal running, peak
+        running += 1
+        peak = max(peak, running)
+        try:
+            await asyncio.sleep(0.001)
+            return value
+        finally:
+            running -= 1
+
+    page = PageTemplate('${render_partial("row.pt", v=aw(1), helper=helper)}', concurrent=True)
+    assert run(page.render_async(aw=aw, helper=helper)).count('<li>') == 5
+    assert peak == 1
+
+
 def test_many_renders_on_one_loop_keep_their_output_apart() -> None:
     page = PageTemplate(
         '<ul tal:define="me aw(n)"><li tal:repeat="i aw(range(n % 5))">${me}:${aw(i)}</li></ul>${render_partial}'
@@ -876,6 +923,71 @@ def test_concurrent_value_error_and_cancellation_of_the_others() -> None:
     assert cancelled == [True]
 
 
+def test_a_lone_concurrent_value_error_has_its_expression() -> None:
+    # With one task left the render awaits the task itself, and the event loop throws that
+    # task's error into the render: it was taken for an exception thrown in and raised as it
+    # was, without the expression's position.
+    @concurrent
+    async def bad() -> str:
+        await asyncio.sleep(0.001)
+        raise KeyError('bad')
+
+    with pytest.raises(KeyError) as error:
+        run(PageTemplate('<div>\n${bad()}</div>').render_async(bad=bad))
+    assert 'Expression: "bad()"' in str(error.value)
+    assert '(line 2: col 2)' in str(error.value)
+
+
+def test_a_render_resumed_before_its_task_is_done_raises() -> None:
+    # A driver that is not an event loop's task, sending again while the one task the render
+    # waits for is pending: awaiting a task twice is a `RuntimeError`, as in a coroutine. The
+    # render took that for the task ending, awaited it again, and never returned.
+    @concurrent
+    async def slow() -> str:
+        await asyncio.sleep(0.01)
+        return 'x'
+
+    async def main() -> None:
+        render = PageTemplate('<p>${slow()}</p>').render_async(slow=slow)
+        render.send(None)
+        # The task is cancelled and waited for first, then the error is raised.
+        render.send(None)
+        await asyncio.sleep(0.05)
+        with pytest.raises(RuntimeError, match="await wasn't used with future"):
+            render.send(None)
+        assert len(asyncio.all_tasks()) == 1
+
+    run(main())
+
+
+@pytest.mark.parametrize('prefix', ['', 'structure: '])
+def test_a_concurrent_call_never_started_is_closed(prefix: str) -> None:
+    # The render fails before the helper's task first runs: the task is cancelled, which
+    # closes its coroutine. `structure:` once wrapped the helper's coroutine in another, so
+    # only that one was closed and the helper's was left never awaited.
+    @concurrent
+    async def helper() -> str:
+        return '<b>x</b>'
+
+    page = PageTemplate('<p>${' + prefix + 'helper()}${1 / 0}</p>')
+    with _no_unawaited_coroutines(), pytest.raises(ZeroDivisionError):
+        run(page.render_async(helper=helper))
+
+
+def test_structure_of_a_concurrent_call_is_converted_wherever_it_is_awaited() -> None:
+    @concurrent
+    async def helper() -> str:
+        return await aw('<b>x</b>')
+
+    # As a task (text), and in place (a condition's content, `tal:on-error`).
+    page = PageTemplate(
+        '<p>${structure: helper()}|${helper()}</p><i tal:content="structure: helper()"/>'
+        '<u tal:on-error="string:e">${structure: helper()}</u>'
+    )
+    want = '<p><b>x</b>|&lt;b&gt;x&lt;/b&gt;</p><i><b>x</b></i><u><b>x</b></u>'
+    assert run(page.render_async(helper=helper)) == want
+
+
 def test_cancelling_a_render_cancels_its_concurrent_tasks() -> None:
     cancelled = []
 
@@ -957,7 +1069,7 @@ def test_values_dropped_when_a_render_ends_may_use_its_awaitable() -> None:
 
     from chameleon_rs.template import render_page_async
 
-    errors: list[BaseException | None] = []
+    errors: list[Optional[BaseException]] = []
     held: dict[str, Any] = {}
 
     class Value:

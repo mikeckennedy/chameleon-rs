@@ -17,7 +17,7 @@ import re
 import sys
 import threading
 from collections.abc import Callable, Mapping
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, Optional, TypedDict
 
 from chameleon_rs import _native
 from chameleon_rs.web import TemplateError
@@ -43,7 +43,7 @@ class MarkdownOptions(TypedDict, total=False):
     heading_ids: bool | str
     classes: Mapping[str, str]
     extensions: MarkdownExtensions
-    max_length: int | None
+    max_length: Optional[int]
 
 
 type MarkdownSetting = bool | Mapping[str, Literal[True] | MarkdownOptions]
@@ -61,8 +61,8 @@ class Settings:
         template_folder: str,
         auto_reload: bool,
         restricted_namespace: bool,
-        strict_tags: bool | None = None,
-        strict_names: bool | None = None,
+        strict_tags: Optional[bool] = None,
+        strict_names: Optional[bool] = None,
     ) -> None:
         from chameleon_rs.config import STRICT_NAMES, STRICT_TAGS
         from chameleon_rs.zpt.loader import TemplateLoader
@@ -99,8 +99,8 @@ class Settings:
 # every slot, each alias only its own (`None`: not configured, or cleared). `views` is replaced
 # whole, never mutated. `generation` is bumped by every change and keys the partial path caches.
 VIEW_SLOTS = ('flask', 'starlette', 'fastapi', 'robyn', 'litestar')
-partials: Settings | None = None
-views: dict[str, Settings | None] = dict.fromkeys(VIEW_SLOTS)
+partials: Optional[Settings] = None
+views: dict[str, Optional[Settings]] = dict.fromkeys(VIEW_SLOTS)
 generation = 0
 _lock = threading.Lock()
 # Called after every change, keyed by module name (so a re-imported module replaces its own):
@@ -222,7 +222,7 @@ def markdown_settings(markdown: object) -> dict[str, _native.MarkdownProfile]:
     return {name: _markdown_profile(name, options) for name, options in markdown.items()}
 
 
-def check_folder(template_folder: str | os.PathLike[str] | None, error: type[Exception] = TemplateError) -> None:
+def check_folder(template_folder: Optional[str | os.PathLike[str]], error: type[Exception] = TemplateError) -> None:
     """chameleon_partials' and chameleon-flask's checks, with their messages."""
     if not template_folder:
         msg = 'The template_folder must be specified.'
@@ -233,13 +233,13 @@ def check_folder(template_folder: str | os.PathLike[str] | None, error: type[Exc
 
 
 def build(
-    template_folder: str | os.PathLike[str] | None = None,
-    auto_reload: bool | None = None,
-    restricted_namespace: bool | None = None,
+    template_folder: Optional[str | os.PathLike[str]] = None,
+    auto_reload: Optional[bool] = None,
+    restricted_namespace: Optional[bool] = None,
     *,
-    strict_tags: bool | None = None,
-    strict_names: bool | None = None,
-    base: Settings | None = None,
+    strict_tags: Optional[bool] = None,
+    strict_names: Optional[bool] = None,
+    base: Optional[Settings] = None,
     error: type[Exception] = TemplateError,
 ) -> Settings:
     """A configuration from ``base`` with the given settings changed (``None``: unchanged)."""
@@ -259,7 +259,7 @@ def build(
 _KEEP: Any = object()
 
 
-def first_configured() -> Settings | None:
+def first_configured() -> Optional[Settings]:
     """The configuration a ``configure()`` that leaves a setting out starts from: the partials'
     slot, else the first configured integration's."""
     if partials is not None:
@@ -267,7 +267,9 @@ def first_configured() -> Settings | None:
     return next((settings for settings in views.values() if settings is not None), None)
 
 
-def install(*, partials_settings: Any = _KEEP, views_settings: Mapping[str, Settings | None] | None = None) -> None:
+def install(
+    *, partials_settings: Any = _KEEP, views_settings: Optional[Mapping[str, Optional[Settings]]] = None
+) -> None:
     """Sets the slots given (``None`` clears one): ``views_settings`` maps integration slot names
     (``VIEW_SLOTS``) to their new configuration."""
     global partials, views, generation
@@ -288,22 +290,22 @@ def install(*, partials_settings: Any = _KEEP, views_settings: Mapping[str, Sett
         listener()
 
 
-def all_views(settings: Settings | None) -> dict[str, Settings | None]:
+def all_views(settings: Optional[Settings]) -> dict[str, Optional[Settings]]:
     """Every integration slot set to ``settings``."""
     return dict.fromkeys(VIEW_SLOTS, settings)
 
 
 def configure(
-    template_folder: str | os.PathLike[str] | None = None,
+    template_folder: Optional[str | os.PathLike[str]] = None,
     *,
-    auto_reload: bool | None = None,
-    restricted_namespace: bool | None = None,
-    strict_tags: bool | None = None,
-    strict_names: bool | None = None,
-    partial_search: str | None = None,
-    markdown: MarkdownSetting | None = None,
-    markdown_cache: int | None = None,
-) -> Settings | None:
+    auto_reload: Optional[bool] = None,
+    restricted_namespace: Optional[bool] = None,
+    strict_tags: Optional[bool] = None,
+    strict_names: Optional[bool] = None,
+    partial_search: Optional[str] = None,
+    markdown: Optional[MarkdownSetting] = None,
+    markdown_cache: Optional[int] = None,
+) -> Optional[Settings]:
     """Configures chameleon-rs for the whole process (partials, framework integrations, and Markdown).
 
     Sets where templates loaded by name live for ``render_partial`` and the framework

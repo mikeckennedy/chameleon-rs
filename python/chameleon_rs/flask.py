@@ -50,7 +50,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable, Coroutine, Iterable, Iterator, Mapping
-from typing import Any, NoReturn, Protocol, overload
+from typing import Any, NoReturn, Optional, Protocol, overload
 
 import flask
 import werkzeug.sansio.response
@@ -80,7 +80,7 @@ EXTENSION = 'chameleon_rs'
 
 # chameleon-flask's module state: the configured folder (or 'templates', which a bare
 # `@template` falls back to when nothing was configured before the view was decorated).
-template_path: str | None = None
+template_path: Optional[str] = None
 
 # Fallback name matching for Response implementations that predate the shared werkzeug base class.
 response_classes = {
@@ -102,9 +102,9 @@ class FlaskChameleonNotFoundException(NotFound, FlaskChameleonException):
 
     def __init__(
         self,
-        message: str | None = None,
+        message: Optional[str] = None,
         four04template_file: str = 'errors/404.pt',
-        template_data: Mapping[str, Any] | None = None,
+        template_data: Optional[Mapping[str, Any]] = None,
     ) -> None:
         super().__init__(message, four04template_file, template_data)
 
@@ -121,7 +121,7 @@ class _Flask(_views.Integration):
     response_name = 'flask.Response'
     route_decorators = '@app.route, @app.get, @blueprint.route, ...'
 
-    def settings(self) -> _settings.Settings | None:
+    def settings(self) -> Optional[_settings.Settings]:
         """The configuration for this request: its app's (Flask's or Quart's ``current_app``),
         else the process-wide one."""
         if flask.has_app_context():
@@ -194,8 +194,8 @@ _flask = _Flask()
 def configure(
     template_folder: Any = None,
     *,
-    auto_reload: bool | None = None,
-    restricted_namespace: bool | None = None,
+    auto_reload: Optional[bool] = None,
+    restricted_namespace: Optional[bool] = None,
     app: Any = None,
     check_order: bool = True,
 ) -> None:
@@ -282,7 +282,7 @@ _settings.listeners[__name__] = _sync
 _sync()  # configured before this module was imported: the legacy global already says so
 
 
-def _current_settings() -> _settings.Settings | None:
+def _current_settings() -> Optional[_settings.Settings]:
     """The configuration for this request: its app's, else the process-wide one."""
     return _flask.settings()
 
@@ -357,21 +357,21 @@ def template[**P](
 def template[**P](template_file: Callable[P, Any], /) -> Callable[P, flask.Response]: ...
 @overload
 def template(
-    template_file: str | None = None,
+    template_file: Optional[str] = None,
     content_type: str = 'text/html',
     status_code: int = 200,
     *,
-    mimetype: str | None = None,
-    concurrent: bool | None = None,
+    mimetype: Optional[str] = None,
+    concurrent: Optional[bool] = None,
     offload: bool = False,
 ) -> TemplateDecorator: ...
 def template(
-    template_file: Callable[..., Any] | str | None = None,
+    template_file: Optional[Callable[..., Any] | str] = None,
     content_type: str = 'text/html',
     status_code: int = 200,
     *,
-    mimetype: str | None = None,
-    concurrent: bool | None = None,
+    mimetype: Optional[str] = None,
+    concurrent: Optional[bool] = None,
     offload: bool = False,
 ) -> Callable[..., Any]:
     """Decorates a Flask or Quart view (sync or async) to render a template with what it
@@ -404,7 +404,7 @@ def template(
 
 
 def not_found(
-    template_file: str | None = None, *, four04template_file: str | None = None, **template_data: Any
+    template_file: Optional[str] = None, *, four04template_file: Optional[str] = None, **template_data: Any
 ) -> NoReturn:
     """Ends the current ``@template`` view with a 404 page: ``template_file``
     (``errors/404.pt`` by default; ``four04template_file=`` is chameleon-flask's name for it)
@@ -428,7 +428,7 @@ def error(template_file: str, status_code: int = 500, **template_data: Any) -> N
     raise FlaskChameleonGenericException(template_file, status_code, msg, template_data or None)
 
 
-def generic_error(template_file: str, status_code: int, template_data: Mapping[str, Any] | None = None) -> NoReturn:
+def generic_error(template_file: str, status_code: int, template_data: Optional[Mapping[str, Any]] = None) -> NoReturn:
     """fastapi-chameleon's name and signature for ``error()``."""
     msg = 'The URL resulted in an error.'
     raise FlaskChameleonGenericException(template_file, status_code, msg, template_data)

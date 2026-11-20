@@ -17,8 +17,7 @@ use std::cell::Cell;
 /// Python frames above it, and deeper than Chameleon goes at the default recursion limit.
 pub const BUDGET: usize = 1024 * 1024;
 
-/// Stack a guarded step needs left: room for the frames until the next guarded step, and for
-/// the later stages (each about as deep as the compile that passed, measured).
+/// Stack a guarded step needs left: room for the frames until the next guarded step.
 pub const RESERVE: usize = 32 * 1024;
 
 thread_local! {
@@ -59,6 +58,19 @@ pub fn enter() -> Result<Guard, TooDeep> {
         cell.set((base, depth + 1));
         Ok(Guard(()))
     })
+}
+
+/// Room for one step of a later stage's walk over the compiled tree (resolving its expressions,
+/// lowering it): `Err(TooDeep)` once less than [`RESERVE`] of the stack is left. A step of
+/// those walks is one node, and an element with many attributes is a dozen nodes deep (a
+/// define around a condition around a repeat ...), so they can nest deeper than the build
+/// that [`enter`] guarded: 90 such elements overflowed a 512 KiB stack in the lowering, killing
+/// the process, where the build stops at 123.
+pub fn room() -> Result<(), TooDeep> {
+    if stacker::remaining_stack().is_some_and(|left| left < RESERVE) {
+        return Err(TooDeep);
+    }
+    Ok(())
 }
 
 impl Drop for Guard {

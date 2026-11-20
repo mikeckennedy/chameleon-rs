@@ -14,7 +14,7 @@ import types
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, Optional
 
 import pytest
 
@@ -27,7 +27,7 @@ import chameleon_rs.web
 ORIGINAL = Path(__file__).resolve().parents[2] / 'temp' / 'chameleon-flask'
 
 
-def load_original() -> ModuleType | None:
+def load_original() -> Optional[ModuleType]:
     if not (ORIGINAL / 'chameleon_flask').is_dir():
         return None
     sys.path.insert(0, str(ORIGINAL))

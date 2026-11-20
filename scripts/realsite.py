@@ -49,7 +49,7 @@ import statistics
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 # The real clock, kept in a container: freezegun swaps module attributes that are time functions.
 _CLOCK = (time.perf_counter,)
@@ -59,7 +59,7 @@ def _perf_counter() -> float:
     return _CLOCK[0]()
 
 
-def _maybe_await(value: Any, timeout: float | None = None) -> Any:
+def _maybe_await(value: Any, timeout: Optional[float] = None) -> Any:
     if inspect.isawaitable(value):
         return asyncio.get_event_loop().run_until_complete(asyncio.wait_for(value, timeout))
     return value
@@ -126,7 +126,7 @@ class _RenderProbe:
         self.repeats = repeats
         self.depth = 0
         self.samples: list[float] = []
-        self.first: float | None = None
+        self.first: Optional[float] = None
         self.unstable = False
         self.templates: list[str] = []
 

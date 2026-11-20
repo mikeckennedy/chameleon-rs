@@ -205,6 +205,11 @@ impl<'py> Partials<'py> {
         })
     }
 
+    /// The pending unit's frame is not pushed (the call was too deep): its scope.
+    pub(crate) fn drop_pending(&self) -> Option<Bound<'py, Scope>> {
+        self.pending.borrow_mut().take().map(|unit| unit.scope)
+    }
+
     /// The pending unit's frame was pushed.
     pub(crate) fn entered(&self) {
         if let Some(mut unit) = self.pending.borrow_mut().take() {
@@ -346,9 +351,15 @@ pub(crate) fn partial_step(
         // its value from then on (`chameleon_rs._async._Once`).
         for (key, _) in kwargs {
             let key = key.bind(py);
-            if let Some(value) = locals.get_item(key)?
-                && crate::awaitable::is_coroutine(&value)?
-            {
+            let Some(value) = locals.get_item(key)? else { continue };
+            // A `@concurrent` call's coroutine too: a partial awaits it in place.
+            let value =
+                if crate::deferred::is_concurrent_call(&value)? && value.getattr(intern!(py, "convert"))?.is_none() {
+                    value.getattr(intern!(py, "awaitable"))?
+                } else {
+                    value
+                };
+            if crate::awaitable::is_coroutine(&value)? {
                 locals.set_item(key, crate::awaitable::once(py)?.call1((value,))?)?;
             }
         }

@@ -19,6 +19,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Optional
 
 import chameleon_partials
 from chameleon import PageTemplateLoader
@@ -34,7 +35,7 @@ class Video(BaseModel):
     url: str
     author: str
     views: int
-    category: str | None = None
+    category: Optional[str] = None
 
 
 def make_videos(n: int) -> list[Video]:

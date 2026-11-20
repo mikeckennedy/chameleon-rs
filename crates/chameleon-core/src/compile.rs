@@ -353,6 +353,7 @@ impl<'a> Lower<'a> {
 
     #[allow(clippy::too_many_lines)] // one arm per node kind
     fn node(&mut self, node: &'a Node) -> LResult<()> {
+        crate::stack::room()?;
         match node {
             Node::Text(s) => self.pending.extend_from_slice(s.as_bytes()),
             Node::Empty => {}

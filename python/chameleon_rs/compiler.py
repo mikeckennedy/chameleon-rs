@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Callable, Mapping, MutableMapping
-from typing import Any
+from typing import Any, Optional
 
 from chameleon_rs._native import Program, Scope
 from chameleon_rs.exc import RenderError
@@ -147,7 +147,7 @@ class ExpressionEvaluator:
         self._cache: dict[str, Program] = {}
 
     def __call__(
-        self, econtext: MutableMapping[str, Any], rcontext: Any, expression_type: str, string: str | None = None
+        self, econtext: MutableMapping[str, Any], rcontext: Any, expression_type: str, string: Optional[str] = None
     ) -> Any:
         if string is None:
             return functools.partial(self.__call__, econtext, rcontext, expression_type)

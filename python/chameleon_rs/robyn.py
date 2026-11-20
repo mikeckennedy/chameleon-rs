@@ -70,7 +70,7 @@ import sys
 import weakref
 from collections.abc import Callable, Coroutine, Iterable, Iterator, Mapping
 from functools import wraps
-from typing import TYPE_CHECKING, Any, NoReturn, Protocol, overload, runtime_checkable
+from typing import TYPE_CHECKING, Any, NoReturn, Optional, Protocol, overload, runtime_checkable
 
 from robyn import Headers, Response, status_codes
 
@@ -100,7 +100,7 @@ __all__ = [
 
 # chameleon-robyn's module state: the configured folder (`None` until configured; a bare
 # `@template` looks in 'templates' meanwhile, and decides for good once a folder is set).
-template_path: str | None = None
+template_path: Optional[str] = None
 
 # The model key chameleon-robyn reserves for a function called with the response.
 RESPONSE_CALLBACK = '__response_callback__'
@@ -116,9 +116,9 @@ class ChameleonRobynNotFoundException(NotFound, ChameleonRobynException):
 
     def __init__(
         self,
-        message: str | None = None,
+        message: Optional[str] = None,
         four04template_file: str = 'errors/404.pt',
-        template_data: Mapping[str, Any] | None = None,
+        template_data: Optional[Mapping[str, Any]] = None,
     ) -> None:
         super().__init__(message, four04template_file, template_data)
 
@@ -147,7 +147,7 @@ class _Robyn(_views.Integration):
 
     # --- Rendering: chameleon-robyn's `__response_callback__` and error-page model ------------
 
-    def _model(self, value: Any) -> tuple[Mapping[str, Any], Callable[[Response], Any] | None]:
+    def _model(self, value: Any) -> tuple[Mapping[str, Any], Optional[Callable[[Response], Any]]]:
         """The model and its response callback (popped from a copy: the handler's dict may be
         shared)."""
         model = self.model(value)
@@ -166,7 +166,7 @@ class _Robyn(_views.Integration):
         value: Any,
         content_type: str,
         status_code: int,
-        extra: Mapping[str, Any] | None = None,
+        extra: Optional[Mapping[str, Any]] = None,
     ) -> Any:
         if self.is_response(value):
             return value
@@ -182,9 +182,9 @@ class _Robyn(_views.Integration):
         value: Any,
         content_type: str,
         status_code: int,
-        concurrent: bool | None = None,
+        concurrent: Optional[bool] = None,
         offload: bool = False,
-        extra: Mapping[str, Any] | None = None,
+        extra: Optional[Mapping[str, Any]] = None,
     ) -> Any:
         if self.is_response(value):
             return value
@@ -198,12 +198,12 @@ class _Robyn(_views.Integration):
             callback(resp)
         return resp
 
-    def error_response(self, page: ErrorPage, extra: Mapping[str, Any] | None = None) -> Any:
+    def error_response(self, page: ErrorPage, extra: Optional[Mapping[str, Any]] = None) -> Any:
         # chameleon-robyn renders its 404 page with `{'message': ...}`; data given to
         # `not_found()` / `error()` is added (and wins).
         return self.render_response(page.template_file, _error_model(page), 'text/html', page.status_code)
 
-    async def error_response_async(self, page: ErrorPage, extra: Mapping[str, Any] | None = None) -> Any:
+    async def error_response_async(self, page: ErrorPage, extra: Optional[Mapping[str, Any]] = None) -> Any:
         return await self.render_response_async(page.template_file, _error_model(page), 'text/html', page.status_code)
 
     # --- The decorator: the bare name is decided at the first request ------------------------
@@ -211,10 +211,10 @@ class _Robyn(_views.Integration):
     def decorate(
         self,
         f: Callable[..., Any],
-        template_file: str | None,
+        template_file: Optional[str],
         content_type: str,
         status_code: int,
-        concurrent: bool | None = None,
+        concurrent: Optional[bool] = None,
         offload: bool = False,
     ) -> Callable[..., Any]:
         """Wraps a handler (sync or async) to render its template with what it returns."""
@@ -328,7 +328,7 @@ def _error_model(page: ErrorPage) -> dict[str, Any]:
     return {'message': page.message, **data} if data else {'message': page.message}
 
 
-def _resolver(f: Callable[..., Any], template_file: str | None) -> Callable[[], str]:
+def _resolver(f: Callable[..., Any], template_file: Optional[str]) -> Callable[[], str]:
     """chameleon-robyn's template name: ``template_file``, or for a bare ``@template``
     ``{last module name}/{function name}.html``, else ``.pt``, looked for in the configured
     folder (``templates`` until one is configured) at each request until a folder is
@@ -360,8 +360,8 @@ _robyn = _Robyn()
 def configure(
     template_folder: Any = None,
     *,
-    auto_reload: bool | None = None,
-    restricted_namespace: bool | None = None,
+    auto_reload: Optional[bool] = None,
+    restricted_namespace: Optional[bool] = None,
     app: Any = None,
     check_order: bool = True,
 ) -> None:
@@ -506,21 +506,21 @@ def template[**P](
 def template[**P](template_file: Callable[P, Any], /) -> Callable[P, Response]: ...
 @overload
 def template(
-    template_file: str | None = None,
+    template_file: Optional[str] = None,
     content_type: str = 'text/html',
     status_code: int = 200,
     *,
-    mimetype: str | None = None,
-    concurrent: bool | None = None,
+    mimetype: Optional[str] = None,
+    concurrent: Optional[bool] = None,
     offload: bool = False,
 ) -> TemplateDecorator: ...
 def template(
-    template_file: Callable[..., Any] | str | None = None,
+    template_file: Optional[Callable[..., Any] | str] = None,
     content_type: str = 'text/html',
     status_code: int = 200,
     *,
-    mimetype: str | None = None,
-    concurrent: bool | None = None,
+    mimetype: Optional[str] = None,
+    concurrent: Optional[bool] = None,
     offload: bool = False,
 ) -> Callable[..., Any]:
     """Decorates a Robyn route handler (sync or async) to render a template with what it
@@ -551,7 +551,7 @@ def template(
 
 
 def not_found(
-    template_file: str | None = None, *, four04template_file: str | None = None, **template_data: Any
+    template_file: Optional[str] = None, *, four04template_file: Optional[str] = None, **template_data: Any
 ) -> NoReturn:
     """Ends the current ``@template`` handler with a 404 page: ``template_file``
     (``errors/404.pt`` by default; ``four04template_file=`` is chameleon-robyn's name for it)
@@ -577,7 +577,7 @@ def error(template_file: str, status_code: int = 500, **template_data: Any) -> N
     raise ChameleonRobynGenericException(template_file, status_code, msg, template_data or None)
 
 
-def generic_error(template_file: str, status_code: int, template_data: Mapping[str, Any] | None = None) -> NoReturn:
+def generic_error(template_file: str, status_code: int, template_data: Optional[Mapping[str, Any]] = None) -> NoReturn:
     """fastapi-chameleon's name and signature for ``error()``."""
     msg = 'The URL resulted in an error.'
     raise ChameleonRobynGenericException(template_file, status_code, msg, template_data)

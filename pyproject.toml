@@ -139,5 +139,10 @@ extend-exclude = [
     "python/chameleon_rs/types.py",
 ]
 
+[tool.ruff.lint]
+# `Optional[X]` is the house style for "a value or nothing" (`int | str` stays a union), so
+# the rule that rewrites it to `X | None` is off.
+ignore = ["UP045"]
+
 [tool.ruff.format]
 quote-style = "single"

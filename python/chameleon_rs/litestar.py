@@ -87,7 +87,7 @@ from collections.abc import Callable, Coroutine, Iterable, Iterator, Mapping, Se
 from functools import partial, wraps
 from mimetypes import guess_type
 from pathlib import PurePath
-from typing import TYPE_CHECKING, Any, NoReturn, Protocol, overload
+from typing import TYPE_CHECKING, Any, NoReturn, Optional, Protocol, overload
 
 from litestar import Litestar, Request, Response
 from litestar.enums import MediaType
@@ -140,7 +140,7 @@ __all__ = [
 
 # The folder a bare `@template` looks in (as the other modules: the configured folder, or
 # 'templates' when nothing was configured before the handler was decorated).
-template_path: str | None = None
+template_path: Optional[str] = None
 
 type TemplateContext = Mapping[str, Any]
 
@@ -211,16 +211,16 @@ class ChameleonEngine(TemplateEngineProtocol[ChameleonTemplate, TemplateContext]
 
     def __init__(
         self,
-        directory: str | os.PathLike[str] | Sequence[str | os.PathLike[str]] | None = None,
-        engine_instance: TemplateLoader | None = None,
+        directory: Optional[str | os.PathLike[str] | Sequence[str | os.PathLike[str]]] = None,
+        engine_instance: Optional[TemplateLoader] = None,
         *,
-        auto_reload: bool | None = None,
-        restricted_namespace: bool | None = None,
+        auto_reload: Optional[bool] = None,
+        restricted_namespace: Optional[bool] = None,
     ) -> None:
         if directory is not None and engine_instance is not None:
             msg = 'You must provide either a directory or a chameleon_rs PageTemplateLoader, not both.'
             raise ImproperlyConfiguredException(msg)
-        self._loader: TemplateLoader | None = engine_instance
+        self._loader: Optional[TemplateLoader] = engine_instance
         if directory is None and (auto_reload is not None or restricted_namespace is not None):
             msg = 'auto_reload and restricted_namespace are loader options: pass a directory, or configure() them'
             raise TypeError(msg)
@@ -239,7 +239,7 @@ class ChameleonEngine(TemplateEngineProtocol[ChameleonTemplate, TemplateContext]
         self.template_callables: Mapping[str, Callable[..., Any]] = dict(_DEFAULT_CALLABLES)
         # Compiled `render_string` templates by (loader, string), guarded by the lock (sync
         # handlers render in worker threads; free-threaded builds).
-        self._strings: dict[tuple[TemplateLoader | None, str], PageTemplate] = {}
+        self._strings: dict[tuple[Optional[TemplateLoader], str], PageTemplate] = {}
         self._strings_lock = threading.Lock()
 
     @classmethod
@@ -288,7 +288,7 @@ class ChameleonEngine(TemplateEngineProtocol[ChameleonTemplate, TemplateContext]
         environment. Compiled templates are kept for reuse (up to 128, the oldest dropped first),
         per loader: a later ``configure()`` (a new loader) compiles them afresh."""
         if self._loader is not None:
-            loader: TemplateLoader | None = self._loader
+            loader: Optional[TemplateLoader] = self._loader
         else:
             settings = _settings.views['litestar']
             loader = settings.loader if settings is not None else None
@@ -316,7 +316,7 @@ class ChameleonEngine(TemplateEngineProtocol[ChameleonTemplate, TemplateContext]
         self.template_callables = {**self.template_callables, key: template_callable}
 
 
-def _guessed_type(template_name: str) -> str | None:
+def _guessed_type(template_name: str) -> Optional[str]:
     """The media type Litestar's ``Template`` guesses from the name's suffixes, if any."""
     for suffix in PurePath(template_name).suffixes:
         guessed = guess_type(f'name{suffix}')[0]
@@ -335,17 +335,17 @@ class Template(_LitestarTemplate):
 
     def to_asgi_response(
         self,
-        app: Litestar | None,
+        app: Optional[Litestar],
         request: Request[Any, Any, Any],
         *,
-        background: BackgroundTask | BackgroundTasks | None = None,
-        cookies: Iterable[Cookie] | None = None,
-        encoded_headers: Iterable[tuple[bytes, bytes]] | None = None,
-        headers: dict[str, str] | None = None,
+        background: Optional[BackgroundTask | BackgroundTasks] = None,
+        cookies: Optional[Iterable[Cookie]] = None,
+        encoded_headers: Optional[Iterable[tuple[bytes, bytes]]] = None,
+        headers: Optional[dict[str, str]] = None,
         is_head_response: bool = False,
-        media_type: MediaType | str | None = None,
-        status_code: int | None = None,
-        type_encoders: TypeEncodersMap | None = None,
+        media_type: Optional[MediaType | str] = None,
+        status_code: Optional[int] = None,
+        type_encoders: Optional[TypeEncodersMap] = None,
     ) -> ASGIResponse:
         if not (self.media_type or media_type) and self.template_name and _guessed_type(self.template_name) is None:
             media_type = MediaType.HTML
@@ -366,7 +366,7 @@ class Template(_LitestarTemplate):
 # --- The decorator API (the other modules' module API) -----------------------------------------
 
 
-def _request_context(request: Any) -> dict[str, Any] | None:
+def _request_context(request: Any) -> Optional[dict[str, Any]]:
     """What a Litestar template gets besides its context (``Template.create_template_context``
     and the engine's callables): ``request``, ``csrf_input``, and the template callables of the
     app's ``ChameleonEngine`` (Litestar's defaults otherwise), bound to these variables."""
@@ -473,10 +473,10 @@ class _Litestar(_views.Integration):
     def decorate(
         self,
         f: Callable[..., Any],
-        template_file: str | None,
+        template_file: Optional[str],
         content_type: str,
         status_code: int,
-        concurrent: bool | None = None,
+        concurrent: Optional[bool] = None,
         offload: bool = False,
     ) -> Callable[..., Any]:
         """Wraps a handler (sync or async) to render its template with what it returns, with
@@ -562,9 +562,9 @@ _litestar = _Litestar()
 def configure(
     template_folder: Any = None,
     *,
-    auto_reload: bool | None = None,
-    restricted_namespace: bool | None = None,
-    app: Litestar | None = None,
+    auto_reload: Optional[bool] = None,
+    restricted_namespace: Optional[bool] = None,
+    app: Optional[Litestar] = None,
     check_order: bool = True,
 ) -> None:
     """Configures where templates live and how they load, for the whole process (the same as
@@ -605,7 +605,7 @@ def global_init(
     cache_init: bool = True,
     restricted_namespace: bool = True,
     *,
-    app: Litestar | None = None,
+    app: Optional[Litestar] = None,
     check_order: bool = True,
 ) -> None:
     """The other integrations' setup call, for Litestar: configures the handlers' templates only
@@ -667,7 +667,7 @@ async def render_async(template_file: str, **template_data: Any) -> str:
 
 
 def response(
-    template_file: str, content_type: str = 'text/html', status_code: int | None = None, **template_data: Any
+    template_file: str, content_type: str = 'text/html', status_code: Optional[int] = None, **template_data: Any
 ) -> Response[str]:
     """Renders a template into a ``litestar.Response`` (every keyword but ``content_type`` and
     ``status_code`` is the model). ``status_code=None``: the route's (200, 201 for ``@post``)."""
@@ -675,7 +675,7 @@ def response(
 
 
 async def response_async(
-    template_file: str, content_type: str = 'text/html', status_code: int | None = None, **template_data: Any
+    template_file: str, content_type: str = 'text/html', status_code: Optional[int] = None, **template_data: Any
 ) -> Response[str]:
     """``response`` as a coroutine, rendering with ``render_async``."""
     html = await render_async(template_file, **template_data)
@@ -702,21 +702,21 @@ def template[**P](
 def template[**P](template_file: Callable[P, Any], /) -> Callable[P, Response[Any]]: ...
 @overload
 def template(
-    template_file: str | None = None,
+    template_file: Optional[str] = None,
     content_type: str = 'text/html',
-    status_code: int | None = None,
+    status_code: Optional[int] = None,
     *,
-    mimetype: str | None = None,
-    concurrent: bool | None = None,
+    mimetype: Optional[str] = None,
+    concurrent: Optional[bool] = None,
     offload: bool = False,
 ) -> TemplateDecorator: ...
 def template(
-    template_file: Callable[..., Any] | str | None = None,
+    template_file: Optional[Callable[..., Any] | str] = None,
     content_type: str = 'text/html',
-    status_code: int | None = None,
+    status_code: Optional[int] = None,
     *,
-    mimetype: str | None = None,
-    concurrent: bool | None = None,
+    mimetype: Optional[str] = None,
+    concurrent: Optional[bool] = None,
     offload: bool = False,
 ) -> Callable[..., Any]:
     """Decorates a Litestar route handler function (sync or async; a ``Controller`` method too)
@@ -760,6 +760,6 @@ def error(template_file: str, status_code: int = 500, **template_data: Any) -> N
     raise ErrorPage(template_file, status_code, 'The URL resulted in an error.', template_data or None)
 
 
-def generic_error(template_file: str, status_code: int, template_data: Mapping[str, Any] | None = None) -> NoReturn:
+def generic_error(template_file: str, status_code: int, template_data: Optional[Mapping[str, Any]] = None) -> NoReturn:
     """fastapi-chameleon's name and signature for ``error()``."""
     raise ErrorPage(template_file, status_code, 'The URL resulted in an error.', template_data)

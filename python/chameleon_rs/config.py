@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Optional
 
 log = logging.getLogger('chameleon.config')
 environment = {k[10:]: v for (k, v) in ((j.lower(), x) for (j, x) in os.environ.items()) if k.startswith('chameleon_')}
@@ -43,7 +44,7 @@ DEBUG_MODE = environment.pop('debug', 'false').lower() in TRUE
 
 # If a cache directory is specified, Chameleon persists template source code on disk.
 path = environment.pop('cache', None)
-CACHE_DIRECTORY: str | None
+CACHE_DIRECTORY: Optional[str]
 if path is not None:  # pragma: no cover
     CACHE_DIRECTORY = os.path.abspath(path)
     if not os.path.exists(CACHE_DIRECTORY):

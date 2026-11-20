@@ -41,7 +41,7 @@ import types
 import unicodedata
 import weakref
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Optional
 
 from chameleon_rs import _settings
 from chameleon_rs.web import TemplateError
@@ -59,7 +59,7 @@ __all__ = [
 # chameleon_partials' module state: true once a template folder is configured. Code written
 # for chameleon_partials resets it (its test suite does), so it is read on every call.
 has_registered_extensions: bool = False
-template_path: str | None = None
+template_path: Optional[str] = None
 
 
 class PartialsException(TemplateError):
@@ -136,7 +136,7 @@ def register_extensions(template_folder: str, auto_reload: bool = False, cache_i
     _settings.install(partials_settings=_settings.Settings(str(template_folder), bool(auto_reload), True))
 
 
-def extend_model(model: dict[str, Any] | None) -> dict[str, Any]:
+def extend_model(model: Optional[dict[str, Any]]) -> dict[str, Any]:
     """Adds ``render_partial`` to a view model (chameleon_partials' helper; not needed with the
     built-in, which every template has). Returns the model (a new dict for ``None``)."""
     if model is None:
@@ -153,7 +153,7 @@ def clear() -> None:
     _settings.install(partials_settings=None)
 
 
-def _configured(settings: _settings.Settings | None) -> None:
+def _configured(settings: Optional[_settings.Settings]) -> None:
     # Called by `_settings.install`.
     global has_registered_extensions, template_path
     has_registered_extensions = settings is not None
@@ -190,7 +190,7 @@ def resolve(caller: Any, template_file: str) -> Any:
     return template
 
 
-def _same_file(template: Any, path: str, identity: FileId | None) -> bool:
+def _same_file(template: Any, path: str, identity: Optional[FileId]) -> bool:
     """Whether ``path`` (the file a name was found as) and ``template``'s own file are still the
     file ``identity`` they were. Hard links part when a deployment replaces one of them (a new
     file renamed over it): the name must not keep another name's template, nor the template
@@ -209,7 +209,7 @@ _CACHE_LIMIT = 1024
 # A file's identity (`stat_identity`): device and inode, plus the folded resolved path of a
 # file with one link; device and resolved path where there are no inodes.
 type FileId = tuple[int, int | str] | tuple[int, int, str]
-_GLOBAL_CACHE: dict[str, tuple[tuple[int, bool, bool], Any, tuple[str, FileId | None] | None]] = {}
+_GLOBAL_CACHE: dict[str, tuple[tuple[int, bool, bool], Any, Optional[tuple[str, Optional[FileId]]]]] = {}
 
 # Templates found on a caller's search path or folders (`partial_search='caller'`), shared by
 # every caller that finds the same file with the same template class and (hashable) settings.
@@ -265,7 +265,7 @@ def _find(caller: Any, template_file: str) -> tuple[Any, str]:
     raise _not_found(spec)
 
 
-def _file_id(path: str) -> FileId | None:
+def _file_id(path: str) -> Optional[FileId]:
     """The file at ``path`` (device and inode), or ``None`` if there is no regular file: one
     identity for every spelling that opens it (case, Unicode form, `..` through a symlink)."""
     try:
@@ -339,7 +339,7 @@ def _in_folder(spec: str, folder: str) -> bool:
     return _inside(os.path.join(root, spec), root)
 
 
-def _folders(caller: Any, settings: _settings.Settings | None) -> list[tuple[str, str]]:
+def _folders(caller: Any, settings: Optional[_settings.Settings]) -> list[tuple[str, str]]:
     """``(folder, root)`` pairs: the caller's search path (without its own folder, which comes
     next), each its own root; then its folder and each one above it, up to the outermost root
     (a configured folder, partials' or an integration's, or a search path entry) that holds it. A caller in no root climbs
@@ -364,7 +364,7 @@ def _folders(caller: Any, settings: _settings.Settings | None) -> list[tuple[str
     return folders
 
 
-def _configured_folders(settings: _settings.Settings | None) -> list[str]:
+def _configured_folders(settings: Optional[_settings.Settings]) -> list[str]:
     # Every folder configured, whatever it is named: partials' own and each integration's
     # (some setups fill only their own slot).
     slots = [settings, _settings.partials, *_settings.views.values()]
@@ -491,7 +491,7 @@ _PageTemplate: Any = None
 _PageTextTemplateFile: Any = None
 
 
-def _prepare(template: Any) -> tuple[Any, Any, Any] | None:
+def _prepare(template: Any) -> Optional[tuple[Any, Any, Any]]:
     """What ``template.render(encoding='utf-8', ...)`` would use, in its order (defaults, then
     ``cook_check()``): ``(program, builtins, defaults)``, or ``None`` when the template cannot
     render as a native frame (another engine's, a text template, a ``_render`` function)."""

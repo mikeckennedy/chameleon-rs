@@ -225,3 +225,60 @@ def test_environment_variable_sets_the_default(folder: Path, value: str, expecte
     assert lines[2] == 'False'
     # Not reported as an unknown variable (`make test` sets other `CHAMELEON_*` ones).
     assert 'CHAMELEON_STRICT_NAMES' not in out.stderr
+
+
+@pytest.mark.parametrize('module', MODULES)
+def test_directory_spellings_do_not_grow_the_cache(folder: Path, module: Any) -> None:
+    # The loader takes a directory for a template (reading it fails, as in Chameleon) and
+    # keeps it under the name it was asked for: every spelling of it once got its own entry,
+    # so a name built from request data (`f'sub/{slug}'`) grew the cache without bound.
+    chameleon_rs.configure(template_folder=str(folder), strict_names=True)
+    settings = chameleon_rs._settings.views[module.__name__.rsplit('.', 1)[1]]
+    assert settings is not None
+    loader = settings.loader
+    for i in range(50):
+        with pytest.raises(IsADirectoryError):
+            module.render('sub/' + './' * (i % 7) + '/' * (i // 7))
+    assert len(loader.registry) <= 2
+
+
+def test_the_legacy_setup_call_keeps_strict_names(folder: Path) -> None:
+    # `global_init(..., cache_init=False)` replaces the settings and has no argument for the
+    # opt-in checks: it once dropped them, so `../outside.pt` rendered again.
+    chameleon_rs.configure(template_folder=str(folder), strict_names=True)
+    chameleon_rs.fastapi.global_init(str(folder), cache_init=False)
+    with pytest.raises(ValueError, match='Template not found'):
+        chameleon_rs.fastapi.render('../outside.pt')
+
+
+def test_a_model_key_named_offload_is_a_template_variable(folder: Path) -> None:
+    # `render_async(template_file, **model)` once passed the model on as keywords, where
+    # `offload` is `PageTemplate.render_async`'s own argument: the render moved to a thread,
+    # awaited nothing and the template never saw the variable.
+    import asyncio
+
+    (folder / 'o.pt').write_text('<p>${value} ${offload}</p>')
+    chameleon_rs.fastapi.global_init(str(folder), cache_init=False)
+
+    async def value() -> int:
+        return 1
+
+    async def main() -> str:
+        return await chameleon_rs.fastapi.render_async('o.pt', value=value(), offload='dock 7')
+
+    assert asyncio.run(main()) == '<p>1 dock 7</p>'
+
+
+def test_names_without_a_file_are_not_kept(folder: Path) -> None:
+    # An absolute path or a package spec is taken as it is, so the loader once kept a template
+    # for every such name, missing or not (default settings: `strict_names` refuses both).
+    chameleon_rs.fastapi.global_init(str(folder), cache_init=False)
+    settings = chameleon_rs._settings.views['fastapi']
+    assert settings is not None
+    for i in range(20):
+        for name in (f'/nonexistent/{i}.pt', f'os:nothing{i}.pt', f'chameleon_rs:nothing{i}.pt', f'missing{i}.pt'):
+            with pytest.raises(Exception):  # noqa: B017 - whatever reading it raises, as before
+                chameleon_rs.fastapi.render(name)
+    assert len(settings.loader.registry) == 0
+    assert chameleon_rs.fastapi.render('sub/p.pt', x=1) == '<p>1</p>'
+    assert len(settings.loader.registry) == 1

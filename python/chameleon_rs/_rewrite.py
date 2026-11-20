@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import ast
 import builtins
+import contextlib
 import dis
 import sys
 import sysconfig
 import textwrap
 import warnings
-from collections.abc import Callable, Iterable
-from typing import Any
+from collections.abc import Callable, Generator, Iterable, Iterator
+from typing import Any, Optional
 
 # Names the compiler keeps for itself; expressions see the render's own objects.
 INTERNALS = frozenset({'econtext', 'rcontext'})
@@ -73,8 +74,8 @@ class Rewriter(ast.NodeTransformer):
         self,
         aliases: dict[str, str],
         template_builtins: Iterable[str] = (),
-        own: Callable[[str], bool] | None = None,
-        local_names: set[str] | None = None,
+        own: Optional[Callable[[str], bool]] = None,
+        local_names: Optional[set[str]] = None,
         code_block: bool = False,
         attributes: bool = True,
     ) -> None:
@@ -111,6 +112,54 @@ class Rewriter(ast.NodeTransformer):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:
         self.scopes[-1].add(node.name)
         return self.generic_visit(node)
+
+    # The next four bind a name through a plain string on the node, not an `ast.Name` store,
+    # which Chameleon's visitor misses: every read of it became a scope lookup, a `NameError`.
+    # Here the name works; a template that renders in Chameleon renders the same.
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> ast.AST:
+        self.scopes[-1].add(node.name)
+        return self.generic_visit(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> ast.AST:
+        # The name only: an assignment in the class body is still a store in the scope, as
+        # in a `def` body.
+        self.scopes[-1].add(node.name)
+        return self.generic_visit(node)
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> ast.AST:
+        # `except E as name`: a plain name inside the handler only, as Python unbinds it when
+        # the handler ends (after it, the name is the scope's again).
+        with self.plain(filter(None, [node.name])):
+            return self.generic_visit(node)
+
+    def visit_match_case(self, node: ast.match_case) -> ast.AST:
+        # A pattern's captures (`case [a, *rest]`, `case int() as n`) can't be stores in the
+        # scope, so they are plain names in the guard and stored in the scope first thing in
+        # the body: assigned names, as a `for` target or a `with ... as` is.
+        names = list(dict.fromkeys(_captures(node.pattern)))
+        node.pattern = self.visit(node.pattern)
+        if node.guard is not None:
+            with self.plain(names):
+                node.guard = self.visit(node.guard)
+        stores: list[ast.stmt] = []
+        for name in names:
+            target = self.visit_Name(ast.Name(id=name, ctx=ast.Store()))
+            if isinstance(target, ast.Subscript):
+                stores.append(ast.Assign(targets=[target], value=ast.Name(id=name, ctx=ast.Load())))
+        node.body = stores + [self.visit(statement) for statement in node.body]
+        return node
+
+    @contextlib.contextmanager
+    def plain(self, names: Iterable[str]) -> Generator[None]:
+        """``names`` as plain names of the current scope, for the code visited inside."""
+        scope = self.scopes[-1]
+        added = [name for name in names if name not in scope]
+        scope.update(added)
+        try:
+            yield
+        finally:
+            scope.difference_update(added)
 
     def visit_alias(self, node: ast.alias) -> ast.AST:
         self.scopes[-1].add(node.asname if node.asname is not None else node.name)
@@ -191,6 +240,14 @@ class Rewriter(ast.NodeTransformer):
         return ast.Call(func=get_name, args=[ast.Constant(name)], keywords=[])
 
 
+def _captures(pattern: ast.pattern) -> Iterator[str]:
+    """The names a ``match`` pattern binds, in order."""
+    for node in ast.walk(pattern):
+        name = node.rest if isinstance(node, ast.MatchMapping) else getattr(node, 'name', None)
+        if isinstance(node, (ast.MatchAs, ast.MatchStar, ast.MatchMapping)) and name is not None:
+            yield name
+
+
 def constant_key(value: Any) -> Any:
     """CPython's `_PyCode_ConstantKey`, for the constants `ast.parse` produces: equal values
     of the same type are one constant (`0.0` and `-0.0` are not)."""
@@ -252,7 +309,7 @@ class _Constants(ast.NodeTransformer):
 TARGET_LANGUAGE = 'target_language'
 
 
-def aliases_for(default_is_marker: bool | str, attrs: dict[str, str] | None) -> dict[str, str]:
+def aliases_for(default_is_marker: bool | str, attrs: Optional[dict[str, str]]) -> dict[str, str]:
     """The compile-time aliases: ``default_is_marker`` is ``True`` for the marker, or
     ``'target_language'`` inside ``i18n:target``."""
     aliases = {}
@@ -307,11 +364,11 @@ def function(
 def compile_expression(
     tree: ast.Expression,
     default_is_marker: bool | str,
-    attrs: dict[str, str] | None,
+    attrs: Optional[dict[str, str]],
     lookup_attr: Callable[[Any, str], Any],
     template_builtins: Iterable[str] = (),
-    constants: dict[Any, Any] | None = None,
-    local_names: set[str] | None = None,
+    constants: Optional[dict[Any, Any]] = None,
+    local_names: Optional[set[str]] = None,
 ) -> tuple[Any, list[str], list[str], bool, bool]:
     """Compile a parsed expression to ``f(econtext, rcontext, default_marker, builtins)``.
 
@@ -368,7 +425,7 @@ def compile_code(
     local_names: set[str],
     bound_names: set[str],
     template_builtins: Iterable[str] = (),
-    constants: dict[Any, Any] | None = None,
+    constants: Optional[dict[Any, Any]] = None,
 ) -> Any:
     """`visit_CodeBlock`: a ``<?python ?>`` block's statements (dedented, surrounding
     newlines stripped), rewritten like expressions (an assignment stores in the scope), as
@@ -430,7 +487,7 @@ def namespace(lookup_attr: Callable[[Any, str], Any], defaults: dict[str, Any]) 
 def build(
     tree: ast.Expression,
     default_is_marker: bool | str,
-    attrs: dict[str, str] | None,
+    attrs: Optional[dict[str, str]],
     lookup_attr: Callable[[Any, str], Any],
 ) -> Callable[..., Any]:
     """The function alone (the Phase 4 interface; benchmarks load old builds that call it)."""

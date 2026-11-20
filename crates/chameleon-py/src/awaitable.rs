@@ -197,6 +197,7 @@ impl RenderAwaitable {
         render.model = model;
         render.awaits = true;
         render.concurrent = concurrent;
+        render.fanned_out = owns_args;
         let target_language =
             Scope::lookup(scope, intern!(py, "target_language").as_any())?.filter(|t| !t.is_none()).map(Bound::unbind);
         let st = VmState::new(
@@ -319,7 +320,7 @@ impl Running {
             self.started = true;
             let next = match &mut self.phase {
                 Phase::Vm => self.vm_event(py, event),
-                Phase::Fill { .. } => self.fill_event(py, event, thrown),
+                Phase::Fill { .. } => self.fill_event(py, event),
                 Phase::Joining { error } => Err(Outcome::Raise(joined(py, error.take(), event, thrown))),
             };
             thrown = false;
@@ -385,17 +386,42 @@ impl Running {
     }
 
     /// What was awaited for the placeholders' tasks ended: what to await next, or the result.
-    fn fill_event(&mut self, py: Python<'_>, event: Event, thrown: bool) -> Result<Py<PyAny>, Outcome> {
+    fn fill_event(&mut self, py: Python<'_>, event: Event) -> Result<Py<PyAny>, Outcome> {
         match event {
             Event::Start => Err(Outcome::Raise(PyRuntimeError::new_err("render restarted"))),
-            // The wait itself interrupted (the render's task cancelled), or an exception thrown
-            // in: raised as it is (the other tasks are then cancelled and joined).
-            Event::Awaited(Err(error)) if thrown || !error.is_instance_of::<pyo3::exceptions::PyException>(py) => {
-                Err(Outcome::Raise(error))
-            }
-            // A task's own result or error: read from the task, with those of the others done.
-            Event::Awaited(_) => self.fill_done(py),
+            // A task's own error, however it arrived (an event loop's task throws the error of
+            // the task it waited for into the render; a task already failed raises it when
+            // awaited): read from the task, so it is reported with its expression.
+            Event::Awaited(Err(error)) if self.is_task_error(py, &error) => self.fill_done(py),
+            // The wait itself interrupted (the render's task cancelled), an exception thrown
+            // in, or the wait failing with every task still pending (a driver that resumed the
+            // render before its task was done: awaiting the task again would fail the same
+            // way, forever): raised as it is (the tasks are then cancelled and joined).
+            Event::Awaited(Err(error)) => Err(Outcome::Raise(error)),
+            // The wait ended: the results of the tasks done.
+            Event::Awaited(Ok(_)) => self.fill_done(py),
         }
+    }
+
+    /// Whether `error` is the error a placeholder's task ended with (the exception object
+    /// itself, as asyncio hands it on), for a task whose result is not taken yet.
+    fn is_task_error(&self, py: Python<'_>, error: &PyErr) -> bool {
+        let Phase::Fill { entries, filled } = &self.phase else { return false };
+        if !error.is_instance_of::<pyo3::exceptions::PyException>(py) {
+            return false;
+        }
+        entries.iter().zip(filled).filter(|(_, text)| text.is_none()).any(|(entry, _)| {
+            let task = entry.task.bind(py);
+            let failed = || -> PyResult<bool> {
+                if !task.call_method0(intern!(py, "done"))?.is_truthy()?
+                    || task.call_method0(intern!(py, "cancelled"))?.is_truthy()?
+                {
+                    return Ok(false);
+                }
+                Ok(task.call_method0(intern!(py, "exception"))?.is(error.value(py)))
+            };
+            failed().unwrap_or(false)
+        })
     }
 
     /// Takes the text of each task done, in document order (the first failed one's error ends
@@ -466,6 +492,12 @@ impl Running {
             DeferKind::Partial => return crate::deferred::text_bytes(value),
             DeferKind::Value(site) => site,
         };
+        // `structure:` / `markdown:` of the call: its conversion first.
+        let converted = match &site.convert {
+            Some(convert) => Some(convert.bind(py).call1((value,))?),
+            None => None,
+        };
+        let value = converted.as_ref().unwrap_or(value);
         let saved = self.render.take().ok_or_else(|| PyRuntimeError::new_err("render state missing"))?;
         let render = RenderCtx::restore(saved, py);
         let frame = FrameCx {

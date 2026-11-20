@@ -9,17 +9,17 @@ split a template into tokens as Chameleon does."""
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Self, SupportsIndex, cast, overload
+from typing import Optional, Self, SupportsIndex, cast, overload
 
 from chameleon_rs._native import tokenize_ranges
 
 
-def iter_xml(body: str, filename: str | None = None) -> Iterator[Token]:
+def iter_xml(body: str, filename: Optional[str] = None) -> Iterator[Token]:
     for start, end in tokenize_ranges(body):
         yield Token(body[start:end], start, body, filename)
 
 
-def iter_text(body: str, filename: str | None = None) -> Iterator[Token]:
+def iter_text(body: str, filename: Optional[str] = None) -> Iterator[Token]:
     yield Token(body, 0, body, filename)
 
 
@@ -27,10 +27,10 @@ class Token(str):
     __slots__ = 'filename', 'pos', 'source'
 
     pos: int
-    source: str | None
+    source: Optional[str]
     filename: str
 
-    def __new__(cls, string: str, pos: int = 0, source: str | None = None, filename: str | None = None) -> Self:
+    def __new__(cls, string: str, pos: int = 0, source: Optional[str] = None, filename: Optional[str] = None) -> Self:
         inst = str.__new__(cls, string)
         inst.pos = pos
         inst.source = source
@@ -53,7 +53,7 @@ class Token(str):
             return Token(s, self.pos + (index.start or 0), self.source, self.filename)
         return s
 
-    def __add__(self, other: str | None) -> Token:  # type: ignore[override]
+    def __add__(self, other: Optional[str]) -> Token:  # type: ignore[override]
         if other is None:
             return self
 
@@ -71,7 +71,7 @@ class Token(str):
 
     # `list[Token]`, as in Chameleon; not a `list[str]` (lists are invariant).
     def split(  # ty: ignore[invalid-method-override]
-        self, sep: str | None = None, maxsplit: SupportsIndex = -1
+        self, sep: Optional[str] = None, maxsplit: SupportsIndex = -1
     ) -> list[Token]:
         l_ = str.split(self, sep, maxsplit)
         pos = self.pos
@@ -80,14 +80,14 @@ class Token(str):
             pos += len(s)
         return cast('list[Token]', l_)
 
-    def strip(self, chars: str | None = None, /) -> Token:
+    def strip(self, chars: Optional[str] = None, /) -> Token:
         return self.lstrip(chars).rstrip(chars)
 
-    def lstrip(self, chars: str | None = None, /) -> Token:
+    def lstrip(self, chars: Optional[str] = None, /) -> Token:
         s = str.lstrip(self, chars)
         return Token(s, self.pos + len(self) - len(s), self.source, self.filename)
 
-    def rstrip(self, chars: str | None = None, /) -> Token:
+    def rstrip(self, chars: Optional[str] = None, /) -> Token:
         s = str.rstrip(self, chars)
         return Token(s, self.pos, self.source, self.filename)
 

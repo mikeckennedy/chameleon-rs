@@ -80,6 +80,9 @@ impl Custom {
     pub(crate) fn eval<'py>(&self, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
         let py = cx.scope.py();
         let rcontext = cx.rcontext();
+        let serial = cx.frame.serial;
+        let namespace =
+            cx.render.namespaces.borrow().iter().rev().find(|(k, _)| *k == serial).map(|(_, ns)| ns.clone().unbind());
         let sub = SubEval {
             subs: Arc::clone(&self.subs),
             scope: cx.scope.clone().unbind(),
@@ -87,7 +90,8 @@ impl Custom {
             marker: cx.marker().clone().unbind(),
             defaults: cx.defaults().map(|d| d.clone().unbind()),
             builtins: cx.builtins().clone().unbind(),
-            serial: cx.frame.serial,
+            serial,
+            namespace,
             domain: cx.frame.domain.as_ref().map(|d| d.clone().unbind()),
             context: cx.frame.context.as_ref().map(|c| c.clone().unbind()),
             target_language: cx.frame.target_language.clone().unbind(),
@@ -107,6 +111,9 @@ pub(crate) struct SubEval {
     defaults: Option<Py<PyDict>>,
     builtins: Py<PyDict>,
     serial: u64,
+    /// The frame's code-block namespace, if it has one: a sub-expression reads the names a
+    /// `<?python ?>` block defined (a `def`, an import) from it, as any other expression.
+    namespace: Option<Py<PyDict>>,
     domain: Option<Py<PyString>>,
     context: Option<Py<PyString>>,
     target_language: Py<PyAny>,
@@ -123,6 +130,9 @@ impl SubEval {
             self.builtins.bind(py).clone(),
         );
         let _ = render.rcontext.set(self.rcontext.bind(py).clone());
+        if let Some(ns) = &self.namespace {
+            render.namespaces.borrow_mut().push((self.serial, ns.bind(py).clone()));
+        }
         let scope = self.scope.bind(py);
         let frame = FrameCx {
             builtins: Some(self.builtins.bind(py).clone()),
@@ -156,6 +166,9 @@ impl SubEval {
         visit.call(&self.marker)?;
         visit.call(&self.builtins)?;
         visit.call(&self.target_language)?;
+        if let Some(ns) = &self.namespace {
+            visit.call(ns)?;
+        }
         if let Some(d) = &self.domain {
             visit.call(d)?;
         }

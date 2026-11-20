@@ -10,7 +10,7 @@ import inspect
 import types
 import typing
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import chameleon_rs
 import chameleon_rs._native as native
@@ -20,7 +20,7 @@ PACKAGE = Path(chameleon_rs.__file__).parent
 
 # The public modules and the names each exports: `__all__`, the listed names, or (`None` and
 # no `__all__`) the public functions and classes the module defines.
-PUBLIC: dict[str, tuple[str, ...] | None] = {
+PUBLIC: dict[str, Optional[tuple[str, ...]]] = {
     'chameleon_rs': None,
     'chameleon_rs._async': None,
     'chameleon_rs.compat': ('install', 'installed'),
@@ -88,7 +88,7 @@ def _stub_params(func: ast.FunctionDef, method: bool) -> list[tuple[str, Any, ob
     return out[1:] if method else out
 
 
-def _runtime_params(obj: Any, method: bool) -> list[tuple[str, Any, object]] | None:
+def _runtime_params(obj: Any, method: bool) -> Optional[list[tuple[str, Any, object]]]:
     """The same from PyO3's text signature; ``None`` when it says nothing (a slot wrapper
     taking ``*args, **kwargs``, like ``__call__``)."""
     try:

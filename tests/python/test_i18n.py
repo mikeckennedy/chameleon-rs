@@ -12,7 +12,7 @@ domain=..., context=..., target_language=...)` differs by site, and so does wher
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Optional
 
 import chameleon
 import chameleon_rs
@@ -154,7 +154,7 @@ IMPLICIT_CASES = [
 
 @pytest.mark.parametrize('language', [None, 'de'])
 @pytest.mark.parametrize('source', CASES)
-def test_translation_renders_like_chameleon(source: str, language: str | None) -> None:
+def test_translation_renders_like_chameleon(source: str, language: Optional[str]) -> None:
     want = outcome(chameleon, source, {}, target_language=language, z=0)
     got = outcome(chameleon_rs, source, {}, target_language=language, z=0)
     assert got == want
@@ -162,7 +162,7 @@ def test_translation_renders_like_chameleon(source: str, language: str | None) -
 
 @pytest.mark.parametrize('language', [None, 'de'])
 @pytest.mark.parametrize('source', IMPLICIT_CASES)
-def test_implicit_translation_renders_like_chameleon(source: str, language: str | None) -> None:
+def test_implicit_translation_renders_like_chameleon(source: str, language: Optional[str]) -> None:
     options = {'implicit_i18n_translate': True, 'implicit_i18n_attributes': {'alt', 'title'}}
     want = outcome(chameleon, source, options, target_language=language)
     got = outcome(chameleon_rs, source, options, target_language=language)
@@ -205,7 +205,7 @@ def test_default_translation_interpolates_mappings() -> None:
 
 
 @pytest.mark.parametrize('result', [None, '', 'ééééé'])
-def test_fallback_register_set_inside_a_closed_translation(result: str | None) -> None:
+def test_fallback_register_set_inside_a_closed_translation(result: Optional[str]) -> None:
     """A deviation, pinned (architecture.md, Phase 6b amendments): an on-error inside an
     `i18n:translate` sets the function's one fallback register as a length of the translation
     stream; once the translation has closed, an outer handler uses that number on the outer
@@ -383,7 +383,7 @@ class Translator:
 
 
 @pytest.mark.parametrize('encoding', [None, 'utf-8'])
-def test_equal_translators_are_not_confused(encoding: str | None) -> None:
+def test_equal_translators_are_not_confused(encoding: Optional[str]) -> None:
     """Phase 10 caches the render defaults; distinct translators must each be used, whether
     passed per render (with or without `encoding`) or set on the template."""
     body = '<p i18n:translate="">Hi</p>'

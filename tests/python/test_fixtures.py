@@ -16,7 +16,7 @@ import glob
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import chameleon.loader
 import chameleon.zpt.template
@@ -40,7 +40,7 @@ OUTPUTS = os.path.join(ROOT, 'outputs')
 LATER: dict[str, str] = {}
 
 
-def fixtures() -> list[tuple[str, str | None]]:
+def fixtures() -> list[tuple[str, Optional[str]]]:
     """`find_files`: each input with every target language its outputs name."""
     found = []
     for filename in sorted(os.listdir(INPUTS)):
@@ -64,7 +64,7 @@ class Literal:
         raise RuntimeError(f'{self.s!r} is a literal.')
 
 
-def render(engine: str, filename: str, language: str | None) -> Any:
+def render(engine: str, filename: str, language: Optional[str]) -> Any:
     """`TestZopePageTemplates.execute` for one engine."""
     path = os.path.join(INPUTS, filename)
     text = filename.endswith('.txt')
@@ -98,7 +98,7 @@ def render(engine: str, filename: str, language: str | None) -> Any:
 
 
 @pytest.mark.parametrize(('filename', 'language'), fixtures(), ids=lambda v: str(v))
-def test_fixture_renders_like_chameleon(filename: str, language: str | None) -> None:
+def test_fixture_renders_like_chameleon(filename: str, language: Optional[str]) -> None:
     if filename in LATER:
         with pytest.raises(chameleon_rs.exc.UnsupportedError) as unsupported:
             render('chameleon_rs', filename, language)

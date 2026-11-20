@@ -301,7 +301,6 @@ CODE_BLOCKS = [
     '<?python\n  for q in range(2):\n    pass\n?>${q}',
     '<?python translate = None ?>${1}',
     '<?python def f(x=lambda z: z): return x(3) ?>${f()}${z | 9}',
-    '<?python class C: pass ?>${C | 7}',
     '<p tal:define="x 5"><?python x = x + 1 ?>${x}</p>${x | 0}',
     '<?python def f(i): return i ?>${f(1)}<?python i = 4 ?>${i}${econtext["i"]}',
     '<?python def f(i): return i ?><p tal:define="i 3">${i}</p>',

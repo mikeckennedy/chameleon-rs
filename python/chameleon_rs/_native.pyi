@@ -2,7 +2,7 @@
 # Keep each signature in step with its `#[pyfunction]` / `#[pymethods]` definition.
 
 from collections.abc import Generator, Iterable, Iterator, Mapping
-from typing import Any, Literal, final, type_check_only
+from typing import Any, Literal, Optional, final, type_check_only
 
 from chameleon_rs.template import PageTemplate
 from chameleon_rs.utils import Markup
@@ -17,14 +17,14 @@ class _TestingModule:
     def tokens(body: str, mode: str = 'xml') -> list[tuple[str, int]]: ...
     @staticmethod
     def parse(
-        body: str, namespaces: dict[str | None, str], restricted_namespace: bool = True, mode: str = 'xml'
+        body: str, namespaces: dict[Optional[str], str], restricted_namespace: bool = True, mode: str = 'xml'
     ) -> list[tuple[str, tuple[Any, ...]]]: ...
     @staticmethod
     def tree(body: str, **options: Any) -> str: ...
     @staticmethod
-    def inventory(body: str, **options: Any) -> list[tuple[str, str, int | None]]: ...
+    def inventory(body: str, **options: Any) -> list[tuple[str, str, Optional[int]]]: ...
     @staticmethod
-    def tokenizer_pattern(name: str) -> str | None: ...
+    def tokenizer_pattern(name: str) -> Optional[str]: ...
     @staticmethod
     def char_class(name: str) -> str: ...
     @staticmethod
@@ -32,7 +32,7 @@ class _TestingModule:
     @staticmethod
     def token_count(body: str) -> int: ...
     @staticmethod
-    def free_variables(body: str, **options: Any) -> list[tuple[str, list[str] | None, list[str] | None]]: ...
+    def free_variables(body: str, **options: Any) -> list[tuple[str, Optional[list[str]], Optional[list[str]]]]: ...
     @staticmethod
     def fast_path_coverage(body: str, load: bool = False, **options: Any) -> tuple[int, int]: ...
     @staticmethod
@@ -43,12 +43,12 @@ _testing: _TestingModule
 def core_version() -> str: ...
 def tokenize_ranges(body: str, mode: str = 'xml') -> list[tuple[int, int]]: ...
 def parse_elements(
-    body: str, lengths: list[int], namespaces: dict[str | None, str], restricted_namespace: bool = True
+    body: str, lengths: list[int], namespaces: dict[Optional[str], str], restricted_namespace: bool = True
 ) -> list[tuple[str, tuple[Any, ...]]]: ...
 def lookup_attr(obj: object, name: str) -> Any: ...
-def render_page(template: PageTemplate, encoding: str | None, kw: dict[str, Any]) -> str: ...
+def render_page(template: PageTemplate, encoding: Optional[str], kw: dict[str, Any]) -> str: ...
 def render_page_async(
-    template: PageTemplate, encoding: str | None, kw: dict[str, Any], concurrent: bool = False
+    template: PageTemplate, encoding: Optional[str], kw: dict[str, Any], concurrent: bool = False
 ) -> str | RenderAwaitable: ...
 
 @final
@@ -78,22 +78,22 @@ class Program:
         source: str,
         filename: str = '<string>',
         *,
-        expression_types: Iterable[tuple[str, tuple[Any, ...]]] | None = None,
-        default_expression: str | None = None,
-        builtins: Iterable[str] | None = None,
+        expression_types: Optional[Iterable[tuple[str, tuple[Any, ...]]]] = None,
+        default_expression: Optional[str] = None,
+        builtins: Optional[Iterable[str]] = None,
         fast_path: bool = True,
         default_marker: Any = None,
-        token_lengths: list[int] | None = None,
-        surrogate_base: int | None = None,
+        token_lengths: Optional[list[int]] = None,
+        surrogate_base: Optional[int] = None,
         **options: Any,
     ) -> None: ...
     def render(
         self,
         variables: dict[str, Any],
-        defaults: dict[str, Any] | None = None,
-        builtins: dict[str, Any] | None = None,
+        defaults: Optional[dict[str, Any]] = None,
+        builtins: Optional[dict[str, Any]] = None,
     ) -> str: ...
-    def render_scope(self, scope: Scope, builtins: dict[str, Any] | None = None) -> str: ...
+    def render_scope(self, scope: Scope, builtins: Optional[dict[str, Any]] = None) -> str: ...
     def dump(self) -> str: ...
     @property
     def macro_names(self) -> list[str]: ...
@@ -102,7 +102,7 @@ class Program:
 class Macro:
     """A macro of a compiled template (or, with ``name`` ``None``, the whole template)."""
 
-    def __init__(self, program: Program, name: str | None, builtins: dict[str, Any]) -> None: ...
+    def __init__(self, program: Program, name: Optional[str], builtins: dict[str, Any]) -> None: ...
     @property
     def include(self) -> MacroInclude: ...
 
@@ -115,8 +115,8 @@ class MacroInclude:
         stream: list[str],
         econtext: Mapping[str, Any],
         rcontext: dict[str, Any],
-        domain: str | None = None,
-        context: str | None = None,
+        domain: Optional[str] = None,
+        context: Optional[str] = None,
         target_language: Any = None,
     ) -> None: ...
 
@@ -130,7 +130,7 @@ class RepeatDict:
     def __init__(self, d: Any) -> None: ...
     def __getitem__(self, key: Any, /) -> Any: ...
     def __setitem__(self, key: Any, value: Any, /) -> None: ...
-    def __call__(self, key: Any, iterable: Iterable[Any] | None, /) -> tuple[Iterator[Any], int]: ...
+    def __call__(self, key: Any, iterable: Optional[Iterable[Any]], /) -> tuple[Iterator[Any], int]: ...
 
 class Scope(dict[str, Any]):
     def __init__(self, *args: Any, **kwargs: Any) -> None: ...
@@ -164,14 +164,14 @@ class MarkdownProfile:
         raw_html: Literal['escape', 'allow'],
         images: bool,
         inline: bool,
-        heading_ids: str | None,
+        heading_ids: Optional[str],
         classes: list[tuple[str, str]],
         table: bool,
         strikethrough: bool,
         tasklist: bool,
         autolink: bool,
         footnotes: bool,
-        max_length: int | None = None,
+        max_length: Optional[int] = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...

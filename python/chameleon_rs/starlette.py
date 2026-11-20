@@ -70,7 +70,7 @@ import contextlib
 import inspect
 from collections.abc import AsyncGenerator, Callable, Coroutine, Iterable, Iterator, Mapping, Sequence
 from os import PathLike
-from typing import Any, NoReturn, Protocol, overload
+from typing import Any, NoReturn, Optional, Protocol, overload
 
 import starlette.responses
 import starlette.routing
@@ -107,7 +107,7 @@ __all__ = [
 
 # The folder a bare `@template` looks in (as chameleon_rs.flask / .fastapi: the configured
 # folder, or 'templates' when nothing was configured before the endpoint was decorated).
-template_path: str | None = None
+template_path: Optional[str] = None
 
 # The HTTP methods an `HTTPEndpoint` class answers with a method of that name.
 _ENDPOINT_METHODS = ('get', 'head', 'post', 'put', 'patch', 'delete', 'options', 'query')
@@ -208,7 +208,7 @@ class StarletteIntegration(_views.Integration):
     def make_response(self, html: str, content_type: str, status_code: int) -> starlette.responses.Response:
         return HTMLResponse(content=html, status_code=status_code, media_type=content_type)
 
-    def view_context(self, args: tuple[Any, ...]) -> dict[str, Any] | None:
+    def view_context(self, args: tuple[Any, ...]) -> Optional[dict[str, Any]]:
         # The request a Starlette endpoint (or an `HTTPEndpoint` method) was called with, and
         # `url_for` on it, as `Templates` gives them.
         for arg in args:
@@ -318,9 +318,9 @@ class _TemplateResponse(HTMLResponse):
         context: dict[str, Any],
         content: str,
         status_code: int = 200,
-        headers: Mapping[str, str] | None = None,
-        media_type: str | None = None,
-        background: BackgroundTask | None = None,
+        headers: Optional[Mapping[str, str]] = None,
+        media_type: Optional[str] = None,
+        background: Optional[BackgroundTask] = None,
     ) -> None:
         self.template = template
         self.context = context
@@ -346,17 +346,17 @@ class Templates:
 
     def __init__(
         self,
-        directory: str | PathLike[str] | Sequence[str | PathLike[str]] | None = None,
+        directory: Optional[str | PathLike[str] | Sequence[str | PathLike[str]]] = None,
         *,
-        context_processors: list[Callable[[Request], dict[str, Any]]] | None = None,
-        auto_reload: bool | None = None,
-        restricted_namespace: bool | None = None,
+        context_processors: Optional[list[Callable[[Request], dict[str, Any]]]] = None,
+        auto_reload: Optional[bool] = None,
+        restricted_namespace: Optional[bool] = None,
     ) -> None:
         self.context_processors = context_processors or []
         # Jinja's `env.globals`: variables of every template, below the context.
         self.globals: dict[str, Any] = {}
         self.globals.setdefault('url_for', _URL_FOR)
-        self._loader: TemplateLoader | None = None
+        self._loader: Optional[TemplateLoader] = None
         if directory is None:
             if auto_reload is not None or restricted_namespace is not None:
                 msg = 'auto_reload and restricted_namespace are loader options: pass a directory, or configure() them'
@@ -400,7 +400,7 @@ class Templates:
             raise TemplateNotFound(msg)
         return loader[spec]
 
-    def _context(self, request: Request, context: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
+    def _context(self, request: Request, context: Optional[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, Any]]:
         """The response's context (Starlette's: ``request`` set unless given, then the context
         processors) and the template's variables (``globals`` with the context over them, the
         default ``url_for`` bound to the request)."""
@@ -420,11 +420,11 @@ class Templates:
         self,
         request: Request,
         name: str,
-        context: dict[str, Any] | None = None,
+        context: Optional[dict[str, Any]] = None,
         status_code: int = 200,
-        headers: Mapping[str, str] | None = None,
-        media_type: str | None = None,
-        background: BackgroundTask | None = None,
+        headers: Optional[Mapping[str, str]] = None,
+        media_type: Optional[str] = None,
+        background: Optional[BackgroundTask] = None,
     ) -> _TemplateResponse:
         """Renders a template to an HTML response (Starlette's ``TemplateResponse``). Renders
         synchronously: in an ``async def`` endpoint, ``TemplateResponse_async`` does not block
@@ -440,13 +440,13 @@ class Templates:
         self,
         request: Request,
         name: str,
-        context: dict[str, Any] | None = None,
+        context: Optional[dict[str, Any]] = None,
         status_code: int = 200,
-        headers: Mapping[str, str] | None = None,
-        media_type: str | None = None,
-        background: BackgroundTask | None = None,
+        headers: Optional[Mapping[str, str]] = None,
+        media_type: Optional[str] = None,
+        background: Optional[BackgroundTask] = None,
         *,
-        concurrent: bool | None = None,
+        concurrent: Optional[bool] = None,
         offload: bool = False,
     ) -> _TemplateResponse:
         """``TemplateResponse`` rendering with ``render_async``: awaitable values in the context
@@ -469,8 +469,8 @@ class Templates:
 def configure(
     template_folder: Any = None,
     *,
-    auto_reload: bool | None = None,
-    restricted_namespace: bool | None = None,
+    auto_reload: Optional[bool] = None,
+    restricted_namespace: Optional[bool] = None,
     app: Any = None,
     check_order: bool = True,
 ) -> None:
@@ -610,21 +610,21 @@ def template[**P](
 def template[**P](template_file: Callable[P, Any], /) -> Callable[P, starlette.responses.Response]: ...
 @overload
 def template(
-    template_file: str | None = None,
+    template_file: Optional[str] = None,
     content_type: str = 'text/html',
     status_code: int = 200,
     *,
-    mimetype: str | None = None,
-    concurrent: bool | None = None,
+    mimetype: Optional[str] = None,
+    concurrent: Optional[bool] = None,
     offload: bool = False,
 ) -> TemplateDecorator: ...
 def template(
-    template_file: Callable[..., Any] | str | None = None,
+    template_file: Optional[Callable[..., Any] | str] = None,
     content_type: str = 'text/html',
     status_code: int = 200,
     *,
-    mimetype: str | None = None,
-    concurrent: bool | None = None,
+    mimetype: Optional[str] = None,
+    concurrent: Optional[bool] = None,
     offload: bool = False,
 ) -> Callable[..., Any]:
     """Decorates a Starlette endpoint (a function, or a method of an ``HTTPEndpoint`` class;
@@ -666,6 +666,6 @@ def error(template_file: str, status_code: int = 500, **template_data: Any) -> N
     raise ErrorPage(template_file, status_code, 'The URL resulted in an error.', template_data or None)
 
 
-def generic_error(template_file: str, status_code: int, template_data: Mapping[str, Any] | None = None) -> NoReturn:
+def generic_error(template_file: str, status_code: int, template_data: Optional[Mapping[str, Any]] = None) -> NoReturn:
     """fastapi-chameleon's name and signature for ``error()``."""
     raise ErrorPage(template_file, status_code, 'The URL resulted in an error.', template_data)

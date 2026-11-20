@@ -336,6 +336,65 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         Ok(Expr::Token(site, token, Box::new(expr)))
     }
 
+    /// [`ExprCompiler::candidate_bound`] for `candidate`, part of a text that is
+    /// [`plain_text`]: the offset of the first closing bracket that closes nothing, if the
+    /// expression is a Python one. Every longer candidate holds that bracket, and goes the same
+    /// way through [`typed`](Self::typed) to [`obviously_invalid`], which rejects it there:
+    ///
+    /// - the prefixes (`structure:`, `not:`, ...) are read from the start, the same for every
+    ///   candidate, and only those that parse the rest as an expression are followed;
+    /// - the first alternative holds the bracket (no `|` before it);
+    /// - nothing in a plain text makes `python` take another way (a lone surrogate, which is
+    ///   an error) or `obviously_invalid` leave the answer to the parser (a backslash, `#`);
+    /// - up to the bracket this is `obviously_invalid`'s own scan, and what it can't judge
+    ///   (a string prefix, a string that doesn't end) is not judged here either.
+    pub(crate) fn python_bound(&self, candidate: &str) -> Option<usize> {
+        let mut rest = candidate;
+        while let Some((prefix, after)) = match_prefix(rest) {
+            match self.config.types.get(prefix)? {
+                TypeSpec::Not | TypeSpec::Exists | TypeSpec::Structure | TypeSpec::Markdown(_) => rest = after,
+                _ => return None,
+            }
+        }
+        if !matches!(self.config.types.get(&self.config.default_type), Some(TypeSpec::Python)) {
+            return None;
+        }
+        let offset = candidate.len() - rest.len();
+        let bytes = rest.as_bytes();
+        let mut stack = Vec::new();
+        let mut i = 0;
+        while let Some(&c) = bytes.get(i) {
+            match c {
+                b'|' => return None,
+                b'\'' | b'"' => {
+                    if i > 0 && bytes[i - 1].is_ascii_alphanumeric() {
+                        return None;
+                    }
+                    let triple = bytes.get(i + 1) == Some(&c) && bytes.get(i + 2) == Some(&c);
+                    let width = if triple { 3 } else { 1 };
+                    let body = bytes.get(i + width..)?;
+                    let end = body.windows(width).position(|w| w.iter().all(|&x| x == c))?;
+                    i += width + end + width;
+                    continue;
+                }
+                b'(' | b'[' | b'{' => stack.push(c),
+                b')' | b']' | b'}' => {
+                    let open = match c {
+                        b')' => b'(',
+                        b']' => b'[',
+                        _ => b'{',
+                    };
+                    if stack.pop() != Some(open) {
+                        return Some(offset + i);
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        None
+    }
+
     /// Whether `text` holds a lone surrogate (mapped to the private-use block).
     fn has_mapped(&self, text: &str) -> bool {
         self.surrogate_base.is_some_and(|base| chameleon_core::surrogates::to_wtf8(text, base).is_some())
@@ -519,9 +578,8 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
         let inner = ExprContext { emitted: false, ..cx };
         let py = self.py;
         let base = self.surrogate_base;
-        let parts = crate::strexpr::interpolate(py, expression, braces_required, base, |s, candidate| {
-            self.typed_ref(s, ExprContext { candidate, ..inner })
-        })?;
+        let mut subs = StringSubs { compiler: self, cx: inner };
+        let parts = crate::strexpr::interpolate(py, expression, braces_required, base, &mut subs)?;
         let engine = cx.engine;
         let conv = TextConv {
             escape: engine.escape,
@@ -721,6 +779,22 @@ fn char_escape_of(chars: &Bound<'_, PyAny>) -> PyResult<Option<Escape>> {
     Err(PyTypeError::new_err(format!("Unsupported escape set: {chars:?}.")))
 }
 
+/// The sub-expressions of a `string:` expression, compiled in its context.
+struct StringSubs<'a, 'c, 's, 'py> {
+    compiler: &'a mut PyExprCompiler<'s, 'py>,
+    cx: ExprContext<'c>,
+}
+
+impl crate::strexpr::SubExprs for StringSubs<'_, '_, '_, '_> {
+    fn compile(&mut self, source: &Tok, candidate: bool) -> CompileResult<Expr> {
+        self.compiler.typed_ref(source, ExprContext { candidate, ..self.cx })
+    }
+
+    fn bound(&self, candidate: &str) -> Option<usize> {
+        self.compiler.python_bound(candidate)
+    }
+}
+
 impl ExprCompiler for PyExprCompiler<'_, '_> {
     type Error = PyErr;
 
@@ -731,6 +805,14 @@ impl ExprCompiler for PyExprCompiler<'_, '_> {
         let expr = self.typed(source, cx, true)?;
         let token = self.token_id(&strip_tok(source));
         self.register(expr, token)
+    }
+
+    fn bounds_candidates(&self, text: &str) -> bool {
+        plain_text(text)
+    }
+
+    fn candidate_bound(&self, candidate: &str, _: ExprContext<'_>) -> Option<usize> {
+        self.python_bound(candidate)
     }
 
     /// A code block's error token is its whole source, unstripped (`TokenRef(node.source)`).
@@ -821,6 +903,14 @@ fn continuation_to_spaces(s: &str) -> String {
     }
     out.push_str(rest);
     out.replace('\n', " ")
+}
+
+/// Whether `text` (an interpolated text, whole) is one [`PyExprCompiler::python_bound`] can
+/// bound the candidates of: ASCII (so no lone surrogate, mapped to the private-use block),
+/// with no backslash or `#` (which [`obviously_invalid`] leaves to the parser) and no `&`
+/// (a character reference: a candidate is decoded before it is compiled).
+pub(crate) fn plain_text(text: &str) -> bool {
+    text.bytes().all(|b| b.is_ascii() && !matches!(b, b'\\' | b'#' | b'&'))
 }
 
 /// A cheap structural check for Interpolator candidates: unbalanced brackets or an

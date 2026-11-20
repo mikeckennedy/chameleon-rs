@@ -27,7 +27,7 @@ import sys
 import weakref
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from functools import wraps
-from typing import Any
+from typing import Any, Optional
 
 from chameleon_rs import _settings
 from chameleon_rs.loader import import_package_resource
@@ -51,7 +51,7 @@ class Integration:
     # As the decorator-order message names the route decorators.
     route_decorators: str = ''
 
-    def settings(self) -> _settings.Settings | None:
+    def settings(self) -> Optional[_settings.Settings]:
         """The configuration for the current render (the process-wide one by default)."""
         return _settings.views[self.name]
 
@@ -63,7 +63,7 @@ class Integration:
         """The framework's response for a rendered page."""
         raise NotImplementedError
 
-    def view_context(self, args: tuple[Any, ...]) -> Mapping[str, Any] | None:
+    def view_context(self, args: tuple[Any, ...]) -> Optional[Mapping[str, Any]]:
         """Template variables the framework adds to a view's model, from the view's arguments
         (Starlette: ``request`` and ``url_for``); the model's own keys win. ``None``: none."""
         return None
@@ -87,13 +87,22 @@ class Integration:
         if _settings.views[self.name] is not None and cache_init:
             return
         _settings.check_folder(template_folder, self.error)
-        settings = _settings.Settings(str(template_folder), bool(auto_reload), bool(restricted_namespace))
+        # The opt-in checks a `configure()` turned on stay on: this call has no way to ask
+        # for them, and dropping `strict_names` would open the folder again without a word.
+        base = _settings.views[self.name] or _settings.first_configured()
+        settings = _settings.Settings(
+            str(template_folder),
+            bool(auto_reload),
+            bool(restricted_namespace),
+            base.strict_tags if base else None,
+            base.strict_names if base else None,
+        )
         _settings.install(views_settings={self.name: settings})
 
     def clear(self) -> None:
         _settings.install(views_settings={self.name: None})
 
-    def template_path(self) -> str | None:
+    def template_path(self) -> Optional[str]:
         """The legacy module global (``None`` when not configured)."""
         current = _settings.views[self.name]
         return None if current is None else current.template_folder
@@ -128,9 +137,12 @@ class Integration:
         return self.page(template_file).render(encoding='utf-8', **template_data)  # type: ignore[no-any-return]
 
     async def render_async(self, template_file: str, template_data: Mapping[str, Any]) -> str:
-        return await self.page(template_file).render_async(encoding='utf-8', **template_data)  # type: ignore[no-any-return]
+        # The model as a dict, not keywords: a variable named `offload` is the template's, not
+        # `PageTemplate.render_async`'s own argument.
+        page = self.page(template_file)
+        return await _render_async(page, 'utf-8', dict(template_data), page.concurrent, False)  # type: ignore[no-any-return]
 
-    def model(self, value: Any, extra: Mapping[str, Any] | None = None) -> Mapping[str, Any]:
+    def model(self, value: Any, extra: Optional[Mapping[str, Any]] = None) -> Mapping[str, Any]:
         model = model_of(value)
         if model is None:
             msg = f'Invalid return type {type(value)}, we expected a dict or {self.response_name} as the return value.'
@@ -145,7 +157,7 @@ class Integration:
         value: Any,
         content_type: str,
         status_code: int,
-        extra: Mapping[str, Any] | None = None,
+        extra: Optional[Mapping[str, Any]] = None,
     ) -> Any:
         if self.is_response(value):
             return value
@@ -158,9 +170,9 @@ class Integration:
         value: Any,
         content_type: str,
         status_code: int,
-        concurrent: bool | None = None,
+        concurrent: Optional[bool] = None,
         offload: bool = False,
-        extra: Mapping[str, Any] | None = None,
+        extra: Optional[Mapping[str, Any]] = None,
     ) -> Any:
         if self.is_response(value):
             return value
@@ -171,19 +183,19 @@ class Integration:
         html = await _render_async(page, 'utf-8', model, bool(concurrent), offload)
         return self.make_response(html, content_type, status_code)
 
-    def error_response(self, page: ErrorPage, extra: Mapping[str, Any] | None = None) -> Any:
+    def error_response(self, page: ErrorPage, extra: Optional[Mapping[str, Any]] = None) -> Any:
         # As the original libraries' error paths: text/html, the page's status, its data as the
         # model (with the framework's `view_context`, whose keys the data's override).
         html = self.render(page.template_file, _error_model(page, extra))
         return self.make_response(html, 'text/html', page.status_code)
 
-    async def error_response_async(self, page: ErrorPage, extra: Mapping[str, Any] | None = None) -> Any:
+    async def error_response_async(self, page: ErrorPage, extra: Optional[Mapping[str, Any]] = None) -> Any:
         html = await self.render_async(page.template_file, _error_model(page, extra))
         return self.make_response(html, 'text/html', page.status_code)
 
     # --- The decorator ----------------------------------------------------------------------
 
-    def view_template(self, f: Callable[..., Any], template_file: str | None) -> str:
+    def view_template(self, f: Callable[..., Any], template_file: Optional[str]) -> str:
         """The template a view renders: ``template_file``, or for a bare ``@template``
         ``{last module name}/{function name}.html``, or ``.pt`` when there is no ``.html`` file
         in the template folder (checked once, when the view is decorated)."""
@@ -206,10 +218,10 @@ class Integration:
     def decorate(
         self,
         f: Callable[..., Any],
-        template_file: str | None,
+        template_file: Optional[str],
         content_type: str,
         status_code: int,
-        concurrent: bool | None = None,
+        concurrent: Optional[bool] = None,
         offload: bool = False,
     ) -> Callable[..., Any]:
         """Wraps a view (sync or async) to render its template with what it returns."""
@@ -308,7 +320,7 @@ def canonical(name: str) -> str:
     return '/'.join(piece for piece in name.split('/') if piece not in {'', '.'})
 
 
-def spelling(loader: Any, name: str) -> str | None:
+def spelling(loader: Any, name: str) -> Optional[str]:
     """The name to load ``name`` by, or ``None`` if no folder of ``loader`` has a regular file
     of that name (a directory is not a template). Every spelling of one file (``./a//b.pt``,
     and on a case-insensitive filesystem ``A.PT``) loads by the first one seen, so the loader's
@@ -330,7 +342,7 @@ def spelling(loader: Any, name: str) -> str | None:
 _PACKAGED: Any = object()
 
 
-def _identity(loader: Any, name: str) -> FileId | None:
+def _identity(loader: Any, name: str) -> Optional[FileId]:
     """The file ``loader`` would load for ``name`` (device and inode), or ``None`` if it finds
     no regular file (``spelling``'s search)."""
     absolute = os.path.isabs(name)
@@ -339,10 +351,11 @@ def _identity(loader: Any, name: str) -> FileId | None:
     for folder in [''] if absolute else loader.search_path:
         if folder and not os.path.isabs(folder) and ':' in folder:
             # A package's folder (`pkg:dir`), which the loader tries in this order: if it has
-            # the file, that is what loads, and it has no identity here (not shared).
-            if _in_package(folder, filename):
-                return _PACKAGED
-            continue
+            # the name, that is what loads.
+            found = _in_package(folder, filename)
+            if found is _MISSING:
+                continue
+            return found  # type: ignore[no-any-return]
         path = os.path.join(folder, filename) if folder else filename
         try:
             info = os.stat(path)
@@ -352,15 +365,30 @@ def _identity(loader: Any, name: str) -> FileId | None:
     return None
 
 
-def _in_package(folder: str, filename: str) -> bool:
-    """Whether the package folder ``folder`` (``pkg:dir``) has ``filename``, as
-    ``TemplateLoader.load`` checks it."""
+_MISSING: Any = object()
+
+
+def _in_package(folder: str, filename: str) -> Any:
+    """What the package folder ``folder`` (``pkg:dir``) has for ``filename``, found as
+    ``TemplateLoader.load`` finds it: ``_MISSING`` if nothing, ``None`` for a directory (not a
+    template, as in a plain folder), else the file's identity. A package on disk has real
+    files, known by device and inode like any other (on a case-insensitive filesystem every
+    case spelling of a name would otherwise compile its own copy); a resource without a file
+    (in a zip, whose names are case-sensitive) is ``_PACKAGED``: loaded as it is spelled."""
     package, path = folder.split(':', 1)
     try:
         with import_package_resource(package) as files:
-            return bool(files.joinpath(path).joinpath(filename).exists())  # ty: ignore[unresolved-attribute]
+            resource = files.joinpath(path).joinpath(filename)
+            if not resource.exists():  # ty: ignore[unresolved-attribute]
+                return _MISSING
+            if not resource.is_file():
+                return None
+            if isinstance(resource, os.PathLike):
+                found = os.fspath(resource)
+                return stat_identity(found, os.stat(found))
+            return _PACKAGED
     except Exception:  # noqa: BLE001 - the loader's own lookup raises it, when it loads
-        return False
+        return _MISSING
 
 
 # At most this many names are remembered per loader by `view_spelling` (then they start over):
@@ -368,7 +396,7 @@ def _in_package(folder: str, filename: str) -> bool:
 _NAMES_LIMIT = 1024
 
 
-def known_spelling(loader: Any, name: str) -> str | None:
+def known_spelling(loader: Any, name: str) -> Optional[str]:
     """``spelling``, remembered per name (``_rs_known`` on ``loader``, bounded by
     ``_NAMES_LIMIT``) while the loader's templates don't reload: the Jinja-shaped engines'
     ``get_template`` then costs no ``stat`` for a name seen before, as ``Integration.page``'s
@@ -417,12 +445,29 @@ def view_spelling(loader: Any, name: Any) -> Any:
         return name
     found = spelling(loader, spec)
     if found is None:
-        return name
+        return _directory_spelling(loader, spec, name)
     names = loader.__dict__.setdefault('_rs_names', {})
     if len(names) >= _NAMES_LIMIT:
         names.clear()
     names[name] = found
     return found
+
+
+def _directory_spelling(loader: Any, spec: str, name: Any) -> Any:
+    """``name``, unless ``spec`` (it, stripped) spells a directory of a search folder in more
+    segments than it needs (``pages/./``, ``pages//``): then the short spelling. The loader
+    takes a directory for a template and keeps it (reading it fails, as in Chameleon), under
+    each spelling it is asked for; names built from request data would grow that without
+    bound. A missing file's name is passed on as it is: nothing is kept for it."""
+    short = canonical(spec)
+    if short == spec or os.path.isabs(spec):
+        return name
+    extension = getattr(loader, 'default_extension', None)
+    filename = short + extension if extension is not None and '.' not in short else short
+    for folder in loader.search_path:
+        if not (not os.path.isabs(folder) and ':' in folder) and os.path.isdir(os.path.join(folder, filename)):
+            return short
+    return name
 
 
 def is_not_found(exc: ValueError) -> bool:
@@ -431,7 +476,7 @@ def is_not_found(exc: ValueError) -> bool:
     return type(exc) is ValueError and str(exc).startswith('Template not found: ')
 
 
-def _error_model(page: ErrorPage, extra: Mapping[str, Any] | None) -> Mapping[str, Any]:
+def _error_model(page: ErrorPage, extra: Optional[Mapping[str, Any]]) -> Mapping[str, Any]:
     data = page.template_data or {}
     return {**extra, **data} if extra else data
 

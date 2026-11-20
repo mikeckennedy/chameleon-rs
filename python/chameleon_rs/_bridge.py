@@ -22,7 +22,7 @@ import ast
 import builtins
 import copy
 from collections.abc import Callable, Iterable
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 from chameleon_rs._rewrite import PARAMS, Rewriter, aliases_for, function
 
@@ -151,7 +151,7 @@ def build(
     expression: str,
     *,
     default_is_marker: bool,
-    attrs: dict[str, str] | None,
+    attrs: Optional[dict[str, str]],
     lookup_attr: Callable[[Any, str], Any],
     template_builtins: Iterable[str] = (),
 ) -> tuple[Callable[..., Any], list[Request]]:

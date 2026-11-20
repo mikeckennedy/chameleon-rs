@@ -17,7 +17,7 @@ import timeit
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import chameleon
 import chameleon.zpt.template
@@ -194,7 +194,7 @@ def make_report_model(rows: int) -> dict:
     return model
 
 
-def engines(model: dict, report: dict | None = None) -> list[tuple[str, Callable[[], Any], Callable[[], Any]]]:
+def engines(model: dict, report: Optional[dict] = None) -> list[tuple[str, Callable[[], Any], Callable[[], Any]]]:
     """(label, Chameleon render, chameleon_rs render) per variant."""
     chameleon_partials.register_extensions(str(TEMPLATES), auto_reload=False, cache_init=False)
     chameleon_rs.configure(template_folder=str(TEMPLATES))

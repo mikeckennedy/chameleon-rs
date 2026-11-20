@@ -22,7 +22,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from enum import Enum
 from html import entities as htmlentitydefs
 from types import TracebackType
-from typing import Any, Literal, NoReturn, Protocol
+from typing import Any, Literal, NoReturn, Optional, Protocol
 
 from chameleon_rs import _native
 
@@ -82,7 +82,7 @@ def read_encoded(data: bytes) -> str:
     return read_bytes(data, 'utf-8')[0]
 
 
-def read_bytes(body: bytes, default_encoding: str) -> tuple[str, str, str | None]:
+def read_bytes(body: bytes, default_encoding: str) -> tuple[str, str, Optional[str]]:
     for bom, prefix, encoding in _xml_prefixes:
         if body.startswith(bom):
             document = body.decode(encoding)
@@ -91,7 +91,7 @@ def read_bytes(body: bytes, default_encoding: str) -> tuple[str, str, str | None
         if prefix != encode_string('<?xml') and body.startswith(prefix):
             return body.decode(encoding), encoding, 'text/xml'
 
-    content_type: str | None
+    content_type: Optional[str]
     if body.startswith(_xml_decl):
         content_type = 'text/xml'
         encoding = read_xml_encoding(body) or default_encoding
@@ -101,7 +101,7 @@ def read_bytes(body: bytes, default_encoding: str) -> tuple[str, str, str | None
     return body.decode(encoding), encoding, content_type
 
 
-def detect_encoding(body: str | bytes, default_encoding: str) -> tuple[str | None, str]:
+def detect_encoding(body: str | bytes, default_encoding: str) -> tuple[Optional[str], str]:
     if not isinstance(body, str):
         body = body.decode('ascii', 'ignore')
 
@@ -113,7 +113,7 @@ def detect_encoding(body: str | bytes, default_encoding: str) -> tuple[str | Non
     return None, default_encoding
 
 
-def _search_meta(body: str) -> tuple[str, str] | None:
+def _search_meta(body: str) -> Optional[tuple[str, str]]:
     r"""``RE_META.search(body).groups()``, in linear time. The regex backtracks its charset
     (``[^"']+``) one character at a time, retrying the ``\s*/?\s*>`` after it from each: cubic
     in a run of whitespace with no ``>`` to end it (2,000 spaces took 4.6 s). The charset it
@@ -125,7 +125,7 @@ def _search_meta(body: str) -> tuple[str, str] | None:
     of heads with no ``;`` was quadratic, 600 KB took 20 s)."""
     pos = 0
     semi = -2  # the `;` last worked out, and the charset after it (`None`: no match)
-    charset: str | None = None
+    charset: Optional[str] = None
     while (head := _META_HEAD.search(body, pos)) is not None:
         content = head.end()
         # The first `;` after an earlier head is the first after this one too, if not passed.
@@ -145,7 +145,7 @@ def _search_meta(body: str) -> tuple[str, str] | None:
     return None
 
 
-def _charset_after(body: str, semi: int) -> str | None:
+def _charset_after(body: str, semi: int) -> Optional[str]:
     r"""What ``;\s*charset=([^"']+)["']?\s*/?\s*>`` captures at ``semi``, or ``None``."""
     key = _META_CHARSET_KEY.match(body, semi + 1)
     if key is None:
@@ -163,7 +163,7 @@ def _charset_after(body: str, semi: int) -> str | None:
     return None
 
 
-def read_xml_encoding(body: bytes) -> str | None:
+def read_xml_encoding(body: bytes) -> Optional[str]:
     if body.startswith(b'<?xml'):
         match = RE_ENCODING.search(body)
         if match is not None:
@@ -241,7 +241,7 @@ module_cache: dict[str, Any] = {}
 
 
 # Taken from zope.dottedname (via Chameleon)
-def _resolve_dotted(name: str, module: str | None = None) -> Any:
+def _resolve_dotted(name: str, module: Optional[str] = None) -> Any:
     name_parts = name.split('.')
     if not name_parts[0]:
         if module is None:
@@ -276,7 +276,7 @@ def resolve_dotted(dotted: str) -> Any:
     return module_cache[dotted]
 
 
-def scope_iter(scope: dict[str, Any], root: dict[str, Any] | None) -> Iterator[str]:
+def scope_iter(scope: dict[str, Any], root: Optional[dict[str, Any]]) -> Iterator[str]:
     """`Scope.__iter__` (the native `Scope` calls this): the local keys, then the root's keys
     not shadowed locally, lazily, so changing the scope while iterating it raises
     ``RuntimeError`` as with Chameleon's generator."""
@@ -380,7 +380,7 @@ class _Marker(Enum):
 marker: Literal[_Marker.marker] = _Marker.marker
 
 
-def raise_with_traceback(exc: BaseException, tb: TracebackType | None) -> NoReturn:
+def raise_with_traceback(exc: BaseException, tb: Optional[TracebackType]) -> NoReturn:
     exc.__traceback__ = tb
     raise exc
 
@@ -474,7 +474,7 @@ class ListDictProxy[KT, VT]:
     def __init__(self, _l: Sequence[Mapping[KT, VT]]) -> None:
         self._l = _l
 
-    def get(self, key: KT) -> VT | None:
+    def get(self, key: KT) -> Optional[VT]:
         return self._l[-1].get(key)
 
 

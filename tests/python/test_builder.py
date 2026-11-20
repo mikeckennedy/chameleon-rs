@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import collections
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import chameleon
 import chameleon_rs
@@ -27,7 +27,7 @@ from chameleon_rs._native import _testing
 
 INPUTS = Path(__file__).parents[1] / 'upstream' / 'chameleon_tests' / 'inputs'
 
-Item = tuple[str, str, int | None]
+Item = tuple[str, str, Optional[int]]
 
 
 def chameleon_inventory(body: str, **options: Any) -> collections.Counter[Item]:

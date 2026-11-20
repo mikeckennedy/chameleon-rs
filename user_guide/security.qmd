@@ -68,9 +68,10 @@ A name that comes from a request must never reach a lookup that accepts any path
 The decorator APIs always keep one compiled template per file, however a name spells it
 (`./pages/a.pt`, `pages//a.pt`, an absolute path), and the names they remember for that are
 bounded, so `response(f'pages/{slug}.pt')` can't grow the template cache past one template
-per file. Without `strict_names`, the loader still caches an absolute path to a file that
-doesn't exist, as Chameleon's does (it fails when rendered), so turn it on if any part of a
-name comes from a request.
+per file. A name with no file behind it (a missing absolute path or package resource, which
+Chameleon's loader caches) isn't kept either. Without `strict_names` those names can still
+reach files outside the template folder, so turn it on if any part of a name comes from a
+request.
 
 If a page is chosen by the request, map the request value to a name you wrote:
 

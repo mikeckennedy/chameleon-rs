@@ -238,6 +238,7 @@ impl<'t, C: ExprCompiler> Resolver<'t, C> {
 
     #[allow(clippy::too_many_lines)] // one arm per node kind
     fn node(&mut self, node: &'t Node) -> Result<(), C::Error> {
+        crate::stack::room().map_err(CompileError::TooDeep)?;
         match node {
             Node::Text(_) | Node::Empty | Node::UseInternalMacro(_) => {}
             Node::Interpolation(i) => {

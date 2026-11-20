@@ -10,7 +10,7 @@ from __future__ import annotations
 import copy
 import re
 from collections.abc import Iterator, Mapping, Sequence
-from typing import Any
+from typing import Any, Optional
 
 from chameleon_rs import _native
 from chameleon_rs.exc import LanguageError
@@ -211,7 +211,7 @@ def prepare_attributes(attrs, dyn_attributes, i18n_attributes, ns_attributes, dr
 _MISSING = object()
 
 
-def _part(item: Any, name: str | None) -> Any:
+def _part(item: Any, name: Optional[str]) -> Any:
     """The part of a repeated item that ``first`` and ``last`` compare: the item itself, or its
     attribute ``name`` (its key ``name``, for a mapping)."""
     if name is None:
@@ -226,7 +226,7 @@ class RepeatItem:
 
     __allow_access_to_unprotected_subobjects__ = True
 
-    def __init__(self, iterator: Iterator[Any], length: int, items: Sequence[Any] | None = None) -> None:
+    def __init__(self, iterator: Iterator[Any], length: int, items: Optional[Sequence[Any]] = None) -> None:
         self.length = length
         self._iterator = iterator
         # The repeated sequence, for `first` and `last` (Chameleon's RepeatItem has no third
@@ -268,19 +268,19 @@ class RepeatItem:
     def parity(self) -> str:
         return (self.index % 2 == 0 and 'even') or 'odd'
 
-    def first(self, name: str | None = None) -> bool:
+    def first(self, name: Optional[str] = None) -> bool:
         """Whether this item starts a run of items with the same ``name`` part (an attribute,
         or a key for a mapping; without a name, the whole item): the first item, or one whose
         part differs from the item before. Zope's ``first``, for grouping a sorted sequence:
         ``<h2 tal:condition="repeat.item.first('category')">``."""
         return self._run_edge(name, -1)
 
-    def last(self, name: str | None = None) -> bool:
+    def last(self, name: Optional[str] = None) -> bool:
         """Whether this item ends a run of items with the same ``name`` part: the last item,
         or one whose part differs from the item after (see ``first``)."""
         return self._run_edge(name, 1)
 
-    def _run_edge(self, name: str | None, step: int) -> bool:
+    def _run_edge(self, name: Optional[str], step: int) -> bool:
         if self._items is None:
             raise TypeError('first() and last() need the repeated items: RepeatItem(iterator, length, items)')
         index = self.index

@@ -113,11 +113,12 @@ pub(crate) fn limit(py: Python<'_>) -> PyResult<usize> {
 
 /// `loop.create_task(...)` for `awaitable`: a `@concurrent` call's coroutine itself (so a task
 /// cancelled before it starts closes the coroutine, rather than leaving it never awaited and
-/// warned about), anything else through `_await`.
+/// warned about), anything else through `_await`. With the task, what its result is still to
+/// be converted with: the call's `convert`, which a task of the coroutine itself doesn't apply.
 pub(crate) fn start_task<'py>(
     event_loop: &Bound<'py, PyAny>,
     awaitable: &Bound<'py, PyAny>,
-) -> PyResult<Bound<'py, PyAny>> {
+) -> PyResult<(Bound<'py, PyAny>, Option<Py<PyAny>>)> {
     let py = event_loop.py();
     if is_concurrent_call(awaitable)? {
         let inner = awaitable.getattr(intern!(py, "awaitable"))?;
@@ -127,14 +128,16 @@ pub(crate) fn start_task<'py>(
             )
         })?;
         if crate::repeat::is_type(&inner, coroutine.bind(py)) {
-            return event_loop.call_method1(intern!(py, "create_task"), (inner,));
+            let convert = Some(awaitable.getattr(intern!(py, "convert"))?).filter(|c| !c.is_none());
+            let task = event_loop.call_method1(intern!(py, "create_task"), (inner,))?;
+            return Ok((task, convert.map(Bound::unbind)));
         }
     }
     let wrap = AWAIT.get_or_try_init(py, || {
         Ok::<_, PyErr>(py.import(intern!(py, "chameleon_rs._async"))?.getattr(intern!(py, "_await"))?.unbind())
     })?;
     let coroutine = wrap.bind(py).call1((awaitable,))?;
-    event_loop.call_method1(intern!(py, "create_task"), (coroutine,))
+    Ok((event_loop.call_method1(intern!(py, "create_task"), (coroutine,))?, None))
 }
 
 /// Where a deferred value's text goes: what converting it needs (the frame's context when it
@@ -152,6 +155,8 @@ pub(crate) struct ValueSite {
     pub(crate) helpers: Option<crate::expr::HelpersPy>,
     pub(crate) program: Py<Program>,
     pub(crate) token: u32,
+    /// Applied to the task's result before it is written (see [`start_task`]).
+    pub(crate) convert: Option<Py<PyAny>>,
 }
 
 pub(crate) enum DeferKind {
@@ -172,6 +177,9 @@ impl Deferred {
         visit.call(&self.task)?;
         if let DeferKind::Value(site) = &self.kind {
             visit.call(&site.scope)?;
+            if let Some(c) = &site.convert {
+                visit.call(c)?;
+            }
             if let Some(b) = &site.builtins {
                 visit.call(b)?;
             }

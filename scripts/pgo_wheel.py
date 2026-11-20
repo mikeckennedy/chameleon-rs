@@ -41,6 +41,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 ROOT = Path(__file__).resolve().parent.parent
 PGO_ROOT = ROOT / 'target' / 'pgo' / 'wheels'
@@ -61,7 +62,7 @@ class ProfileUnavailable(Exception):
     """The profile could not be made on this platform (the fallback's trigger)."""
 
 
-def run(cmd: list[str], env: dict[str, str] | None = None, capture: bool = False, cwd: Path = ROOT) -> str:
+def run(cmd: list[str], env: Optional[dict[str, str]] = None, capture: bool = False, cwd: Path = ROOT) -> str:
     print('+', ' '.join(cmd), flush=True)
     if not capture:
         subprocess.run(cmd, check=True, env=env, cwd=cwd)
@@ -105,7 +106,7 @@ def default_maturin() -> str:
     return str(beside) if beside.exists() else shutil.which('maturin') or 'maturin'
 
 
-def interpreter_tag(python: str, target: str | None) -> str:
+def interpreter_tag(python: str, target: Optional[str]) -> str:
     """cp315t-macosx-11.0-arm64: one working directory per interpreter, platform and target."""
     code = (
         'import sys, sysconfig; '
@@ -160,11 +161,11 @@ def training_venv(python: str, work: Path) -> str:
     return py
 
 
-def target_args(target: str | None) -> list[str]:
+def target_args(target: Optional[str]) -> list[str]:
     return ['--target', target] if target else []
 
 
-def profile(python: str, maturin: str, target: str | None) -> Path:
+def profile(python: str, maturin: str, target: Optional[str]) -> Path:
     """Instrumented wheel, training run, merge. Returns the merged profile."""
     work = PGO_ROOT / interpreter_tag(python, target)
     data = work / 'data'
@@ -197,7 +198,9 @@ def profile(python: str, maturin: str, target: str | None) -> Path:
     return merged
 
 
-def build(python: str, maturin: str, target: str | None, merged: Path | None, out: Path, extra: list[str]) -> None:
+def build(
+    python: str, maturin: str, target: Optional[str], merged: Optional[Path], out: Path, extra: list[str]
+) -> None:
     work = PGO_ROOT / interpreter_tag(python, target)
     flags = [f'-Cprofile-use={merged}', '-Cllvm-args=-pgo-warn-missing-function'] if merged else []
     env = clean_env(

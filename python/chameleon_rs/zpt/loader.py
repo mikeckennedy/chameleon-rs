@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable, Mapping
-from typing import Any
+from typing import Any, Optional
 
 from chameleon_rs.loader import TemplateLoader as BaseLoader
 from chameleon_rs.template import PageTemplateFile, PageTextTemplateFile
@@ -31,10 +31,10 @@ class TemplateLoader(BaseLoader):
 
     def __init__(
         self,
-        search_path: Iterable[str | os.PathLike[str]] | str | os.PathLike[str] | None = None,
-        default_extension: str | None = None,
+        search_path: Optional[Iterable[str | os.PathLike[str]] | str | os.PathLike[str]] = None,
+        default_extension: Optional[str] = None,
         *,
-        formats: Mapping[str, type[PageTemplateFile]] | None = None,
+        formats: Optional[Mapping[str, type[PageTemplateFile]]] = None,
         **kwargs: Any,
     ) -> None:
         if formats is not None:
@@ -44,7 +44,7 @@ class TemplateLoader(BaseLoader):
 
     # Chameleon names the argument `filename` here and `spec` in the base class.
     def load(  # ty: ignore[invalid-method-override]
-        self, filename: str | os.PathLike[str], format: str | None = None
+        self, filename: str | os.PathLike[str], format: Optional[str] = None
     ) -> PageTemplateFile:
         """Load and return a template file.
 

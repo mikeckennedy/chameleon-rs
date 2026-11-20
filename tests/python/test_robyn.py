@@ -28,7 +28,7 @@ import urllib.request
 from collections.abc import Callable, Coroutine
 from pathlib import Path
 from types import ModuleType
-from typing import Any, assert_type
+from typing import Any, Optional, assert_type
 
 import pytest
 
@@ -43,7 +43,7 @@ from robyn.testing import TestClient as RobynClient
 ORIGINAL = Path(__file__).resolve().parents[2] / 'temp' / 'chameleon-robyn'
 
 
-def load_original() -> ModuleType | None:
+def load_original() -> Optional[ModuleType]:
     if not (ORIGINAL / 'chameleon_robyn').is_dir():
         return None
     sys.path.insert(0, str(ORIGINAL))
@@ -890,7 +890,7 @@ def free_port() -> int:
             return port
 
 
-def fetch(port: int, path: str) -> tuple[int, str | None, str]:
+def fetch(port: int, path: str) -> tuple[int, Optional[str], str]:
     try:
         with urllib.request.urlopen(f'http://127.0.0.1:{port}{path}', timeout=10) as r:
             return r.status, r.headers.get('Content-Type'), r.read().decode()

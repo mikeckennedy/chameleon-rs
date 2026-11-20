@@ -83,6 +83,7 @@ pub(crate) fn interpolate_full<C: ExprCompiler>(
     let mut t = 0;
     // Chameleon's `body`: whether an earlier `${...}` produced code.
     let mut body = false;
+    let bounded = compiler.bounds_candidates(src);
     while t < end {
         let rest = &src[t..];
         let Some((m_start, close)) = search(rest) else {
@@ -116,6 +117,9 @@ pub(crate) fn interpolate_full<C: ExprCompiler>(
         }
         body = true;
         let mut close_abs = t + close - m_start;
+        if bounded && let Some(bound) = compiler.candidate_bound(&src[start + 2..close_abs], cx) {
+            close_abs = bounded_close(src, start + 2, bound).unwrap_or(close_abs);
+        }
         loop {
             let expr = text.slice(start + 2, close_abs);
             if expr.is_empty() {
@@ -169,6 +173,17 @@ pub(crate) fn interpolate_full<C: ExprCompiler>(
         _ => None,
     };
     Ok((merge_text(parts), implicit))
+}
+
+/// Where the first candidate to try closes, given that none ending after `bound` (an offset
+/// from `from`, where the expression starts) can be valid ([`ExprCompiler::candidate_bound`]):
+/// the last `}` at or before it, else the first one after (the shortest candidate, which is
+/// the one whose error is reported when every candidate fails).
+fn bounded_close(src: &str, from: usize, bound: usize) -> Option<usize> {
+    let rest = src.get(from..)?;
+    let within = rest.as_bytes().get(..=bound)?;
+    let close = within.iter().rposition(|&b| b == b'}').or_else(|| rest.find('}'))?;
+    Some(from + close)
 }
 
 fn merge_text(parts: Vec<Part>) -> Vec<Part> {
