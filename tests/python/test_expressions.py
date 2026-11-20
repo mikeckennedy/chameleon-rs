@@ -1058,6 +1058,58 @@ CLASS_BODIES = [
         'class Point:\n    def m(self):\n        class Inner:\n            b = Point\n        return Inner.b\n'
         'res = Point().m() is Point'
     ),
+    # A type parameter's bound is evaluated once the class is bound.
+    'class Q[T: Q]:\n    pass\nres = Q.__type_params__[0].__bound__ is Q',
+    (
+        'class Point:\n    def m[T: Point](self, x: T) -> T:\n        return x\n'
+        'res = Point.m.__type_params__[0].__bound__ is Point'
+    ),
+    # A `global` binding that never runs changes nothing.
+    'class C:\n    def m(self):\n        global a\n        def a():\n            return 42\n    y = a\nres = (C.y, a)',
+    (
+        'class C:\n    def m(self):\n        global a\n        def a():\n            return 42\n'
+        '    def other(self):\n        return a\nres = C().other()'
+    ),
+    'class C:\n    if False:\n        global a\n        def a():\n            return 1\nres = a',
+    (
+        'class C:\n    def m(self):\n        global a\n        def a():\n            return 42\n'
+        '    def other(self):\n        return a()\nC().m()\nres = (C().other(), a())'
+    ),
+    # `global` in a function whose enclosing method has a parameter of that name.
+    (
+        'class C:\n    def m(self, a):\n        def inner():\n            global a\n            return a\n'
+        '        return (a, inner())\nres = C().m(10)'
+    ),
+    (
+        'class C:\n    def m(self, a):\n        def inner():\n            global a\n            a = 55\n'
+        '        inner()\n        return a\nres = (C().m(10), a)'
+    ),
+    (
+        'class C:\n    def m(self, a):\n        def inner():\n            global a\n            def a():\n'
+        '                return 7\n        inner()\n        return a\nres = (C().m(10), a())'
+    ),
+    (
+        'class C:\n    def m(self, a):\n        def inner():\n            global a\n'
+        '            return (lambda a: a)(3), (lambda: a)()\n        return inner()\nres = C().m(10)'
+    ),
+    # A `global` class named like the class around it, and other `global` bindings.
+    (
+        'class Point:\n    global Point\n    class Point:\n        b = Point\n    saved = Point.b\n'
+        'res = Point.saved.__name__'
+    ),
+    (
+        'def a():\n    return 1\nclass C:\n    def m(self):\n        global a\n        def a():\n            return 2\n'
+        'r1 = a()\nC().m()\nres = (r1, a())'
+    ),
+    'class C:\n    global a\n    from math import pi as a, e as x\n    b = a\nres = (C.b, a, x)',
+    (
+        'class C:\n    def m(self):\n        global a, x\n        import os.path as a, math as x\n'
+        'C().m()\nres = (a.sep, x.pi)'
+    ),
+    (
+        'class C:\n    def m(self):\n        global a\n        class a:\n            v = 7\n            def me(self):\n'
+        '                return a\nC().m()\nres = (a.v, a().me() is a)'
+    ),
 ]
 
 

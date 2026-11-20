@@ -21,7 +21,7 @@ Class bodies in `<?python ?>` blocks, which have had Python's scoping since 0.2.
 - **A class pattern from the render data in a class body** works with one `match` inside another, and leaves nothing on the class when the `match` is left by `break`, `continue` or an exception.
 - **A `match` in a class inside a function that has a `match` of its own** raised `NameError` when both patterns named a class from the render data.
 - **A pattern's class or value that the class body also binds** (`case Point(x=q): Point = q`) is the template's until the class binds it, like any other read; it was a `NameError`.
-- **A `def`, a `class` or an import of a name declared `global`** in a class body, or in a method, binds the template's name, and `del` of such a name compiles.
+- **A `def`, a `class` or an import of a name declared `global`** in a class body, or in a method, binds the template's name once it runs, and `del` of such a name compiles. A name declared `global` is the template's even where a method around it has a parameter of that name.
 - **A parameter named like its `async def` method** (`async def f(self, f=1)`) no longer makes that name a `NameError` for the rest of the template.
 
 And in any `<?python ?>` block:
