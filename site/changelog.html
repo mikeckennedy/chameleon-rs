@@ -112,7 +112,7 @@ ul.task-list li input[type="checkbox"] {
     <img src="./chameleon-rs-logo-light.png" alt="chameleon-rs" class="navbar-logo dark-content">
     </a>
     <a class="navbar-brand" href="./index.html">
-    <span class="navbar-title">chameleon-rs <span class="version-badge" title="Released 2026-11-20">v0.2.57</span></span>
+    <span class="navbar-title">chameleon-rs <span class="version-badge" title="Released 2026-11-20">v0.2.58</span></span>
     </a>
   </div>
           <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
@@ -164,7 +164,8 @@ ul.task-list li input[type="checkbox"] {
     <h2 id="toc-title">On this page</h2>
    
   <ul class="collapse">
-  <li><a href="#v0.2.57" id="toc-v0.2.57" class="nav-link active" data-scroll-target="#v0.2.57">v0.2.57</a></li>
+  <li><a href="#v0.2.58" id="toc-v0.2.58" class="nav-link active" data-scroll-target="#v0.2.58">v0.2.58</a></li>
+  <li><a href="#v0.2.57" id="toc-v0.2.57" class="nav-link" data-scroll-target="#v0.2.57">v0.2.57</a></li>
   <li><a href="#v0.1.56" id="toc-v0.1.56" class="nav-link" data-scroll-target="#v0.1.56">v0.1.56</a></li>
   <li><a href="#v0.1.55" id="toc-v0.1.55" class="nav-link" data-scroll-target="#v0.1.55">v0.1.55</a></li>
   <li><a href="#v0.1.54" id="toc-v0.1.54" class="nav-link" data-scroll-target="#v0.1.54">v0.1.54</a></li>
@@ -200,12 +201,34 @@ ul.task-list li input[type="checkbox"] {
 
 
 <p>This changelog is generated automatically from <a href="https://github.com/mikeckennedy/chameleon-rs/releases">GitHub Releases</a>.</p>
+<section id="v0.2.58" class="level1 changelog-version">
+<h1 class="changelog-version">v0.2.58</h1>
+<p><em>2026-11-20</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.2.58">GitHub</a></p>
+<p>Fixes from a review of 0.2.57: two things that release broke, one of its security fixes completed, and more of what a <code>&lt;?python ?&gt;</code> block can do.</p>
+<section id="security" class="level3">
+<h3 class="anchored" data-anchor-id="security">Security</h3>
+<ul>
+<li><strong>A directory’s name could still grow the decorator APIs’ template cache</strong> after 0.2.57: an absolute path to it under the default settings, and with <code>strict_names</code> every case spelling on a case-insensitive filesystem. The loader keeps no template for a name that is not a file.</li>
+</ul>
+</section>
+<section id="fixed" class="level3">
+<h3 class="anchored" data-anchor-id="fixed">Fixed</h3>
+<ul>
+<li><strong>A template builtin read inside a <code>lambda</code> raised <code>KeyError: '__rs_tpl'</code></strong> (0.2.57): <code>${(lambda q: q or nothing)(0)}</code>, or <a href="reference/flask.template.html#chameleon_rs.flask.template" class="gdls-link gdls-code">template</a>, <code>macros</code> and the others, in any expression.</li>
+<li><strong>Type parameters of a <code>def</code> or <code>class</code> in a <code>&lt;?python ?&gt;</code> block were not rewritten</strong> (0.2.57): a bound from the render data (<code>def f[T: Base]</code>) raised <code>NameError</code>.</li>
+<li><strong><code>import a.b</code> in a <code>&lt;?python ?&gt;</code> block binds <code>a</code></strong>, where reading it was a <code>NameError</code> (as in Chameleon), and an import in a class body is the class’s.</li>
+<li><strong>A class or value from the render data in a <code>match</code> pattern</strong> (<code>case Point(x=a)</code>) was a <code>SyntaxError</code>, as in Chameleon.</li>
+<li><strong>A <code>[@concurrent](https://github.com/concurrent)</code> call passed to a partial that is not found</strong> was left “never awaited”.</li>
+<li>The README and the docs name the platforms that have wheels (Linux glibc x86_64 and aarch64, macOS on Apple silicon, Windows x64); they claimed musl, Intel Mac and Windows on Arm wheels that were never published. 0.2.57 was the first release with Windows wheels.</li>
+</ul>
+</section>
+</section>
 <section id="v0.2.57" class="level1 changelog-version">
 <h1 class="changelog-version">v0.2.57</h1>
 <p><em>2026-11-20</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.2.57">GitHub</a></p>
 <p>Fixes from a fourth review (bugs, races, deadlocks, security), and <code>&lt;?python ?&gt;</code> blocks that bind names the way Python does. The version’s middle number goes up for the changes in behaviour listed under Changed.</p>
-<section id="security" class="level3">
-<h3 class="anchored" data-anchor-id="security">Security</h3>
+<section id="security-1" class="level3">
+<h3 class="anchored" data-anchor-id="security-1">Security</h3>
 <ul>
 <li><strong>An element with many attributes, nested deeply, could crash the process on a small thread stack.</strong> Such an element is a dozen nodes deep in the compiled tree, and the stages after the build walked it with no stack check: 90 of them, which the build allows on a 512 KiB stack, overflowed it (SIGBUS). They raise <code>RecursionError</code> now.</li>
 <li><strong><code>global_init(..., cache_init=False)</code> dropped <code>strict_names</code> and <code>strict_tags</code></strong> that a <a href="reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">configure()</a> had turned on, so names that leave the template folder (<code>../secret.pt</code>) rendered again. The legacy setup call keeps them.</li>
@@ -223,8 +246,8 @@ ul.task-list li input[type="checkbox"] {
 <li><strong>A template whose file does not exist is not kept by the loader</strong> (see Security): <code>loader['/missing.pt']</code> is a new object each time, until the file exists.</li>
 </ul>
 </section>
-<section id="fixed" class="level3">
-<h3 class="anchored" data-anchor-id="fixed">Fixed</h3>
+<section id="fixed-1" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-1">Fixed</h3>
 <ul>
 <li><strong>Assigning to an attribute in a <code>&lt;?python ?&gt;</code> block was a <code>SyntaxError</code></strong> (<code>x.a = 1</code>, <code>x.a += 2</code>, <code>del x.a</code>), where Chameleon runs it.</li>
 <li><strong>A sub-expression of a custom expression type could not read what a <code>&lt;?python ?&gt;</code> block defined</strong> (a <code>def</code>, an import): <code>UnboundLocalError</code>, where Chameleon renders.</li>
@@ -242,16 +265,16 @@ ul.task-list li input[type="checkbox"] {
 <h1 class="changelog-version">v0.1.56</h1>
 <p><em>2026-10-30</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.56">GitHub</a></p>
 <p>Fixes from a third reliability, security and memory review: a crash freeing deeply nested expressions on a small thread stack, output and async fixes in the VM and partials, a bound on Markdown input, and smaller hygiene fixes.</p>
-<section id="security-1" class="level3">
-<h3 class="anchored" data-anchor-id="security-1">Security</h3>
+<section id="security-2" class="level3">
+<h3 class="anchored" data-anchor-id="security-2">Security</h3>
 <ul>
 <li><strong>Freeing a deeply nested expression could crash the process on a small thread stack.</strong> The compile’s nesting limit is measured on the thread that compiles, but a compiled template’s expressions were freed, and traversed by the garbage collector, recursively on whatever thread released them: the deepest <code>string:${...}</code> nesting the compile allowed killed a 64 KiB thread (SIGBUS). Both are iterative now.</li>
 <li><strong>Markdown text has a length limit.</strong> Converting takes a few hundred bytes of memory per character, so a megabyte of Markdown from a request could cost hundreds of megabytes. A profile’s new <code>max_length</code> option (a million characters by default, <code>None</code> for no limit) refuses longer text with <code>ValueError</code>.</li>
 <li><strong>Placeholder nonces for concurrent renders come from the operating system’s random source</strong>, rather than from SipHash keys over a counter. Both were unpredictable; the new source needs no argument for it.</li>
 </ul>
 </section>
-<section id="fixed-1" class="level3">
-<h3 class="anchored" data-anchor-id="fixed-1">Fixed</h3>
+<section id="fixed-2" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-2">Fixed</h3>
 <ul>
 <li><strong>A value of several parts in a slot body kept the parts written before an error</strong> when one part rendered a native partial whose own slot body had such a value: the inner value cleared the record of the outer one, so a <code>tal:on-error</code> around it kept output Chameleon never writes.</li>
 <li><strong><code>tal:case</code> awaited a coroutine passed to <a href="reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a> twice</strong> (<code>RuntimeError: cannot reuse already awaited coroutine</code>) when the case did not match: the <code>default</code> comparison evaluates the expression again, as in Chameleon, and now reuses the awaited value.</li>
@@ -276,15 +299,15 @@ ul.task-list li input[type="checkbox"] {
 <h1 class="changelog-version">v0.1.55</h1>
 <p><em>2026-10-30</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.55">GitHub</a></p>
 <p>Fixes from a security and stability review: templates on filesystems without inode numbers and expressions too deep for a worker thread’s stack, plus smaller async, macro and compatibility fixes.</p>
-<section id="security-2" class="level3">
-<h3 class="anchored" data-anchor-id="security-2">Security</h3>
+<section id="security-3" class="level3">
+<h3 class="anchored" data-anchor-id="security-3">Security</h3>
 <ul>
 <li><strong>Templates on filesystems without inode numbers rendered each other’s content.</strong> Partials, sibling templates and the Jinja-shaped engines identified a file by device and inode, and filesystems without file IDs (FAT, exFAT and some network or FUSE mounts, notably on Windows) report inode 0 for every file: every template on such a volume was taken for the first one loaded. A zero inode now falls back to the file’s resolved path.</li>
 <li><strong>An expression nested deeply could crash the process on a small thread stack.</strong> The compile’s nesting limit is measured on the thread that compiles, but evaluation recurses on the thread that renders: the deepest expressions it allowed (a few hundred levels of <code>a + a + ...</code>, <code>not not ...</code> or an attribute chain) overflowed a 128 to 256 KiB worker thread’s stack (SIGBUS). Expressions deeper than 64 levels now check the stack left before they are evaluated and raise <code>RecursionError</code>.</li>
 </ul>
 </section>
-<section id="fixed-2" class="level3">
-<h3 class="anchored" data-anchor-id="fixed-2">Fixed</h3>
+<section id="fixed-3" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-3">Fixed</h3>
 <ul>
 <li><strong>Errors inside a slot fill name the expression that failed</strong> (malthe/chameleon<a href="https://github.com/mikeckennedy/chameleon-rs/issues/447">#447</a>, reported by gelbi123; also <a href="https://github.com/mikeckennedy/chameleon-rs/issues/291">#291</a>, reported by Franco Pellegrini, and <a href="https://github.com/mikeckennedy/chameleon-rs/issues/259">#259</a>, reported by castilma). An error in a <code>metal:fill-slot</code> body was reported at the page’s <code>metal:use-macro</code>, often after the macro’s last expression, which had nothing to do with it: in Plone, every error in a view’s content pointed at <code>context/main_template/macros/master</code>. The message now leads with the fill’s failing expression, its file, line and source, followed by the <code>use-macro</code> that led there; the macro’s unrelated expression is gone. Errors outside slot fills are reported as before. This changes messages Chameleon gets wrong; see “Chameleon bugs fixed” in the compatibility guide.</li>
 <li><strong><code>render_async(offload=True)</code> lost the caller’s context variables</strong> on Python 3.12 to 3.14: the worker thread ran without the calling task’s <code>contextvars</code> (a request’s, a framework’s current app, tracing spans). Offloaded renders now run in <code>asyncio.to_thread</code>, which copies them.</li>
@@ -308,8 +331,8 @@ ul.task-list li input[type="checkbox"] {
 <li><strong><code>chameleon_rs.template.HTML5_BOOLEAN_ATTRIBUTES</code></strong> (<a href="https://github.com/mikeckennedy/chameleon-rs/issues/11">#11</a>, reported by zopyx): Chameleon’s 12 boolean attributes plus HTML5’s 20 (<code>required</code>, <code>autofocus</code>, <code>formnovalidate</code>, …), the set z3c.pt uses for Zope and Plone. Set <code>boolean_attributes = HTML5_BOOLEAN_ATTRIBUTES</code> to render <code>required="required"</code> instead of <code>required="True"</code>. The default stays Chameleon’s.</li>
 </ul>
 </section>
-<section id="fixed-3" class="level3">
-<h3 class="anchored" data-anchor-id="fixed-3">Fixed</h3>
+<section id="fixed-4" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-4">Fixed</h3>
 <ul>
 <li><strong>A valueless attribute given a value is written <code>name="value"</code></strong> (malthe/chameleon<a href="https://github.com/mikeckennedy/chameleon-rs/issues/429">#429</a>, reported by petschki): <code>&lt;input disabled tal:attributes="disabled True"&gt;</code> rendered <code>&lt;input disableddisabled&gt;</code>, and the same for any valueless attribute set by <code>tal:attributes</code> or translated by <code>i18n:attributes</code> (<code>titlehello</code>, <code>altAlt</code>). It’s now written as an added attribute is, <code>disabled="disabled"</code>. <code>default</code> still keeps the attribute as written (<code>checked</code>). This changes output that Chameleon gets wrong; see “Chameleon bugs fixed” in the compatibility guide.</li>
 <li><strong><code>repeat</code> in a recursive macro</strong> (malthe/chameleon<a href="https://github.com/mikeckennedy/chameleon-rs/issues/177">#177</a>, reported by marcidy): when a loop ended inside a loop of the same name, <code>repeat.item</code> kept the inner loop’s item, so the outer loop’s next items read its <code>index</code> and <code>number</code> (<code>-1</code> and <code>0</code> after a leaf’s empty loop). The outer loop’s item is put back when the inner loop ends. Loops one after another still leave the last loop’s item, and a <code>repeat</code> passed in by the caller is left alone.</li>
@@ -351,8 +374,8 @@ ul.task-list li input[type="checkbox"] {
 <li><strong>Pages with partials scale across threads on free-threaded Python.</strong> Every partial call copied the template’s render defaults (<code>__translate</code>, <code>__decode</code>, …) from one dict shared by every thread, and on free-threaded CPython reading a dict takes its lock: six threads rendering a page with 52 partials did 2.4× the work of one. A loop or a mention of <code>repeat</code> now only gives a scope a fresh <code>repeat</code>. The defaults are copied in only where a template can see them (it names <code>econtext</code>, <code>rcontext</code> or a default, has names only known at render time, or calls a macro); an error message still lists them, as Chameleon’s does. Switching between a page’s and its partials’ frames no longer takes references to shared objects, and on free-threaded builds the string constants of templates read from files are interned, as CPython does for code constants (never those of a template made from a string, which may be one per request). At six threads a page with partials now scales 3.7× (37,500 renders a second where it was 22,900), and a flat template shared by every thread 4.3×.</li>
 </ul>
 </section>
-<section id="fixed-4" class="level3">
-<h3 class="anchored" data-anchor-id="fixed-4">Fixed</h3>
+<section id="fixed-5" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-5">Fixed</h3>
 <ul>
 <li><strong>A partial whose code read a render default by its plain name</strong> (<code>translate</code>, <code>decode</code>, <code>on_error_handler</code>, which expressions read as <code>econtext['__translate']</code> and so on) raised <code>KeyError</code> when it had no loop.</li>
 <li><strong>An async render of a macro recursing until <code>tal:on-error</code> caught the <code>RecursionError</code> rendered fewer levels than Chameleon</strong> (936 against 991 at the default limit): it kept a fixed reserve of 64 frames. It now measures the stack as a sync render does, and stops where <a href="reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> called in place of <code>await render_async(...)</code> would.</li>
@@ -364,8 +387,8 @@ ul.task-list li input[type="checkbox"] {
 <h1 class="changelog-version">v0.1.51</h1>
 <p><em>2026-10-30</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.51">GitHub</a></p>
 <p>Fixes from two reviews: for memory leaks, GC problems and anything that could crash or wedge a web worker, then for the memory, time and cache lifetimes a small input could take.</p>
-<section id="security-3" class="level3">
-<h3 class="anchored" data-anchor-id="security-3">Security</h3>
+<section id="security-4" class="level3">
+<h3 class="anchored" data-anchor-id="security-4">Security</h3>
 <ul>
 <li><strong>Renders nested through Python could crash the process on Python 3.12 and 3.13.</strong> A value whose <code>__html__</code>, or a helper, renders another template (a comment thread rendering its replies) nests as deep as the data goes. Before 3.14, CPython counts only Python frames, so on a worker thread with a small stack (512 KiB to 2 MiB) the native stack overflowed at 68 to 268 levels (SIGBUS) instead of raising <code>RecursionError</code>. Every render now checks the stack left when it starts.</li>
 <li><strong>A deep <code>metal:fill-slot</code> body could crash a compile on a small thread stack.</strong> Copying the compiled slot body recursed without a guard; it now runs on a stack of its own when needed.</li>
@@ -382,8 +405,8 @@ ul.task-list li input[type="checkbox"] {
 <li><strong><code>CHAMELEON_CONCURRENT_LIMIT</code></strong> (default 64): one asynchronous render starts at most this many tasks for <code>[@concurrent](https://github.com/concurrent)</code> calls and concurrent partials; further calls are awaited in place, so a <code>tal:repeat</code> over request-sized data can’t fan out without bound.</li>
 </ul>
 </section>
-<section id="fixed-5" class="level3">
-<h3 class="anchored" data-anchor-id="fixed-5">Fixed</h3>
+<section id="fixed-6" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-6">Fixed</h3>
 <ul>
 <li><strong>A <code>tal:on-error</code> inside a <code>metal:fill-slot</code> kept text Chameleon drops</strong>, when the macro’s slot sits inside an <code>i18n:translate</code> or <code>i18n:name</code>. Chameleon writes a text node with its <code>${...}</code> expressions (and an interpolated attribute value) as one string, so when an expression fails, the text before it in that node was never written. chameleon-rs wrote it first: <code>&lt;i&gt;a&lt;i&gt;E&lt;/i&gt;</code> where Chameleon gives <code>&lt;i&gt;&lt;i&gt;E&lt;/i&gt;</code>. The last of the slot-body known differences of this kind; the render fuzzer now generates handlers in such bodies.</li>
 <li><strong>A cancellation during an async render’s cleanup was swallowed.</strong> When a <code>[@concurrent](https://github.com/concurrent)</code> call failed, the render cancelled the others and waited for their <code>finally</code> blocks; a <code>CancelledError</code> arriving then (a client disconnect, <code>asyncio.timeout</code>, <code>wait_for</code>) was replaced by the template’s error, so a disconnect became a logged 500 and a timeout never fired. Cancellation now wins, with the template error as its context.</li>
@@ -423,8 +446,8 @@ ul.task-list li input[type="checkbox"] {
 <h1 class="changelog-version">v0.1.49</h1>
 <p><em>2026-10-30</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.49">GitHub</a></p>
 <p>Fixes from a second, independent review of the 0.1.48 changes.</p>
-<section id="security-4" class="level3">
-<h3 class="anchored" data-anchor-id="security-4">Security</h3>
+<section id="security-5" class="level3">
+<h3 class="anchored" data-anchor-id="security-5">Security</h3>
 <ul>
 <li><strong>Render data could replace a code block’s own <code>def</code>, parameter or import named like a builtin</strong> (<code>def filter(...)</code> in a <code>&lt;?python ?&gt;</code> block, data named <code>filter</code>). A regression in 0.1.48’s code-block fix; it now matches Chameleon again.</li>
 <li><strong>A partial lookup could loop forever</strong>, hanging the worker, when the calling template’s path started with <code>//</code> and the configured folder’s with <code>/</code> (or, on Windows, they differed in case). A folder configured as <code>//...</code> made every partial “not found”.</li>
@@ -432,8 +455,8 @@ ul.task-list li input[type="checkbox"] {
 <li><strong>More deep nesting crashes fixed:</strong> <code>chameleon_rs.parser.ElementParser</code>, and compiles on small thread stacks or with most of the stack already used, overflowed the native stack. Compiling now also checks the stack actually left (with the <code>stacker</code> crate).</li>
 </ul>
 </section>
-<section id="fixed-6" class="level3">
-<h3 class="anchored" data-anchor-id="fixed-6">Fixed</h3>
+<section id="fixed-7" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-7">Fixed</h3>
 <ul>
 <li>A directory name given to <a href="reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a> or a Jinja-style <a href="reference/starlette.Templates.html#chameleon_rs.starlette.Templates.get_template" class="gdls-link gdls-code">get_template</a> is “not found”, rather than an <code>IsADirectoryError</code>. <a href="reference/robyn.ChameleonTemplate.html#chameleon_rs.robyn.ChameleonTemplate" class="gdls-link gdls-code">chameleon_rs.robyn.ChameleonTemplate</a> raises <a href="reference/web.TemplateNotFound.html#chameleon_rs.web.TemplateNotFound" class="gdls-link gdls-code">TemplateNotFound</a> for a missing file too.</li>
 <li>With nothing configured, a template loaded by a <a href="reference/PageTemplateLoader.html#chameleon_rs.PageTemplateLoader" class="gdls-link gdls-code">PageTemplateLoader</a> below a package’s <code>templates</code> folder finds partials elsewhere in that folder again (a Pyramid layout).</li>

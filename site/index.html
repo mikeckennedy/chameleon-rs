@@ -162,7 +162,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <img src="./chameleon-rs-logo-light.png" alt="chameleon-rs" class="navbar-logo dark-content">
     </a>
     <a class="navbar-brand" href="./index.html">
-    <span class="navbar-title">chameleon-rs <span class="version-badge" title="Released 2026-11-20">v0.2.57</span></span>
+    <span class="navbar-title">chameleon-rs <span class="version-badge" title="Released 2026-11-20">v0.2.58</span></span>
     </a>
   </div>
           <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
@@ -271,7 +271,7 @@ section.level2:first-of-type > h2:first-child,
 <section id="install" class="level2">
 <h2 class="anchored" data-anchor-id="install">Install</h2>
 <div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="ex">uv</span> pip install chameleon-rs</span></code></pre></div>
-<p>CPython 3.12 to 3.15, including the free-threaded builds (3.14t, 3.15t). The wheels for Linux, macOS and Windows include the compiled engine, so you don’t need a Rust toolchain, and stock Chameleon doesn’t need to be installed.</p>
+<p>CPython 3.12 to 3.15, including the free-threaded builds (3.14t, 3.15t). The wheels for Linux (glibc, x86_64 and aarch64), macOS (Apple silicon) and Windows (x64) include the compiled engine, so you don’t need a Rust toolchain there; anywhere else (Alpine, Intel Macs, Windows on Arm) pip builds from source, which needs Rust. Stock Chameleon doesn’t need to be installed.</p>
 </section>
 <section id="already-on-chameleon" class="level2">
 <h2 class="anchored" data-anchor-id="already-on-chameleon">Already on Chameleon?</h2>

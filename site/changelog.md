@@ -3,6 +3,28 @@
 This changelog is generated automatically from [GitHub Releases](https://github.com/mikeckennedy/chameleon-rs/releases).
 
 
+# v0.2.58
+
+*2026-11-20* · [GitHub](https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.2.58)
+
+Fixes from a review of 0.2.57: two things that release broke, one of its security fixes completed, and more of what a `<?python ?>` block can do.
+
+
+### Security
+
+- **A directory's name could still grow the decorator APIs' template cache** after 0.2.57: an absolute path to it under the default settings, and with `strict_names` every case spelling on a case-insensitive filesystem. The loader keeps no template for a name that is not a file.
+
+
+### Fixed
+
+- **A template builtin read inside a `lambda` raised `KeyError: '__rs_tpl'`** (0.2.57): `${(lambda q: q or nothing)(0)}`, or [template](reference/flask.template.html#chameleon_rs.flask.template), `macros` and the others, in any expression.
+- **Type parameters of a `def` or `class` in a `<?python ?>` block were not rewritten** (0.2.57): a bound from the render data (`def f[T: Base]`) raised `NameError`.
+- **`import a.b` in a `<?python ?>` block binds `a`**, where reading it was a `NameError` (as in Chameleon), and an import in a class body is the class's.
+- **A class or value from the render data in a `match` pattern** (`case Point(x=a)`) was a `SyntaxError`, as in Chameleon.
+- **A `[@concurrent](https://github.com/concurrent)` call passed to a partial that is not found** was left "never awaited".
+- The README and the docs name the platforms that have wheels (Linux glibc x86_64 and aarch64, macOS on Apple silicon, Windows x64); they claimed musl, Intel Mac and Windows on Arm wheels that were never published. 0.2.57 was the first release with Windows wheels.
+
+
 # v0.2.57
 
 *2026-11-20* · [GitHub](https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.2.57)
