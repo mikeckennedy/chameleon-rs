@@ -848,10 +848,11 @@ CODE_BLOCK_BINDINGS = [
     ('<?python\nmatch p:\n    case Shape(x=a):\n        y = a\n?>${y}', {'p': _Shape(3), 'Shape': _Shape}, '3'),
     ('<?python\nmatch p:\n    case int():\n        y = 1\n    case Missing():\n        y = 2\n?>${y}', {'p': 5}, '1'),
     ('<?python\nmatch c:\n    case ns.Shape.KIND:\n        y = "kind"\n?>${y}', {'c': 'k', 'ns': _ShapeNames}, 'kind'),
+    # In a class body the capture is the class's, as any name bound there: not the scope's.
     (
-        '<?python\nclass C:\n    match p:\n        case Shape(x=a):\n            found = a\n?>${C.found} ${a}',
-        {'p': _Shape(3), 'Shape': _Shape},
-        '3 3',
+        '<?python\nclass C:\n    match p:\n        case Shape(x=a):\n            found = a\n?>${C.found} ${C.a} ${a}',
+        {'p': _Shape(3), 'Shape': _Shape, 'a': 'data'},
+        '3 3 data',
     ),
     # Type parameters are visited like the rest of a `def` or `class` (a bound from the scope).
     (
@@ -879,6 +880,82 @@ def test_code_block_names_bound_without_an_assignment(source: str, data: dict[st
     # name rewriting misses: reading it there is a `NameError` (unless render data has the
     # name, which is then read instead). Here the name is the one the block bound.
     assert chameleon_rs.PageTemplate(source)(**data) == expected
+
+
+class _Point:
+    __match_args__ = ('x',)
+
+    def __init__(self, x: int) -> None:
+        self.x = x
+
+
+CLASS_DATA: dict[str, Any] = {'a': 100, 'x': 99, 'v': [3, 4], 'items': [1, 2], 'p': _Point(5), 'Point': _Point}
+
+# Each sets `res`. The class's own names shadow render data of the same name (`a`, `x`, `items`).
+CLASS_BODIES = [
+    # A comprehension sees the class's names in its first iterable only.
+    'class C:\n    a = 1\n    items = [10, 20]\n    b = [a + i for i in items]\nres = C.b',
+    'class C:\n    a = 1\n    items = [10, 20]\n    b = {a + i for i in items}\nres = sorted(C.b)',
+    'class C:\n    a = 1\n    items = [10, 20]\n    b = {i: a for i in items}\nres = C.b',
+    'class C:\n    a = 1\n    items = [10, 20]\n    b = list(a + i for i in items)\nres = C.b',
+    'class C:\n    a = 1\n    items = [10, 20]\n    b = [(i, j) for i in items for j in [a]]\nres = C.b',
+    'class C:\n    a = 1\n    items = [10, 20]\n    b = [i for i in items if i > a]\nres = C.b',
+    'class C:\n    items = [10, 20]\n    b = [[a + j for j in items] for i in items]\nres = C.b',
+    'class C:\n    a = 1\n    b = [(lambda: a)() for i in items]\nres = C.b',
+    'class C:\n    x = 1\n    y = [x for x in items]\n    z = x\nres = (C.y, C.z)',
+    'class C:\n    n = 5\n    t = tuple(n for _ in range(n))\nres = C.t',
+    'class C:\n    import os.path\n    sep = [os.sep for _ in items]\nres = 1',
+    # Defaults are evaluated in the class body, a lambda's or a method's body is not.
+    'class C:\n    x = 10\n    f = lambda self, y=x: (y, x)\nres = C().f()',
+    'class C:\n    x = 10\n    f = lambda self, *, y=x: (y, x)\nres = C().f()',
+    'class C:\n    x = 10\n    def f(self, y=x):\n        return (y, x)\nres = C().f()',
+    'class C:\n    def f(self, a=a):\n        return a\n    g = lambda self, x=x: x\nres = (C().f(), C().g())',
+    'class C:\n    a = 1\n    f = lambda self, a=a, b=[a for _ in items]: (a, b)\nres = C().f()',
+    'class C:\n    x = 1\n    y = (lambda: x)()\nres = C.y',
+    'class C:\n    x = 10\n    def f(self):\n        return [x + i for i in items]\nres = C().f()',
+    # Classes in classes, and in methods.
+    'class C:\n    x = 10\n    class D:\n        y = x\n        z = [x for _ in items]\nres = (C.D.y, C.D.z)',
+    (
+        'class C:\n    x = 10\n    def f(self):\n        class D:\n            x = 1\n            y = x + a\n'
+        '            g = lambda self, z=x: (z, x)\n        return (D.y, D().g())\nres = C().f()'
+    ),
+    'def deco(c):\n    c.tag = a\n    return c\n@deco\nclass C:\n    a = 1\nres = (C.tag, C.a)',
+    # A `match` capture is the class's name, and the scope's `a` is left alone.
+    'class C:\n    match v:\n        case [a, b]:\n            y = a + b\nres = (C.y, a, getattr(C, "a", "MISSING"))',
+    'class C:\n    match v:\n        case [a, b] if a < b:\n            y = [a for _ in items]\nres = (C.y, a, C.a)',
+    # Nothing of ours is left on the class.
+    (
+        'class C:\n    match p:\n        case Point(x=q):\n            y = q\n'
+        'res = (C.y, sorted(k for k in vars(C) if k.startswith("__rs")))'
+    ),
+    'class C:\n    def f(self):\n        match p:\n            case Point(x=q):\n                return q + a\nres = C().f()',
+    # A class attribute named `globals` doesn't hide what the generated code reads.
+    'class C:\n    globals = 1\n    t = template\n    def f(self):\n        return template\nres = (C.t is C().f(), C.globals)',
+    'class C:\n    globals = 1\n    match p:\n        case Point(x=q):\n            y = q\nres = C.y',
+]
+
+
+@pytest.mark.parametrize('block', CLASS_BODIES)
+def test_class_bodies_in_code_blocks_scope_names_as_python_does(block: str) -> None:
+    # Chameleon has no class scoping to compare with (reading the class is a `NameError`
+    # there), so the block is run as plain Python, the render data its globals.
+    def plain() -> Any:
+        namespace = {**CLASS_DATA, 'template': None}
+        exec(block, namespace)  # noqa: S102
+        return namespace['res']
+
+    def rendered() -> Any:
+        seen: list[Any] = []
+        chameleon_rs.PageTemplate(f'<?python\n{block}\n?>${{seen.append(res)}}')(**CLASS_DATA, seen=seen)
+        return seen[0]
+
+    try:
+        expected = plain()
+    except Exception as error:  # noqa: BLE001
+        with pytest.raises(type(error)):
+            rendered()
+        return
+    assert rendered() == expected
 
 
 @pytest.mark.parametrize(

@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+Class bodies in `<?python ?>` blocks, which have had Python's scoping since 0.2.57 (Chameleon has none: reading the class there is a `NameError`):
+
+- **A comprehension or generator expression in a class body** that read a name the class also binds raised `NameError`. It reads the template's name, as in Python; only its first iterable sees the class's.
+- **A default of a `lambda` or a method in a class body** reads the class's name (`f = lambda self, y=x: y`), where a lambda's read the render data, and one named like its parameter (`def f(self, a=a)`) is no longer a `NameError`.
+- **A `match` capture in a class body** is the class's attribute; it was stored in the template scope, over render data of that name. A class pattern from the render data no longer leaves `__rs_names__` on the class.
+- **A class attribute named `globals`** broke reads of `template`, `macros` and the other template builtins in that class (`TypeError`).
+
 ## [0.2.58] - 2026-11-19
 
 Fixes from a review of 0.2.57: two things that release broke, one of its security fixes completed, and more of what a `<?python ?>` block can do.

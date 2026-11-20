@@ -60,6 +60,7 @@ MODULE_GLOBALS = {
     '__default': sys.intern('__default__'),
     '__rs_name_error': _name_error,
     '__rs_names_of': _ScopeNames,
+    '__rs_globals__': globals,
 }
 
 
@@ -81,10 +82,12 @@ def _econtext() -> ast.Name:
 
 def _global(name: str, in_class: bool) -> ast.expr:
     """One of the generated code's own globals (`__rs_tpl`, ...). Inside a class Python mangles a
-    name with two leading underscores (`_C__rs_tpl`), so there it is read from `globals()`."""
+    name with two leading underscores (`_C__rs_tpl`), so there it is read from the globals:
+    through `__rs_globals__`, which isn't mangled (it ends in `__`) and which a class attribute
+    named `globals` doesn't hide."""
     if not in_class:
         return ast.Name(id=name, ctx=ast.Load())
-    namespace = ast.Call(func=ast.Name(id='globals', ctx=ast.Load()), args=[], keywords=[])
+    namespace = ast.Call(func=ast.Name(id='__rs_globals__', ctx=ast.Load()), args=[], keywords=[])
     return ast.Subscript(value=namespace, slice=ast.Constant(name), ctx=ast.Load())
 
 
@@ -162,7 +165,7 @@ class Rewriter(ast.NodeTransformer):
         # its body is a scope of its own.
         node.decorator_list = [self.visit(decorator) for decorator in node.decorator_list]
         node.type_params = [self.visit(param) for param in node.type_params]
-        node.args = self.visit(node.args)
+        self.arguments(node.args, self.in_class_body(), scope=False)
         if node.returns is not None:
             node.returns = self.visit(node.returns)
         self.class_names.append(None)
@@ -184,7 +187,7 @@ class Rewriter(ast.NodeTransformer):
         node.type_params = [self.visit(param) for param in node.type_params]
         node.bases = [self.visit(base) for base in node.bases]
         node.keywords = [self.visit(keyword) for keyword in node.keywords]
-        self.class_names.append(_bound(node.body))
+        self.class_names.append(_bound(node.body, captures=True))
         try:
             node.body = self.statements(node.body)
         finally:
@@ -239,7 +242,11 @@ class Rewriter(ast.NodeTransformer):
         if not used:
             return node
         names = ast.Call(func=_global('__rs_names_of', self.in_class()), args=[_econtext()], keywords=[])
-        return [ast.Assign(targets=[ast.Name(id=SCOPE_NAMES, ctx=ast.Store())], value=names), node]
+        out: list[ast.stmt] = [ast.Assign(targets=[ast.Name(id=SCOPE_NAMES, ctx=ast.Store())], value=names), node]
+        if self.in_class_body():
+            # Not left behind as an attribute of the class.
+            out.append(ast.Delete(targets=[ast.Name(id=SCOPE_NAMES, ctx=ast.Del())]))
+        return out
 
     def visit_MatchClass(self, node: ast.MatchClass) -> ast.AST:
         node.cls = self.dotted(node.cls)
@@ -290,14 +297,64 @@ class Rewriter(ast.NodeTransformer):
             self.scopes[-1].add(node.asname if node.asname is not None else node.name.split('.')[0])
         return self.generic_visit(node)
 
+    def arguments(self, args: ast.arguments, in_class_body: bool, scope: bool) -> None:
+        """Visits a function's or a lambda's ``args``, a lambda's in a ``scope`` of its own
+        (left for the caller to pop).
+
+        In a class body the defaults come first, before the parameters are names and outside
+        the lambda's scope: `def f(self, a=a)` reads the class's or the template's `a`, as in
+        Python. Elsewhere the order is Chameleon's (parameters first, so that default is the
+        parameter itself, a `NameError`)."""
+        if in_class_body:
+            args.defaults = [self.visit(default) for default in args.defaults]
+            args.kw_defaults = [default and self.visit(default) for default in args.kw_defaults]
+        if scope:
+            self.scopes.append(set())
+        if not in_class_body:
+            self.generic_visit(args)
+            return
+        for arg in (*args.posonlyargs, *args.args, args.vararg, *args.kwonlyargs, args.kwarg):
+            if arg is not None:
+                self.visit(arg)
+
     def visit_Lambda(self, node: ast.Lambda) -> ast.AST:
-        self.scopes.append(set())
+        # Its body is a scope of its own, which doesn't see a class's names.
+        self.arguments(node.args, self.in_class_body(), scope=True)
+        try:
+            self.class_names.append(None)
+            try:
+                node.body = self.visit(node.body)
+            finally:
+                self.class_names.pop()
+            return node
+        finally:
+            self.scopes.pop()
+
+    def comprehension(self, node: ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp) -> ast.AST:
+        # In a class body a comprehension is a scope of its own that doesn't see the class's
+        # names, as a method doesn't: only its first iterable is evaluated in the class body.
+        if not self.in_class_body():
+            return self.generic_visit(node)
+        first = node.generators[0]
+        first.iter = self.visit(first.iter)
         self.class_names.append(None)
         try:
-            return self.generic_visit(node)
+            first.target = self.visit(first.target)
+            first.ifs = [self.visit(test) for test in first.ifs]
+            node.generators[1:] = [self.visit(generator) for generator in node.generators[1:]]
+            if isinstance(node, ast.DictComp):
+                node.key = self.visit(node.key)
+                node.value = self.visit(node.value)
+            else:
+                node.elt = self.visit(node.elt)
         finally:
             self.class_names.pop()
-            self.scopes.pop()
+        return node
+
+    visit_ListComp = comprehension
+    visit_SetComp = comprehension
+    visit_DictComp = comprehension
+    visit_GeneratorExp = comprehension
 
     def visit_Attribute(self, node: ast.Attribute) -> ast.AST:
         if not self.attributes:
@@ -584,9 +641,9 @@ def compile_code(
         return compile(ast.unparse(module), '<template code>', 'exec')
 
 
-def _bound(body: list[ast.stmt]) -> set[str]:
+def _bound(body: list[ast.stmt], captures: bool = False) -> set[str]:
     """Names the statements bind at their own level (not inside a nested function, class,
-    lambda or comprehension)."""
+    lambda or comprehension), with those a ``match`` pattern captures if ``captures``."""
     names: set[str] = set()
     nested = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda, ast.ListComp, ast.SetComp)
     nested += (ast.DictComp, ast.GeneratorExp)
@@ -599,6 +656,8 @@ def _bound(body: list[ast.stmt]) -> set[str]:
             names.add(node.id)
         elif isinstance(node, ast.alias):
             names.add(node.asname or node.name.split('.')[0])
+        elif captures and isinstance(node, ast.match_case):
+            names.update(_captures(node.pattern))
         if not isinstance(node, nested):
             stack.extend(ast.iter_child_nodes(node))
     return names
