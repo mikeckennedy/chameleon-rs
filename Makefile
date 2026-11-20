@@ -53,7 +53,7 @@ checkout = if [ -d $(1)/.git ]; then git -C $(1) checkout -q $(2); else echo "$(
 ROBYN_VERSION := 0.88.0
 ROBYN_VENV := $(CURDIR)/temp/venv-robyn
 
-.PHONY: dev reference build build-release build-profiling build-pgo wheels sdist release-local check-wheels test test-rust test-python \
+.PHONY: dev reference build build-release build-profiling build-pgo wheels wheels-windows sdist release-local check-wheels test test-rust test-python \
 	test-upstream test-upstream-rust test-robyn integration test-integration lint fmt bench docs docs-serve
 
 dev: reference temp/litestar-chameleon
@@ -152,6 +152,18 @@ WHEEL_PYTHONS ?= 3.12 3.13 3.14 3.14t 3.15 3.15t
 
 wheels: reference
 	$(PY) scripts/pgo_wheel.py $(foreach p,$(WHEEL_PYTHONS),--python $(p)) --maturin venv/bin/maturin --out dist
+
+# win_amd64 wheels into dist/, on a Windows machine (GNU make there: winget install
+# ezwinports.make), as 0.2.57's were built: the same script, with the hash-pinned maturin of
+# the release workflow in a tools venv. Only `uv` is run by name, so it works from cmd,
+# PowerShell or sh. Build from a clone at a neutral path (C:\build\chameleon-rs): maturin
+# writes the checkout's path into each wheel's SBOM. Then check and upload from there:
+#   uv run --no-project --python 3.13 scripts/check_wheel.py --all dist
+#   uv publish dist/*.whl
+wheels-windows:
+	uv venv -q --allow-existing --python 3.13 target/release-tools
+	uv pip install -q --python target/release-tools --require-hashes -r scripts/release-requirements.txt
+	uv run --no-project --python 3.13 scripts/pgo_wheel.py $(foreach p,$(WHEEL_PYTHONS),--python $(p)) --maturin target/release-tools/Scripts/maturin.exe --fallback-plain --out dist
 
 sdist:
 	$(MATURIN) sdist --out dist

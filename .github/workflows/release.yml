@@ -10,7 +10,8 @@ name: Release
 # sdist. Every wheel is built by scripts/pgo_wheel.py, on a native runner of its architecture
 # (Linux: inside the PyPA image, scripts/linux_wheel.sh), profile-guided where the matrix says
 # `pgo: true`: the training runs on that runner, per interpreter. PGO verified locally: macOS
-# arm64. Expected to work, not yet run: manylinux, macOS x86_64, Windows x64. Unverified:
+# arm64 and manylinux (`make release-local`). Built locally: Windows x64 (0.2.57's wheels,
+# `make wheels-windows`). Expected to work, not yet run: macOS x86_64. Unverified:
 # musllinux and Windows arm64. Every PGO entry passes `--fallback-plain`: where no profile can
 # be made (no llvm-tools or profiler runtime, a training dependency without a wheel) the wheel
 # is built plain, with a warning; each job's summary says which kind every wheel is. A profile

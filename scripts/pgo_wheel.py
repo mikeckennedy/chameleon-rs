@@ -67,10 +67,21 @@ def run(cmd: list[str], env: Optional[dict[str, str]] = None, capture: bool = Fa
     if not capture:
         subprocess.run(cmd, check=True, env=env, cwd=cwd)
         return ''
+    # maturin and cargo write UTF-8 (maturin's progress lines have emoji), whatever the
+    # locale: on Windows the default, cp1252, failed to decode them, and can't print them
+    # either when the output is redirected.
     proc = subprocess.run(
-        cmd, check=False, env=env, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        cmd,
+        check=False,
+        env=env,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        encoding='utf-8',
+        errors='replace',
     )
-    print(proc.stdout, flush=True)
+    encoding = sys.stdout.encoding or 'utf-8'
+    print(proc.stdout.encode(encoding, 'replace').decode(encoding), flush=True)
     if proc.returncode:
         raise subprocess.CalledProcessError(proc.returncode, cmd, proc.stdout)
     return proc.stdout

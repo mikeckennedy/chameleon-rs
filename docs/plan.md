@@ -1713,7 +1713,8 @@ Built:
   checkbox, off by default): 48 wheels (CPython 3.12, 3.13, 3.14, 3.14t, 3.15, 3.15t ×
   manylinux_2_28 and musllinux_1_2 x86_64/aarch64 via `PyO3/maturin-action` in the PyPA images
   on native runners, PGO trained in the container by `before-script-linux`; macOS arm64 and
-  x86_64 and Windows x64 by `pgo_wheel.py`; Windows arm64 without PGO, untried there) and the
+  x86_64 and Windows x64 by `pgo_wheel.py` (first run on Windows for 0.2.57, built locally with
+  `make wheels-windows`' steps on 2026-11-19); Windows arm64 without PGO, untried there) and the
   sdist (maturin-action); a test job per platform and interpreter running `check_wheel.py`
   (musllinux inside its image by `docker run`, as JavaScript actions cannot run in Alpine;
   on Windows the smoke test blocks and the upstream suite is `continue-on-error`, never run on
