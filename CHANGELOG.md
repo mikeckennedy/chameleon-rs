@@ -19,6 +19,13 @@ Class bodies in `<?python ?>` blocks, which have had Python's scoping since 0.2.
 - **A name a class body binds is the template's while it isn't bound**, as in Python: read before the assignment, after a `del`, or with the assignment in a branch not taken. These were a `NameError`. A name the body declares `global` is the template's.
 - **A walrus in a default, a decorator or a base class** in a class body (`def f(self, y=(k := 10))`) binds the class's name; it was a `SyntaxError`.
 - **A class pattern from the render data in a class body** works with one `match` inside another, and leaves nothing on the class when the `match` is left by `break`, `continue` or an exception.
+- **A `match` in a class inside a function that has a `match` of its own** raised `NameError` when both patterns named a class from the render data.
+- **A pattern's class or value that the class body also binds** (`case Point(x=q): Point = q`) is the template's until the class binds it, like any other read; it was a `NameError`.
+- **A `def`, a `class` or an import of a name the class body declares `global`** binds the template's name, and `del` of such a name compiles.
+
+And in any `<?python ?>` block:
+
+- **A name is bound after the header that defines it is evaluated**: `class Base(Base)`, `except E as E` and `async def f(x=f)` read the render data's `Base`, `E` and `f`, where they raised `UnboundLocalError` or `NameError`.
 
 ## [0.2.58] - 2026-11-19
 

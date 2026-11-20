@@ -889,6 +889,10 @@ class _Point:
         self.x = x
 
 
+class _Kind:
+    A = 99
+
+
 CLASS_DATA: dict[str, Any] = {
     'a': 100,
     'x': 99,
@@ -897,6 +901,8 @@ CLASS_DATA: dict[str, Any] = {
     'p': _Point(5),
     'p2': _Point(6),
     'Point': _Point,
+    'Kind': _Kind,
+    'Fault': ZeroDivisionError,
     'deco': lambda function: function,
 }
 
@@ -980,6 +986,44 @@ CLASS_BODIES = [
     'class C:\n    del zz\nres = 1',
     # `global`: the template's name.
     'class C:\n    global a\n    a = 42\nres = a',
+    'class C:\n    global a\n    def a():\n        return 42\nres = (a(), hasattr(C, "a"))',
+    'class C:\n    global a\n    class a:\n        v = 7\nres = (a.v, hasattr(C, "a"))',
+    'class C:\n    global a\n    import math as a\nres = (a.pi, hasattr(C, "a"))',
+    'class C:\n    global a\n    def a():\n        return 42\n    b = a()\n    del a\nres = C.b',
+    'class C:\n    global a\n    a = 42\n    del a\nres = hasattr(C, "a")',
+    # A `match` in a class inside a function that has a `match` of its own, taken or not.
+    (
+        'def f():\n    class C:\n        match p:\n            case Point(x=q):\n                y = q\n'
+        '    match p2:\n        case Point(x=r):\n            z = r\n    return (C.y, z)\nres = f()'
+    ),
+    (
+        'def f():\n    class C:\n        match p:\n            case Point(x=q):\n                y = q\n'
+        '    if False:\n        match p2:\n            case Point(x=r):\n                z = r\n    return C.y\nres = f()'
+    ),
+    # A pattern's class or value the class body also binds: the class's once it is bound.
+    'class C:\n    match p:\n        case Point(x=q):\n            Point = q\nres = C.Point',
+    'class C:\n    match p:\n        case Point(x=q):\n            y = q\n    Point = int\nres = (C.y, C.Point)',
+    'class C:\n    Point = int\n    del Point\n    match p:\n        case Point(x=q):\n            y = q\nres = C.y',
+    (
+        'class C:\n    Point = int\n    match p:\n        case Point(x=q):\n            y = q\n        case _:\n'
+        '            y = "no"\nres = C.y'
+    ),
+    'class C:\n    match x:\n        case Kind.A:\n            y = 1\n    Kind = object\nres = C.y',
+    # A name is bound after the header that defines it is evaluated, in a class body too.
+    'class C:\n    class Point(Point):\n        pass\n    ok = Point.__mro__[1].__name__\nres = C.ok',
+    'class C:\n    try:\n        1 / 0\n    except Fault as Fault:\n        y = type(Fault).__name__\nres = C.y',
+    'class Point(Point):\n    pass\nres = Point.__mro__[1].__name__',
+    '@deco\nclass deco(Point, metaclass=type(deco and Point)):\n    pass\nres = deco.__mro__[1].__name__',
+    'try:\n    1 / 0\nexcept Fault as Fault:\n    y = type(Fault).__name__\nres = y',
+    'try:\n    1 / 0\nexcept (Fault, ValueError) as Fault:\n    y = type(Fault).__name__\nres = y',
+    (
+        '@deco\nasync def deco(x=deco, *, y=deco) -> deco:\n    return x\n'
+        'res = (deco.__defaults__[0] is deco, deco.__kwdefaults__["y"] is deco)'
+    ),
+    (
+        'class C:\n    def m(self):\n        async def g(x=1):\n            return x\n        return g.__name__\n'
+        'res = C().m()'
+    ),
 ]
 
 

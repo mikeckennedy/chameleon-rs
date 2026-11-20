@@ -42,6 +42,9 @@ def _name_error(name: str) -> Any:
 # The plain name a `match` statement's patterns read the scope's names through (see
 # `Rewriter.visit_Match`). Ours (`_ours`), and not mangled in a class: it ends in `__`.
 SCOPE_NAMES = '__rs_names__'
+# Its attribute for the names of the class body trying the pattern. No scope name can be this
+# one: a name starting with `__` is never looked up in the scope.
+CLASS_NAMES = '__rs_class__'
 
 
 class _ScopeNames:
@@ -54,6 +57,28 @@ class _ScopeNames:
 
     def __getattr__(self, name: str) -> Any:
         return self.econtext.get_name(name)
+
+    @property
+    def __rs_class__(self) -> _ClassNames:
+        # The caller is the class body trying the pattern, its locals the class's namespace.
+        return _ClassNames(self.econtext, sys._getframe(1).f_locals)
+
+
+class _ClassNames:
+    """``names.__rs_class__.Point`` is the class body's ``Point`` if it is bound by then, and
+    otherwise the scope's: what a read of a class's name is anywhere else in its body."""
+
+    __slots__ = ('econtext', 'names')
+
+    def __init__(self, econtext: Any, names: Any) -> None:
+        self.econtext = econtext
+        self.names = names
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return self.names[name]
+        except KeyError:
+            return self.econtext.get_name(name)
 
 
 MODULE_GLOBALS = {
@@ -144,6 +169,8 @@ class Rewriter(ast.NodeTransformer):
         # The names bound in the body of each class being visited (see `visit_ClassDef`);
         # `None` while inside a function or lambda in it, which doesn't see them.
         self.class_names: list[Optional[set[str]]] = []
+        # The names each of those class bodies declares `global`.
+        self.class_globals: list[set[str]] = []
         # Whether a pattern of the `match` being visited reads a name from the scope.
         self.scope_names = False
 
@@ -162,13 +189,16 @@ class Rewriter(ast.NodeTransformer):
         return self.function(node)
 
     def function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> ast.AST:
-        # A method's name is its class's, not a name of the template.
-        if not self.in_class_body():
-            self.scopes[-1].add(node.name)
+        # Chameleon binds a function's name before it visits anything else, so `@f` on
+        # `def f`, or `def f(x=f)`, with `f` in the render data doesn't read it (an
+        # `UnboundLocalError` there). It has no `async def` to copy: that one is Python's,
+        # its name bound after its decorators, defaults and annotations are evaluated.
+        late = isinstance(node, ast.AsyncFunctionDef)
+        if not late:
+            self.bind(node.name)
         # Decorators, defaults and annotations are evaluated where the function is defined;
         # its body is a scope of its own.
         node.decorator_list = [self.visit(decorator) for decorator in node.decorator_list]
-        node.type_params = [self.visit(param) for param in node.type_params]
         # Chameleon keeps a function's parameters, and what its body defines, as plain names
         # for the rest of the template (`def f(a)`, then `${a}`: a `NameError`). Not so for a
         # function inside a class, which Chameleon can't run: those names end with it.
@@ -183,6 +213,10 @@ class Rewriter(ast.NodeTransformer):
                 self.generic_visit(node.args)
             if node.returns is not None:
                 node.returns = self.visit(node.returns)
+            if late:
+                self.bind(node.name)
+                before.update(scope & {node.name})
+            node.type_params = [self.visit(param) for param in node.type_params]
             self.class_names.append(None)
             try:
                 node.body = self.statements(node.body)
@@ -199,18 +233,28 @@ class Rewriter(ast.NodeTransformer):
         # an assignment there in the template scope like any other, so `class C: v = 3` has
         # no `C.v` (and its dataclasses no fields). Functions in the body don't see those
         # names, as in Python: an assignment in a method is still a store in the scope.
-        if not self.in_class_body():
-            self.scopes[-1].add(node.name)
+        # Its decorators, bases and keywords are evaluated before its name is bound: in
+        # `class Base(Base)` the base is the scope's `Base`.
         node.decorator_list = [self.visit(decorator) for decorator in node.decorator_list]
-        node.type_params = [self.visit(param) for param in node.type_params]
         node.bases = [self.visit(base) for base in node.bases]
         node.keywords = [self.visit(keyword) for keyword in node.keywords]
-        self.class_names.append(_bound(node.body, class_body=True))
+        self.bind(node.name)
+        node.type_params = [self.visit(param) for param in node.type_params]
+        names, global_names = _bindings(node.body, class_body=True)
+        self.class_names.append(names - global_names)
+        self.class_globals.append(global_names)
         try:
             node.body = self.statements(node.body)
         finally:
             self.class_names.pop()
+            self.class_globals.pop()
         return node
+
+    def bind(self, name: str) -> None:
+        """A `def`, a `class` or an import makes ``name`` a plain name of the template. In a
+        class body the name is the class's instead, unless the body declares it `global`."""
+        if not self.in_class_body() or name in self.class_globals[-1]:
+            self.scopes[-1].add(name)
 
     def in_class_body(self) -> bool:
         return bool(self.class_names) and self.class_names[-1] is not None
@@ -224,9 +268,13 @@ class Rewriter(ast.NodeTransformer):
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> ast.AST:
         # `except E as name`: a plain name inside the handler only, as Python unbinds it when
-        # the handler ends (after it, the name is the scope's again).
+        # the handler ends (after it, the name is the scope's again). The type is evaluated
+        # before the name is bound: in `except E as E` it is the scope's `E`.
+        if node.type is not None:
+            node.type = self.visit(node.type)
         with self.plain(filter(None, [node.name])):
-            return self.generic_visit(node)
+            node.body = self.statements(node.body)
+        return node
 
     def visit_match_case(self, node: ast.match_case) -> ast.AST:
         # A pattern's captures (`case [a, *rest]`, `case int() as n`) can't be stores in the
@@ -261,9 +309,10 @@ class Rewriter(ast.NodeTransformer):
             return node
         names = ast.Call(func=_global('__rs_names_of', self.in_class()), args=[_econtext()], keywords=[])
         target: ast.expr = ast.Name(id=SCOPE_NAMES, ctx=ast.Store())
-        if self.in_class_body():
-            # A global there, which the patterns find as they would a class's name: an
-            # assignment would make it an attribute of the class.
+        if self.code_block:
+            # A global of the render's namespace, wherever the `match` is: an assignment
+            # would make it an attribute of a class, or a local of a function that a `match`
+            # in a class inside that function then reads unbound.
             target = ast.Subscript(value=_globals(), slice=ast.Constant(SCOPE_NAMES), ctx=ast.Store())
         return [ast.Assign(targets=[target], value=names), node]
 
@@ -284,13 +333,17 @@ class Rewriter(ast.NodeTransformer):
             return node
         if not isinstance(node, ast.Name):
             return cast('ast.expr', self.visit(node))
-        if self.class_name(node.id):
-            return node
-        visited = self.visit(node)
+        # A name the class body binds is read as any other read of it is (see `visit_Name`):
+        # the class's if bound by then, and otherwise what it is outside the class.
+        bound = self.class_name(node.id)
+        visited = self.lookup(ast.Name(id=node.id, ctx=ast.Load())) if bound else self.visit(node)
         if isinstance(visited, ast.Name):
             return visited
         self.scope_names = True
-        return ast.Attribute(value=ast.Name(id=SCOPE_NAMES, ctx=ast.Load()), attr=node.id, ctx=ast.Load())
+        names: ast.expr = ast.Name(id=SCOPE_NAMES, ctx=ast.Load())
+        if bound:
+            names = ast.Attribute(value=names, attr=CLASS_NAMES, ctx=ast.Load())
+        return ast.Attribute(value=names, attr=node.id, ctx=ast.Load())
 
     def statements(self, body: list[ast.stmt]) -> list[ast.stmt]:
         """``body``, each statement visited (one may become several)."""
@@ -314,8 +367,7 @@ class Rewriter(ast.NodeTransformer):
     def visit_alias(self, node: ast.alias) -> ast.AST:
         # `import os.path` binds `os` (Chameleon records `os.path`, which is no name: reading
         # `os` afterwards was a `NameError`). In a class body the name is the class's.
-        if not self.in_class_body():
-            self.scopes[-1].add(node.asname if node.asname is not None else node.name.split('.')[0])
+        self.bind(node.asname if node.asname is not None else node.name.split('.')[0])
         return self.generic_visit(node)
 
     def defaults(self, args: ast.arguments) -> None:
@@ -393,7 +445,13 @@ class Rewriter(ast.NodeTransformer):
 
     def visit_Name(self, node: ast.Name) -> ast.AST:
         if not self.class_name(node.id):
-            return self.lookup(node)
+            visited = self.lookup(node)
+            declared = self.in_class_body() and node.id in self.class_globals[-1]
+            if declared and isinstance(node.ctx, ast.Del) and not isinstance(visited, ast.Name):
+                # `del` of a name the class body declares `global`: the template's, where the
+                # body's assignment to it went (outside a class Chameleon can't compile one).
+                return ast.Subscript(value=_econtext(), slice=ast.Constant(node.id), ctx=ast.Del())
+            return visited
         if not isinstance(node.ctx, ast.Load):
             return node
         # A class body reads its own name if it is bound by then, and otherwise what the name
@@ -672,7 +730,7 @@ def compile_code(
     # call, a `SyntaxError`.)
     rewriter = Rewriter({}, template_builtins, local_names=local_names, code_block=True, attributes=False)
     body = rewriter.statements(tree.body)
-    bound_names.update(_bound(body))
+    bound_names.update(_bindings(body)[0])
     module = ast.fix_missing_locations(ast.Module(body=body, type_ignores=[]))
     try:
         return compile(module, '<template code>', 'exec')
@@ -680,13 +738,13 @@ def compile_code(
         return compile(ast.unparse(module), '<template code>', 'exec')
 
 
-def _bound(body: list[ast.stmt], class_body: bool = False) -> set[str]:
+def _bindings(body: list[ast.stmt], class_body: bool = False) -> tuple[set[str], set[str]]:
     """Names the statements bind at their own level (not inside a nested function, class,
-    lambda or comprehension).
+    lambda or comprehension), and the names they declare ``global``.
 
     For a ``class_body``, all that makes a name the class's: also a ``match`` capture, a
     ``del``, and a walrus in what a nested function, lambda or class evaluates in the body
-    (decorators, defaults, bases). Not a name the body declares ``global``."""
+    (decorators, defaults, bases). A name the body declares ``global`` is not the class's."""
     names: set[str] = set()
     global_names: set[str] = set()
     nested = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda, ast.ListComp, ast.SetComp)
@@ -704,13 +762,13 @@ def _bound(body: list[ast.stmt], class_body: bool = False) -> set[str]:
             names.update(_captures(node.pattern))
         elif class_body and isinstance(node, ast.Name) and isinstance(node.ctx, ast.Del):
             names.add(node.id)
-        elif class_body and isinstance(node, ast.Global):
+        elif isinstance(node, ast.Global):
             global_names.update(node.names)
         if not isinstance(node, nested):
             stack.extend(ast.iter_child_nodes(node))
         elif class_body:
             stack.extend(_header(node))
-    return names - global_names
+    return names, global_names
 
 
 def _header(node: ast.AST) -> list[ast.expr]:
