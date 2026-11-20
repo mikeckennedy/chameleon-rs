@@ -13,8 +13,12 @@ Class bodies in `<?python ?>` blocks, which have had Python's scoping since 0.2.
 
 - **A comprehension or generator expression in a class body** that read a name the class also binds raised `NameError`. It reads the template's name, as in Python; only its first iterable sees the class's.
 - **A default of a `lambda` or a method in a class body** reads the class's name (`f = lambda self, y=x: y`), where a lambda's read the render data, and one named like its parameter (`def f(self, a=a)`) is no longer a `NameError`.
-- **A `match` capture in a class body** is the class's attribute; it was stored in the template scope, over render data of that name. A class pattern from the render data no longer leaves `__rs_names__` on the class.
+- **A `match` capture in a class body** is the class's attribute; it was stored in the template scope, over render data of that name.
 - **A class attribute named `globals`** broke reads of `template`, `macros` and the other template builtins in that class (`TypeError`).
+- **A method's parameters stayed plain names after it**, so a later read of the same name was a `NameError`: a second method's default (`def g(self, a=a)`), a class attribute (`y = a`), or `${a}` after the class. Inside a class a function's names now end with the function.
+- **A name a class body binds is the template's while it isn't bound**, as in Python: read before the assignment, after a `del`, or with the assignment in a branch not taken. These were a `NameError`. A name the body declares `global` is the template's.
+- **A walrus in a default, a decorator or a base class** in a class body (`def f(self, y=(k := 10))`) binds the class's name; it was a `SyntaxError`.
+- **A class pattern from the render data in a class body** works with one `match` inside another, and leaves nothing on the class when the `match` is left by `break`, `continue` or an exception.
 
 ## [0.2.58] - 2026-11-19
 

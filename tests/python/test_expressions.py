@@ -889,7 +889,16 @@ class _Point:
         self.x = x
 
 
-CLASS_DATA: dict[str, Any] = {'a': 100, 'x': 99, 'v': [3, 4], 'items': [1, 2], 'p': _Point(5), 'Point': _Point}
+CLASS_DATA: dict[str, Any] = {
+    'a': 100,
+    'x': 99,
+    'v': [3, 4],
+    'items': [1, 2],
+    'p': _Point(5),
+    'p2': _Point(6),
+    'Point': _Point,
+    'deco': lambda function: function,
+}
 
 # Each sets `res`. The class's own names shadow render data of the same name (`a`, `x`, `items`).
 CLASS_BODIES = [
@@ -932,6 +941,45 @@ CLASS_BODIES = [
     # A class attribute named `globals` doesn't hide what the generated code reads.
     'class C:\n    globals = 1\n    t = template\n    def f(self):\n        return template\nres = (C.t is C().f(), C.globals)',
     'class C:\n    globals = 1\n    match p:\n        case Point(x=q):\n            y = q\nres = C.y',
+    # ... with one `match` in another, and when its body is left early.
+    (
+        'class C:\n    match p:\n        case Point(x=q):\n            match p2:\n'
+        '                case Point(x=r):\n                    y = q + r\nres = C.y'
+    ),
+    (
+        'class C:\n    for item in [p]:\n        match item:\n            case Point(x=q):\n'
+        '                y = q\n                break\nres = (C.y, [k for k in vars(C) if k.startswith("__rs")])'
+    ),
+    (
+        'class C:\n    try:\n        match p:\n            case Point(x=q):\n                1 / 0\n'
+        '    except ZeroDivisionError:\n        pass\nres = [k for k in vars(C) if k.startswith("__rs")]'
+    ),
+    # A class of the body itself in a pattern.
+    'class C:\n    class Q:\n        pass\n    match Q():\n        case Q():\n            y = 1\nres = C.y',
+    # A method's parameters are its own: not names of the class body or of the template after it.
+    (
+        'class C:\n    def f(self, a=a):\n        return a\n    def g(self, a=a):\n        return a\n'
+        'res = (C().f(), C().g())'
+    ),
+    'class C:\n    def f(self, a):\n        return a\n    y = a\nres = (C().f(1), C.y)',
+    'class C:\n    def f(self, a):\n        return a\nres = (C().f(1), a)',
+    (
+        'class C:\n    def f(self):\n        def inner(a):\n            return a\n        return inner(1)\n'
+        'res = (C().f(), a)'
+    ),
+    # A walrus in what a function, a lambda or a class evaluates in the body binds the class's name.
+    'class C:\n    f = lambda self, y=(k := 10): y\nres = (C().f(), C.k)',
+    'class C:\n    def f(self, y=(k := 10)):\n        return y\nres = (C().f(), C.k)',
+    'class C:\n    @(k := deco)\n    def f(self):\n        return 1\nres = (C().f(), C.k is deco)',
+    'class C:\n    class D(k := object):\n        pass\nres = C.k is object',
+    # A name the body binds is the template's while it isn't bound.
+    'class C:\n    a = 1\n    del a\n    b = a\nres = C.b',
+    'class C:\n    b = a\n    a = 1\nres = (C.b, C.a)',
+    'class C:\n    if False:\n        a = 1\n    b = a\nres = C.b',
+    'class C:\n    a: int\n    b = a\nres = C.b',
+    'class C:\n    del zz\nres = 1',
+    # `global`: the template's name.
+    'class C:\n    global a\n    a = 42\nres = a',
 ]
 
 
@@ -956,6 +1004,17 @@ def test_class_bodies_in_code_blocks_scope_names_as_python_does(block: str) -> N
             rendered()
         return
     assert rendered() == expected
+
+
+def test_a_failed_visit_leaves_no_lambda_scope_behind() -> None:
+    class Failing(Rewriter):
+        def visit_Constant(self, node: ast.Constant) -> ast.AST:
+            raise RuntimeError
+
+    rewriter = Failing({}, code_block=True)
+    with pytest.raises(RuntimeError):
+        rewriter.visit(ast.parse('lambda x=1: x', mode='eval'))
+    assert len(rewriter.scopes) == 1
 
 
 @pytest.mark.parametrize(

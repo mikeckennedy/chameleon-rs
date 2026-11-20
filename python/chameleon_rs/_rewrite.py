@@ -61,6 +61,7 @@ MODULE_GLOBALS = {
     '__rs_name_error': _name_error,
     '__rs_names_of': _ScopeNames,
     '__rs_globals__': globals,
+    '__rs_locals__': locals,
 }
 
 
@@ -87,8 +88,11 @@ def _global(name: str, in_class: bool) -> ast.expr:
     named `globals` doesn't hide."""
     if not in_class:
         return ast.Name(id=name, ctx=ast.Load())
-    namespace = ast.Call(func=ast.Name(id='__rs_globals__', ctx=ast.Load()), args=[], keywords=[])
-    return ast.Subscript(value=namespace, slice=ast.Constant(name), ctx=ast.Load())
+    return ast.Subscript(value=_globals(), slice=ast.Constant(name), ctx=ast.Load())
+
+
+def _globals() -> ast.expr:
+    return ast.Call(func=ast.Name(id='__rs_globals__', ctx=ast.Load()), args=[], keywords=[])
 
 
 def _tpl(name: str, in_class: bool = False) -> ast.Subscript:
@@ -165,14 +169,28 @@ class Rewriter(ast.NodeTransformer):
         # its body is a scope of its own.
         node.decorator_list = [self.visit(decorator) for decorator in node.decorator_list]
         node.type_params = [self.visit(param) for param in node.type_params]
-        self.arguments(node.args, self.in_class_body(), scope=False)
-        if node.returns is not None:
-            node.returns = self.visit(node.returns)
-        self.class_names.append(None)
+        # Chameleon keeps a function's parameters, and what its body defines, as plain names
+        # for the rest of the template (`def f(a)`, then `${a}`: a `NameError`). Not so for a
+        # function inside a class, which Chameleon can't run: those names end with it.
+        python = self.in_class()
+        scope = self.scopes[-1]
+        before = set(scope)
         try:
-            node.body = self.statements(node.body)
+            if python:
+                self.defaults(node.args)
+                self.parameters(node.args)
+            else:
+                self.generic_visit(node.args)
+            if node.returns is not None:
+                node.returns = self.visit(node.returns)
+            self.class_names.append(None)
+            try:
+                node.body = self.statements(node.body)
+            finally:
+                self.class_names.pop()
         finally:
-            self.class_names.pop()
+            if python:
+                scope.intersection_update(before)
         return node
 
     def visit_ClassDef(self, node: ast.ClassDef) -> ast.AST:
@@ -187,7 +205,7 @@ class Rewriter(ast.NodeTransformer):
         node.type_params = [self.visit(param) for param in node.type_params]
         node.bases = [self.visit(base) for base in node.bases]
         node.keywords = [self.visit(keyword) for keyword in node.keywords]
-        self.class_names.append(_bound(node.body, captures=True))
+        self.class_names.append(_bound(node.body, class_body=True))
         try:
             node.body = self.statements(node.body)
         finally:
@@ -242,11 +260,12 @@ class Rewriter(ast.NodeTransformer):
         if not used:
             return node
         names = ast.Call(func=_global('__rs_names_of', self.in_class()), args=[_econtext()], keywords=[])
-        out: list[ast.stmt] = [ast.Assign(targets=[ast.Name(id=SCOPE_NAMES, ctx=ast.Store())], value=names), node]
+        target: ast.expr = ast.Name(id=SCOPE_NAMES, ctx=ast.Store())
         if self.in_class_body():
-            # Not left behind as an attribute of the class.
-            out.append(ast.Delete(targets=[ast.Name(id=SCOPE_NAMES, ctx=ast.Del())]))
-        return out
+            # A global there, which the patterns find as they would a class's name: an
+            # assignment would make it an attribute of the class.
+            target = ast.Subscript(value=_globals(), slice=ast.Constant(SCOPE_NAMES), ctx=ast.Store())
+        return [ast.Assign(targets=[target], value=names), node]
 
     def visit_MatchClass(self, node: ast.MatchClass) -> ast.AST:
         node.cls = self.dotted(node.cls)
@@ -265,6 +284,8 @@ class Rewriter(ast.NodeTransformer):
             return node
         if not isinstance(node, ast.Name):
             return cast('ast.expr', self.visit(node))
+        if self.class_name(node.id):
+            return node
         visited = self.visit(node)
         if isinstance(visited, ast.Name):
             return visited
@@ -297,30 +318,30 @@ class Rewriter(ast.NodeTransformer):
             self.scopes[-1].add(node.asname if node.asname is not None else node.name.split('.')[0])
         return self.generic_visit(node)
 
-    def arguments(self, args: ast.arguments, in_class_body: bool, scope: bool) -> None:
-        """Visits a function's or a lambda's ``args``, a lambda's in a ``scope`` of its own
-        (left for the caller to pop).
+    def defaults(self, args: ast.arguments) -> None:
+        """Visits the defaults of ``args``: for a function inside a class, before its
+        parameters are names and outside a lambda's scope, so `def f(self, a=a)` reads the
+        class's or the template's `a`, as in Python. Elsewhere the order is Chameleon's
+        (parameters first, so that default is the parameter itself: a `NameError`)."""
+        args.defaults = [self.visit(default) for default in args.defaults]
+        args.kw_defaults = [default and self.visit(default) for default in args.kw_defaults]
 
-        In a class body the defaults come first, before the parameters are names and outside
-        the lambda's scope: `def f(self, a=a)` reads the class's or the template's `a`, as in
-        Python. Elsewhere the order is Chameleon's (parameters first, so that default is the
-        parameter itself, a `NameError`)."""
-        if in_class_body:
-            args.defaults = [self.visit(default) for default in args.defaults]
-            args.kw_defaults = [default and self.visit(default) for default in args.kw_defaults]
-        if scope:
-            self.scopes.append(set())
-        if not in_class_body:
-            self.generic_visit(args)
-            return
+    def parameters(self, args: ast.arguments) -> None:
         for arg in (*args.posonlyargs, *args.args, args.vararg, *args.kwonlyargs, args.kwarg):
             if arg is not None:
                 self.visit(arg)
 
     def visit_Lambda(self, node: ast.Lambda) -> ast.AST:
+        python = self.in_class()
+        if python:
+            self.defaults(node.args)
         # Its body is a scope of its own, which doesn't see a class's names.
-        self.arguments(node.args, self.in_class_body(), scope=True)
+        self.scopes.append(set())
         try:
+            if python:
+                self.parameters(node.args)
+            else:
+                self.generic_visit(node.args)
             self.class_names.append(None)
             try:
                 node.body = self.visit(node.body)
@@ -366,9 +387,27 @@ class Rewriter(ast.NodeTransformer):
             keywords=[],
         )
 
+    def class_name(self, name: str) -> bool:
+        """Whether ``name`` is one the class body being visited binds."""
+        return bool(self.class_names) and (names := self.class_names[-1]) is not None and name in names
+
     def visit_Name(self, node: ast.Name) -> ast.AST:
-        if self.class_names and (names := self.class_names[-1]) is not None and node.id in names:
+        if not self.class_name(node.id):
+            return self.lookup(node)
+        if not isinstance(node.ctx, ast.Load):
             return node
+        # A class body reads its own name if it is bound by then, and otherwise what the name
+        # is outside the class (`b = a` before `a = 1`, after `del a`, or with the assignment
+        # in a branch not taken): the template's.
+        outside = self.lookup(ast.Name(id=node.id, ctx=ast.Load()))
+        if isinstance(outside, ast.Name):
+            # A plain name there too: Python looks in the class, the globals, the builtins.
+            return node
+        bound = ast.Call(func=ast.Name(id='__rs_locals__', ctx=ast.Load()), args=[], keywords=[])
+        test = ast.Compare(left=ast.Constant(node.id), ops=[ast.In()], comparators=[bound])
+        return ast.IfExp(test=test, body=node, orelse=cast('ast.expr', outside))
+
+    def lookup(self, node: ast.Name) -> ast.AST:
         if node.id in self.scopes[-1]:
             if len(self.scopes) == 1:
                 self.uses_locals = True
@@ -641,10 +680,15 @@ def compile_code(
         return compile(ast.unparse(module), '<template code>', 'exec')
 
 
-def _bound(body: list[ast.stmt], captures: bool = False) -> set[str]:
+def _bound(body: list[ast.stmt], class_body: bool = False) -> set[str]:
     """Names the statements bind at their own level (not inside a nested function, class,
-    lambda or comprehension), with those a ``match`` pattern captures if ``captures``."""
+    lambda or comprehension).
+
+    For a ``class_body``, all that makes a name the class's: also a ``match`` capture, a
+    ``del``, and a walrus in what a nested function, lambda or class evaluates in the body
+    (decorators, defaults, bases). Not a name the body declares ``global``."""
     names: set[str] = set()
+    global_names: set[str] = set()
     nested = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda, ast.ListComp, ast.SetComp)
     nested += (ast.DictComp, ast.GeneratorExp)
     stack: list[ast.AST] = list(body)
@@ -656,11 +700,31 @@ def _bound(body: list[ast.stmt], captures: bool = False) -> set[str]:
             names.add(node.id)
         elif isinstance(node, ast.alias):
             names.add(node.asname or node.name.split('.')[0])
-        elif captures and isinstance(node, ast.match_case):
+        elif class_body and isinstance(node, ast.match_case):
             names.update(_captures(node.pattern))
+        elif class_body and isinstance(node, ast.Name) and isinstance(node.ctx, ast.Del):
+            names.add(node.id)
+        elif class_body and isinstance(node, ast.Global):
+            global_names.update(node.names)
         if not isinstance(node, nested):
             stack.extend(ast.iter_child_nodes(node))
-    return names
+        elif class_body:
+            stack.extend(_header(node))
+    return names - global_names
+
+
+def _header(node: ast.AST) -> list[ast.expr]:
+    """What a function, a lambda or a class evaluates where it is defined."""
+    out: list[ast.expr] = []
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        out += node.decorator_list
+    if isinstance(node, ast.ClassDef):
+        out += node.bases
+        out += [keyword.value for keyword in node.keywords]
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+        out += node.args.defaults
+        out += [default for default in node.args.kw_defaults if default is not None]
+    return out
 
 
 def namespace(lookup_attr: Callable[[Any, str], Any], defaults: dict[str, Any]) -> dict[str, Any]:
