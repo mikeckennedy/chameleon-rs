@@ -992,3 +992,21 @@ def test_many_interpolations_in_one_text_compile_fast(expression: str, wrap: str
     page = chameleon_rs.PageTemplate(source)
     assert time.perf_counter() - start < 5
     assert page(a=1, d={'k': 1}).count('1') >= 3000
+
+
+@pytest.mark.parametrize(
+    'source',
+    [
+        '${(lambda q: q or nothing)(0)}',
+        '${[f(1) for f in [lambda q: template is not None]]}',
+        '${(lambda: (lambda: nothing)())()}',
+        '${(lambda q: q.real)(1)}',
+        '<?python f = lambda q: q or nothing ?>${f(0)}',
+        '<?python\ndef f():\n    return (lambda: nothing)()\n?>${f()}',
+    ],
+)
+def test_template_builtins_inside_a_lambda(source: str) -> None:
+    # 0.2.57 read the generated code's own names from `globals()` inside a lambda, as it must
+    # inside a class (where Python mangles them): but `__rs_tpl` is a parameter of a compiled
+    # expression, so a template builtin read in a lambda raised `KeyError: '__rs_tpl'`.
+    assert chameleon_rs.PageTemplate(source)() == chameleon.PageTemplate(source)()

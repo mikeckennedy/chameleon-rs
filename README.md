@@ -26,8 +26,10 @@ pip install chameleon-rs        # or: uv pip install chameleon-rs
 ```
 
 CPython 3.12 to 3.15, including the free-threaded builds (3.14t, 3.15t). Wheels for Linux
-(glibc and musl), macOS and Windows contain the compiled engine, so no Rust toolchain is
-needed. Stock Chameleon need not be installed.
+(glibc, x86_64 and aarch64), macOS (Apple silicon) and Windows (x64) contain the compiled
+engine, so no Rust toolchain is needed there. Anywhere else (Alpine and other musl systems,
+Intel Macs, Windows on Arm) pip builds from the source distribution, which needs Rust. Stock
+Chameleon need not be installed.
 
 ## Already on Chameleon?
 

@@ -194,6 +194,13 @@ class Rewriter(ast.NodeTransformer):
     def in_class_body(self) -> bool:
         return bool(self.class_names) and self.class_names[-1] is not None
 
+    def in_class(self) -> bool:
+        """Whether the code is anywhere inside a class, its methods included: where Python
+        mangles names (see `_global`). A lambda or a function alone is not a class: `__rs_tpl`
+        is a parameter of a compiled expression, which `globals()` doesn't have (inside a
+        lambda, reading a template builtin once raised `KeyError: '__rs_tpl'`)."""
+        return any(names is not None for names in self.class_names)
+
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> ast.AST:
         # `except E as name`: a plain name inside the handler only, as Python unbinds it when
         # the handler ends (after it, the name is the scope's again).
@@ -231,7 +238,7 @@ class Rewriter(ast.NodeTransformer):
             self.scope_names = before
         if not used:
             return node
-        names = ast.Call(func=_global('__rs_names_of', bool(self.class_names)), args=[_econtext()], keywords=[])
+        names = ast.Call(func=_global('__rs_names_of', self.in_class()), args=[_econtext()], keywords=[])
         return [ast.Assign(targets=[ast.Name(id=SCOPE_NAMES, ctx=ast.Store())], value=names), node]
 
     def visit_MatchClass(self, node: ast.MatchClass) -> ast.AST:
@@ -297,7 +304,7 @@ class Rewriter(ast.NodeTransformer):
             return self.generic_visit(node)
         # The object is visited; the `__lookup_attr` name is ours and stays as it is.
         return ast.Call(
-            func=_global('__lookup_attr', bool(self.class_names)),
+            func=_global('__lookup_attr', self.in_class()),
             args=[self.visit(node.value), ast.Constant(node.attr)],
             keywords=[],
         )
@@ -316,9 +323,9 @@ class Rewriter(ast.NodeTransformer):
         if name.startswith('__'):
             # Left alone: a parameter of the render function if it is a template builtin.
             if name in self.template_builtins and isinstance(node.ctx, ast.Load):
-                return _tpl(name, bool(self.class_names))
+                return _tpl(name, self.in_class())
             if _ours(name) and not self.own(name) and isinstance(node.ctx, ast.Load):
-                error = _global('__rs_name_error', bool(self.class_names))
+                error = _global('__rs_name_error', self.in_class())
                 return ast.Call(func=error, args=[ast.Constant(name)], keywords=[])
             return node
         if name in INTERNALS:
@@ -349,7 +356,7 @@ class Rewriter(ast.NodeTransformer):
         self.reads.add(name)
         get = ast.Attribute(value=_econtext(), attr='get', ctx=ast.Load())
         if name in self.template_builtins:
-            return ast.Call(func=get, args=[ast.Constant(name), _tpl(name, bool(self.class_names))], keywords=[])
+            return ast.Call(func=get, args=[ast.Constant(name), _tpl(name, self.in_class())], keywords=[])
         if name in BUILTINS and rebound(name) in self.scopes[0]:
             # A builtin a code block assigned: still `get(name, name)`, its fallback that
             # render-local value (the expression runs in the code blocks' namespace).

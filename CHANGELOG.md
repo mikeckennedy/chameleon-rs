@@ -5,7 +5,9 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.58] - 2026-11-19
+
+Fixes from a review of 0.2.57: two things that release broke, one of its security fixes completed, and more of what a `<?python ?>` block can do.
 
 ### Security
 
@@ -13,10 +15,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A template builtin read inside a `lambda` raised `KeyError: '__rs_tpl'`** (0.2.57): `${(lambda q: q or nothing)(0)}`, or `template`, `macros` and the others, in any expression.
 - **Type parameters of a `def` or `class` in a `<?python ?>` block were not rewritten** (0.2.57): a bound from the render data (`def f[T: Base]`) raised `NameError`.
 - **`import a.b` in a `<?python ?>` block binds `a`**, where reading it was a `NameError` (as in Chameleon), and an import in a class body is the class's.
 - **A class or value from the render data in a `match` pattern** (`case Point(x=a)`) was a `SyntaxError`, as in Chameleon.
 - **A `@concurrent` call passed to a partial that is not found** was left "never awaited".
+- The README and the docs name the platforms that have wheels (Linux glibc x86_64 and aarch64, macOS on Apple silicon, Windows x64); they claimed musl, Intel Mac and Windows on Arm wheels that were never published. 0.2.57 was the first release with Windows wheels.
 
 ## [0.2.57] - 2026-11-19
 

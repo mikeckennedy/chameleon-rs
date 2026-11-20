@@ -34,9 +34,10 @@ print(page(names=['World', 'Rust']))
 uv pip install chameleon-rs
 ```
 
-CPython 3.12 to 3.15, including the free-threaded builds (3.14t, 3.15t). The wheels for Linux,
-macOS and Windows include the compiled engine, so you don't need a Rust toolchain, and stock
-Chameleon doesn't need to be installed.
+CPython 3.12 to 3.15, including the free-threaded builds (3.14t, 3.15t). The wheels for Linux
+(glibc, x86_64 and aarch64), macOS (Apple silicon) and Windows (x64) include the compiled
+engine, so you don't need a Rust toolchain there; anywhere else (Alpine, Intel Macs, Windows on
+Arm) pip builds from source, which needs Rust. Stock Chameleon doesn't need to be installed.
 
 ## Already on Chameleon?
 
