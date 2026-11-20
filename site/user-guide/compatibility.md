@@ -54,12 +54,13 @@ With chameleon_partials, [render_partial](../reference/render_partial.md#chamele
 
 ## Corner cases in slot bodies
 
-Four cases, all involving the slot fills of a macro call together with `tal:on-error` or i18n settings, render differently. No real template we've seen does this; each is pinned by a test that fails if the behaviour changes.
+Five cases, all involving the slot fills of a macro call together with `tal:on-error` or i18n settings, render differently. No real template we've seen does this; each is pinned by a test that fails if the behaviour changes.
 
 - **A failing expression under a handler in a slot body** whose slot sits inside `i18n:translate` or `i18n:name`. Chameleon writes a text node and its expressions as one piece, so when an expression fails, the text before it in the same node is dropped with it. chameleon-rs writes that text first, so it stays (`<q>Q` where Chameleon gives `<q>`).
 - **A handler on an `i18n:name` element** whose content calls a macro that fails partway: the same difference, for the text of the failing node inside the macro.
 - **A handler around a nested macro call in a slot body** whose slot sits inside `i18n:translate` or `i18n:name`, when the nested call's own fill fails. Chameleon keeps the start tag of the failed fill and never closes it (`T <u>E U`). chameleon-rs takes the failed fill's output back (`T E U`).
 - **A fill no macro took**, used by a later macro call while the calling template has different `i18n:domain`, `i18n:context` or `i18n:target` settings: values converted by that fill use the settings where it was defined. Chameleon uses the settings at the later call.
+- **A fill no macro took, defined inside `i18n:name`**, used by a later macro call. Chameleon renders that slot empty, without even its default content (`M2[]`). chameleon-rs renders the fill (`M2[<i>FILL</i>]`), as both engines do when the fill is defined anywhere else.
 
 
 ## Behaviour of the helper libraries
@@ -78,7 +79,7 @@ The built-ins differ from chameleon_partials, chameleon-flask, fastapi-chameleon
 
 ## Chameleon bugs fixed
 
-Where Chameleon's output is clearly broken, chameleon-rs writes what the template means. Each fix is a Chameleon issue that chameleon-rs adopted.
+Where Chameleon's output is clearly broken, chameleon-rs writes what the template means. Most are Chameleon issues that chameleon-rs adopted.
 
 | Template | Chameleon | chameleon-rs |
 |----|----|----|
@@ -86,6 +87,8 @@ Where Chameleon's output is clearly broken, chameleon-rs writes what the templat
 | A loop inside a loop of the same name, as in a recursive macro ([\#177](https://github.com/malthe/chameleon/issues/177)) | After the inner loop ends, `repeat.item` is still the inner loop's, so the outer loop's next items get its `index` and `length` (often `-1` and `0`). | `repeat.item` is the outer loop's again. |
 | A local variable with the same name as a global, then a macro call inside it ([\#445](https://github.com/malthe/chameleon/issues/445)) | The macro call resets the local to the global's value. | The local keeps its value, unless the macro sets the global. |
 | An error inside a `metal:fill-slot` body ([\#447](https://github.com/malthe/chameleon/issues/447), [\#291](https://github.com/malthe/chameleon/issues/291), [\#259](https://github.com/malthe/chameleon/issues/259)) | The error message points at the page's `metal:use-macro`, often after the macro's last expression, which didn't fail. | The message leads with the fill's failing expression, then the `metal:use-macro`. |
+| A `<?python ?>` block that binds a name with `except ... as`, `class`, `async def` or a `match` capture | Reading the name raises `NameError` (or reads render data of the same name). | The name is the one the block bound. |
+| An assignment in a `class` body in a `<?python ?>` block: `class C: v = 3` | Stored in the template's scope like any assignment: `${v}` is `3` and `C.v` raises `AttributeError`, so a dataclass has no fields. | The class's attribute, as in Python: `C.v` is `3`. A template that read `${v}` afterwards must read `${C.v}`. |
 
 
 # Found a difference?

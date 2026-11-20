@@ -11,7 +11,7 @@ litestar.template(template_file: Callable[P, Coroutine[Any, Any, Any]]) -> Calla
  
 litestar.template(template_file: Callable[P, Any]) -> Callable[P, Response[Any]]
  
-litestar.template(template_file: str | None = None, content_type: str = 'text/html', status_code: int | None = None, mimetype: str | None = None, concurrent: bool | None = None, offload: bool = False) -> TemplateDecorator
+litestar.template(template_file: Optional[str] = None, content_type: str = 'text/html', status_code: Optional[int] = None, mimetype: Optional[str] = None, concurrent: Optional[bool] = None, offload: bool = False) -> TemplateDecorator
 ```
 
 

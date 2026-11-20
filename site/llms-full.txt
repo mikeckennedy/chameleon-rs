@@ -22,7 +22,7 @@ Every template has the builtin ``render_partial(path, **kwargs)`` (D10, see
 ``chameleon_rs.partials``), which a render keyword or ``extra_builtins`` entry of the same
 name overrides.
 
-PageTemplateFile(filename: 'str | os.PathLike[str]', loader_class: 'type[TemplateLoader]' = <class 'chameleon_rs.loader.TemplateLoader'>, package_name: 'str | None' = None, search_path: 'Iterable[str | os.PathLike[str]] | str | os.PathLike[str] | None' = None, **config: 'Any') -> 'None'
+PageTemplateFile(filename: 'str | os.PathLike[str]', loader_class: 'type[TemplateLoader]' = <class 'chameleon_rs.loader.TemplateLoader'>, package_name: 'Optional[str]' = None, search_path: 'Optional[Iterable[str | os.PathLike[str]] | str | os.PathLike[str]]' = None, **config: 'Any') -> 'None'
 
 File-based page template loaded from ``filename`` when first used.
 
@@ -40,13 +40,13 @@ Takes a non-XML input::
 
   template = PageTextTemplate("Hello, ${name}.")
 
-PageTextTemplateFile(filename: 'str | os.PathLike[str]', loader_class: 'type[TemplateLoader]' = <class 'chameleon_rs.loader.TemplateLoader'>, package_name: 'str | None' = None, search_path: 'Iterable[str | os.PathLike[str]] | str | os.PathLike[str] | None' = None, **config: 'Any') -> 'None'
+PageTextTemplateFile(filename: 'str | os.PathLike[str]', loader_class: 'type[TemplateLoader]' = <class 'chameleon_rs.loader.TemplateLoader'>, package_name: 'Optional[str]' = None, search_path: 'Optional[Iterable[str | os.PathLike[str]] | str | os.PathLike[str]]' = None, **config: 'Any') -> 'None'
 
 File-based text template whose ``render()`` returns ``bytes`` (UTF-8 by default).
 
 Encoded with the template's ``encoding`` (UTF-8 by default), as Chameleon's does.
 
-TemplateLoader(search_path: 'Iterable[str | os.PathLike[str]] | str | os.PathLike[str] | None' = None, default_extension: 'str | None' = None, *, formats: 'Mapping[str, type[PageTemplateFile]] | None' = None, **kwargs: 'Any') -> 'None'
+TemplateLoader(search_path: 'Optional[Iterable[str | os.PathLike[str]] | str | os.PathLike[str]]' = None, default_extension: 'Optional[str]' = None, *, formats: 'Optional[Mapping[str, type[PageTemplateFile]]]' = None, **kwargs: 'Any') -> 'None'
 
 Loads and caches page templates from one or more directories by filename (``loader['page.pt']``).
 
@@ -88,7 +88,7 @@ The whole template as a macro (``metal:use-macro="template"``).
 Chameleon's ``include(stream, econtext, rcontext, ...)``, which renders the main
 function into ``stream``.
 
-render(self, encoding: 'str | None' = None, **kw: 'Any') -> 'str'
+render(self, encoding: 'Optional[str]' = None, **kw: 'Any') -> 'str'
 
 Render template to string.
 
@@ -97,7 +97,7 @@ Additional keyword arguments are passed as template variables; ``translate``
 overrides the template's translation function and ``target_language`` is the
 language passed to it when no ``i18n:target`` applies.
 
-render_async(self, encoding: 'str | None' = None, *, offload: 'bool' = False, **kw: 'Any') -> 'str'
+render_async(self, encoding: 'Optional[str]' = None, *, offload: 'bool' = False, **kw: 'Any') -> 'str'
 
 Render template to string, awaiting awaitable values (D9).
 
@@ -128,7 +128,7 @@ digest(self, body: 'str', names: 'Collection[str]') -> 'str'
 Process-wide settings for templates loaded by name, partials and Markdown.
 
 
-configure(template_folder: 'str | os.PathLike[str] | None' = None, *, auto_reload: 'bool | None' = None, restricted_namespace: 'bool | None' = None, strict_tags: 'bool | None' = None, strict_names: 'bool | None' = None, partial_search: 'str | None' = None, markdown: 'MarkdownSetting | None' = None, markdown_cache: 'int | None' = None) -> 'Settings | None'
+configure(template_folder: 'Optional[str | os.PathLike[str]]' = None, *, auto_reload: 'Optional[bool]' = None, restricted_namespace: 'Optional[bool]' = None, strict_tags: 'Optional[bool]' = None, strict_names: 'Optional[bool]' = None, partial_search: 'Optional[str]' = None, markdown: 'Optional[MarkdownSetting]' = None, markdown_cache: 'Optional[int]' = None) -> 'Optional[Settings]'
 
 Configures chameleon-rs for the whole process (partials, framework integrations, and Markdown).
 
@@ -200,7 +200,7 @@ that; ``chameleon_rs.configure`` also configures the framework integrations). A 
 is ignored unless ``cache_init`` is false. Raises ``PartialsException`` for a missing
 folder.
 
-extend_model(model: 'dict[str, Any] | None') -> 'dict[str, Any]'
+extend_model(model: 'Optional[dict[str, Any]]') -> 'dict[str, Any]'
 
 Adds ``render_partial`` to a view model (chameleon_partials' helper; not needed with the
 built-in, which every template has). Returns the model (a new dict for ``None``).
@@ -279,12 +279,12 @@ A template integration was configured or used incorrectly: no template folder
 configured, a folder that does not exist, a view returning something that is not a model
 or a response. (Not a template compile error: that is ``chameleon_rs.TemplateError``.)
 
-ErrorPage(template_file: 'str', status_code: 'int', message: 'str | None' = None, template_data: 'Mapping[str, Any] | None' = None) -> 'None'
+ErrorPage(template_file: 'str', status_code: 'int', message: 'Optional[str]' = None, template_data: 'Optional[Mapping[str, Any]]' = None) -> 'None'
 
 Raised inside a decorated view to answer with an error page: the decorator renders
 ``template_file`` with ``template_data`` and ``status_code``.
 
-NotFound(message: 'str | None' = None, template_file: 'str' = 'errors/404.pt', template_data: 'Mapping[str, Any] | None' = None) -> 'None'
+NotFound(message: 'Optional[str]' = None, template_file: 'str' = 'errors/404.pt', template_data: 'Optional[Mapping[str, Any]]' = None) -> 'None'
 
 Raised by ``not_found()``: the decorator renders ``template_file`` (``errors/404.pt``
 by default) with status 404.
@@ -307,7 +307,7 @@ view and the template never renders. Raised when the app starts (or on its first
 for apps given to ``configure(app=...)`` or ``global_init(..., app=...)``, and by
 ``check_views(app)``.
 
-model_of(value: 'Any') -> 'dict[str, Any] | None'
+model_of(value: 'Any') -> 'Optional[dict[str, Any]]'
 
 The template model a view returned: a ``dict`` as is; any other ``Mapping`` as a
 ``dict``; a dataclass instance as its fields (shallow: field values are not converted);
@@ -3263,7 +3263,7 @@ builtin of every template, so it is not in either.
 
 ### Corner cases in slot bodies
 
-Four cases, all involving the slot fills of a macro call together with `tal:on-error` or
+Five cases, all involving the slot fills of a macro call together with `tal:on-error` or
 i18n settings, render differently. No real template we've seen does this; each is pinned by a
 test that fails if the behaviour changes.
 
@@ -3281,6 +3281,9 @@ test that fails if the behaviour changes.
 - **A fill no macro took**, used by a later macro call while the calling template has
   different `i18n:domain`, `i18n:context` or `i18n:target` settings: values converted by that
   fill use the settings where it was defined. Chameleon uses the settings at the later call.
+- **A fill no macro took, defined inside `i18n:name`**, used by a later macro call. Chameleon
+  renders that slot empty, without even its default content (`M2[]`). chameleon-rs renders the
+  fill (`M2[<i>FILL</i>]`), as both engines do when the fill is defined anywhere else.
 
 ### Behaviour of the helper libraries
 
@@ -3309,8 +3312,8 @@ framework integrations, then renders synchronously through your function. See
 
 ### Chameleon bugs fixed
 
-Where Chameleon's output is clearly broken, chameleon-rs writes what the template means. Each
-fix is a Chameleon issue that chameleon-rs adopted.
+Where Chameleon's output is clearly broken, chameleon-rs writes what the template means. Most
+are Chameleon issues that chameleon-rs adopted.
 
 | Template | Chameleon | chameleon-rs |
 |---|---|---|
@@ -3318,6 +3321,8 @@ fix is a Chameleon issue that chameleon-rs adopted.
 | A loop inside a loop of the same name, as in a recursive macro ([#177](https://github.com/malthe/chameleon/issues/177)) | After the inner loop ends, `repeat.item` is still the inner loop's, so the outer loop's next items get its `index` and `length` (often `-1` and `0`). | `repeat.item` is the outer loop's again. |
 | A local variable with the same name as a global, then a macro call inside it ([#445](https://github.com/malthe/chameleon/issues/445)) | The macro call resets the local to the global's value. | The local keeps its value, unless the macro sets the global. |
 | An error inside a `metal:fill-slot` body ([#447](https://github.com/malthe/chameleon/issues/447), [#291](https://github.com/malthe/chameleon/issues/291), [#259](https://github.com/malthe/chameleon/issues/259)) | The error message points at the page's `metal:use-macro`, often after the macro's last expression, which didn't fail. | The message leads with the fill's failing expression, then the `metal:use-macro`. |
+| A `<?python ?>` block that binds a name with `except ... as`, `class`, `async def` or a `match` capture | Reading the name raises `NameError` (or reads render data of the same name). | The name is the one the block bound. |
+| An assignment in a `class` body in a `<?python ?>` block: `class C: v = 3` | Stored in the template's scope like any assignment: `${v}` is `3` and `C.v` raises `AttributeError`, so a dataclass has no fields. | The class's attribute, as in Python: `C.v` is `3`. A template that read `${v}` afterwards must read `${C.v}`. |
 
 ## Found a difference?
 
@@ -3395,9 +3400,10 @@ A name that comes from a request must never reach a lookup that accepts any path
 The decorator APIs always keep one compiled template per file, however a name spells it
 (`./pages/a.pt`, `pages//a.pt`, an absolute path), and the names they remember for that are
 bounded, so `response(f'pages/{slug}.pt')` can't grow the template cache past one template
-per file. Without `strict_names`, the loader still caches an absolute path to a file that
-doesn't exist, as Chameleon's does (it fails when rendered), so turn it on if any part of a
-name comes from a request.
+per file. A name with no file behind it (a missing absolute path or package resource, which
+Chameleon's loader caches) isn't kept either. Without `strict_names` those names can still
+reach files outside the template folder, so turn it on if any part of a name comes from a
+request.
 
 If a page is chosen by the request, map the request value to a name you wrote:
 

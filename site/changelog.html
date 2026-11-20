@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+<link rel="canonical" href="https://mkennedy.codes/docs/chameleon-rs/changelog.html">
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.11.9">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Changelog – chameleon-rs | chameleon-rs</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<link href="./favicon.ico" rel="icon">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/scrollable-regions/scrollable-regions.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-63b5708e65d6cd79cd7618c58d0c21e7.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-4c995cf1e5ce428d9c201124d003f5da.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<script async="" src="https://uma.mkennedy.codes/script.js" data-website-id="fc9b6770-3b44-4073-944e-4a4f0e79f66a"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<script>document.head.appendChild(Object.assign(document.createElement('link'),{rel:'stylesheet',href:(document.querySelector('meta[name="quarto:offset"]')||{content:''}).content+'termshow.css'}));</script>
+<meta name="gd-logo-dark" content="chameleon-rs-logo-dark.png">
+<link rel="icon" type="image/x-icon" href="https://mkennedy.codes/docs/chameleon-rs/favicon.ico" sizes="48x48">
+<link rel="icon" type="image/png" sizes="32x32" href="https://mkennedy.codes/docs/chameleon-rs/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="https://mkennedy.codes/docs/chameleon-rs/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="https://mkennedy.codes/docs/chameleon-rs/apple-touch-icon.png">
+<script src="theme-init.js"></script>
+
+
+  <meta name="description" content="This changelog is generated automatically from GitHub Releases.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Changelog – chameleon-rs | chameleon-rs">
+  <meta property="og:description" content="This changelog is generated automatically from GitHub Releases.">
+  <meta property="og:url" content="https://mkennedy.codes/docs/chameleon-rs/changelog.html">
+  <meta property="og:site_name" content="chameleon-rs">
+  <meta property="og:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Changelog – chameleon-rs | chameleon-rs">
+  <meta name="twitter:description" content="This changelog is generated automatically from GitHub Releases.">
+  <meta name="twitter:image" content="https://mkennedy.codes/docs/chameleon-rs/assets/chameleon-rs-slogan.png">
+</head>
+
+<body class="nav-fixed quarto-light"><a id="quarto-skip-link" class="visually-hidden-focusable" href="#quarto-document-content">Skip to main content</a>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark" aria-label="Site">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a href="./index.html" class="navbar-brand navbar-brand-logo">
+    <img src="./chameleon-rs-logo-light.png" alt="chameleon-rs" class="navbar-logo light-content">
+    <img src="./chameleon-rs-logo-light.png" alt="chameleon-rs" class="navbar-logo dark-content">
+    </a>
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">chameleon-rs <span class="version-badge" title="Released 2026-11-20">v0.2.57</span></span>
+    </a>
+  </div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="./user-guide/getting-started.html"> 
+<span class="menu-text">User Guide</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./language/index.html"> 
+<span class="menu-text">Language Reference</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./recipes/index.html"> 
+<span class="menu-text">Recipes</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link" href="./reference/index.html"> 
+<span class="menu-text">API Reference</span></a>
+  </li>  
+  <li class="nav-item">
+    <a class="nav-link active" href="./changelog.html" aria-current="page"> 
+<span class="menu-text">Changelog</span></a>
+  </li>  
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item">
+    <span class="nav-link">
+<div id="github-widget" data-owner="mikeckennedy" data-repo="chameleon-rs"></div>
+    </span>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+            <div id="quarto-search" class=""></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" aria-labelledby="toc-title" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul class="collapse">
+  <li><a href="#v0.2.57" id="toc-v0.2.57" class="nav-link active" data-scroll-target="#v0.2.57">v0.2.57</a></li>
+  <li><a href="#v0.1.56" id="toc-v0.1.56" class="nav-link" data-scroll-target="#v0.1.56">v0.1.56</a></li>
+  <li><a href="#v0.1.55" id="toc-v0.1.55" class="nav-link" data-scroll-target="#v0.1.55">v0.1.55</a></li>
+  <li><a href="#v0.1.54" id="toc-v0.1.54" class="nav-link" data-scroll-target="#v0.1.54">v0.1.54</a></li>
+  <li><a href="#v0.1.53" id="toc-v0.1.53" class="nav-link" data-scroll-target="#v0.1.53">v0.1.53</a></li>
+  <li><a href="#v0.1.52" id="toc-v0.1.52" class="nav-link" data-scroll-target="#v0.1.52">v0.1.52</a></li>
+  <li><a href="#v0.1.51" id="toc-v0.1.51" class="nav-link" data-scroll-target="#v0.1.51">v0.1.51</a></li>
+  <li><a href="#v0.1.50" id="toc-v0.1.50" class="nav-link" data-scroll-target="#v0.1.50">v0.1.50</a></li>
+  <li><a href="#v0.1.49" id="toc-v0.1.49" class="nav-link" data-scroll-target="#v0.1.49">v0.1.49</a></li>
+  <li><a href="#v0.1.48-initial-public-release" id="toc-v0.1.48-initial-public-release" class="nav-link" data-scroll-target="#v0.1.48-initial-public-release">v0.1.48: Initial public release</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content" tabindex="-1">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Changelog</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>This changelog is generated automatically from <a href="https://github.com/mikeckennedy/chameleon-rs/releases">GitHub Releases</a>.</p>
+<section id="v0.2.57" class="level1 changelog-version">
+<h1 class="changelog-version">v0.2.57</h1>
+<p><em>2026-11-20</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.2.57">GitHub</a></p>
+<p>Fixes from a fourth review (bugs, races, deadlocks, security), and <code>&lt;?python ?&gt;</code> blocks that bind names the way Python does. The version’s middle number goes up for the changes in behaviour listed under Changed.</p>
+<section id="security" class="level3">
+<h3 class="anchored" data-anchor-id="security">Security</h3>
+<ul>
+<li><strong>An element with many attributes, nested deeply, could crash the process on a small thread stack.</strong> Such an element is a dozen nodes deep in the compiled tree, and the stages after the build walked it with no stack check: 90 of them, which the build allows on a 512 KiB stack, overflowed it (SIGBUS). They raise <code>RecursionError</code> now.</li>
+<li><strong><code>global_init(..., cache_init=False)</code> dropped <code>strict_names</code> and <code>strict_tags</code></strong> that a <a href="reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">configure()</a> had turned on, so names that leave the template folder (<code>../secret.pt</code>) rendered again. The legacy setup call keeps them.</li>
+<li><strong>Names built from request data could grow the decorator APIs’ template cache without bound</strong>, against what the security guide says: every spelling of a directory (<code>pages/./</code>, <code>pages//</code>) got its own entry, even with <code>strict_names</code>, and so did every missing absolute path or package resource under the default settings. A directory is kept under one spelling, and a name with no file behind it isn’t kept.</li>
+<li><strong>A model key named <code>offload</code> changed how the integrations’ <code>render_async(template_file, **model)</code> rendered</strong>: the render moved to a worker thread, awaited nothing, and the template never saw the variable. The model is the template’s, whatever its keys.</li>
+<li><strong>The task limit of a concurrent render did not hold inside a partial rendering as a task.</strong> Each such partial started tasks of its own, as many as the page may, the count set by render data. A <code>[@concurrent](https://github.com/concurrent)</code> call in a partial is awaited in place, as documented.</li>
+</ul>
+</section>
+<section id="changed" class="level3">
+<h3 class="anchored" data-anchor-id="changed">Changed</h3>
+<ul>
+<li><strong>A <code>&lt;?python ?&gt;</code> block binds the names Python binds without an assignment</strong>: <code>except ... as</code>, <code>class</code>, <code>async def</code> and the captures of a <code>match</code>. Chameleon’s name rewriting misses them, so reading one raised <code>NameError</code>, or read render data of the same name. A template that relied on that <code>NameError</code> (<code>${C | 7}</code> after <code>class C</code>) renders differently.</li>
+<li><strong>A class body in a <code>&lt;?python ?&gt;</code> block is Python’s.</strong> Its assignments, annotations and methods are the class’s attributes, so <code>class C: v = 3</code> has <code>C.v</code> and a dataclass has its fields. Chameleon stores such an assignment in the template scope: a template that read <code>${v}</code> afterwards must read <code>${C.v}</code>. What a method assigns is still stored in the template scope, as in any <code>def</code>.</li>
+<li><strong>Attributes in a <code>&lt;?python ?&gt;</code> block are Python’s</strong>, as in Chameleon: <code>obj.name</code> falling back to <code>obj['name']</code> is for expressions only. A block that read a dictionary’s key as an attribute now raises <code>AttributeError</code>, as it does there.</li>
+<li><strong>A template whose file does not exist is not kept by the loader</strong> (see Security): <code>loader['/missing.pt']</code> is a new object each time, until the file exists.</li>
+</ul>
+</section>
+<section id="fixed" class="level3">
+<h3 class="anchored" data-anchor-id="fixed">Fixed</h3>
+<ul>
+<li><strong>Assigning to an attribute in a <code>&lt;?python ?&gt;</code> block was a <code>SyntaxError</code></strong> (<code>x.a = 1</code>, <code>x.a += 2</code>, <code>del x.a</code>), where Chameleon runs it.</li>
+<li><strong>A sub-expression of a custom expression type could not read what a <code>&lt;?python ?&gt;</code> block defined</strong> (a <code>def</code>, an import): <code>UnboundLocalError</code>, where Chameleon renders.</li>
+<li><strong>Compiling a text with many interpolations was slower than quadratic</strong>: each <code>${</code> tried every <code>}</code> after it, each candidate as long as the text. 2,000 <code>${a}</code> in one text node, attribute or <code>string:</code> expression took 6 s (54 s in Chameleon); 1,500 now take 5 ms. Where each interpolation ends is unchanged.</li>
+<li><strong>A <code>[@concurrent](https://github.com/concurrent)</code> call passed to a native partial could be used only once in it</strong>: the second use raised <code>RuntimeError: cannot reuse already awaited coroutine</code>, or rendered a <code>tal:on-error</code> fallback.</li>
+<li><strong>The error of the last <code>[@concurrent](https://github.com/concurrent)</code> call a render waited for had no expression or position.</strong></li>
+<li><strong>A render resumed while the one task it waited for was still pending never returned</strong> (a driver that is not an event loop’s task); it raises <code>RuntimeError</code>, as a coroutine does.</li>
+<li><strong>Coroutines left “never awaited”</strong>: the arguments of a partial call refused at the recursion limit, and a <code>[@concurrent](https://github.com/concurrent)</code> helper under <code>structure:</code> or <code>markdown:</code> when the render failed before its task started.</li>
+<li><strong>A package folder on the search path (<code>pkg:dir</code>)</strong>: a directory in it was taken for a template by the Starlette and Litestar engines (an error instead of “not found”), and on a case-insensitive filesystem every case spelling of a name compiled its own copy.</li>
+<li>The annotations use <code>Optional[X]</code> rather than <code>X | None</code>.</li>
+</ul>
+</section>
+</section>
+<section id="v0.1.56" class="level1 changelog-version">
+<h1 class="changelog-version">v0.1.56</h1>
+<p><em>2026-10-30</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.56">GitHub</a></p>
+<p>Fixes from a third reliability, security and memory review: a crash freeing deeply nested expressions on a small thread stack, output and async fixes in the VM and partials, a bound on Markdown input, and smaller hygiene fixes.</p>
+<section id="security-1" class="level3">
+<h3 class="anchored" data-anchor-id="security-1">Security</h3>
+<ul>
+<li><strong>Freeing a deeply nested expression could crash the process on a small thread stack.</strong> The compile’s nesting limit is measured on the thread that compiles, but a compiled template’s expressions were freed, and traversed by the garbage collector, recursively on whatever thread released them: the deepest <code>string:${...}</code> nesting the compile allowed killed a 64 KiB thread (SIGBUS). Both are iterative now.</li>
+<li><strong>Markdown text has a length limit.</strong> Converting takes a few hundred bytes of memory per character, so a megabyte of Markdown from a request could cost hundreds of megabytes. A profile’s new <code>max_length</code> option (a million characters by default, <code>None</code> for no limit) refuses longer text with <code>ValueError</code>.</li>
+<li><strong>Placeholder nonces for concurrent renders come from the operating system’s random source</strong>, rather than from SipHash keys over a counter. Both were unpredictable; the new source needs no argument for it.</li>
+</ul>
+</section>
+<section id="fixed-1" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-1">Fixed</h3>
+<ul>
+<li><strong>A value of several parts in a slot body kept the parts written before an error</strong> when one part rendered a native partial whose own slot body had such a value: the inner value cleared the record of the outer one, so a <code>tal:on-error</code> around it kept output Chameleon never writes.</li>
+<li><strong><code>tal:case</code> awaited a coroutine passed to <a href="reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a> twice</strong> (<code>RuntimeError: cannot reuse already awaited coroutine</code>) when the case did not match: the <code>default</code> comparison evaluates the expression again, as in Chameleon, and now reuses the awaited value.</li>
+<li><strong>A coroutine passed to a native partial could be used only once in it.</strong> It is awaited at the partial’s first use and keeps that value. A partial that is not found no longer leaves its arguments “never awaited”.</li>
+<li><strong><code>${default}</code> inside an <code>i18n:target</code> element raised <code>NameError</code></strong> when no <code>target_language</code> was passed; it is the render default (<code>None</code>), as in Chameleon.</li>
+<li><strong>Templates on filesystems that give different files one inode number rendered each other’s content</strong> (some FUSE, overlay and network mounts). A file with a single link is now also known by its resolved path.</li>
+<li><strong>The Jinja-shaped engines could serve a package folder’s file for another name</strong> when the search path mixed package folders (<code>pkg:dir</code>) and directories: the name cache skipped the package folders the loader tries first.</li>
+<li><strong>A loop length of <code>-2**63</code> from a custom <code>repeat</code> wrapped around</strong> in release builds and wrote repeat whitespace where Chameleon writes none.</li>
+<li><strong><code>throw()</code> into a render waiting for its concurrent calls</strong> dropped an <code>Exception</code> and kept waiting, and <code>GeneratorExit</code> yielded again; the first is now raised once the other calls are cancelled, the second at once.</li>
+<li><strong>A key whose <code>__hash__</code> changed <code>rcontext</code> while a macro was called raised <code>InternalError</code>.</strong></li>
+<li><strong>The <code>&lt;meta&gt;</code> charset search was quadratic in the number of <code>&lt;meta http-equiv=Content-Type content=</code> prefixes</strong> without a <code>;</code> (600 KB took 20 s); it is linear.</li>
+<li><strong>A render error’s argument listing could print a subclass’s value at any length</strong> (a <code>str</code> subclass whose <code>__len__</code> lies, an <code>int</code> subclass with a long <code>__str__</code>); every value is cut to 53 characters.</li>
+<li><strong>A failed import of the concurrency limit’s or the error formatter’s module</strong> pinned the limit at 64 for good, or replaced the render’s error with the import error; it is raised and retried, or the render’s own error is raised.</li>
+<li><strong>Fallback expression functions referred to themselves through their globals</strong>, so on GIL builds a reloaded template’s old functions waited for the garbage collector.</li>
+<li><strong>Threads meeting one file under two spellings at once compiled it twice.</strong></li>
+<li><code>_native.Program</code> refuses an out-of-range <code>surrogate_base</code>, and the <code>_testing</code> tokenizer helpers check the source length as every other entry does.</li>
+<li><code>make lint</code> fails if <code>fancy-regex</code> (a test reference) ever becomes a dependency of the extension.</li>
+</ul>
+</section>
+</section>
+<section id="v0.1.55" class="level1 changelog-version">
+<h1 class="changelog-version">v0.1.55</h1>
+<p><em>2026-10-30</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.55">GitHub</a></p>
+<p>Fixes from a security and stability review: templates on filesystems without inode numbers and expressions too deep for a worker thread’s stack, plus smaller async, macro and compatibility fixes.</p>
+<section id="security-2" class="level3">
+<h3 class="anchored" data-anchor-id="security-2">Security</h3>
+<ul>
+<li><strong>Templates on filesystems without inode numbers rendered each other’s content.</strong> Partials, sibling templates and the Jinja-shaped engines identified a file by device and inode, and filesystems without file IDs (FAT, exFAT and some network or FUSE mounts, notably on Windows) report inode 0 for every file: every template on such a volume was taken for the first one loaded. A zero inode now falls back to the file’s resolved path.</li>
+<li><strong>An expression nested deeply could crash the process on a small thread stack.</strong> The compile’s nesting limit is measured on the thread that compiles, but evaluation recurses on the thread that renders: the deepest expressions it allowed (a few hundred levels of <code>a + a + ...</code>, <code>not not ...</code> or an attribute chain) overflowed a 128 to 256 KiB worker thread’s stack (SIGBUS). Expressions deeper than 64 levels now check the stack left before they are evaluated and raise <code>RecursionError</code>.</li>
+</ul>
+</section>
+<section id="fixed-2" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-2">Fixed</h3>
+<ul>
+<li><strong>Errors inside a slot fill name the expression that failed</strong> (malthe/chameleon<a href="https://github.com/mikeckennedy/chameleon-rs/issues/447">#447</a>, reported by gelbi123; also <a href="https://github.com/mikeckennedy/chameleon-rs/issues/291">#291</a>, reported by Franco Pellegrini, and <a href="https://github.com/mikeckennedy/chameleon-rs/issues/259">#259</a>, reported by castilma). An error in a <code>metal:fill-slot</code> body was reported at the page’s <code>metal:use-macro</code>, often after the macro’s last expression, which had nothing to do with it: in Plone, every error in a view’s content pointed at <code>context/main_template/macros/master</code>. The message now leads with the fill’s failing expression, its file, line and source, followed by the <code>use-macro</code> that led there; the macro’s unrelated expression is gone. Errors outside slot fills are reported as before. This changes messages Chameleon gets wrong; see “Chameleon bugs fixed” in the compatibility guide.</li>
+<li><strong><code>render_async(offload=True)</code> lost the caller’s context variables</strong> on Python 3.12 to 3.14: the worker thread ran without the calling task’s <code>contextvars</code> (a request’s, a framework’s current app, tracing spans). Offloaded renders now run in <code>asyncio.to_thread</code>, which copies them.</li>
+<li><strong>A value’s <code>__del__</code> that used a finished async render failed with “coroutine already executing”</strong>: the render’s state was dropped while its awaitable was still borrowed. It is now dropped after.</li>
+<li><strong>A global changed while a macro call copied the globals back raised <code>InternalError</code></strong> (a value’s <code>__del__</code> changing <code>rcontext</code> as the local it shadowed was replaced). It now raises Chameleon’s <code>RuntimeError: dict mutated during update</code>.</li>
+<li><strong>A suspended async render’s garbage-collector traversal skipped one value</strong> (the target language of a slot body’s conversion helpers), so a reference cycle through it could not be collected.</li>
+<li><strong>Render defaults could be paired with another settings’ key on free-threaded Python</strong>: they were cached in two attributes written one after the other, and are now one.</li>
+<li><strong><code>ExpressionEvaluator</code> accepts no builtins</strong> (Chameleon raises <code>ValueError</code>, malthe/chameleon<a href="https://github.com/mikeckennedy/chameleon-rs/issues/452">#452</a>), and <strong>relative dotted names go up one module per leading dot</strong> (malthe/chameleon<a href="https://github.com/mikeckennedy/chameleon-rs/issues/451">#451</a>; not reachable from templates).</li>
+</ul>
+</section>
+</section>
+<section id="v0.1.54" class="level1 changelog-version">
+<h1 class="changelog-version">v0.1.54</h1>
+<p><em>2026-10-30</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.54">GitHub</a></p>
+<p>Zope and Plone: z3c.pt’s and Zope 6.3’s own test suites pass unmodified on <a href="reference/compat.install.html#chameleon_rs.compat.install" class="gdls-link gdls-code">compat.install()</a>. Also fixes for adopted upstream Chameleon issues, and three additions.</p>
+<section id="added" class="level3">
+<h3 class="anchored" data-anchor-id="added">Added</h3>
+<ul>
+<li><strong><code>pathlib.Path</code> wherever a path string works</strong> (malthe/chameleon<a href="https://github.com/mikeckennedy/chameleon-rs/issues/342">#342</a>, reported by markkuleinio): a single <code>Path</code> as <code>search_path</code> (Chameleon raises “‘PosixPath’ object is not iterable”), <code>Path</code> entries in a search path, and <code>loader[Path('page.pt')]</code>. Any <code>os.PathLike</code> is accepted; a list or tuple of strings is still kept as the loader’s own <code>search_path</code>, as in Chameleon.</li>
+<li><strong>Zope’s <code>repeat.item.first(name)</code> and <code>repeat.item.last(name)</code></strong> (malthe/chameleon<a href="https://github.com/mikeckennedy/chameleon-rs/issues/144">#144</a>, reported by pbauer): whether the item starts or ends a run of items with the same <code>name</code> attribute (or key, for a mapping), for headings and rules in a sorted sequence: <code>&lt;h2 tal:condition="repeat.item.first('category')"&gt;</code>. Without a name, whole items compare. Chameleon never implemented them (its docs suggest <code>itertools.groupby</code>). <code>RepeatItem</code> takes the repeated items as an optional third argument; one made with Chameleon’s two arguments raises a <code>TypeError</code> from <code>first</code> and <code>last</code> only.</li>
+<li><strong><code>chameleon_rs.template.HTML5_BOOLEAN_ATTRIBUTES</code></strong> (<a href="https://github.com/mikeckennedy/chameleon-rs/issues/11">#11</a>, reported by zopyx): Chameleon’s 12 boolean attributes plus HTML5’s 20 (<code>required</code>, <code>autofocus</code>, <code>formnovalidate</code>, …), the set z3c.pt uses for Zope and Plone. Set <code>boolean_attributes = HTML5_BOOLEAN_ATTRIBUTES</code> to render <code>required="required"</code> instead of <code>required="True"</code>. The default stays Chameleon’s.</li>
+</ul>
+</section>
+<section id="fixed-3" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-3">Fixed</h3>
+<ul>
+<li><strong>A valueless attribute given a value is written <code>name="value"</code></strong> (malthe/chameleon<a href="https://github.com/mikeckennedy/chameleon-rs/issues/429">#429</a>, reported by petschki): <code>&lt;input disabled tal:attributes="disabled True"&gt;</code> rendered <code>&lt;input disableddisabled&gt;</code>, and the same for any valueless attribute set by <code>tal:attributes</code> or translated by <code>i18n:attributes</code> (<code>titlehello</code>, <code>altAlt</code>). It’s now written as an added attribute is, <code>disabled="disabled"</code>. <code>default</code> still keeps the attribute as written (<code>checked</code>). This changes output that Chameleon gets wrong; see “Chameleon bugs fixed” in the compatibility guide.</li>
+<li><strong><code>repeat</code> in a recursive macro</strong> (malthe/chameleon<a href="https://github.com/mikeckennedy/chameleon-rs/issues/177">#177</a>, reported by marcidy): when a loop ended inside a loop of the same name, <code>repeat.item</code> kept the inner loop’s item, so the outer loop’s next items read its <code>index</code> and <code>number</code> (<code>-1</code> and <code>0</code> after a leaf’s empty loop). The outer loop’s item is put back when the inner loop ends. Loops one after another still leave the last loop’s item, and a <code>repeat</code> passed in by the caller is left alone.</li>
+<li><strong>A local that shadows a global survives a macro call</strong> (malthe/chameleon<a href="https://github.com/mikeckennedy/chameleon-rs/issues/445">#445</a>, reported by vnmabus): after every macro call, Chameleon copies all globals into the caller’s scope, so <code>tal:define="foo ..."</code> inside an element reverted to the global <code>foo</code> after any <code>metal:use-macro</code> in it. Only globals the macro changed are copied now; a macro that sets the global still updates the caller, as before.</li>
+<li><strong>Custom expression types written for Chameleon reject a <code>${...}</code> candidate with its <code>ExpressionError</code></strong> (<a href="https://github.com/mikeckennedy/chameleon-rs/issues/8">#8</a>, reported by zopyx): the interpolator offers the longest candidate first and shortens it while the type raises <code>ExpressionError</code>, but it only recognized chameleon-rs’ class, so a type raising <code>chameleon.exc.ExpressionError</code> (z3c.pt, Zope’s <code>MappedExpr</code>) aborted the template, and any Plone attribute with two <code>${...}</code> failed to compile. Chameleon’s class counts too now, when Chameleon is loaded; chameleon-rs still never imports it.</li>
+<li><strong>Chameleon’s expression types can be subclassed, and z3c.pt runs on <a href="reference/compat.install.html#chameleon_rs.compat.install" class="gdls-link gdls-code">compat.install()</a></strong> (<a href="https://github.com/mikeckennedy/chameleon-rs/issues/9">#9</a>, reported by zopyx): z3c.pt, the page template layer of Zope and Plone, subclasses <code>chameleon.tales.PythonExpr</code> and <code>ExistsExpr</code>, which failed with “‘PythonExpr’ object has no attribute ‘translate’” and a <code>RecursionError</code>. <code>PythonExpr</code> now has Chameleon’s <code>translate</code>, and <code>NotExpr</code>, <code>ExistsExpr</code>, <code>ImportExpr</code> and <code>StructureExpr</code> compile as Chameleon’s do when called from Python; templates that name the classes themselves still compile natively. <a href="reference/PageTemplate.engine.html#chameleon_rs.PageTemplate.engine" class="gdls-link gdls-code">PageTemplate.engine</a> and <a href="reference/PageTemplate.expression_parser.html#chameleon_rs.PageTemplate.expression_parser" class="gdls-link gdls-code">expression_parser</a> exist as in Chameleon, <code>ExpressionEvaluator</code> works with a parser that has no <code>python</code> type, and <code>tales.test</code>, <code>SimpleEngine</code> and <code>SimpleCompiler</code> are there for doctests. z3c.pt’s own suite passes unmodified and runs in <code>make test-integration</code>.</li>
+<li><strong>Custom expression types: <code>Builtin</code> names and attribute access as in Chameleon</strong> (<a href="https://github.com/mikeckennedy/chameleon-rs/issues/9">#9</a>): a <code>Builtin('get')</code>, <code>Builtin('econtext')</code> or a template builtin in a type’s AST now means what it does in Chameleon’s render function (it raised <code>AttributeError</code> from Python’s builtins), and attribute access in a type’s AST no longer falls back to item lookup, which Chameleon only does inside <code>PythonExpr</code>.</li>
+<li><strong>A custom expression type’s AST is left as the type made it</strong> (found by Zope’s suite): the bridge replaced <code>Symbol</code> and <code>Static</code> nodes inside the type’s own objects, so a type that hands every expression the same nodes (Zope’s untrusted <code>python:</code> shares one <code>Static</code> per builtin) failed on its second expression with <code>NameError: name '__rs_symbol_2' is not defined</code>. The bridge now works on copies, as Chameleon’s code generator leaves the nodes alone.</li>
+<li><strong>Error reports use the template’s <code>value_repr</code> when its builtins have no <a href="reference/flask.template.html#chameleon_rs.flask.template" class="gdls-link gdls-code">template</a></strong> (found by Zope’s suite): z3c.pt replaces a template’s builtins, and Zope passes its own <a href="reference/flask.template.html#chameleon_rs.flask.template" class="gdls-link gdls-code">template</a>, so the report used the default formatting instead of Zope’s <code>value_repr = repr</code>.</li>
+<li><strong>A macro is not callable</strong> (<a href="https://github.com/mikeckennedy/chameleon-rs/issues/10">#10</a>, reported by zopyx): Zope’s path expressions call whatever they resolve to, so <code>metal:use-macro="context/@[@main](https://github.com/main)_template/macros/master"</code> called the macro and raised a <code>TypeError</code>, on every Plone page. As in Chameleon, <code>Macro</code> is a plain object again and its <a href="reference/PageTemplate.include.html#chameleon_rs.PageTemplate.include" class="gdls-link gdls-code">include</a> (now a separate <code>MacroInclude</code>) renders it, with the same signature as before. Code that called a macro directly calls <code>macro.include(...)</code>, which works on both engines.</li>
+</ul>
+</section>
+</section>
+<section id="v0.1.53" class="level1 changelog-version">
+<h1 class="changelog-version">v0.1.53</h1>
+<p><em>2026-10-30</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.53">GitHub</a></p>
+<p>Less shared reference counting per render on free-threaded Python.</p>
+<section id="changed-1" class="level3">
+<h3 class="anchored" data-anchor-id="changed-1">Changed</h3>
+<ul>
+<li><strong>Less shared reference counting per render on free-threaded Python,</strong> from Kitewing’s profile of a page served over HTTP. Each of these updated a count every rendering thread shares:
+<ul>
+<li><code>chameleon_rs.tal.RepeatDict</code> (one per looping partial) is now a native class. Chameleon’s keeps the dict’s bound <a href="reference/PageTemplate.__getitem__.html#chameleon_rs.PageTemplate.__getitem__" class="gdls-link gdls-code">__getitem__</a> and <code>__setitem__</code>, which reference <code>dict</code>’s own slot descriptors; creating them from six threads ran no faster than from one. It keeps Chameleon’s name, module, subclassing, errors and <code>copy.copy</code>.</li>
+<li>The check for <code>repeat</code> and <code>Markup</code> values took a reference to each value’s type on every attribute access and every emitted value.</li>
+<li>Calling a builtin such as <code>len</code> took a reference to it (builtin functions are not immortal).</li>
+<li>The VM cloned the running program’s <code>Arc</code> at every frame switch, twice per partial call; it now holds each program once per render.</li>
+<li>The partials’ <code>_prepare</code> imported the template module on every call, a lookup in <code>sys.modules</code> that takes that dict’s lock on free-threaded Python.</li>
+</ul></li>
+</ul>
+</section>
+</section>
+<section id="v0.1.52" class="level1 changelog-version">
+<h1 class="changelog-version">v0.1.52</h1>
+<p><em>2026-10-30</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.52">GitHub</a></p>
+<p>Free-threaded scaling for pages with partials, and three bugs found on the way.</p>
+<section id="changed-2" class="level3">
+<h3 class="anchored" data-anchor-id="changed-2">Changed</h3>
+<ul>
+<li><strong>Pages with partials scale across threads on free-threaded Python.</strong> Every partial call copied the template’s render defaults (<code>__translate</code>, <code>__decode</code>, …) from one dict shared by every thread, and on free-threaded CPython reading a dict takes its lock: six threads rendering a page with 52 partials did 2.4× the work of one. A loop or a mention of <code>repeat</code> now only gives a scope a fresh <code>repeat</code>. The defaults are copied in only where a template can see them (it names <code>econtext</code>, <code>rcontext</code> or a default, has names only known at render time, or calls a macro); an error message still lists them, as Chameleon’s does. Switching between a page’s and its partials’ frames no longer takes references to shared objects, and on free-threaded builds the string constants of templates read from files are interned, as CPython does for code constants (never those of a template made from a string, which may be one per request). At six threads a page with partials now scales 3.7× (37,500 renders a second where it was 22,900), and a flat template shared by every thread 4.3×.</li>
+</ul>
+</section>
+<section id="fixed-4" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-4">Fixed</h3>
+<ul>
+<li><strong>A partial whose code read a render default by its plain name</strong> (<code>translate</code>, <code>decode</code>, <code>on_error_handler</code>, which expressions read as <code>econtext['__translate']</code> and so on) raised <code>KeyError</code> when it had no loop.</li>
+<li><strong>An async render of a macro recursing until <code>tal:on-error</code> caught the <code>RecursionError</code> rendered fewer levels than Chameleon</strong> (936 against 991 at the default limit): it kept a fixed reserve of 64 frames. It now measures the stack as a sync render does, and stops where <a href="reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> called in place of <code>await render_async(...)</code> would.</li>
+<li><strong>Litestar’s <a href="reference/litestar.ChameleonEngine.html#chameleon_rs.litestar.ChameleonEngine.render_string" class="gdls-link gdls-code">render_string</a> cache could lose an entry</strong> when two threads compiled the same string at once: the second evicted the oldest template before storing the key the first had stored. The second now keeps the first one’s template.</li>
+</ul>
+</section>
+</section>
+<section id="v0.1.51" class="level1 changelog-version">
+<h1 class="changelog-version">v0.1.51</h1>
+<p><em>2026-10-30</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.51">GitHub</a></p>
+<p>Fixes from two reviews: for memory leaks, GC problems and anything that could crash or wedge a web worker, then for the memory, time and cache lifetimes a small input could take.</p>
+<section id="security-3" class="level3">
+<h3 class="anchored" data-anchor-id="security-3">Security</h3>
+<ul>
+<li><strong>Renders nested through Python could crash the process on Python 3.12 and 3.13.</strong> A value whose <code>__html__</code>, or a helper, renders another template (a comment thread rendering its replies) nests as deep as the data goes. Before 3.14, CPython counts only Python frames, so on a worker thread with a small stack (512 KiB to 2 MiB) the native stack overflowed at 68 to 268 levels (SIGBUS) instead of raising <code>RecursionError</code>. Every render now checks the stack left when it starts.</li>
+<li><strong>A deep <code>metal:fill-slot</code> body could crash a compile on a small thread stack.</strong> Copying the compiled slot body recursed without a guard; it now runs on a stack of its own when needed.</li>
+<li><strong>The decorator and module APIs compiled and cached every spelling of a template name forever</strong> (<code>./sub/p.pt</code>, <code>sub//p.pt</code>, an absolute path): with names built from a request, the cache grew without bound. They now load one template per file. The names remembered for that are bounded (1024 per loader), names of missing files are never remembered, and a name seen before costs no <code>stat</code>.</li>
+<li><strong>A small Markdown value could make a conversion take hundreds of megabytes.</strong> Every row of a table gets as many cells as its header, and comrak’s own limit is per table: four sparse tables of 700 columns and 700 one-cell rows, 22 KB of text, made two million cells (500 MB peak, 20 MB of HTML). Text whose tables would make more than 100,000 cells, or more cells than it has bytes, now converts with tables off (their rows show as paragraphs), checked before parsing.</li>
+<li><strong>Nested namespace declarations took memory quadratic in the depth.</strong> Every start tag copied its parent’s prefix map: 2,000 nested <code>xmlns:</code> declarations (45 KB of template) took 330 MB before the compile rejected the depth. A tag now shares its parent’s map, or stores only what it adds, and lookups while parsing cost the same at any depth.</li>
+<li><strong>A long run of whitespace made compiling quadratic.</strong> 64K spaces after an attribute took 8 s: the attribute search, and the <code>&lt;meta&gt;</code> charset sniffing (which Chameleon shares, for a run anywhere in the template), each rescanned the rest of the run from every space. Both are linear now: 256K spaces compile in 2 ms.</li>
+</ul>
+</section>
+<section id="added-1" class="level3">
+<h3 class="anchored" data-anchor-id="added-1">Added</h3>
+<ul>
+<li><strong><code>strict_names</code></strong> (opt-in: <code>configure(strict_names=True)</code> or <code>CHAMELEON_STRICT_NAMES=1</code>): the framework integrations’ decorator and module APIs (<code>[@template](https://github.com/template)</code>, <a href="reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render</a>, <a href="reference/flask.response.html#chameleon_rs.flask.response" class="gdls-link gdls-code">response</a>, their async forms, <a href="reference/web.ErrorPage.html#chameleon_rs.web.ErrorPage" class="gdls-link gdls-code">ErrorPage</a>’s template) refuse template names that could reach outside the template folder (absolute paths, <code>..</code>, backslashes, drive letters, <code>package:path</code> specs, NUL, surrounding whitespace) with the <code>ValueError("Template not found: ...")</code> a missing template raises. Off by default, as in the original libraries.</li>
+<li><strong><code>CHAMELEON_CONCURRENT_LIMIT</code></strong> (default 64): one asynchronous render starts at most this many tasks for <code>[@concurrent](https://github.com/concurrent)</code> calls and concurrent partials; further calls are awaited in place, so a <code>tal:repeat</code> over request-sized data can’t fan out without bound.</li>
+</ul>
+</section>
+<section id="fixed-5" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-5">Fixed</h3>
+<ul>
+<li><strong>A <code>tal:on-error</code> inside a <code>metal:fill-slot</code> kept text Chameleon drops</strong>, when the macro’s slot sits inside an <code>i18n:translate</code> or <code>i18n:name</code>. Chameleon writes a text node with its <code>${...}</code> expressions (and an interpolated attribute value) as one string, so when an expression fails, the text before it in that node was never written. chameleon-rs wrote it first: <code>&lt;i&gt;a&lt;i&gt;E&lt;/i&gt;</code> where Chameleon gives <code>&lt;i&gt;&lt;i&gt;E&lt;/i&gt;</code>. The last of the slot-body known differences of this kind; the render fuzzer now generates handlers in such bodies.</li>
+<li><strong>A cancellation during an async render’s cleanup was swallowed.</strong> When a <code>[@concurrent](https://github.com/concurrent)</code> call failed, the render cancelled the others and waited for their <code>finally</code> blocks; a <code>CancelledError</code> arriving then (a client disconnect, <code>asyncio.timeout</code>, <code>wait_for</code>) was replaced by the template’s error, so a disconnect became a logged 500 and a timeout never fired. Cancellation now wins, with the template error as its context.</li>
+<li><strong>A failed <code>[@concurrent](https://github.com/concurrent)</code> call no longer waits for slower calls before it in the page</strong>: the render ends as soon as one fails, as a <code>TaskGroup</code> does.</li>
+<li><strong>A <code>StopIteration</code> raised in an async render</strong> (<code>next()</code> on an exhausted iterator) made <code>await render_async()</code> return the exception’s arguments as if they were the page. It is now a <code>RuntimeError</code>, as in any coroutine (PEP 479).</li>
+<li><strong>Rendering error messages could fail and lose the original message</strong>: the source line was read with the locale’s encoding, so a template file that isn’t UTF-8 (or a non-UTF-8 locale) made <code>str()</code> of the error raise. The file is now read as UTF-8 with replacement characters, and a failure while formatting falls back to the original message.</li>
+<li><strong>A macro with a <code>&lt;?python ?&gt;</code> block called in a long <code>tal:repeat</code> was quadratic</strong>: each call’s namespace was kept until the end of the render and searched on every lookup (128k items took 1.3 s and 62 MB at 64k). Namespaces are dropped when their frame returns: 0.85 µs per item at any size.</li>
+<li>Cancelled <code>[@concurrent](https://github.com/concurrent)</code> calls and concurrent partials’ arguments no longer leave “coroutine was never awaited” warnings.</li>
+<li><strong>The Litestar integration made a reference cycle per render</strong> (the template callables were bound to the dict that held them), so each request and its model lived until the next garbage collection. The callables now get a copy of the context, as Litestar’s Mako engine does.</li>
+<li><strong>Each distinct name a template used stayed in memory for the life of the process</strong>: interned immortally, by PyO3 and by CPython’s parser. Bare names and dotted paths (<code>${title}</code>, <code>${user.name}</code>) now compile without the parser, which is also faster, and names are interned with <code>sys.intern</code>, so they are freed with the last template using them on CPython 3.13 and later with the GIL (3.12 and free-threaded builds intern only immortally). This matters only for templates generated at runtime.</li>
+<li><strong>No more <code>PanicException</code>s from a dict changed while chameleon-rs reads it</strong> (a key whose <code>__hash__</code> changes the scope, or another thread on a free-threaded build): the scope’s copy, the defaults and the partials’ error context read a snapshot, and the macro, slot, async step, tokenizer and element parser entry points turn any panic into <code>InternalError</code>. A <code>PanicException</code> is a <code>BaseException</code>, so <code>except Exception</code> handlers missed it.</li>
+<li>A render’s saved error is visible to the garbage collector while its cancelled tasks are joined; a second awaiter of a suspended render gets <code>RuntimeError("coroutine is being awaited already")</code>; an error looking up a delegate’s <code>throw</code> is raised, as in CPython.</li>
+<li><strong>Templates found next to a caller (sibling partials) were kept for the life of the process,</strong> with the settings in their cache key (a <code>translate</code> function per template, say), and one more for each file a deployment replaced. They now live as long as a template that uses them, and the cache holds settings by value only when they are plain data (strings, numbers), so a setting or a template subclass that refers back to its template doesn’t keep it either. A setting that can’t be hashed (a dict such as <code>extra_builtins</code>) still isn’t shared, so a sibling never keeps contents the dict has since changed.</li>
+<li><strong>A <code>[@concurrent](https://github.com/concurrent)</code> call’s own cancellation waited for every other call.</strong> A helper raising <code>CancelledError</code> (or awaiting a cancelled future) ended the render only once the others finished, never if one hung. It now ends it at once, as a failure does.</li>
+<li><strong>Two names of one file (a hard link) stayed together after a deployment replaced one.</strong> <code>b.pt</code> loaded as <code>a.pt</code>, the first name seen of its file, and rendered <code>a.pt</code>’s new content after <code>a.pt</code> was replaced. A remembered name is now checked to still name that file, in the integrations, the Jinja-shaped engines and the partials folder (with <code>auto_reload</code>).</li>
+<li>The README said async rendering never blocks the event loop; it never blocks it on I/O. A page that is all CPU work holds the loop while it renders (see “Offloading a render to a thread”).</li>
+</ul>
+</section>
+<section id="changed-3" class="level3">
+<h3 class="anchored" data-anchor-id="changed-3">Changed</h3>
+<ul>
+<li>The Jinja-shaped engines’ <a href="reference/starlette.Templates.html#chameleon_rs.starlette.Templates.get_template" class="gdls-link gdls-code">get_template()</a> (Starlette, Litestar, Robyn) remembers the names it found when templates don’t reload, as the decorator API does: a name seen before costs no <code>stat</code> (0.5 µs, from 2.3 µs).</li>
+</ul>
+</section>
+</section>
+<section id="v0.1.50" class="level1 changelog-version">
+<h1 class="changelog-version">v0.1.50</h1>
+<p><em>2026-10-30</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.50">GitHub</a></p>
+<section id="added-2" class="level3">
+<h3 class="anchored" data-anchor-id="added-2">Added</h3>
+<ul>
+<li><strong><code>strict_tags</code>: template errors reported where the mistake is.</strong> Chameleon treats an unclosed start tag as an empty element, so a <code>tal:condition</code> missing its <code>&lt;/div&gt;</code> hides nothing, and a <code>tal:repeat</code> missing its <code>&lt;/ul&gt;</code> fails with a <code>NameError</code> on a later line. With <code>strict_tags=True</code> (on a template or loader, in <a href="reference/configure.html#chameleon_rs.configure" class="gdls-link gdls-code">chameleon_rs.configure()</a>, or through <code>CHAMELEON_STRICT_TAGS=1</code>), an unclosed element carrying <code>tal:</code>, <code>metal:</code> or <code>i18n:</code> attributes, or a <code>&lt;tal:...&gt;</code>/<code>&lt;metal:...&gt;</code> element, is a <code>ParseError</code> pointing at its start tag. HTML void elements (<code>&lt;input&gt;</code>, <code>&lt;img&gt;</code>, …) are allowed. Off by default, as in Chameleon; every template of two production sites compiles with it on.</li>
+</ul>
+</section>
+</section>
+<section id="v0.1.49" class="level1 changelog-version">
+<h1 class="changelog-version">v0.1.49</h1>
+<p><em>2026-10-30</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.49">GitHub</a></p>
+<p>Fixes from a second, independent review of the 0.1.48 changes.</p>
+<section id="security-4" class="level3">
+<h3 class="anchored" data-anchor-id="security-4">Security</h3>
+<ul>
+<li><strong>Render data could replace a code block’s own <code>def</code>, parameter or import named like a builtin</strong> (<code>def filter(...)</code> in a <code>&lt;?python ?&gt;</code> block, data named <code>filter</code>). A regression in 0.1.48’s code-block fix; it now matches Chameleon again.</li>
+<li><strong>A partial lookup could loop forever</strong>, hanging the worker, when the calling template’s path started with <code>//</code> and the configured folder’s with <code>/</code> (or, on Windows, they differed in case). A folder configured as <code>//...</code> made every partial “not found”.</li>
+<li><strong>On case-insensitive filesystems (macOS, Windows), each spelling of a name compiled and kept its own template</strong> (<code>INDEX.pt</code>, <code>index.PT</code>): 3,000 spellings took 360 MB. Templates are now cached by file, in <a href="reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a> and the Jinja-style <a href="reference/starlette.Templates.html#chameleon_rs.starlette.Templates.get_template" class="gdls-link gdls-code">get_template</a> APIs.</li>
+<li><strong>More deep nesting crashes fixed:</strong> <code>chameleon_rs.parser.ElementParser</code>, and compiles on small thread stacks or with most of the stack already used, overflowed the native stack. Compiling now also checks the stack actually left (with the <code>stacker</code> crate).</li>
+</ul>
+</section>
+<section id="fixed-6" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-6">Fixed</h3>
+<ul>
+<li>A directory name given to <a href="reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a> or a Jinja-style <a href="reference/starlette.Templates.html#chameleon_rs.starlette.Templates.get_template" class="gdls-link gdls-code">get_template</a> is “not found”, rather than an <code>IsADirectoryError</code>. <a href="reference/robyn.ChameleonTemplate.html#chameleon_rs.robyn.ChameleonTemplate" class="gdls-link gdls-code">chameleon_rs.robyn.ChameleonTemplate</a> raises <a href="reference/web.TemplateNotFound.html#chameleon_rs.web.TemplateNotFound" class="gdls-link gdls-code">TemplateNotFound</a> for a missing file too.</li>
+<li>With nothing configured, a template loaded by a <a href="reference/PageTemplateLoader.html#chameleon_rs.PageTemplateLoader" class="gdls-link gdls-code">PageTemplateLoader</a> below a package’s <code>templates</code> folder finds partials elsewhere in that folder again (a Pyramid layout).</li>
+<li>A <code>[@concurrent](https://github.com/concurrent)</code> helper wrapped in <code>structure:</code> or <code>markdown:</code> runs concurrently again.</li>
+</ul>
+</section>
+</section>
+<section id="v0.1.48-initial-public-release" class="level1 changelog-version">
+<h1 class="changelog-version">v0.1.48: Initial public release</h1>
+<p><em>2026-10-30</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.48">GitHub</a></p>
+<p>Initial release.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/mkennedy\.codes\/docs\/chameleon-rs\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+      window.quartoDecorateExternalLinks = function (root) {
+     var links = (root || window.document).querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+          if (!link.classList.contains('no-external-icon')) {
+          }
+        }
+      }
+      };
+      window.quartoDecorateExternalLinks(window.document);
+    // Esc closes the popup (WCAG 1.4.13) and focus leaving both trigger and
+    // popup closes it (WCAG 2.4.11); tippy handles neither for interactive popups.
+    const hideOnEscAndFocusOut = {
+      name: 'hideOnEscAndFocusOut',
+      defaultValue: true,
+      fn(instance) {
+        const dismiss = () => {
+          // A show scheduled by the trigger delay would otherwise reopen it
+          instance.clearDelayTimeouts();
+          instance.hide();
+        };
+        const onKeyDown = (event) => {
+          if (event.key !== 'Escape') {
+            return;
+          }
+          // Keep Esc from also reaching page handlers (e.g. reveal.js overview),
+          // except an open reveal.js slide menu, which Esc should close too.
+          // The menu handles keys only when its keyboard option is on.
+          const menuHandlesEsc = window.Reveal?.getPlugin?.('menu')?.isOpen() &&
+            window.Reveal.getConfig().menu?.keyboard !== false;
+          if (!menuHandlesEsc) {
+            event.stopPropagation();
+          }
+          if (instance.popper.contains(window.document.activeElement)) {
+            // Disabled while refocusing so the focus trigger does not reopen it
+            instance.disable();
+            instance.reference.focus();
+            instance.enable();
+          }
+          dismiss();
+        };
+        const onFocusOut = (event) => {
+          const target = event.relatedTarget;
+          if (target && !instance.reference.contains(target) &&
+              !instance.popper.contains(target)) {
+            dismiss();
+          }
+        };
+        // On the trigger too: a click trigger (code-annotations: select) has no
+        // blur handling. Attached for the instance's lifetime so leaving the
+        // trigger also cancels a show still pending on the trigger delay.
+        instance.reference.addEventListener('focusout', onFocusOut);
+        return {
+          onShow() {
+            window.document.addEventListener('keydown', onKeyDown, true);
+            instance.popper.addEventListener('focusout', onFocusOut);
+          },
+          onHide() {
+            window.document.removeEventListener('keydown', onKeyDown, true);
+            instance.popper.removeEventListener('focusout', onFocusOut);
+          },
+          onDestroy() {
+            instance.reference.removeEventListener('focusout', onFocusOut);
+          },
+        };
+      },
+    };
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+        plugins: [hideOnEscAndFocusOut],
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          // Each band is positioned against its own containing block, which is
+          // not the offsetParent of the lines, so place it from client rects.
+          const placeBand = (band, firstEl, lastEl, codeBlock) => {
+            const container = band.offsetParent;
+            if (container === null) {
+              return;
+            }
+            const containerRect = container.getBoundingClientRect();
+            // Reveal.js scales slides with a transform, so convert client
+            // pixels back to the CSS pixels of the container.
+            const scale = containerRect.height / container.offsetHeight || 1;
+            const firstRect = firstEl.getBoundingClientRect();
+            const lastRect = lastEl.getBoundingClientRect();
+            const top = (firstRect.top - containerRect.top) / scale - container.clientTop + container.scrollTop;
+            const height = (lastRect.bottom - firstRect.top) / scale;
+            band.style.top = top - 2 + "px";
+            band.style.height = height + 4 + "px";
+            if (codeBlock) {
+              // Without the copy button wrapper, the containing block is wider
+              // than the code block, so span the code block explicitly.
+              const blockRect = codeBlock.getBoundingClientRect();
+              band.style.left = (blockRect.left - containerRect.left) / scale - container.clientLeft + container.scrollLeft + "px";
+              band.style.width = blockRect.width / scale + "px";
+            }
+          };
+          if (lineIds.length > 0) {
+            const el = window.document.getElementById(lineIds[0]);
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const parent = el.parentElement.parentElement;
+            // cook up a div (if necessary) and position it
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            placeBand(div, el, lastEl, parent.closest("div.sourceCode") || parent);
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            placeBand(gutterDiv, el, lastEl);
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+  <script type="application/javascript">
+  window.quartoScrollableRegionsLabels = {"code":"Scrollable code","output":"Scrollable output"};
+  </script>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+<div class="nav-footer-center">
+<p>Developed by <a href="https://mkennedy.codes"><strong>Michael&nbsp;Kennedy</strong></a>.<br>Site created with <strong>Great&nbsp;Docs</strong>.</p>
+</div>
+</div>
+</footer>
+<script src="github-widget.js"></script>
+<script src="copy-page.js"></script>
+<script src="sidebar-wrap.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'sidebar-float.js';document.body.appendChild(s);})();</script>
+<script src="sidebar-filter.js"></script>
+<script src="dark-mode-toggle.js"></script>
+<script src="back-to-top.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'on-this-page.js';document.body.appendChild(s);})();</script>
+<script src="keyboard-nav.js"></script>
+<script src="copy-code.js"></script>
+<script src="details.js"></script>
+<script src="mermaid-renderer.js"></script>
+<script src="tooltips.js"></script>
+<script>(function(){var s=document.createElement('script');s.src=(document.querySelector('link[rel="canonical"]')||{href:location.href}).href.replace(/\/[^\/]*$/,'').replace(/\/[^\/]*$/,'')+'/color-swatch.js';var h=document.currentScript;h.parentNode.insertBefore(s,h.nextSibling);})()</script>
+<script src="responsive-tables.js"></script>
+<script src="video-embed.js"></script>
+<script>(function(){var s=document.createElement('script');var m=document.querySelector('meta[name="quarto:offset"]');s.src=(m?m.content:'')+'termshow.js';document.body.appendChild(s);})();</script>
+<script src="navbar-widgets.js"></script>
+
+
+
+
+</body></html>

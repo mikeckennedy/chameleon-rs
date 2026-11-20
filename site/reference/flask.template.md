@@ -11,7 +11,7 @@ flask.template(template_file: Callable[P, Coroutine[Any, Any, Any]]) -> Callable
  
 flask.template(template_file: Callable[P, Any]) -> Callable[P, flask.Response]
  
-flask.template(template_file: str | None = None, content_type: str = 'text/html', status_code: int = 200, mimetype: str | None = None, concurrent: bool | None = None, offload: bool = False) -> TemplateDecorator
+flask.template(template_file: Optional[str] = None, content_type: str = 'text/html', status_code: int = 200, mimetype: Optional[str] = None, concurrent: Optional[bool] = None, offload: bool = False) -> TemplateDecorator
 ```
 
 

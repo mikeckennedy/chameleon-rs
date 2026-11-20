@@ -1,0 +1,247 @@
+# Changelog
+
+This changelog is generated automatically from [GitHub Releases](https://github.com/mikeckennedy/chameleon-rs/releases).
+
+
+# v0.2.57
+
+*2026-11-20* · [GitHub](https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.2.57)
+
+Fixes from a fourth review (bugs, races, deadlocks, security), and `<?python ?>` blocks that bind names the way Python does. The version's middle number goes up for the changes in behaviour listed under Changed.
+
+
+### Security
+
+- **An element with many attributes, nested deeply, could crash the process on a small thread stack.** Such an element is a dozen nodes deep in the compiled tree, and the stages after the build walked it with no stack check: 90 of them, which the build allows on a 512 KiB stack, overflowed it (SIGBUS). They raise `RecursionError` now.
+- **`global_init(..., cache_init=False)` dropped `strict_names` and `strict_tags`** that a [configure()](reference/configure.html#chameleon_rs.configure) had turned on, so names that leave the template folder (`../secret.pt`) rendered again. The legacy setup call keeps them.
+- **Names built from request data could grow the decorator APIs' template cache without bound**, against what the security guide says: every spelling of a directory (`pages/./`, `pages//`) got its own entry, even with `strict_names`, and so did every missing absolute path or package resource under the default settings. A directory is kept under one spelling, and a name with no file behind it isn't kept.
+- **A model key named `offload` changed how the integrations' `render_async(template_file, **model)` rendered**: the render moved to a worker thread, awaited nothing, and the template never saw the variable. The model is the template's, whatever its keys.
+- **The task limit of a concurrent render did not hold inside a partial rendering as a task.** Each such partial started tasks of its own, as many as the page may, the count set by render data. A `[@concurrent](https://github.com/concurrent)` call in a partial is awaited in place, as documented.
+
+
+### Changed
+
+- **A `<?python ?>` block binds the names Python binds without an assignment**: `except ... as`, `class`, `async def` and the captures of a `match`. Chameleon's name rewriting misses them, so reading one raised `NameError`, or read render data of the same name. A template that relied on that `NameError` (`${C | 7}` after `class C`) renders differently.
+- **A class body in a `<?python ?>` block is Python's.** Its assignments, annotations and methods are the class's attributes, so `class C: v = 3` has `C.v` and a dataclass has its fields. Chameleon stores such an assignment in the template scope: a template that read `${v}` afterwards must read `${C.v}`. What a method assigns is still stored in the template scope, as in any `def`.
+- **Attributes in a `<?python ?>` block are Python's**, as in Chameleon: `obj.name` falling back to `obj['name']` is for expressions only. A block that read a dictionary's key as an attribute now raises `AttributeError`, as it does there.
+- **A template whose file does not exist is not kept by the loader** (see Security): `loader['/missing.pt']` is a new object each time, until the file exists.
+
+
+### Fixed
+
+- **Assigning to an attribute in a `<?python ?>` block was a `SyntaxError`** (`x.a = 1`, `x.a += 2`, `del x.a`), where Chameleon runs it.
+- **A sub-expression of a custom expression type could not read what a `<?python ?>` block defined** (a `def`, an import): `UnboundLocalError`, where Chameleon renders.
+- **Compiling a text with many interpolations was slower than quadratic**: each `${` tried every `}` after it, each candidate as long as the text. 2,000 `${a}` in one text node, attribute or `string:` expression took 6 s (54 s in Chameleon); 1,500 now take 5 ms. Where each interpolation ends is unchanged.
+- **A `[@concurrent](https://github.com/concurrent)` call passed to a native partial could be used only once in it**: the second use raised `RuntimeError: cannot reuse already awaited coroutine`, or rendered a `tal:on-error` fallback.
+- **The error of the last `[@concurrent](https://github.com/concurrent)` call a render waited for had no expression or position.**
+- **A render resumed while the one task it waited for was still pending never returned** (a driver that is not an event loop's task); it raises `RuntimeError`, as a coroutine does.
+- **Coroutines left "never awaited"**: the arguments of a partial call refused at the recursion limit, and a `[@concurrent](https://github.com/concurrent)` helper under `structure:` or `markdown:` when the render failed before its task started.
+- **A package folder on the search path (`pkg:dir`)**: a directory in it was taken for a template by the Starlette and Litestar engines (an error instead of "not found"), and on a case-insensitive filesystem every case spelling of a name compiled its own copy.
+- The annotations use `Optional[X]` rather than `X | None`.
+
+
+# v0.1.56
+
+*2026-10-30* · [GitHub](https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.56)
+
+Fixes from a third reliability, security and memory review: a crash freeing deeply nested expressions on a small thread stack, output and async fixes in the VM and partials, a bound on Markdown input, and smaller hygiene fixes.
+
+
+### Security
+
+- **Freeing a deeply nested expression could crash the process on a small thread stack.** The compile's nesting limit is measured on the thread that compiles, but a compiled template's expressions were freed, and traversed by the garbage collector, recursively on whatever thread released them: the deepest `string:${...}` nesting the compile allowed killed a 64 KiB thread (SIGBUS). Both are iterative now.
+- **Markdown text has a length limit.** Converting takes a few hundred bytes of memory per character, so a megabyte of Markdown from a request could cost hundreds of megabytes. A profile's new `max_length` option (a million characters by default, `None` for no limit) refuses longer text with `ValueError`.
+- **Placeholder nonces for concurrent renders come from the operating system's random source**, rather than from SipHash keys over a counter. Both were unpredictable; the new source needs no argument for it.
+
+
+### Fixed
+
+- **A value of several parts in a slot body kept the parts written before an error** when one part rendered a native partial whose own slot body had such a value: the inner value cleared the record of the outer one, so a `tal:on-error` around it kept output Chameleon never writes.
+- **`tal:case` awaited a coroutine passed to [render_async](reference/robyn.render_async.html#chameleon_rs.robyn.render_async) twice** (`RuntimeError: cannot reuse already awaited coroutine`) when the case did not match: the `default` comparison evaluates the expression again, as in Chameleon, and now reuses the awaited value.
+- **A coroutine passed to a native partial could be used only once in it.** It is awaited at the partial's first use and keeps that value. A partial that is not found no longer leaves its arguments "never awaited".
+- **`${default}` inside an `i18n:target` element raised `NameError`** when no `target_language` was passed; it is the render default (`None`), as in Chameleon.
+- **Templates on filesystems that give different files one inode number rendered each other's content** (some FUSE, overlay and network mounts). A file with a single link is now also known by its resolved path.
+- **The Jinja-shaped engines could serve a package folder's file for another name** when the search path mixed package folders (`pkg:dir`) and directories: the name cache skipped the package folders the loader tries first.
+- **A loop length of `-2**63` from a custom `repeat` wrapped around** in release builds and wrote repeat whitespace where Chameleon writes none.
+- **`throw()` into a render waiting for its concurrent calls** dropped an `Exception` and kept waiting, and `GeneratorExit` yielded again; the first is now raised once the other calls are cancelled, the second at once.
+- **A key whose `__hash__` changed `rcontext` while a macro was called raised `InternalError`.**
+- **The `<meta>` charset search was quadratic in the number of `<meta http-equiv=Content-Type content=` prefixes** without a `;` (600 KB took 20 s); it is linear.
+- **A render error's argument listing could print a subclass's value at any length** (a `str` subclass whose `__len__` lies, an `int` subclass with a long `__str__`); every value is cut to 53 characters.
+- **A failed import of the concurrency limit's or the error formatter's module** pinned the limit at 64 for good, or replaced the render's error with the import error; it is raised and retried, or the render's own error is raised.
+- **Fallback expression functions referred to themselves through their globals**, so on GIL builds a reloaded template's old functions waited for the garbage collector.
+- **Threads meeting one file under two spellings at once compiled it twice.**
+- `_native.Program` refuses an out-of-range `surrogate_base`, and the `_testing` tokenizer helpers check the source length as every other entry does.
+- `make lint` fails if `fancy-regex` (a test reference) ever becomes a dependency of the extension.
+
+
+# v0.1.55
+
+*2026-10-30* · [GitHub](https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.55)
+
+Fixes from a security and stability review: templates on filesystems without inode numbers and expressions too deep for a worker thread's stack, plus smaller async, macro and compatibility fixes.
+
+
+### Security
+
+- **Templates on filesystems without inode numbers rendered each other's content.** Partials, sibling templates and the Jinja-shaped engines identified a file by device and inode, and filesystems without file IDs (FAT, exFAT and some network or FUSE mounts, notably on Windows) report inode 0 for every file: every template on such a volume was taken for the first one loaded. A zero inode now falls back to the file's resolved path.
+- **An expression nested deeply could crash the process on a small thread stack.** The compile's nesting limit is measured on the thread that compiles, but evaluation recurses on the thread that renders: the deepest expressions it allowed (a few hundred levels of `a + a + ...`, `not not ...` or an attribute chain) overflowed a 128 to 256 KiB worker thread's stack (SIGBUS). Expressions deeper than 64 levels now check the stack left before they are evaluated and raise `RecursionError`.
+
+
+### Fixed
+
+- **Errors inside a slot fill name the expression that failed** (malthe/chameleon[\#447](https://github.com/mikeckennedy/chameleon-rs/issues/447), reported by gelbi123; also [\#291](https://github.com/mikeckennedy/chameleon-rs/issues/291), reported by Franco Pellegrini, and [\#259](https://github.com/mikeckennedy/chameleon-rs/issues/259), reported by castilma). An error in a `metal:fill-slot` body was reported at the page's `metal:use-macro`, often after the macro's last expression, which had nothing to do with it: in Plone, every error in a view's content pointed at `context/main_template/macros/master`. The message now leads with the fill's failing expression, its file, line and source, followed by the `use-macro` that led there; the macro's unrelated expression is gone. Errors outside slot fills are reported as before. This changes messages Chameleon gets wrong; see "Chameleon bugs fixed" in the compatibility guide.
+- **`render_async(offload=True)` lost the caller's context variables** on Python 3.12 to 3.14: the worker thread ran without the calling task's `contextvars` (a request's, a framework's current app, tracing spans). Offloaded renders now run in `asyncio.to_thread`, which copies them.
+- **A value's `__del__` that used a finished async render failed with "coroutine already executing"**: the render's state was dropped while its awaitable was still borrowed. It is now dropped after.
+- **A global changed while a macro call copied the globals back raised `InternalError`** (a value's `__del__` changing `rcontext` as the local it shadowed was replaced). It now raises Chameleon's `RuntimeError: dict mutated during update`.
+- **A suspended async render's garbage-collector traversal skipped one value** (the target language of a slot body's conversion helpers), so a reference cycle through it could not be collected.
+- **Render defaults could be paired with another settings' key on free-threaded Python**: they were cached in two attributes written one after the other, and are now one.
+- **`ExpressionEvaluator` accepts no builtins** (Chameleon raises `ValueError`, malthe/chameleon[\#452](https://github.com/mikeckennedy/chameleon-rs/issues/452)), and **relative dotted names go up one module per leading dot** (malthe/chameleon[\#451](https://github.com/mikeckennedy/chameleon-rs/issues/451); not reachable from templates).
+
+
+# v0.1.54
+
+*2026-10-30* · [GitHub](https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.54)
+
+Zope and Plone: z3c.pt's and Zope 6.3's own test suites pass unmodified on [compat.install()](reference/compat.install.html#chameleon_rs.compat.install). Also fixes for adopted upstream Chameleon issues, and three additions.
+
+
+### Added
+
+- **`pathlib.Path` wherever a path string works** (malthe/chameleon[\#342](https://github.com/mikeckennedy/chameleon-rs/issues/342), reported by markkuleinio): a single `Path` as `search_path` (Chameleon raises "'PosixPath' object is not iterable"), `Path` entries in a search path, and `loader[Path('page.pt')]`. Any `os.PathLike` is accepted; a list or tuple of strings is still kept as the loader's own `search_path`, as in Chameleon.
+- **Zope's `repeat.item.first(name)` and `repeat.item.last(name)`** (malthe/chameleon[\#144](https://github.com/mikeckennedy/chameleon-rs/issues/144), reported by pbauer): whether the item starts or ends a run of items with the same `name` attribute (or key, for a mapping), for headings and rules in a sorted sequence: `<h2 tal:condition="repeat.item.first('category')">`. Without a name, whole items compare. Chameleon never implemented them (its docs suggest `itertools.groupby`). `RepeatItem` takes the repeated items as an optional third argument; one made with Chameleon's two arguments raises a `TypeError` from `first` and `last` only.
+- **`chameleon_rs.template.HTML5_BOOLEAN_ATTRIBUTES`** ([\#11](https://github.com/mikeckennedy/chameleon-rs/issues/11), reported by zopyx): Chameleon's 12 boolean attributes plus HTML5's 20 (`required`, `autofocus`, `formnovalidate`, …), the set z3c.pt uses for Zope and Plone. Set `boolean_attributes = HTML5_BOOLEAN_ATTRIBUTES` to render `required="required"` instead of `required="True"`. The default stays Chameleon's.
+
+
+### Fixed
+
+- **A valueless attribute given a value is written `name="value"`** (malthe/chameleon[\#429](https://github.com/mikeckennedy/chameleon-rs/issues/429), reported by petschki): `<input disabled tal:attributes="disabled True">` rendered `<input disableddisabled>`, and the same for any valueless attribute set by `tal:attributes` or translated by `i18n:attributes` (`titlehello`, `altAlt`). It's now written as an added attribute is, `disabled="disabled"`. `default` still keeps the attribute as written (`checked`). This changes output that Chameleon gets wrong; see "Chameleon bugs fixed" in the compatibility guide.
+- **`repeat` in a recursive macro** (malthe/chameleon[\#177](https://github.com/mikeckennedy/chameleon-rs/issues/177), reported by marcidy): when a loop ended inside a loop of the same name, `repeat.item` kept the inner loop's item, so the outer loop's next items read its `index` and `number` (`-1` and `0` after a leaf's empty loop). The outer loop's item is put back when the inner loop ends. Loops one after another still leave the last loop's item, and a `repeat` passed in by the caller is left alone.
+- **A local that shadows a global survives a macro call** (malthe/chameleon[\#445](https://github.com/mikeckennedy/chameleon-rs/issues/445), reported by vnmabus): after every macro call, Chameleon copies all globals into the caller's scope, so `tal:define="foo ..."` inside an element reverted to the global `foo` after any `metal:use-macro` in it. Only globals the macro changed are copied now; a macro that sets the global still updates the caller, as before.
+- **Custom expression types written for Chameleon reject a `${...}` candidate with its `ExpressionError`** ([\#8](https://github.com/mikeckennedy/chameleon-rs/issues/8), reported by zopyx): the interpolator offers the longest candidate first and shortens it while the type raises `ExpressionError`, but it only recognized chameleon-rs' class, so a type raising `chameleon.exc.ExpressionError` (z3c.pt, Zope's `MappedExpr`) aborted the template, and any Plone attribute with two `${...}` failed to compile. Chameleon's class counts too now, when Chameleon is loaded; chameleon-rs still never imports it.
+- **Chameleon's expression types can be subclassed, and z3c.pt runs on [compat.install()](reference/compat.install.html#chameleon_rs.compat.install)** ([\#9](https://github.com/mikeckennedy/chameleon-rs/issues/9), reported by zopyx): z3c.pt, the page template layer of Zope and Plone, subclasses `chameleon.tales.PythonExpr` and `ExistsExpr`, which failed with "'PythonExpr' object has no attribute 'translate'" and a `RecursionError`. `PythonExpr` now has Chameleon's `translate`, and `NotExpr`, `ExistsExpr`, `ImportExpr` and `StructureExpr` compile as Chameleon's do when called from Python; templates that name the classes themselves still compile natively. [PageTemplate.engine](reference/PageTemplate.engine.html#chameleon_rs.PageTemplate.engine) and [expression_parser](reference/PageTemplate.expression_parser.html#chameleon_rs.PageTemplate.expression_parser) exist as in Chameleon, `ExpressionEvaluator` works with a parser that has no `python` type, and `tales.test`, `SimpleEngine` and `SimpleCompiler` are there for doctests. z3c.pt's own suite passes unmodified and runs in `make test-integration`.
+- **Custom expression types: `Builtin` names and attribute access as in Chameleon** ([\#9](https://github.com/mikeckennedy/chameleon-rs/issues/9)): a `Builtin('get')`, `Builtin('econtext')` or a template builtin in a type's AST now means what it does in Chameleon's render function (it raised `AttributeError` from Python's builtins), and attribute access in a type's AST no longer falls back to item lookup, which Chameleon only does inside `PythonExpr`.
+- **A custom expression type's AST is left as the type made it** (found by Zope's suite): the bridge replaced `Symbol` and `Static` nodes inside the type's own objects, so a type that hands every expression the same nodes (Zope's untrusted `python:` shares one `Static` per builtin) failed on its second expression with `NameError: name '__rs_symbol_2' is not defined`. The bridge now works on copies, as Chameleon's code generator leaves the nodes alone.
+- **Error reports use the template's `value_repr` when its builtins have no [template](reference/flask.template.html#chameleon_rs.flask.template)** (found by Zope's suite): z3c.pt replaces a template's builtins, and Zope passes its own [template](reference/flask.template.html#chameleon_rs.flask.template), so the report used the default formatting instead of Zope's `value_repr = repr`.
+- **A macro is not callable** ([\#10](https://github.com/mikeckennedy/chameleon-rs/issues/10), reported by zopyx): Zope's path expressions call whatever they resolve to, so `metal:use-macro="context/@[@main](https://github.com/main)_template/macros/master"` called the macro and raised a `TypeError`, on every Plone page. As in Chameleon, `Macro` is a plain object again and its [include](reference/PageTemplate.include.html#chameleon_rs.PageTemplate.include) (now a separate `MacroInclude`) renders it, with the same signature as before. Code that called a macro directly calls `macro.include(...)`, which works on both engines.
+
+
+# v0.1.53
+
+*2026-10-30* · [GitHub](https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.53)
+
+Less shared reference counting per render on free-threaded Python.
+
+
+### Changed
+
+- **Less shared reference counting per render on free-threaded Python,** from Kitewing's profile of a page served over HTTP. Each of these updated a count every rendering thread shares:
+  - `chameleon_rs.tal.RepeatDict` (one per looping partial) is now a native class. Chameleon's keeps the dict's bound [__getitem__](reference/PageTemplate.__getitem__.html#chameleon_rs.PageTemplate.__getitem__) and `__setitem__`, which reference `dict`'s own slot descriptors; creating them from six threads ran no faster than from one. It keeps Chameleon's name, module, subclassing, errors and `copy.copy`.
+  - The check for `repeat` and `Markup` values took a reference to each value's type on every attribute access and every emitted value.
+  - Calling a builtin such as `len` took a reference to it (builtin functions are not immortal).
+  - The VM cloned the running program's `Arc` at every frame switch, twice per partial call; it now holds each program once per render.
+  - The partials' `_prepare` imported the template module on every call, a lookup in `sys.modules` that takes that dict's lock on free-threaded Python.
+
+
+# v0.1.52
+
+*2026-10-30* · [GitHub](https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.52)
+
+Free-threaded scaling for pages with partials, and three bugs found on the way.
+
+
+### Changed
+
+- **Pages with partials scale across threads on free-threaded Python.** Every partial call copied the template's render defaults (`__translate`, `__decode`, …) from one dict shared by every thread, and on free-threaded CPython reading a dict takes its lock: six threads rendering a page with 52 partials did 2.4× the work of one. A loop or a mention of `repeat` now only gives a scope a fresh `repeat`. The defaults are copied in only where a template can see them (it names `econtext`, `rcontext` or a default, has names only known at render time, or calls a macro); an error message still lists them, as Chameleon's does. Switching between a page's and its partials' frames no longer takes references to shared objects, and on free-threaded builds the string constants of templates read from files are interned, as CPython does for code constants (never those of a template made from a string, which may be one per request). At six threads a page with partials now scales 3.7× (37,500 renders a second where it was 22,900), and a flat template shared by every thread 4.3×.
+
+
+### Fixed
+
+- **A partial whose code read a render default by its plain name** (`translate`, `decode`, `on_error_handler`, which expressions read as `econtext['__translate']` and so on) raised `KeyError` when it had no loop.
+- **An async render of a macro recursing until `tal:on-error` caught the `RecursionError` rendered fewer levels than Chameleon** (936 against 991 at the default limit): it kept a fixed reserve of 64 frames. It now measures the stack as a sync render does, and stops where [render()](reference/flask.render.html#chameleon_rs.flask.render) called in place of `await render_async(...)` would.
+- **Litestar's [render_string](reference/litestar.ChameleonEngine.html#chameleon_rs.litestar.ChameleonEngine.render_string) cache could lose an entry** when two threads compiled the same string at once: the second evicted the oldest template before storing the key the first had stored. The second now keeps the first one's template.
+
+
+# v0.1.51
+
+*2026-10-30* · [GitHub](https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.51)
+
+Fixes from two reviews: for memory leaks, GC problems and anything that could crash or wedge a web worker, then for the memory, time and cache lifetimes a small input could take.
+
+
+### Security
+
+- **Renders nested through Python could crash the process on Python 3.12 and 3.13.** A value whose `__html__`, or a helper, renders another template (a comment thread rendering its replies) nests as deep as the data goes. Before 3.14, CPython counts only Python frames, so on a worker thread with a small stack (512 KiB to 2 MiB) the native stack overflowed at 68 to 268 levels (SIGBUS) instead of raising `RecursionError`. Every render now checks the stack left when it starts.
+- **A deep `metal:fill-slot` body could crash a compile on a small thread stack.** Copying the compiled slot body recursed without a guard; it now runs on a stack of its own when needed.
+- **The decorator and module APIs compiled and cached every spelling of a template name forever** (`./sub/p.pt`, `sub//p.pt`, an absolute path): with names built from a request, the cache grew without bound. They now load one template per file. The names remembered for that are bounded (1024 per loader), names of missing files are never remembered, and a name seen before costs no `stat`.
+- **A small Markdown value could make a conversion take hundreds of megabytes.** Every row of a table gets as many cells as its header, and comrak's own limit is per table: four sparse tables of 700 columns and 700 one-cell rows, 22 KB of text, made two million cells (500 MB peak, 20 MB of HTML). Text whose tables would make more than 100,000 cells, or more cells than it has bytes, now converts with tables off (their rows show as paragraphs), checked before parsing.
+- **Nested namespace declarations took memory quadratic in the depth.** Every start tag copied its parent's prefix map: 2,000 nested `xmlns:` declarations (45 KB of template) took 330 MB before the compile rejected the depth. A tag now shares its parent's map, or stores only what it adds, and lookups while parsing cost the same at any depth.
+- **A long run of whitespace made compiling quadratic.** 64K spaces after an attribute took 8 s: the attribute search, and the `<meta>` charset sniffing (which Chameleon shares, for a run anywhere in the template), each rescanned the rest of the run from every space. Both are linear now: 256K spaces compile in 2 ms.
+
+
+### Added
+
+- **`strict_names`** (opt-in: `configure(strict_names=True)` or `CHAMELEON_STRICT_NAMES=1`): the framework integrations' decorator and module APIs (`[@template](https://github.com/template)`, [render](reference/flask.render.html#chameleon_rs.flask.render), [response](reference/flask.response.html#chameleon_rs.flask.response), their async forms, [ErrorPage](reference/web.ErrorPage.html#chameleon_rs.web.ErrorPage)'s template) refuse template names that could reach outside the template folder (absolute paths, `..`, backslashes, drive letters, `package:path` specs, NUL, surrounding whitespace) with the `ValueError("Template not found: ...")` a missing template raises. Off by default, as in the original libraries.
+- **`CHAMELEON_CONCURRENT_LIMIT`** (default 64): one asynchronous render starts at most this many tasks for `[@concurrent](https://github.com/concurrent)` calls and concurrent partials; further calls are awaited in place, so a `tal:repeat` over request-sized data can't fan out without bound.
+
+
+### Fixed
+
+- **A `tal:on-error` inside a `metal:fill-slot` kept text Chameleon drops**, when the macro's slot sits inside an `i18n:translate` or `i18n:name`. Chameleon writes a text node with its `${...}` expressions (and an interpolated attribute value) as one string, so when an expression fails, the text before it in that node was never written. chameleon-rs wrote it first: `<i>a<i>E</i>` where Chameleon gives `<i><i>E</i>`. The last of the slot-body known differences of this kind; the render fuzzer now generates handlers in such bodies.
+- **A cancellation during an async render's cleanup was swallowed.** When a `[@concurrent](https://github.com/concurrent)` call failed, the render cancelled the others and waited for their `finally` blocks; a `CancelledError` arriving then (a client disconnect, `asyncio.timeout`, `wait_for`) was replaced by the template's error, so a disconnect became a logged 500 and a timeout never fired. Cancellation now wins, with the template error as its context.
+- **A failed `[@concurrent](https://github.com/concurrent)` call no longer waits for slower calls before it in the page**: the render ends as soon as one fails, as a `TaskGroup` does.
+- **A `StopIteration` raised in an async render** (`next()` on an exhausted iterator) made `await render_async()` return the exception's arguments as if they were the page. It is now a `RuntimeError`, as in any coroutine (PEP 479).
+- **Rendering error messages could fail and lose the original message**: the source line was read with the locale's encoding, so a template file that isn't UTF-8 (or a non-UTF-8 locale) made `str()` of the error raise. The file is now read as UTF-8 with replacement characters, and a failure while formatting falls back to the original message.
+- **A macro with a `<?python ?>` block called in a long `tal:repeat` was quadratic**: each call's namespace was kept until the end of the render and searched on every lookup (128k items took 1.3 s and 62 MB at 64k). Namespaces are dropped when their frame returns: 0.85 µs per item at any size.
+- Cancelled `[@concurrent](https://github.com/concurrent)` calls and concurrent partials' arguments no longer leave "coroutine was never awaited" warnings.
+- **The Litestar integration made a reference cycle per render** (the template callables were bound to the dict that held them), so each request and its model lived until the next garbage collection. The callables now get a copy of the context, as Litestar's Mako engine does.
+- **Each distinct name a template used stayed in memory for the life of the process**: interned immortally, by PyO3 and by CPython's parser. Bare names and dotted paths (`${title}`, `${user.name}`) now compile without the parser, which is also faster, and names are interned with `sys.intern`, so they are freed with the last template using them on CPython 3.13 and later with the GIL (3.12 and free-threaded builds intern only immortally). This matters only for templates generated at runtime.
+- **No more `PanicException`s from a dict changed while chameleon-rs reads it** (a key whose `__hash__` changes the scope, or another thread on a free-threaded build): the scope's copy, the defaults and the partials' error context read a snapshot, and the macro, slot, async step, tokenizer and element parser entry points turn any panic into `InternalError`. A `PanicException` is a `BaseException`, so `except Exception` handlers missed it.
+- A render's saved error is visible to the garbage collector while its cancelled tasks are joined; a second awaiter of a suspended render gets `RuntimeError("coroutine is being awaited already")`; an error looking up a delegate's `throw` is raised, as in CPython.
+- **Templates found next to a caller (sibling partials) were kept for the life of the process,** with the settings in their cache key (a `translate` function per template, say), and one more for each file a deployment replaced. They now live as long as a template that uses them, and the cache holds settings by value only when they are plain data (strings, numbers), so a setting or a template subclass that refers back to its template doesn't keep it either. A setting that can't be hashed (a dict such as `extra_builtins`) still isn't shared, so a sibling never keeps contents the dict has since changed.
+- **A `[@concurrent](https://github.com/concurrent)` call's own cancellation waited for every other call.** A helper raising `CancelledError` (or awaiting a cancelled future) ended the render only once the others finished, never if one hung. It now ends it at once, as a failure does.
+- **Two names of one file (a hard link) stayed together after a deployment replaced one.** `b.pt` loaded as `a.pt`, the first name seen of its file, and rendered `a.pt`'s new content after `a.pt` was replaced. A remembered name is now checked to still name that file, in the integrations, the Jinja-shaped engines and the partials folder (with `auto_reload`).
+- The README said async rendering never blocks the event loop; it never blocks it on I/O. A page that is all CPU work holds the loop while it renders (see "Offloading a render to a thread").
+
+
+### Changed
+
+- The Jinja-shaped engines' [get_template()](reference/starlette.Templates.html#chameleon_rs.starlette.Templates.get_template) (Starlette, Litestar, Robyn) remembers the names it found when templates don't reload, as the decorator API does: a name seen before costs no `stat` (0.5 µs, from 2.3 µs).
+
+
+# v0.1.50
+
+*2026-10-30* · [GitHub](https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.50)
+
+
+### Added
+
+- **`strict_tags`: template errors reported where the mistake is.** Chameleon treats an unclosed start tag as an empty element, so a `tal:condition` missing its `</div>` hides nothing, and a `tal:repeat` missing its `</ul>` fails with a `NameError` on a later line. With `strict_tags=True` (on a template or loader, in [chameleon_rs.configure()](reference/configure.html#chameleon_rs.configure), or through `CHAMELEON_STRICT_TAGS=1`), an unclosed element carrying `tal:`, `metal:` or `i18n:` attributes, or a `<tal:...>`/`<metal:...>` element, is a `ParseError` pointing at its start tag. HTML void elements (`<input>`, `<img>`, …) are allowed. Off by default, as in Chameleon; every template of two production sites compiles with it on.
+
+
+# v0.1.49
+
+*2026-10-30* · [GitHub](https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.49)
+
+Fixes from a second, independent review of the 0.1.48 changes.
+
+
+### Security
+
+- **Render data could replace a code block's own `def`, parameter or import named like a builtin** (`def filter(...)` in a `<?python ?>` block, data named `filter`). A regression in 0.1.48's code-block fix; it now matches Chameleon again.
+- **A partial lookup could loop forever**, hanging the worker, when the calling template's path started with `//` and the configured folder's with `/` (or, on Windows, they differed in case). A folder configured as `//...` made every partial "not found".
+- **On case-insensitive filesystems (macOS, Windows), each spelling of a name compiled and kept its own template** (`INDEX.pt`, `index.PT`): 3,000 spellings took 360 MB. Templates are now cached by file, in [render_partial](reference/render_partial.html#chameleon_rs.render_partial) and the Jinja-style [get_template](reference/starlette.Templates.html#chameleon_rs.starlette.Templates.get_template) APIs.
+- **More deep nesting crashes fixed:** `chameleon_rs.parser.ElementParser`, and compiles on small thread stacks or with most of the stack already used, overflowed the native stack. Compiling now also checks the stack actually left (with the `stacker` crate).
+
+
+### Fixed
+
+- A directory name given to [render_partial](reference/render_partial.html#chameleon_rs.render_partial) or a Jinja-style [get_template](reference/starlette.Templates.html#chameleon_rs.starlette.Templates.get_template) is "not found", rather than an `IsADirectoryError`. [chameleon_rs.robyn.ChameleonTemplate](reference/robyn.ChameleonTemplate.html#chameleon_rs.robyn.ChameleonTemplate) raises [TemplateNotFound](reference/web.TemplateNotFound.html#chameleon_rs.web.TemplateNotFound) for a missing file too.
+- With nothing configured, a template loaded by a [PageTemplateLoader](reference/PageTemplateLoader.html#chameleon_rs.PageTemplateLoader) below a package's `templates` folder finds partials elsewhere in that folder again (a Pyramid layout).
+- A `[@concurrent](https://github.com/concurrent)` helper wrapped in `structure:` or `markdown:` runs concurrently again.
+
+
+# v0.1.48: Initial public release
+
+*2026-10-30* · [GitHub](https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.1.48)
+
+Initial release.

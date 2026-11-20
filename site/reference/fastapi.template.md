@@ -11,7 +11,7 @@ fastapi.template(template_file: Callable[P, Coroutine[Any, Any, Any]]) -> Callab
  
 fastapi.template(template_file: Callable[P, Any]) -> Callable[P, fastapi.Response]
  
-fastapi.template(template_file: str | None = None, mimetype: str = 'text/html', status_code: int = 200, content_type: str | None = None, concurrent: bool | None = None, offload: bool = False) -> TemplateDecorator
+fastapi.template(template_file: Optional[str] = None, mimetype: str = 'text/html', status_code: int = 200, content_type: Optional[str] = None, concurrent: Optional[bool] = None, offload: bool = False) -> TemplateDecorator
 ```
 
 
