@@ -55,10 +55,11 @@ def cache[F: Callable[..., Any]](func: F) -> F:
             # (atomic on a dict, free-threaded builds included) makes them all use the first.
             template = func(self, *args, **kwargs)
             if _missing(template):
-                # Not kept: an absolute path or a package spec is taken as it is, so a name
-                # with no file behind it would stay in the registry, one entry per name
-                # (names built from request data grew it without bound). The template is
-                # what it always was: reading it raises.
+                # Not kept: an absolute path or a package spec is taken as it is, and a
+                # directory for a template, so a name with no file behind it would stay in
+                # the registry, one entry per name and spelling (names built from request
+                # data grew it without bound). The template is what it always was: reading
+                # it raises.
                 return template
             template = self.registry.setdefault(args, template)
         return template
@@ -67,18 +68,20 @@ def cache[F: Callable[..., Any]](func: F) -> F:
 
 
 def _missing(template: Any) -> bool:
-    """Whether a file template's file does not exist (``False`` for any other template)."""
+    """Whether a file template has no file to read: none of that name, or a directory, which
+    the loader takes for a template under every spelling it is asked for (``False`` for any
+    other template)."""
     filename = getattr(template, 'filename', None)
     if not isinstance(filename, str):
         return False
     package = getattr(template, 'package_name', None)
     if package is None:
-        return not os.path.exists(filename)
+        return not os.path.isfile(filename)
     # A package that can't be looked in has no file to read either.
     found = False
     try:
         with import_package_resource(package) as files:
-            found = bool(files.joinpath(filename).exists())  # ty: ignore[unresolved-attribute]
+            found = bool(files.joinpath(filename).is_file())
     except Exception:  # noqa: BLE001, S110 - the template's own read raises it, when it loads
         pass
     return not found

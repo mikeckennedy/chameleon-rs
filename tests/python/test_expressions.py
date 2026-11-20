@@ -773,6 +773,18 @@ def test_render_data_cannot_replace_builtins_in_code_blocks(source: str, data: d
     assert 'HIJACK' not in outcome(chameleon_rs) or '${len(' in source
 
 
+class _Shape:
+    __match_args__ = ('x',)
+    KIND = 'k'
+
+    def __init__(self, x: int) -> None:
+        self.x = x
+
+
+class _ShapeNames:
+    Shape = _Shape
+
+
 CODE_BLOCK_BINDINGS = [
     ('<?python\ntry:\n    1 / 0\nexcept Exception as err:\n    x = str(err)\n?>${x}', {}, 'division by zero'),
     # After the handler the name is unbound, as in Python: the scope's again.
@@ -827,6 +839,29 @@ CODE_BLOCK_BINDINGS = [
     ),
     # A template builtin read in a method (the generated code's own names aren't mangled).
     ('<?python\nclass C:\n    def m(self):\n        return nothing is None\n?>${C().m()}', {}, 'True'),
+    # `import a.b` binds `a` (Chameleon records `a.b`, so reading `os` is a `NameError` there).
+    ('<?python import os.path ?>${os.path.basename("a/b")}', {}, 'b'),
+    # An import in a class body is the class's: the name is still the scope's outside it.
+    ('<?python\nclass C:\n    import os\n?>${os} ${C.os.sep}', {'os': 'data'}, 'data /'),
+    # A class or value of a pattern that is the scope's (`SyntaxError` in Chameleon: a pattern
+    # takes a dotted name, not the lookup a read is rewritten to), looked up when tried.
+    ('<?python\nmatch p:\n    case Shape(x=a):\n        y = a\n?>${y}', {'p': _Shape(3), 'Shape': _Shape}, '3'),
+    ('<?python\nmatch p:\n    case int():\n        y = 1\n    case Missing():\n        y = 2\n?>${y}', {'p': 5}, '1'),
+    ('<?python\nmatch c:\n    case ns.Shape.KIND:\n        y = "kind"\n?>${y}', {'c': 'k', 'ns': _ShapeNames}, 'kind'),
+    (
+        '<?python\nclass C:\n    match p:\n        case Shape(x=a):\n            found = a\n?>${C.found} ${a}',
+        {'p': _Shape(3), 'Shape': _Shape},
+        '3 3',
+    ),
+    # Type parameters are visited like the rest of a `def` or `class` (a bound from the scope).
+    (
+        (
+            '<?python\ndef f[T: Shape](a: T) -> T:\n    return a\nclass C[U: Shape]:\n    pass\n?>'
+            '${f.__type_params__[0].__bound__.__name__} ${C.__type_params__[0].__bound__.__name__}'
+        ),
+        {'Shape': _Shape},
+        '_Shape _Shape',
+    ),
     # A case that doesn't match binds nothing: the name is still the scope's.
     (
         '<?python\nmatch 5:\n    case str() as n:\n        pass\n    case _:\n        pass\n?>${n}',

@@ -17,7 +17,7 @@ import sysconfig
 import textwrap
 import warnings
 from collections.abc import Callable, Generator, Iterable, Iterator
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 # Names the compiler keeps for itself; expressions see the render's own objects.
 INTERNALS = frozenset({'econtext', 'rcontext'})
@@ -39,7 +39,28 @@ def _name_error(name: str) -> Any:
 
 # Module globals of Chameleon's generated code that a `__` name in an expression can reach,
 # and the helper that keeps our own names (`__rs_*`, `__lookup_attr`) out of reach.
-MODULE_GLOBALS = {'__default': sys.intern('__default__'), '__rs_name_error': _name_error}
+# The plain name a `match` statement's patterns read the scope's names through (see
+# `Rewriter.visit_Match`). Ours (`_ours`), and not mangled in a class: it ends in `__`.
+SCOPE_NAMES = '__rs_names__'
+
+
+class _ScopeNames:
+    """``names.Point`` is the scope's ``Point``, looked up when the pattern is tried."""
+
+    __slots__ = ('econtext',)
+
+    def __init__(self, econtext: Any) -> None:
+        self.econtext = econtext
+
+    def __getattr__(self, name: str) -> Any:
+        return self.econtext.get_name(name)
+
+
+MODULE_GLOBALS = {
+    '__default': sys.intern('__default__'),
+    '__rs_name_error': _name_error,
+    '__rs_names_of': _ScopeNames,
+}
 
 
 def _ours(name: str) -> bool:
@@ -116,6 +137,8 @@ class Rewriter(ast.NodeTransformer):
         # The names bound in the body of each class being visited (see `visit_ClassDef`);
         # `None` while inside a function or lambda in it, which doesn't see them.
         self.class_names: list[Optional[set[str]]] = []
+        # Whether a pattern of the `match` being visited reads a name from the scope.
+        self.scope_names = False
 
     def visit_arg(self, node: ast.arg) -> ast.arg:
         self.scopes[-1].add(node.arg)
@@ -138,12 +161,13 @@ class Rewriter(ast.NodeTransformer):
         # Decorators, defaults and annotations are evaluated where the function is defined;
         # its body is a scope of its own.
         node.decorator_list = [self.visit(decorator) for decorator in node.decorator_list]
+        node.type_params = [self.visit(param) for param in node.type_params]
         node.args = self.visit(node.args)
         if node.returns is not None:
             node.returns = self.visit(node.returns)
         self.class_names.append(None)
         try:
-            node.body = [self.visit(statement) for statement in node.body]
+            node.body = self.statements(node.body)
         finally:
             self.class_names.pop()
         return node
@@ -157,11 +181,12 @@ class Rewriter(ast.NodeTransformer):
         if not self.in_class_body():
             self.scopes[-1].add(node.name)
         node.decorator_list = [self.visit(decorator) for decorator in node.decorator_list]
+        node.type_params = [self.visit(param) for param in node.type_params]
         node.bases = [self.visit(base) for base in node.bases]
         node.keywords = [self.visit(keyword) for keyword in node.keywords]
         self.class_names.append(_bound(node.body))
         try:
-            node.body = [self.visit(statement) for statement in node.body]
+            node.body = self.statements(node.body)
         finally:
             self.class_names.pop()
         return node
@@ -189,8 +214,56 @@ class Rewriter(ast.NodeTransformer):
             target = self.visit_Name(ast.Name(id=name, ctx=ast.Store()))
             if isinstance(target, ast.Subscript):
                 stores.append(ast.Assign(targets=[target], value=ast.Name(id=name, ctx=ast.Load())))
-        node.body = stores + [self.visit(statement) for statement in node.body]
+        node.body = stores + self.statements(node.body)
         return node
+
+    def visit_Match(self, node: ast.Match) -> ast.AST | list[ast.stmt]:
+        # A class or value in a pattern must be a dotted name, so one that is the scope's
+        # (`case Point(x=a)`, `Point` from the render data) can't be the lookup every other
+        # read becomes: `SyntaxError`, in Chameleon too. It is read as an attribute of an
+        # object that looks names up in the scope, made just before the `match`.
+        before = self.scope_names
+        self.scope_names = False
+        try:
+            node = cast('ast.Match', self.generic_visit(node))
+            used = self.scope_names
+        finally:
+            self.scope_names = before
+        if not used:
+            return node
+        names = ast.Call(func=_global('__rs_names_of', bool(self.class_names)), args=[_econtext()], keywords=[])
+        return [ast.Assign(targets=[ast.Name(id=SCOPE_NAMES, ctx=ast.Store())], value=names), node]
+
+    def visit_MatchClass(self, node: ast.MatchClass) -> ast.AST:
+        node.cls = self.dotted(node.cls)
+        node.patterns = [self.visit(pattern) for pattern in node.patterns]
+        node.kwd_patterns = [self.visit(pattern) for pattern in node.kwd_patterns]
+        return node
+
+    def visit_MatchValue(self, node: ast.MatchValue) -> ast.AST:
+        node.value = self.dotted(node.value) if isinstance(node.value, ast.Attribute) else self.visit(node.value)
+        return node
+
+    def dotted(self, node: ast.expr) -> ast.expr:
+        """A dotted name of a pattern, its first name read from the scope if it is the scope's."""
+        if isinstance(node, ast.Attribute):
+            node.value = self.dotted(node.value)
+            return node
+        if not isinstance(node, ast.Name):
+            return cast('ast.expr', self.visit(node))
+        visited = self.visit(node)
+        if isinstance(visited, ast.Name):
+            return visited
+        self.scope_names = True
+        return ast.Attribute(value=ast.Name(id=SCOPE_NAMES, ctx=ast.Load()), attr=node.id, ctx=ast.Load())
+
+    def statements(self, body: list[ast.stmt]) -> list[ast.stmt]:
+        """``body``, each statement visited (one may become several)."""
+        out: list[ast.stmt] = []
+        for statement in body:
+            visited = self.visit(statement)
+            out.extend(visited if isinstance(visited, list) else [visited])
+        return out
 
     @contextlib.contextmanager
     def plain(self, names: Iterable[str]) -> Generator[None]:
@@ -204,7 +277,10 @@ class Rewriter(ast.NodeTransformer):
             scope.difference_update(added)
 
     def visit_alias(self, node: ast.alias) -> ast.AST:
-        self.scopes[-1].add(node.asname if node.asname is not None else node.name)
+        # `import os.path` binds `os` (Chameleon records `os.path`, which is no name: reading
+        # `os` afterwards was a `NameError`). In a class body the name is the class's.
+        if not self.in_class_body():
+            self.scopes[-1].add(node.asname if node.asname is not None else node.name.split('.')[0])
         return self.generic_visit(node)
 
     def visit_Lambda(self, node: ast.Lambda) -> ast.AST:
@@ -492,7 +568,7 @@ def compile_code(
     # code block doesn't go through. (It also turned `obj.name = 1` into an assignment to a
     # call, a `SyntaxError`.)
     rewriter = Rewriter({}, template_builtins, local_names=local_names, code_block=True, attributes=False)
-    body = [rewriter.visit(statement) for statement in tree.body]
+    body = rewriter.statements(tree.body)
     bound_names.update(_bound(body))
     module = ast.fix_missing_locations(ast.Module(body=body, type_ignores=[]))
     try:

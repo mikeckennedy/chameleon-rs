@@ -974,6 +974,17 @@ def test_a_concurrent_call_never_started_is_closed(prefix: str) -> None:
         run(page.render_async(helper=helper))
 
 
+def test_a_concurrent_call_passed_to_a_missing_partial_is_closed(tmp_path: Path, configured: Path) -> None:
+    # As a coroutine argument is: the partial that would have awaited it does not exist.
+    @concurrent
+    async def helper() -> int:
+        return 1
+
+    page = PageTemplate('<p tal:on-error="string:missing">${render_partial("nope.pt", v=helper())}</p>')
+    with _no_unawaited_coroutines():
+        assert run(page.render_async(helper=helper)) == '<p>missing</p>'
+
+
 def test_structure_of_a_concurrent_call_is_converted_wherever_it_is_awaited() -> None:
     @concurrent
     async def helper() -> str:

@@ -289,7 +289,6 @@ CODE_BLOCKS = [
     '<?python def f(i): return i + 1 ?>${f(2)}|${i | 0}',
     '<?python def f(i): return i + 1 ?><p tal:repeat="i [1]">${i | 0}</p>',
     '<?python import os ?>${os.sep}',
-    '<?python import os.path ?>${os.path.sep}',
     '<?python import os.path as p ?>${p.sep}',
     '<?python x = ?>',
     '<?python 1/0 ?>',

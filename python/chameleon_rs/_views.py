@@ -445,29 +445,12 @@ def view_spelling(loader: Any, name: Any) -> Any:
         return name
     found = spelling(loader, spec)
     if found is None:
-        return _directory_spelling(loader, spec, name)
+        return name
     names = loader.__dict__.setdefault('_rs_names', {})
     if len(names) >= _NAMES_LIMIT:
         names.clear()
     names[name] = found
     return found
-
-
-def _directory_spelling(loader: Any, spec: str, name: Any) -> Any:
-    """``name``, unless ``spec`` (it, stripped) spells a directory of a search folder in more
-    segments than it needs (``pages/./``, ``pages//``): then the short spelling. The loader
-    takes a directory for a template and keeps it (reading it fails, as in Chameleon), under
-    each spelling it is asked for; names built from request data would grow that without
-    bound. A missing file's name is passed on as it is: nothing is kept for it."""
-    short = canonical(spec)
-    if short == spec or os.path.isabs(spec):
-        return name
-    extension = getattr(loader, 'default_extension', None)
-    filename = short + extension if extension is not None and '.' not in short else short
-    for folder in loader.search_path:
-        if not (not os.path.isabs(folder) and ':' in folder) and os.path.isdir(os.path.join(folder, filename)):
-            return short
-    return name
 
 
 def is_not_found(exc: ValueError) -> bool:

@@ -680,6 +680,13 @@ pub(crate) fn close_unstarted(py: Python<'_>, scope: &Bound<'_, Scope>) {
                 Ok(inner) if !inner.is_none() => inner,
                 _ => continue,
             },
+            // A `@concurrent` call not wrapped yet (the partial was not found): its coroutine.
+            _ if crate::deferred::is_concurrent_call(&value).unwrap_or(false) => {
+                match value.getattr(intern!(py, "awaitable")) {
+                    Ok(inner) => inner,
+                    Err(_) => continue,
+                }
+            }
             _ => value,
         };
         if !value.hasattr(intern!(py, "cr_frame")).unwrap_or(false) {

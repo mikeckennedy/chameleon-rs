@@ -239,7 +239,23 @@ def test_directory_spellings_do_not_grow_the_cache(folder: Path, module: Any) ->
     for i in range(50):
         with pytest.raises(IsADirectoryError):
             module.render('sub/' + './' * (i % 7) + '/' * (i // 7))
-    assert len(loader.registry) <= 2
+    # Nor the spellings a case-insensitive filesystem adds (elsewhere `SUB` is not found).
+    for name in ('sub', 'SUB', 'Sub', 'sUb'):
+        with pytest.raises((IsADirectoryError, ValueError)):
+            module.render(name)
+    assert len(loader.registry) == 0
+
+
+@pytest.mark.parametrize('module', MODULES)
+def test_absolute_directory_spellings_do_not_grow_the_cache(folder: Path, module: Any) -> None:
+    # The default settings take an absolute path as it is: a directory's spellings too.
+    chameleon_rs.configure(template_folder=str(folder))
+    settings = chameleon_rs._settings.views[module.__name__.rsplit('.', 1)[1]]
+    assert settings is not None
+    for i in range(1, 20):
+        with pytest.raises(IsADirectoryError):
+            module.render(str(folder / 'sub') + '/.' * i)
+    assert len(settings.loader.registry) == 0
 
 
 def test_the_legacy_setup_call_keeps_strict_names(folder: Path) -> None:
