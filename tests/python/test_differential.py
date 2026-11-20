@@ -366,3 +366,19 @@ def test_template_is_reusable_and_isolated() -> None:
     variables = {'items': [4]}
     template(**variables)
     assert variables == {'items': [4]}
+
+
+@pytest.mark.parametrize('first', range(0, 6000, 500))
+def test_generated_code_blocks_render_like_chameleon(first: int) -> None:
+    # The name rewriting of blocks and expressions (`chameleon_rs._rewrite`), over shapes both
+    # engines render: 0.2.57 changed it for class bodies and broke a template builtin read
+    # inside a lambda (`KeyError: '__rs_tpl'`) and a `def`'s type parameters, which no test saw.
+    import warnings
+
+    import blockgen
+
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')  # the parser's, about the generated code
+        for seed in range(first, first + 500):
+            source = blockgen.template(seed)
+            assert blockgen.outcome(chameleon_rs, source) == blockgen.outcome(chameleon, source), (seed, source)
