@@ -5,6 +5,37 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.57] - 2026-11-19
+
+Fixes from a fourth review (bugs, races, deadlocks, security), and `<?python ?>` blocks that bind names the way Python does. The version's middle number goes up for the changes in behaviour listed under Changed.
+
+### Security
+
+- **An element with many attributes, nested deeply, could crash the process on a small thread stack.** Such an element is a dozen nodes deep in the compiled tree, and the stages after the build walked it with no stack check: 90 of them, which the build allows on a 512 KiB stack, overflowed it (SIGBUS). They raise `RecursionError` now.
+- **`global_init(..., cache_init=False)` dropped `strict_names` and `strict_tags`** that a `configure()` had turned on, so names that leave the template folder (`../secret.pt`) rendered again. The legacy setup call keeps them.
+- **Names built from request data could grow the decorator APIs' template cache without bound**, against what the security guide says: every spelling of a directory (`pages/./`, `pages//`) got its own entry, even with `strict_names`, and so did every missing absolute path or package resource under the default settings. A directory is kept under one spelling, and a name with no file behind it isn't kept.
+- **A model key named `offload` changed how the integrations' `render_async(template_file, **model)` rendered**: the render moved to a worker thread, awaited nothing, and the template never saw the variable. The model is the template's, whatever its keys.
+- **The task limit of a concurrent render did not hold inside a partial rendering as a task.** Each such partial started tasks of its own, as many as the page may, the count set by render data. A `@concurrent` call in a partial is awaited in place, as documented.
+
+### Changed
+
+- **A `<?python ?>` block binds the names Python binds without an assignment**: `except ... as`, `class`, `async def` and the captures of a `match`. Chameleon's name rewriting misses them, so reading one raised `NameError`, or read render data of the same name. A template that relied on that `NameError` (`${C | 7}` after `class C`) renders differently.
+- **A class body in a `<?python ?>` block is Python's.** Its assignments, annotations and methods are the class's attributes, so `class C: v = 3` has `C.v` and a dataclass has its fields. Chameleon stores such an assignment in the template scope: a template that read `${v}` afterwards must read `${C.v}`. What a method assigns is still stored in the template scope, as in any `def`.
+- **Attributes in a `<?python ?>` block are Python's**, as in Chameleon: `obj.name` falling back to `obj['name']` is for expressions only. A block that read a dictionary's key as an attribute now raises `AttributeError`, as it does there.
+- **A template whose file does not exist is not kept by the loader** (see Security): `loader['/missing.pt']` is a new object each time, until the file exists.
+
+### Fixed
+
+- **Assigning to an attribute in a `<?python ?>` block was a `SyntaxError`** (`x.a = 1`, `x.a += 2`, `del x.a`), where Chameleon runs it.
+- **A sub-expression of a custom expression type could not read what a `<?python ?>` block defined** (a `def`, an import): `UnboundLocalError`, where Chameleon renders.
+- **Compiling a text with many interpolations was slower than quadratic**: each `${` tried every `}` after it, each candidate as long as the text. 2,000 `${a}` in one text node, attribute or `string:` expression took 6 s (54 s in Chameleon); 1,500 now take 5 ms. Where each interpolation ends is unchanged.
+- **A `@concurrent` call passed to a native partial could be used only once in it**: the second use raised `RuntimeError: cannot reuse already awaited coroutine`, or rendered a `tal:on-error` fallback.
+- **The error of the last `@concurrent` call a render waited for had no expression or position.**
+- **A render resumed while the one task it waited for was still pending never returned** (a driver that is not an event loop's task); it raises `RuntimeError`, as a coroutine does.
+- **Coroutines left "never awaited"**: the arguments of a partial call refused at the recursion limit, and a `@concurrent` helper under `structure:` or `markdown:` when the render failed before its task started.
+- **A package folder on the search path (`pkg:dir`)**: a directory in it was taken for a template by the Starlette and Litestar engines (an error instead of "not found"), and on a case-insensitive filesystem every case spelling of a name compiled its own copy.
+- The annotations use `Optional[X]` rather than `X | None`.
+
 ## [0.1.56] - 2026-10-29
 
 Fixes from a third reliability, security and memory review: a crash freeing deeply nested expressions on a small thread stack, output and async fixes in the VM and partials, a bound on Markdown input, and smaller hygiene fixes.
