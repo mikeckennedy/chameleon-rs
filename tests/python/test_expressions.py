@@ -902,6 +902,7 @@ CLASS_DATA: dict[str, Any] = {
     'p2': _Point(6),
     'Point': _Point,
     'Kind': _Kind,
+    'Bound': int,
     'Fault': ZeroDivisionError,
     'deco': lambda function: function,
 }
@@ -1110,6 +1111,39 @@ CLASS_BODIES = [
         'class C:\n    def m(self):\n        global a\n        class a:\n            v = 7\n            def me(self):\n'
         '                return a\nC().m()\nres = (a.v, a().me() is a)'
     ),
+    # A builtin declared `global` and defined: the block's own, and the builtin again after `del`.
+    (
+        'class C:\n    global len\n    def len():\n        return 42\n    r1 = len()\n    del len\n'
+        'res = (C.r1, len([1, 2, 3]))'
+    ),
+    'class C:\n    global len\n    def len():\n        return 42\nres = len()',
+    'class C:\n    def m(self):\n        global len\n        def len():\n            return 42\nres = len([1])',
+    # `global` in a class inside a function with a parameter of that name.
+    'def f(a):\n    class C:\n        global a\n        b = a\n    return (a, C.b)\nres = f(10)',
+    (
+        'def f(a):\n    class C:\n        def m(self):\n            global a\n            return a\n'
+        '    return (a, C().m())\nres = f(10)'
+    ),
+    # Type parameters are names of the class or function; a bound doesn't see the parameters.
+    (
+        'class C:\n    def m[T: Bound](self, Bound):\n        return Bound\n'
+        'res = (C().m(5), C.m.__type_params__[0].__bound__.__name__)'
+    ),
+    'class Box[T](list[T]):\n    kind = T\nres = Box.kind is Box.__type_params__[0]',
+    'class C:\n    def m[T](self):\n        return T\nres = C().m() is C.m.__type_params__[0]',
+    (
+        'class Box[a]:\n    kind = a\n    def get(self):\n        return a\n'
+        'res = (Box.kind is Box.__type_params__[0], Box().get() is Box.__type_params__[0], a)'
+    ),
+    'class Box[T, U: T]:\n    pass\nres = Box.__type_params__[1].__bound__ is Box.__type_params__[0]',
+    (
+        'def f[T: Bound, *Ts, **P](x: T) -> T:\n    return x\n'
+        'res = (f(3), f.__type_params__[0].__bound__.__name__, len(f.__type_params__))'
+    ),
+    # A bound in a class body reads the finished class's names.
+    'class C:\n    class Inner[T: Inner]:\n        pass\nres = C.Inner.__type_params__[0].__bound__ is C.Inner',
+    'class C:\n    Bound = "attr"\n    class Inner[T: Bound]:\n        pass\nres = C.Inner.__type_params__[0].__bound__',
+    'class C:\n    Bound = str\n    def m[T: Bound](self):\n        return T.__bound__.__name__\nres = C().m()',
 ]
 
 
