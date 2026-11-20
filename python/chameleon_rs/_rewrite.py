@@ -58,8 +58,17 @@ def _econtext() -> ast.Name:
     return ast.Name(id='econtext', ctx=ast.Load())
 
 
-def _tpl(name: str) -> ast.Subscript:
-    return ast.Subscript(value=ast.Name(id='__rs_tpl', ctx=ast.Load()), slice=ast.Constant(name), ctx=ast.Load())
+def _global(name: str, in_class: bool) -> ast.expr:
+    """One of the generated code's own globals (`__rs_tpl`, ...). Inside a class Python mangles a
+    name with two leading underscores (`_C__rs_tpl`), so there it is read from `globals()`."""
+    if not in_class:
+        return ast.Name(id=name, ctx=ast.Load())
+    namespace = ast.Call(func=ast.Name(id='globals', ctx=ast.Load()), args=[], keywords=[])
+    return ast.Subscript(value=namespace, slice=ast.Constant(name), ctx=ast.Load())
+
+
+def _tpl(name: str, in_class: bool = False) -> ast.Subscript:
+    return ast.Subscript(value=_global('__rs_tpl', in_class), slice=ast.Constant(name), ctx=ast.Load())
 
 
 class Rewriter(ast.NodeTransformer):
@@ -104,28 +113,61 @@ class Rewriter(ast.NodeTransformer):
         self.dynamic = False
         # The render-function locals the code uses (`translate`, ...).
         self.locals: set[str] = set()
+        # The names bound in the body of each class being visited (see `visit_ClassDef`);
+        # `None` while inside a function or lambda in it, which doesn't see them.
+        self.class_names: list[Optional[set[str]]] = []
 
     def visit_arg(self, node: ast.arg) -> ast.arg:
         self.scopes[-1].add(node.arg)
         return node
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:
-        self.scopes[-1].add(node.name)
-        return self.generic_visit(node)
+        return self.function(node)
 
     # The next four bind a name through a plain string on the node, not an `ast.Name` store,
     # which Chameleon's visitor misses: every read of it became a scope lookup, a `NameError`.
-    # Here the name works; a template that renders in Chameleon renders the same.
+    # Here the name works.
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> ast.AST:
-        self.scopes[-1].add(node.name)
-        return self.generic_visit(node)
+        return self.function(node)
+
+    def function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> ast.AST:
+        # A method's name is its class's, not a name of the template.
+        if not self.in_class_body():
+            self.scopes[-1].add(node.name)
+        # Decorators, defaults and annotations are evaluated where the function is defined;
+        # its body is a scope of its own.
+        node.decorator_list = [self.visit(decorator) for decorator in node.decorator_list]
+        node.args = self.visit(node.args)
+        if node.returns is not None:
+            node.returns = self.visit(node.returns)
+        self.class_names.append(None)
+        try:
+            node.body = [self.visit(statement) for statement in node.body]
+        finally:
+            self.class_names.pop()
+        return node
 
     def visit_ClassDef(self, node: ast.ClassDef) -> ast.AST:
-        # The name only: an assignment in the class body is still a store in the scope, as
-        # in a `def` body.
-        self.scopes[-1].add(node.name)
-        return self.generic_visit(node)
+        # A class body is Python's: what it binds (an assignment, an annotation, a method)
+        # is the class's attribute, read as a plain name in the body itself. Chameleon stores
+        # an assignment there in the template scope like any other, so `class C: v = 3` has
+        # no `C.v` (and its dataclasses no fields). Functions in the body don't see those
+        # names, as in Python: an assignment in a method is still a store in the scope.
+        if not self.in_class_body():
+            self.scopes[-1].add(node.name)
+        node.decorator_list = [self.visit(decorator) for decorator in node.decorator_list]
+        node.bases = [self.visit(base) for base in node.bases]
+        node.keywords = [self.visit(keyword) for keyword in node.keywords]
+        self.class_names.append(_bound(node.body))
+        try:
+            node.body = [self.visit(statement) for statement in node.body]
+        finally:
+            self.class_names.pop()
+        return node
+
+    def in_class_body(self) -> bool:
+        return bool(self.class_names) and self.class_names[-1] is not None
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> ast.AST:
         # `except E as name`: a plain name inside the handler only, as Python unbinds it when
@@ -167,9 +209,11 @@ class Rewriter(ast.NodeTransformer):
 
     def visit_Lambda(self, node: ast.Lambda) -> ast.AST:
         self.scopes.append(set())
+        self.class_names.append(None)
         try:
             return self.generic_visit(node)
         finally:
+            self.class_names.pop()
             self.scopes.pop()
 
     def visit_Attribute(self, node: ast.Attribute) -> ast.AST:
@@ -177,12 +221,14 @@ class Rewriter(ast.NodeTransformer):
             return self.generic_visit(node)
         # The object is visited; the `__lookup_attr` name is ours and stays as it is.
         return ast.Call(
-            func=ast.Name(id='__lookup_attr', ctx=ast.Load()),
+            func=_global('__lookup_attr', bool(self.class_names)),
             args=[self.visit(node.value), ast.Constant(node.attr)],
             keywords=[],
         )
 
     def visit_Name(self, node: ast.Name) -> ast.AST:
+        if self.class_names and (names := self.class_names[-1]) is not None and node.id in names:
+            return node
         if node.id in self.scopes[-1]:
             if len(self.scopes) == 1:
                 self.uses_locals = True
@@ -194,9 +240,9 @@ class Rewriter(ast.NodeTransformer):
         if name.startswith('__'):
             # Left alone: a parameter of the render function if it is a template builtin.
             if name in self.template_builtins and isinstance(node.ctx, ast.Load):
-                return _tpl(name)
+                return _tpl(name, bool(self.class_names))
             if _ours(name) and not self.own(name) and isinstance(node.ctx, ast.Load):
-                error = ast.Name(id='__rs_name_error', ctx=ast.Load())
+                error = _global('__rs_name_error', bool(self.class_names))
                 return ast.Call(func=error, args=[ast.Constant(name)], keywords=[])
             return node
         if name in INTERNALS:
@@ -227,7 +273,7 @@ class Rewriter(ast.NodeTransformer):
         self.reads.add(name)
         get = ast.Attribute(value=_econtext(), attr='get', ctx=ast.Load())
         if name in self.template_builtins:
-            return ast.Call(func=get, args=[ast.Constant(name), _tpl(name)], keywords=[])
+            return ast.Call(func=get, args=[ast.Constant(name), _tpl(name, bool(self.class_names))], keywords=[])
         if name in BUILTINS and rebound(name) in self.scopes[0]:
             # A builtin a code block assigned: still `get(name, name)`, its fallback that
             # render-local value (the expression runs in the code blocks' namespace).
@@ -442,7 +488,10 @@ def compile_code(
         return None
     if constants is not None:
         tree = _Constants(constants).visit(tree)
-    rewriter = Rewriter({}, template_builtins, local_names=local_names, code_block=True)
+    # `attributes=False`: `obj.name` falling back to `obj['name']` is `PythonExpr`'s, which a
+    # code block doesn't go through. (It also turned `obj.name = 1` into an assignment to a
+    # call, a `SyntaxError`.)
+    rewriter = Rewriter({}, template_builtins, local_names=local_names, code_block=True, attributes=False)
     body = [rewriter.visit(statement) for statement in tree.body]
     bound_names.update(_bound(body))
     module = ast.fix_missing_locations(ast.Module(body=body, type_ignores=[]))

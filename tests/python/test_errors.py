@@ -302,6 +302,13 @@ CODE_BLOCKS = [
     '<?python translate = None ?>${1}',
     '<?python def f(x=lambda z: z): return x(3) ?>${f()}${z | 9}',
     '<p tal:define="x 5"><?python x = x + 1 ?>${x}</p>${x | 0}',
+    # Attributes in a code block are Python's: assigned, deleted, and never read as items
+    # (`obj.name` falling back to `obj['name']` is the expressions').
+    '<?python\nimport types\nx = types.SimpleNamespace()\nx.a = 1\nx.a += 2\n?>${x.a}',
+    '<?python\nimport types\nx = types.SimpleNamespace(a=1)\ndel x.a\n?>${hasattr(x, "a")}',
+    '<?python\nimport types\nx = types.SimpleNamespace(a=1)\nfor x.a in [5]:\n    pass\n?>${x.a}',
+    '<?python\nd = {"k": 1}\ny = d.k\n?>${y}',
+    '<?python\ndef f(d):\n    return d.k\n?>${f({"k": 1})}|${{"k": 1}.k}',
     '<?python def f(i): return i ?>${f(1)}<?python i = 4 ?>${i}${econtext["i"]}',
     '<?python def f(i): return i ?><p tal:define="i 3">${i}</p>',
     '<?python def f(len): return 1 ?>${len("ab")}',

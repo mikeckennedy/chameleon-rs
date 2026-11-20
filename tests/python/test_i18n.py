@@ -481,3 +481,24 @@ def test_handler_on_a_name_maps_it_to_its_appends(source: str) -> None:
         return repr(kw.get('mapping'))
 
     assert chameleon_rs.PageTemplate(source)(translate=tr) == chameleon.PageTemplate(source)(translate=tr)
+
+
+def test_a_left_over_fill_defined_inside_a_name_is_still_a_fill() -> None:
+    """A fill no macro took, defined inside `i18n:name`, and a later macro call with that
+    slot. Chameleon renders the slot empty (not even its default): the fill's output goes to
+    the name's stream, which is gone by then. chameleon-rs renders the fill, as it does (and
+    Chameleon does) when the fill is defined anywhere else. Pinned: a known difference
+    (user_guide/compatibility.qmd, "Corner cases in slot bodies")."""
+    macros = (
+        '<metal:m define-macro="m1">M1</metal:m>'
+        '<metal:m define-macro="m2">M2[<metal:s define-slot="x">default</metal:s>]</metal:m>'
+    )
+    fill = """<u metal:use-macro="macros['m1']"><i metal:fill-slot="x">FILL</i></u>"""
+    later = """<u metal:use-macro="macros['m2']"/>"""
+    inside = f'{macros}<p i18n:translate="">t <b i18n:name="n">{fill}</b></p>{later}'
+    assert chameleon.PageTemplate(inside)() == 'M1M2[default]<p>t <b>M1</b></p>M2[]'
+    assert chameleon_rs.PageTemplate(inside)() == 'M1M2[default]<p>t <b>M1</b></p>M2[<i>FILL</i>]'
+    # Outside a name the engines agree.
+    outside = f'{macros}<p>t <b>{fill}</b></p>{later}'
+    assert chameleon_rs.PageTemplate(outside)() == chameleon.PageTemplate(outside)()
+    assert chameleon_rs.PageTemplate(outside)() == 'M1M2[default]<p>t <b>M1</b></p>M2[<i>FILL</i>]'

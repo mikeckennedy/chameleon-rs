@@ -801,6 +801,32 @@ CODE_BLOCK_BINDINGS = [
     ),
     # Chameleon renders `7`: its `NameError` for `C` is what the `|` falls back from.
     ('<?python class C: pass ?>${C.__name__ | 7}', {}, 'C'),
+    # A class body is Python's: its assignments are the class's attributes (in Chameleon they
+    # are stored in the template scope: `${v}` is 3 there, and `C.v` an `AttributeError`).
+    ('<?python\nclass C:\n    v = 3\n    w = v + 1\n?>${C.v} ${C.w} ${v | "no v"}', {}, '3 4 no v'),
+    (
+        '<?python\nfrom dataclasses import dataclass\n@dataclass\nclass P:\n    x: int\n    y: int = 2\n?>${P(1)}',
+        {},
+        'P(x=1, y=2)',
+    ),
+    # A method doesn't see the class's names, and what it assigns is the template's, as in a `def`.
+    (
+        '<?python\nclass C:\n    v = 3\n    def m(self):\n        seen = v\n        return self.v + seen\n?>${C().m()} ${seen}',
+        {'v': 10},
+        '13 10',
+    ),
+    ('<?python\nclass C:\n    def m(self):\n        return 1\n?>${m | "no m"}', {}, 'no m'),
+    ('<?python\nclass A:\n    class B:\n        v = 1\n    w = B.v + 1\n?>${A.B.v} ${A.w}', {}, '1 2'),
+    (
+        (
+            '<?python\nclass C:\n    def __init__(self, n):\n        self.__n = n\n'
+            '    def double(self):\n        return self.__n * 2\n?>${C(4).double()} ${C(1)._C__n}'
+        ),
+        {},
+        '8 1',
+    ),
+    # A template builtin read in a method (the generated code's own names aren't mangled).
+    ('<?python\nclass C:\n    def m(self):\n        return nothing is None\n?>${C().m()}', {}, 'True'),
     # A case that doesn't match binds nothing: the name is still the scope's.
     (
         '<?python\nmatch 5:\n    case str() as n:\n        pass\n    case _:\n        pass\n?>${n}',
@@ -825,7 +851,6 @@ def test_code_block_names_bound_without_an_assignment(source: str, data: dict[st
     [
         '<?python\ntry:\n    x = 1\nexcept Exception as err:\n    x = 2\n?>${x}',
         '<?python\ntry:\n    1 / 0\nexcept Exception as err:\n    x = 2\n?>${x} ${err}',
-        '<?python\nclass C:\n    v = 3\n?>${v}',
         '<?python\nmatch 5:\n    case 5:\n        y = "five"\n    case _:\n        y = "other"\n?>${y}',
         '<?python\nmatch 5:\n    case int() as n:\n        y = 1\n?>${y}',
     ],
