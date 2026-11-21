@@ -178,8 +178,11 @@ class Rewriter(ast.NodeTransformer):
         self.template_names: Optional[set[str]] = None
         # Marks of rebound builtins (see `stored`) that outlive the function they were made in.
         self.kept: set[str] = set()
-        # Whether a type parameter's bound is being visited (see `type_parameters`).
+        # Whether a type parameter's bound is being visited (see `annotation_scope`).
         self.lazy = False
+        # For each class body being visited, the type parameters of its class that became
+        # plain names for it: not what a name the body itself binds is outside it.
+        self.class_types: list[set[str]] = []
         # How many functions deep the code is, and the classes being defined outside every
         # function: their names, which the functions in them see (see `visit_ClassDef`).
         self.functions = 0
@@ -223,20 +226,25 @@ class Rewriter(ast.NodeTransformer):
         outermost = self.template_names is None
         if outermost:
             self.template_names = before
+        types = _type_names(node)
         try:
-            # Its type parameters are names for all of it but the decorators. Their bounds are
-            # evaluated in a scope that doesn't see its parameters, so they are visited first.
-            with self.plain(_type_names(node)):
+            # Its type parameters are names for all of it but the decorators and the defaults.
+            # Their bounds are evaluated in a scope that doesn't see its parameters, so they
+            # are visited first.
+            with self.plain(types):
                 self.type_parameters(node)
+            if python:
+                self.defaults(node.args)
+            else:
+                self.generic_visit(node.args)
+            bound = late and self.bind(node.name)
+            if bound:
+                before.add(node.name)
+            with self.plain(types):
                 if python:
-                    self.defaults(node.args)
                     self.parameters(node.args)
-                else:
-                    self.generic_visit(node.args)
                 if node.returns is not None:
                     node.returns = self.visit(node.returns)
-                if late and self.bind(node.name):
-                    before.add(node.name)
                 self.class_names.append(None)
                 self.declared.append(_bindings(node.body)[1])
                 self.functions += 1
@@ -248,6 +256,9 @@ class Rewriter(ast.NodeTransformer):
                     self.functions -= 1
                     self.declared.pop()
                     self.class_names.pop()
+            if bound:
+                # A type parameter of its own name (`async def f[f]`) ended with the function.
+                scope.add(node.name)
         finally:
             if python:
                 scope.intersection_update(before | self.kept)
@@ -265,11 +276,23 @@ class Rewriter(ast.NodeTransformer):
         # `class Base(Base)` the base is the scope's `Base`.
         node.decorator_list = [self.visit(decorator) for decorator in node.decorator_list]
         # Its type parameters are names for the rest of it: `class Box[T](list[T])`.
-        with self.plain(_type_names(node)):
-            self.class_definition(node)
+        with self.plain(_type_names(node)) as types:
+            self.class_definition(node, types)
+        # Again: a type parameter of its own name (`class Box[Box]`) ended with the class.
+        self.bind(node.name)
         return self.stored(node, [node.name])
 
-    def class_definition(self, node: ast.ClassDef) -> None:
+    def visit_TypeAlias(self, node: ast.TypeAlias) -> ast.AST | list[ast.stmt]:
+        # `type Alias[T] = list[T]` binds its name as a `def` does (Chameleon stores it in the
+        # scope, which no `type` statement can: a `SyntaxError`). Its value is evaluated
+        # later, as a bound is.
+        with self.plain(_type_names(node)), self.annotation_scope():
+            node.type_params = [self.visit(param) for param in node.type_params]
+            node.value = self.visit(node.value)
+        self.bind(node.name.id)
+        return self.stored(node, [node.name.id])
+
+    def class_definition(self, node: ast.ClassDef, types: list[str]) -> None:
         node.bases = [self.visit(base) for base in node.bases]
         node.keywords = [self.visit(keyword) for keyword in node.keywords]
         # Nor is it bound while its body runs: outside a function `class Base: b = Base` reads
@@ -287,11 +310,13 @@ class Rewriter(ast.NodeTransformer):
             self.type_parameters(node)
             names, global_names = _bindings(node.body, class_body=True)
             self.class_names.append(names - global_names)
+            self.class_types.append(set(types))
             self.declared.append(global_names)
             try:
                 node.body = self.statements(node.body)
             finally:
                 self.class_names.pop()
+                self.class_types.pop()
                 self.declared.pop()
         finally:
             if deferred:
@@ -300,13 +325,19 @@ class Rewriter(ast.NodeTransformer):
             self.bind(node.name)
 
     def type_parameters(self, node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) -> None:
-        """Visits the type parameters of ``node``. A bound is evaluated later, once a class
-        being defined around it is bound, in a scope of its own that reads a class body's
-        names from the finished class: those stay plain names, which Python compiles so."""
+        with self.annotation_scope():
+            node.type_params = [self.visit(param) for param in node.type_params]
+
+    @contextlib.contextmanager
+    def annotation_scope(self) -> Generator[None]:
+        """For visiting a type parameter's bound or a `type` statement's value. It is
+        evaluated later, once a class being defined around it is bound, in a scope of its own
+        that reads a class body's names from the finished class: those stay plain names,
+        which Python compiles so."""
         lazy, self.lazy = self.lazy, True
         try:
             with self.plain(self.defining):
-                node.type_params = [self.visit(param) for param in node.type_params]
+                yield
         finally:
             self.lazy = lazy
 
@@ -434,7 +465,7 @@ class Rewriter(ast.NodeTransformer):
         # A name the class body binds is read as any other read of it is (see `visit_Name`):
         # the class's if bound by then, and otherwise what it is outside the class.
         bound = self.class_name(node.id)
-        visited = self.lookup(ast.Name(id=node.id, ctx=ast.Load())) if bound else self.visit(node)
+        visited = self.outside(node.id) if bound else self.visit(node)
         if isinstance(visited, ast.Name):
             return visited
         self.scope_names = True
@@ -452,13 +483,14 @@ class Rewriter(ast.NodeTransformer):
         return out
 
     @contextlib.contextmanager
-    def plain(self, names: Iterable[str]) -> Generator[None]:
-        """``names`` as plain names of the current scope, for the code visited inside."""
+    def plain(self, names: Iterable[str]) -> Generator[list[str]]:
+        """``names`` as plain names of the current scope, for the code visited inside. Gives
+        the ones that weren't already."""
         scope = self.scopes[-1]
         added = [name for name in names if name not in scope]
         scope.update(added)
         try:
-            yield
+            yield added
         finally:
             scope.difference_update(added)
 
@@ -557,13 +589,20 @@ class Rewriter(ast.NodeTransformer):
         # A class body reads its own name if it is bound by then, and otherwise what the name
         # is outside the class (`b = a` before `a = 1`, after `del a`, or with the assignment
         # in a branch not taken): the template's.
-        outside = self.lookup(ast.Name(id=node.id, ctx=ast.Load()))
+        outside = self.outside(node.id)
         if isinstance(outside, ast.Name):
             # A plain name there too: Python looks in the class, the globals, the builtins.
             return node
         bound = ast.Call(func=ast.Name(id='__rs_locals__', ctx=ast.Load()), args=[], keywords=[])
         test = ast.Compare(left=ast.Constant(node.id), ops=[ast.In()], comparators=[bound])
         return ast.IfExp(test=test, body=node, orelse=cast('ast.expr', outside))
+
+    def outside(self, name: str) -> ast.AST:
+        """A read of ``name``, which the class body being visited binds, as it is outside the
+        class. Not its class's type parameter of that name, which Python skips for such a
+        name (`class Box[a]: x = a; a = 1` reads the template's `a`)."""
+        node = ast.Name(id=name, ctx=ast.Load())
+        return self.transform(node) if name in self.class_types[-1] else self.lookup(node)
 
     def lookup(self, node: ast.Name) -> ast.AST:
         plain = self.plain_global(node.id) if self.is_global(node.id) else node.id in self.scopes[-1]
@@ -624,7 +663,7 @@ class Rewriter(ast.NodeTransformer):
         return ast.Call(func=get_name, args=[ast.Constant(name)], keywords=[])
 
 
-def _type_names(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) -> list[str]:
+def _type_names(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.TypeAlias) -> list[str]:
     """The names of the type parameters of ``node`` (`T`, `*Ts`, `**P`)."""
     kinds = (ast.TypeVar, ast.TypeVarTuple, ast.ParamSpec)
     return [param.name for param in node.type_params if isinstance(param, kinds)]

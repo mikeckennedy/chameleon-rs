@@ -27,7 +27,8 @@ Class bodies in `<?python ?>` blocks, which have had Python's scoping since 0.2.
 And in any `<?python ?>` block:
 
 - **A name is bound after the header that defines it is evaluated**: `class Base(Base)`, `except E as E` and `async def f(x=f)` read the render data's `Base`, `E` and `f`, where they raised `UnboundLocalError` or `NameError`.
-- **Type parameters of a `def` or `class` are names inside it** (`class Box[T](list[T])`, `def m[T](self): return T`); reading one was a `NameError`. A bound reads a class body's names from the finished class, and doesn't see the function's parameters.
+- **Type parameters of a `def` or `class` are names inside it** (`class Box[T](list[T])`, `def m[T](self): return T`); reading one was a `NameError`. A bound reads a class body's names from the finished class, and doesn't see the function's parameters. A default doesn't see them (`def f[a](x=a)` reads the template's `a`), and neither does a name the class body itself binds.
+- **A `type` statement** (`type Pair[T] = tuple[T, T]`) works, in a class body too; it was a `SyntaxError`, as in Chameleon.
 - **A class's name is not bound while its body runs**: `class Base: b = Base` reads the render data's `Base` (or an earlier class of that name), and its methods read the class. It raised `UnboundLocalError`.
 
 ## [0.2.58] - 2026-11-19

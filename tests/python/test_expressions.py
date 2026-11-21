@@ -1144,6 +1144,32 @@ CLASS_BODIES = [
     'class C:\n    class Inner[T: Inner]:\n        pass\nres = C.Inner.__type_params__[0].__bound__ is C.Inner',
     'class C:\n    Bound = "attr"\n    class Inner[T: Bound]:\n        pass\nres = C.Inner.__type_params__[0].__bound__',
     'class C:\n    Bound = str\n    def m[T: Bound](self):\n        return T.__bound__.__name__\nres = C().m()',
+    # A default is evaluated outside the type parameters' scope.
+    'def f[a](x=a):\n    return x\nres = f()',
+    'class C:\n    def m[a](self, x=a, *, y=a):\n        return (x, y, a.__name__)\nres = C().m()',
+    'class C[T]:\n    def m[U](self, x=a):\n        return (x, T.__name__, U.__name__)\nres = C().m()',
+    # A type parameter named like its class or function.
+    'class Box[Box]:\n    k = Box\nres = (Box.__name__, type(Box.k).__name__)',
+    'class Box[Box]:\n    pass\nclass D(Box):\n    pass\nres = D.__mro__[1].__name__',
+    'async def f[f]():\n    return 1\nres = f.__name__',
+    'def f[f]():\n    return f\nres = (f.__name__, type(f()).__name__)',
+    'class C:\n    def m(self):\n        async def f[f]():\n            return 1\n        return f.__name__\nres = C().m()',
+    # A name the class body binds is not its class's type parameter of that name.
+    'class Box[a]:\n    x = a\n    a = 1\nres = (Box.x, Box.a)',
+    (
+        'class Box[a]:\n    x = a\n    a = 1\n    def get(self):\n        return a\n'
+        'res = (Box.x, type(Box().get()).__name__)'
+    ),
+    'class Box[a]:\n    a = 1\n    del a\n    x = a\nres = Box.x',
+    # `type` statements.
+    'type Alias[T] = list[T]\nres = (Alias.__name__, repr(Alias.__value__))',
+    'type Alias = list[Bound]\nres = Alias.__value__',
+    'type Alias[a] = list[a]\nres = (Alias.__name__, a)',
+    'class C:\n    type Alias[T] = list[T]\n    v = repr(Alias.__value__)\nres = C.v',
+    'class C:\n    Y = str\n    type Alias = list[Y]\n    v = Alias.__value__\nres = C.v',
+    'class C:\n    def m(self):\n        type Alias = list[Bound]\n        return Alias.__value__\nres = C().m()',
+    'class C:\n    global Alias\n    type Alias = int\nres = Alias.__value__',
+    'type Alias = int\nclass C:\n    v = Alias\nres = C.v.__name__',
 ]
 
 
