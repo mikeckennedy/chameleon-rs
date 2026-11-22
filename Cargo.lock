@@ -167,7 +167,7 @@ dependencies = [
 
 [[package]]
 name = "chameleon-core"
-version = "0.2.58"
+version = "0.2.59"
 dependencies = [
  "comrak",
  "criterion",
@@ -182,7 +182,7 @@ dependencies = [
 
 [[package]]
 name = "chameleon-py"
-version = "0.2.58"
+version = "0.2.59"
 dependencies = [
  "chameleon-core",
  "getrandom",
