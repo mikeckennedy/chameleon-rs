@@ -530,6 +530,11 @@ ul.task-list li input[type="checkbox"] {
 <td>Stored in the template’s scope like any assignment: <code>${v}</code> is <code>3</code> and <code>C.v</code> raises <code>AttributeError</code>, so a dataclass has no fields.</td>
 <td>The class’s attribute, as in Python: <code>C.v</code> is <code>3</code>. A template that read <code>${v}</code> afterwards must read <code>${C.v}</code>.</td>
 </tr>
+<tr class="odd">
+<td>A <code>type</code> statement in a <code>&lt;?python ?&gt;</code> block: <code>type Pair[T] = tuple[T, T]</code></td>
+<td><code>SyntaxError</code>.</td>
+<td>The alias is a name of the template, as a <code>def</code> is.</td>
+</tr>
 </tbody>
 </table>
 </section>

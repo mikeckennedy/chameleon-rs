@@ -164,7 +164,8 @@ ul.task-list li input[type="checkbox"] {
     <h2 id="toc-title">On this page</h2>
    
   <ul class="collapse">
-  <li><a href="#v0.2.58" id="toc-v0.2.58" class="nav-link active" data-scroll-target="#v0.2.58">v0.2.58</a></li>
+  <li><a href="#v0.2.59" id="toc-v0.2.59" class="nav-link active" data-scroll-target="#v0.2.59">v0.2.59</a></li>
+  <li><a href="#v0.2.58" id="toc-v0.2.58" class="nav-link" data-scroll-target="#v0.2.58">v0.2.58</a></li>
   <li><a href="#v0.2.57" id="toc-v0.2.57" class="nav-link" data-scroll-target="#v0.2.57">v0.2.57</a></li>
   <li><a href="#v0.1.56" id="toc-v0.1.56" class="nav-link" data-scroll-target="#v0.1.56">v0.1.56</a></li>
   <li><a href="#v0.1.55" id="toc-v0.1.55" class="nav-link" data-scroll-target="#v0.1.55">v0.1.55</a></li>
@@ -201,6 +202,36 @@ ul.task-list li input[type="checkbox"] {
 
 
 <p>This changelog is generated automatically from <a href="https://github.com/mikeckennedy/chameleon-rs/releases">GitHub Releases</a>.</p>
+<section id="v0.2.59" class="level1 changelog-version">
+<h1 class="changelog-version">v0.2.59</h1>
+<p><em>2026-11-23</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.2.59">GitHub</a></p>
+<p>Fixes from seven more rounds of review of <code>&lt;?python ?&gt;</code> blocks: class bodies, <code>global</code>, type parameters and <code>type</code> statements now scope names as Python does.</p>
+<section id="fixed" class="level3">
+<h3 class="anchored" data-anchor-id="fixed">Fixed</h3>
+<p>Class bodies in <code>&lt;?python ?&gt;</code> blocks, which have had Python’s scoping since 0.2.57 (Chameleon has none: reading the class there is a <code>NameError</code>):</p>
+<ul>
+<li><strong>A comprehension or generator expression in a class body</strong> that read a name the class also binds raised <code>NameError</code>. It reads the template’s name, as in Python; only its first iterable sees the class’s.</li>
+<li><strong>A default of a <code>lambda</code> or a method in a class body</strong> reads the class’s name (<code>f = lambda self, y=x: y</code>), where a lambda’s read the render data, and one named like its parameter (<code>def f(self, a=a)</code>) is no longer a <code>NameError</code>.</li>
+<li><strong>A <code>match</code> capture in a class body</strong> is the class’s attribute; it was stored in the template scope, over render data of that name.</li>
+<li><strong>A class attribute named <code>globals</code></strong> broke reads of <a href="reference/flask.template.html#chameleon_rs.flask.template" class="gdls-link gdls-code">template</a>, <code>macros</code> and the other template builtins in that class (<code>TypeError</code>).</li>
+<li><strong>A method’s parameters stayed plain names after it</strong>, so a later read of the same name was a <code>NameError</code>: a second method’s default (<code>def g(self, a=a)</code>), a class attribute (<code>y = a</code>), or <code>${a}</code> after the class. Inside a class a function’s names now end with the function.</li>
+<li><strong>A name a class body binds is the template’s while it isn’t bound</strong>, as in Python: read before the assignment, after a <code>del</code>, or with the assignment in a branch not taken. These were a <code>NameError</code>. A name the body declares <code>global</code> is the template’s.</li>
+<li><strong>A walrus in a default, a decorator or a base class</strong> in a class body (<code>def f(self, y=(k := 10))</code>) binds the class’s name; it was a <code>SyntaxError</code>.</li>
+<li><strong>A class pattern from the render data in a class body</strong> works with one <code>match</code> inside another, and leaves nothing on the class when the <code>match</code> is left by <code>break</code>, <code>continue</code> or an exception.</li>
+<li><strong>A <code>match</code> in a class inside a function that has a <code>match</code> of its own</strong> raised <code>NameError</code> when both patterns named a class from the render data.</li>
+<li><strong>A pattern’s class or value that the class body also binds</strong> (<code>case Point(x=q): Point = q</code>) is the template’s until the class binds it, like any other read; it was a <code>NameError</code>.</li>
+<li><strong>A <code>def</code>, a <code>class</code> or an import of a name declared <code>global</code></strong> in a class body, or in a method, binds the template’s name once it runs, and <code>del</code> of such a name compiles. A name declared <code>global</code> is the template’s even where a function around it has a parameter of that name. A builtin defined that way (<code>global len</code>, <code>def len()</code>) is the builtin again after <code>del</code>.</li>
+<li><strong>A parameter named like its <code>async def</code> method</strong> (<code>async def f(self, f=1)</code>) no longer makes that name a <code>NameError</code> for the rest of the template.</li>
+</ul>
+<p>And in any <code>&lt;?python ?&gt;</code> block:</p>
+<ul>
+<li><strong>A name is bound after the header that defines it is evaluated</strong>: <code>class Base(Base)</code>, <code>except E as E</code> and <code>async def f(x=f)</code> read the render data’s <code>Base</code>, <code>E</code> and <code>f</code>, where they raised <code>UnboundLocalError</code> or <code>NameError</code>.</li>
+<li><strong>Type parameters of a <code>def</code> or <code>class</code> are names inside it</strong> (<code>class Box[T](list[T])</code>, <code>def m[T](self): return T</code>); reading one was a <code>NameError</code>. A bound reads a class body’s names from the finished class, and doesn’t see the function’s parameters. A default doesn’t see them (<code>def f[a](x=a)</code> reads the template’s <code>a</code>), and neither does a name the class body itself binds.</li>
+<li><strong>A <code>type</code> statement</strong> (<code>type Pair[T] = tuple[T, T]</code>) works, in a class body too; it was a <code>SyntaxError</code>, as in Chameleon.</li>
+<li><strong>A class’s name is not bound while its body runs</strong>: <code>class Base: b = Base</code> reads the render data’s <code>Base</code> (or an earlier class of that name), and its methods read the class. It raised <code>UnboundLocalError</code>.</li>
+</ul>
+</section>
+</section>
 <section id="v0.2.58" class="level1 changelog-version">
 <h1 class="changelog-version">v0.2.58</h1>
 <p><em>2026-11-20</em> · <a href="https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.2.58">GitHub</a></p>
@@ -211,8 +242,8 @@ ul.task-list li input[type="checkbox"] {
 <li><strong>A directory’s name could still grow the decorator APIs’ template cache</strong> after 0.2.57: an absolute path to it under the default settings, and with <code>strict_names</code> every case spelling on a case-insensitive filesystem. The loader keeps no template for a name that is not a file.</li>
 </ul>
 </section>
-<section id="fixed" class="level3">
-<h3 class="anchored" data-anchor-id="fixed">Fixed</h3>
+<section id="fixed-1" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-1">Fixed</h3>
 <ul>
 <li><strong>A template builtin read inside a <code>lambda</code> raised <code>KeyError: '__rs_tpl'</code></strong> (0.2.57): <code>${(lambda q: q or nothing)(0)}</code>, or <a href="reference/flask.template.html#chameleon_rs.flask.template" class="gdls-link gdls-code">template</a>, <code>macros</code> and the others, in any expression.</li>
 <li><strong>Type parameters of a <code>def</code> or <code>class</code> in a <code>&lt;?python ?&gt;</code> block were not rewritten</strong> (0.2.57): a bound from the render data (<code>def f[T: Base]</code>) raised <code>NameError</code>.</li>
@@ -246,8 +277,8 @@ ul.task-list li input[type="checkbox"] {
 <li><strong>A template whose file does not exist is not kept by the loader</strong> (see Security): <code>loader['/missing.pt']</code> is a new object each time, until the file exists.</li>
 </ul>
 </section>
-<section id="fixed-1" class="level3">
-<h3 class="anchored" data-anchor-id="fixed-1">Fixed</h3>
+<section id="fixed-2" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-2">Fixed</h3>
 <ul>
 <li><strong>Assigning to an attribute in a <code>&lt;?python ?&gt;</code> block was a <code>SyntaxError</code></strong> (<code>x.a = 1</code>, <code>x.a += 2</code>, <code>del x.a</code>), where Chameleon runs it.</li>
 <li><strong>A sub-expression of a custom expression type could not read what a <code>&lt;?python ?&gt;</code> block defined</strong> (a <code>def</code>, an import): <code>UnboundLocalError</code>, where Chameleon renders.</li>
@@ -273,8 +304,8 @@ ul.task-list li input[type="checkbox"] {
 <li><strong>Placeholder nonces for concurrent renders come from the operating system’s random source</strong>, rather than from SipHash keys over a counter. Both were unpredictable; the new source needs no argument for it.</li>
 </ul>
 </section>
-<section id="fixed-2" class="level3">
-<h3 class="anchored" data-anchor-id="fixed-2">Fixed</h3>
+<section id="fixed-3" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-3">Fixed</h3>
 <ul>
 <li><strong>A value of several parts in a slot body kept the parts written before an error</strong> when one part rendered a native partial whose own slot body had such a value: the inner value cleared the record of the outer one, so a <code>tal:on-error</code> around it kept output Chameleon never writes.</li>
 <li><strong><code>tal:case</code> awaited a coroutine passed to <a href="reference/robyn.render_async.html#chameleon_rs.robyn.render_async" class="gdls-link gdls-code">render_async</a> twice</strong> (<code>RuntimeError: cannot reuse already awaited coroutine</code>) when the case did not match: the <code>default</code> comparison evaluates the expression again, as in Chameleon, and now reuses the awaited value.</li>
@@ -306,8 +337,8 @@ ul.task-list li input[type="checkbox"] {
 <li><strong>An expression nested deeply could crash the process on a small thread stack.</strong> The compile’s nesting limit is measured on the thread that compiles, but evaluation recurses on the thread that renders: the deepest expressions it allowed (a few hundred levels of <code>a + a + ...</code>, <code>not not ...</code> or an attribute chain) overflowed a 128 to 256 KiB worker thread’s stack (SIGBUS). Expressions deeper than 64 levels now check the stack left before they are evaluated and raise <code>RecursionError</code>.</li>
 </ul>
 </section>
-<section id="fixed-3" class="level3">
-<h3 class="anchored" data-anchor-id="fixed-3">Fixed</h3>
+<section id="fixed-4" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-4">Fixed</h3>
 <ul>
 <li><strong>Errors inside a slot fill name the expression that failed</strong> (malthe/chameleon<a href="https://github.com/mikeckennedy/chameleon-rs/issues/447">#447</a>, reported by gelbi123; also <a href="https://github.com/mikeckennedy/chameleon-rs/issues/291">#291</a>, reported by Franco Pellegrini, and <a href="https://github.com/mikeckennedy/chameleon-rs/issues/259">#259</a>, reported by castilma). An error in a <code>metal:fill-slot</code> body was reported at the page’s <code>metal:use-macro</code>, often after the macro’s last expression, which had nothing to do with it: in Plone, every error in a view’s content pointed at <code>context/main_template/macros/master</code>. The message now leads with the fill’s failing expression, its file, line and source, followed by the <code>use-macro</code> that led there; the macro’s unrelated expression is gone. Errors outside slot fills are reported as before. This changes messages Chameleon gets wrong; see “Chameleon bugs fixed” in the compatibility guide.</li>
 <li><strong><code>render_async(offload=True)</code> lost the caller’s context variables</strong> on Python 3.12 to 3.14: the worker thread ran without the calling task’s <code>contextvars</code> (a request’s, a framework’s current app, tracing spans). Offloaded renders now run in <code>asyncio.to_thread</code>, which copies them.</li>
@@ -331,8 +362,8 @@ ul.task-list li input[type="checkbox"] {
 <li><strong><code>chameleon_rs.template.HTML5_BOOLEAN_ATTRIBUTES</code></strong> (<a href="https://github.com/mikeckennedy/chameleon-rs/issues/11">#11</a>, reported by zopyx): Chameleon’s 12 boolean attributes plus HTML5’s 20 (<code>required</code>, <code>autofocus</code>, <code>formnovalidate</code>, …), the set z3c.pt uses for Zope and Plone. Set <code>boolean_attributes = HTML5_BOOLEAN_ATTRIBUTES</code> to render <code>required="required"</code> instead of <code>required="True"</code>. The default stays Chameleon’s.</li>
 </ul>
 </section>
-<section id="fixed-4" class="level3">
-<h3 class="anchored" data-anchor-id="fixed-4">Fixed</h3>
+<section id="fixed-5" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-5">Fixed</h3>
 <ul>
 <li><strong>A valueless attribute given a value is written <code>name="value"</code></strong> (malthe/chameleon<a href="https://github.com/mikeckennedy/chameleon-rs/issues/429">#429</a>, reported by petschki): <code>&lt;input disabled tal:attributes="disabled True"&gt;</code> rendered <code>&lt;input disableddisabled&gt;</code>, and the same for any valueless attribute set by <code>tal:attributes</code> or translated by <code>i18n:attributes</code> (<code>titlehello</code>, <code>altAlt</code>). It’s now written as an added attribute is, <code>disabled="disabled"</code>. <code>default</code> still keeps the attribute as written (<code>checked</code>). This changes output that Chameleon gets wrong; see “Chameleon bugs fixed” in the compatibility guide.</li>
 <li><strong><code>repeat</code> in a recursive macro</strong> (malthe/chameleon<a href="https://github.com/mikeckennedy/chameleon-rs/issues/177">#177</a>, reported by marcidy): when a loop ended inside a loop of the same name, <code>repeat.item</code> kept the inner loop’s item, so the outer loop’s next items read its <code>index</code> and <code>number</code> (<code>-1</code> and <code>0</code> after a leaf’s empty loop). The outer loop’s item is put back when the inner loop ends. Loops one after another still leave the last loop’s item, and a <code>repeat</code> passed in by the caller is left alone.</li>
@@ -374,8 +405,8 @@ ul.task-list li input[type="checkbox"] {
 <li><strong>Pages with partials scale across threads on free-threaded Python.</strong> Every partial call copied the template’s render defaults (<code>__translate</code>, <code>__decode</code>, …) from one dict shared by every thread, and on free-threaded CPython reading a dict takes its lock: six threads rendering a page with 52 partials did 2.4× the work of one. A loop or a mention of <code>repeat</code> now only gives a scope a fresh <code>repeat</code>. The defaults are copied in only where a template can see them (it names <code>econtext</code>, <code>rcontext</code> or a default, has names only known at render time, or calls a macro); an error message still lists them, as Chameleon’s does. Switching between a page’s and its partials’ frames no longer takes references to shared objects, and on free-threaded builds the string constants of templates read from files are interned, as CPython does for code constants (never those of a template made from a string, which may be one per request). At six threads a page with partials now scales 3.7× (37,500 renders a second where it was 22,900), and a flat template shared by every thread 4.3×.</li>
 </ul>
 </section>
-<section id="fixed-5" class="level3">
-<h3 class="anchored" data-anchor-id="fixed-5">Fixed</h3>
+<section id="fixed-6" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-6">Fixed</h3>
 <ul>
 <li><strong>A partial whose code read a render default by its plain name</strong> (<code>translate</code>, <code>decode</code>, <code>on_error_handler</code>, which expressions read as <code>econtext['__translate']</code> and so on) raised <code>KeyError</code> when it had no loop.</li>
 <li><strong>An async render of a macro recursing until <code>tal:on-error</code> caught the <code>RecursionError</code> rendered fewer levels than Chameleon</strong> (936 against 991 at the default limit): it kept a fixed reserve of 64 frames. It now measures the stack as a sync render does, and stops where <a href="reference/flask.render.html#chameleon_rs.flask.render" class="gdls-link gdls-code">render()</a> called in place of <code>await render_async(...)</code> would.</li>
@@ -405,8 +436,8 @@ ul.task-list li input[type="checkbox"] {
 <li><strong><code>CHAMELEON_CONCURRENT_LIMIT</code></strong> (default 64): one asynchronous render starts at most this many tasks for <code>[@concurrent](https://github.com/concurrent)</code> calls and concurrent partials; further calls are awaited in place, so a <code>tal:repeat</code> over request-sized data can’t fan out without bound.</li>
 </ul>
 </section>
-<section id="fixed-6" class="level3">
-<h3 class="anchored" data-anchor-id="fixed-6">Fixed</h3>
+<section id="fixed-7" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-7">Fixed</h3>
 <ul>
 <li><strong>A <code>tal:on-error</code> inside a <code>metal:fill-slot</code> kept text Chameleon drops</strong>, when the macro’s slot sits inside an <code>i18n:translate</code> or <code>i18n:name</code>. Chameleon writes a text node with its <code>${...}</code> expressions (and an interpolated attribute value) as one string, so when an expression fails, the text before it in that node was never written. chameleon-rs wrote it first: <code>&lt;i&gt;a&lt;i&gt;E&lt;/i&gt;</code> where Chameleon gives <code>&lt;i&gt;&lt;i&gt;E&lt;/i&gt;</code>. The last of the slot-body known differences of this kind; the render fuzzer now generates handlers in such bodies.</li>
 <li><strong>A cancellation during an async render’s cleanup was swallowed.</strong> When a <code>[@concurrent](https://github.com/concurrent)</code> call failed, the render cancelled the others and waited for their <code>finally</code> blocks; a <code>CancelledError</code> arriving then (a client disconnect, <code>asyncio.timeout</code>, <code>wait_for</code>) was replaced by the template’s error, so a disconnect became a logged 500 and a timeout never fired. Cancellation now wins, with the template error as its context.</li>
@@ -455,8 +486,8 @@ ul.task-list li input[type="checkbox"] {
 <li><strong>More deep nesting crashes fixed:</strong> <code>chameleon_rs.parser.ElementParser</code>, and compiles on small thread stacks or with most of the stack already used, overflowed the native stack. Compiling now also checks the stack actually left (with the <code>stacker</code> crate).</li>
 </ul>
 </section>
-<section id="fixed-7" class="level3">
-<h3 class="anchored" data-anchor-id="fixed-7">Fixed</h3>
+<section id="fixed-8" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-8">Fixed</h3>
 <ul>
 <li>A directory name given to <a href="reference/render_partial.html#chameleon_rs.render_partial" class="gdls-link gdls-code">render_partial</a> or a Jinja-style <a href="reference/starlette.Templates.html#chameleon_rs.starlette.Templates.get_template" class="gdls-link gdls-code">get_template</a> is “not found”, rather than an <code>IsADirectoryError</code>. <a href="reference/robyn.ChameleonTemplate.html#chameleon_rs.robyn.ChameleonTemplate" class="gdls-link gdls-code">chameleon_rs.robyn.ChameleonTemplate</a> raises <a href="reference/web.TemplateNotFound.html#chameleon_rs.web.TemplateNotFound" class="gdls-link gdls-code">TemplateNotFound</a> for a missing file too.</li>
 <li>With nothing configured, a template loaded by a <a href="reference/PageTemplateLoader.html#chameleon_rs.PageTemplateLoader" class="gdls-link gdls-code">PageTemplateLoader</a> below a package’s <code>templates</code> folder finds partials elsewhere in that folder again (a Pyramid layout).</li>

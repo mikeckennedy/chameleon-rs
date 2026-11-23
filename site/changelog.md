@@ -3,6 +3,38 @@
 This changelog is generated automatically from [GitHub Releases](https://github.com/mikeckennedy/chameleon-rs/releases).
 
 
+# v0.2.59
+
+*2026-11-23* · [GitHub](https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.2.59)
+
+Fixes from seven more rounds of review of `<?python ?>` blocks: class bodies, `global`, type parameters and `type` statements now scope names as Python does.
+
+
+### Fixed
+
+Class bodies in `<?python ?>` blocks, which have had Python's scoping since 0.2.57 (Chameleon has none: reading the class there is a `NameError`):
+
+- **A comprehension or generator expression in a class body** that read a name the class also binds raised `NameError`. It reads the template's name, as in Python; only its first iterable sees the class's.
+- **A default of a `lambda` or a method in a class body** reads the class's name (`f = lambda self, y=x: y`), where a lambda's read the render data, and one named like its parameter (`def f(self, a=a)`) is no longer a `NameError`.
+- **A `match` capture in a class body** is the class's attribute; it was stored in the template scope, over render data of that name.
+- **A class attribute named `globals`** broke reads of [template](reference/flask.template.html#chameleon_rs.flask.template), `macros` and the other template builtins in that class (`TypeError`).
+- **A method's parameters stayed plain names after it**, so a later read of the same name was a `NameError`: a second method's default (`def g(self, a=a)`), a class attribute (`y = a`), or `${a}` after the class. Inside a class a function's names now end with the function.
+- **A name a class body binds is the template's while it isn't bound**, as in Python: read before the assignment, after a `del`, or with the assignment in a branch not taken. These were a `NameError`. A name the body declares `global` is the template's.
+- **A walrus in a default, a decorator or a base class** in a class body (`def f(self, y=(k := 10))`) binds the class's name; it was a `SyntaxError`.
+- **A class pattern from the render data in a class body** works with one `match` inside another, and leaves nothing on the class when the `match` is left by `break`, `continue` or an exception.
+- **A `match` in a class inside a function that has a `match` of its own** raised `NameError` when both patterns named a class from the render data.
+- **A pattern's class or value that the class body also binds** (`case Point(x=q): Point = q`) is the template's until the class binds it, like any other read; it was a `NameError`.
+- **A `def`, a `class` or an import of a name declared `global`** in a class body, or in a method, binds the template's name once it runs, and `del` of such a name compiles. A name declared `global` is the template's even where a function around it has a parameter of that name. A builtin defined that way (`global len`, `def len()`) is the builtin again after `del`.
+- **A parameter named like its `async def` method** (`async def f(self, f=1)`) no longer makes that name a `NameError` for the rest of the template.
+
+And in any `<?python ?>` block:
+
+- **A name is bound after the header that defines it is evaluated**: `class Base(Base)`, `except E as E` and `async def f(x=f)` read the render data's `Base`, `E` and `f`, where they raised `UnboundLocalError` or `NameError`.
+- **Type parameters of a `def` or `class` are names inside it** (`class Box[T](list[T])`, `def m[T](self): return T`); reading one was a `NameError`. A bound reads a class body's names from the finished class, and doesn't see the function's parameters. A default doesn't see them (`def f[a](x=a)` reads the template's `a`), and neither does a name the class body itself binds.
+- **A `type` statement** (`type Pair[T] = tuple[T, T]`) works, in a class body too; it was a `SyntaxError`, as in Chameleon.
+- **A class's name is not bound while its body runs**: `class Base: b = Base` reads the render data's `Base` (or an earlier class of that name), and its methods read the class. It raised `UnboundLocalError`.
+
+
 # v0.2.58
 
 *2026-11-20* · [GitHub](https://github.com/mikeckennedy/chameleon-rs/releases/tag/v0.2.58)

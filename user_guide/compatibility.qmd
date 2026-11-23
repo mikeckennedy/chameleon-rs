@@ -126,6 +126,7 @@ are Chameleon issues that chameleon-rs adopted.
 | An error inside a `metal:fill-slot` body ([#447](https://github.com/malthe/chameleon/issues/447), [#291](https://github.com/malthe/chameleon/issues/291), [#259](https://github.com/malthe/chameleon/issues/259)) | The error message points at the page's `metal:use-macro`, often after the macro's last expression, which didn't fail. | The message leads with the fill's failing expression, then the `metal:use-macro`. |
 | A `<?python ?>` block that binds a name with `except ... as`, `class`, `async def` or a `match` capture | Reading the name raises `NameError` (or reads render data of the same name). | The name is the one the block bound. |
 | An assignment in a `class` body in a `<?python ?>` block: `class C: v = 3` | Stored in the template's scope like any assignment: `${v}` is `3` and `C.v` raises `AttributeError`, so a dataclass has no fields. | The class's attribute, as in Python: `C.v` is `3`. A template that read `${v}` afterwards must read `${C.v}`. |
+| A `type` statement in a `<?python ?>` block: `type Pair[T] = tuple[T, T]` | `SyntaxError`. | The alias is a name of the template, as a `def` is. |
 
 ## Found a difference?
 
