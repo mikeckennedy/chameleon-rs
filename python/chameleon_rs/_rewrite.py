@@ -189,6 +189,9 @@ class Rewriter(ast.NodeTransformer):
         self.defining: set[str] = set()
         # Whether a pattern of the `match` being visited reads a name from the scope.
         self.scope_names = False
+        # The names of the handlers of the `try` being visited that were plain names already
+        # (see `visit_Try`).
+        self.unbound: list[str] = []
 
     def visit_arg(self, node: ast.arg) -> ast.arg:
         self.scopes[-1].add(node.arg)
@@ -401,9 +404,45 @@ class Rewriter(ast.NodeTransformer):
         # before the name is bound: in `except E as E` it is the scope's `E`.
         if node.type is not None:
             node.type = self.visit(node.type)
-        with self.plain(filter(None, [node.name])):
+        with self.plain(filter(None, [node.name])) as added:
+            if node.name is not None and not added and not self.in_class() and node.name not in self.unbound:
+                self.unbound.append(node.name)
             node.body = self.statements(node.body)
         return node
+
+    def visit_Try(self, node: ast.Try | ast.TryStar) -> ast.AST:
+        # A handler unbinds its name when it ends. One that was a plain name already (a `def`,
+        # a class or an import of it, then `except E as name`) stays a plain name, so reading
+        # it after the handler ran was an `UnboundLocalError`, in Chameleon too. The scope's
+        # value is bound in its place, if there is one: the name then reads as it does after
+        # a handler whose name was not bound. When the handler didn't run, it is bound still.
+        outer, self.unbound = self.unbound, []
+        try:
+            node.body = self.statements(node.body)
+            node.handlers = [self.visit(handler) for handler in node.handlers]
+            names = self.unbound
+        finally:
+            self.unbound = outer
+        node.orelse = self.statements(node.orelse)
+        # First thing in the `finally`, which runs after the handler has unbound the name.
+        node.finalbody = [self.rebind(name) for name in names] + self.statements(node.finalbody)
+        return node
+
+    visit_TryStar = visit_Try
+
+    def rebind(self, name: str) -> ast.stmt:
+        """``try: name`` / ``except NameError: name = <the scope's>``, and nothing if the scope
+        has none."""
+        skip: list[ast.stmt] = [ast.Pass()]
+        value = cast('ast.expr', self.transform(ast.Name(id=name, ctx=ast.Load())))
+        assign = ast.Assign(targets=[ast.Name(id=name, ctx=ast.Store())], value=value)
+
+        def handler(body: list[ast.stmt]) -> ast.ExceptHandler:
+            return ast.ExceptHandler(type=ast.Name(id='NameError', ctx=ast.Load()), name=None, body=body)
+
+        fallback = ast.Try(body=[assign], handlers=[handler(skip)], orelse=[], finalbody=[])
+        read: list[ast.stmt] = [ast.Expr(value=ast.Name(id=name, ctx=ast.Load()))]
+        return ast.Try(body=read, handlers=[handler([fallback])], orelse=[], finalbody=[])
 
     def visit_match_case(self, node: ast.match_case) -> ast.AST:
         # A pattern's captures (`case [a, *rest]`, `case int() as n`) can't be stores in the

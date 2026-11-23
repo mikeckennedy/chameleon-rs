@@ -882,6 +882,86 @@ def test_code_block_names_bound_without_an_assignment(source: str, data: dict[st
     assert chameleon_rs.PageTemplate(source)(**data) == expected
 
 
+BINDING_STATEMENTS = [
+    ('class thing: pass', 'thing'),
+    ('def thing(): pass', 'thing'),
+    ('async def thing(): pass', 'thing'),
+    ('import os as thing', 'os'),
+]
+
+
+@pytest.mark.parametrize(('statement', 'name'), BINDING_STATEMENTS)
+def test_code_block_names_are_not_bound_in_another_macro(statement: str, name: str) -> None:
+    # Each macro, and the main body, is a function of its own in Chameleon: what a code block
+    # binds in one is not a name of the next. Chameleon's one visitor kept those names for
+    # every macro after, a `NameError` there where the render data has the name (fixed
+    # upstream in malthe/chameleon#465, as here).
+    source = (
+        f'<div metal:define-macro="first"><?python\n{statement}\n?>${{thing.__name__}}</div>'
+        '<div metal:define-macro="second">${thing}</div>'
+        '<div metal:use-macro="template.macros[\'first\']" />'
+        '<div metal:use-macro="template.macros[\'second\']" />'
+        '${thing}'
+    )
+    # Each macro is rendered where it is defined, and once more where it is used.
+    expected = 2 * f'<div>{name}</div><div>data</div>' + 'data'
+    assert chameleon_rs.PageTemplate(source)(thing='data') == expected
+
+
+@pytest.mark.parametrize(('statement', 'name'), BINDING_STATEMENTS)
+def test_code_block_exception_name_that_is_bound_already(statement: str, name: str) -> None:
+    # A handler unbinds its name. One a `def`, a class or an import bound before stays a plain
+    # name, so reading it after the handler ran was an `UnboundLocalError` (in Chameleon too,
+    # fixed in malthe/chameleon#465): it is the scope's then, and the earlier binding if the
+    # handler did not run.
+    source = (
+        f'<?python\n{statement}\ntry:\n    %s\nexcept ZeroDivisionError as thing:\n'
+        '    seen = type(thing).__name__\n?>${seen} ${getattr(thing, "__name__", thing)}'
+    )
+    ran = chameleon_rs.PageTemplate(source % '1 / 0')
+    assert ran(seen='-', thing='data') == 'ZeroDivisionError data'
+    with pytest.raises(NameError):
+        ran(seen='-')
+    assert chameleon_rs.PageTemplate(source % 'pass')(seen='-', thing='data') == f'- {name}'
+
+
+@pytest.mark.parametrize(
+    ('block', 'expected'),
+    [
+        # Once per run of the handler: skipped, then run.
+        (
+            (
+                'out = []\nfor n in (1, 0):\n    try:\n        1 / n\n    except ZeroDivisionError as thing:\n'
+                '        pass\n    out.append(getattr(thing, "__name__", thing))\nres = out'
+            ),
+            "['thing', 'data']",
+        ),
+        # The `finally` of the statement reads the scope's name too, and its `else` the function.
+        ('try:\n    1 / 0\nexcept ZeroDivisionError as thing:\n    pass\nfinally:\n    res = thing', 'data'),
+        ('try:\n    pass\nexcept ZeroDivisionError as thing:\n    pass\nelse:\n    res = thing.__name__', 'thing'),
+        (
+            'try:\n    [][0]\nexcept ZeroDivisionError as thing:\n    pass\nexcept IndexError:\n    pass\nres = thing.__name__',
+            'thing',
+        ),
+        (
+            'try:\n    raise ExceptionGroup("g", [ValueError(1)])\nexcept* ValueError as thing:\n    pass\nres = thing',
+            'data',
+        ),
+        # Inside a function, where the name is its local.
+        (
+            (
+                'def f():\n    def thing(): pass\n    try:\n        1 / 0\n    except ZeroDivisionError as thing:\n'
+                '        pass\n    return thing\nres = f()'
+            ),
+            'data',
+        ),
+    ],
+)
+def test_code_block_exception_name_is_rebound_on_every_path(block: str, expected: str) -> None:
+    source = f'<?python\ndef thing(): pass\n{block}\n?>${{res}}'
+    assert chameleon_rs.PageTemplate(source)(thing='data') == expected
+
+
 class _Point:
     __match_args__ = ('x',)
 

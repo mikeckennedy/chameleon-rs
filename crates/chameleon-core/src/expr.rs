@@ -164,6 +164,11 @@ pub trait ExprCompiler {
         None
     }
 
+    /// Called before the expressions of each macro, and of the main body, are compiled
+    /// (`visit_Macro`): each is a function of its own in Chameleon, so the names the code
+    /// blocks of another one bound are not its locals.
+    fn begin_macro(&mut self) {}
+
     /// Parses and registers a `<?python ... ?>` code block (statements, not an expression).
     fn compile_code(&mut self, source: &Tok) -> Result<ExprId, ExprCompileError<Self::Error>>;
 

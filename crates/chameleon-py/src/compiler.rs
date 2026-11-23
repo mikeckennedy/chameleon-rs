@@ -815,6 +815,15 @@ impl ExprCompiler for PyExprCompiler<'_, '_> {
         self.python_bound(candidate)
     }
 
+    /// The names code blocks defined end with their macro: its code runs in a namespace of
+    /// its own (see `NsCode`), where another macro's are not bound. Chameleon's one visitor
+    /// kept them for every macro compiled after, where reading one was a `NameError` and
+    /// render data of that name could not be read.
+    fn begin_macro(&mut self) {
+        self.local_names = None;
+        self.bound_names = None;
+    }
+
     /// A code block's error token is its whole source, unstripped (`TokenRef(node.source)`).
     fn compile_code(&mut self, source: &Tok) -> Result<ExprId, ExprCompileError<PyErr>> {
         self.generator = false;

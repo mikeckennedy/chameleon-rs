@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+Two fixes to `<?python ?>` blocks from the review of our pull request to Chameleon ([malthe/chameleon#465](https://github.com/malthe/chameleon/pull/465)), made the same way there:
+
+- **A name a code block binds with `def`, `class` or an import ends with its macro.** It stayed a plain name in every macro compiled after it, and in the main body: `${thing}` there raised `UnboundLocalError` (`NameError` in Chameleon) where the render data has a `thing`. Each macro is a function of its own, so the name is the template's there. Expressions in those macros also take the fast path again.
+- **`except E as name`, for a name a `def`, a class or an import had bound**, left it unbound once the handler ran, so reading it afterwards raised `UnboundLocalError` (in Chameleon too). It is the template's name then, as after any handler, and still the earlier binding if the handler didn't run.
+
 ## [0.2.59] - 2026-11-22
 
 Fixes from seven more rounds of review of `<?python ?>` blocks: class bodies, `global`, type parameters and `type` statements now scope names as Python does.

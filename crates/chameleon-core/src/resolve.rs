@@ -90,8 +90,10 @@ pub(crate) fn resolve<C: ExprCompiler>(tree: &Tree, compiler: &mut C, options: &
         },
     };
     for (_, node) in &tree.macros {
+        r.compiler.begin_macro();
         r.node(node)?;
     }
+    r.compiler.begin_macro();
     r.node(&tree.body)?;
     if let Some(e) = r.late_error {
         return Err(e);
