@@ -189,6 +189,13 @@ class Nothing(Anything):
         return False
 
 
+# A stand-in in a render error's argument listing. Chameleon shows what the value's own
+# `replace` and `__format__` make of it ("formatted"), chameleon-rs its characters ("any0",
+# or nothing for the empty twin): a string subclass can't change what is shown of it here
+# (tests/python/test_hardening.py). Only these stand-ins tell the two apart.
+STAND_IN_ARGUMENT = re.compile(r'^((?: - Arguments: {2}| {15})\w+: )(?:formatted|any\d*|)$', re.MULTILINE)
+
+
 def render_corpus(stand_in: Any) -> tuple[int, int, list[str]]:
     """Each template rendered by both engines with every name it needs bound to `stand_in`
     (found by rendering until no `NameError` is left): (identical renders, same errors,
@@ -209,7 +216,9 @@ def render_corpus(stand_in: Any) -> tuple[int, int, list[str]]:
                 try:
                     outcomes.append(('ok', template(**variables)))
                 except Exception as e:  # noqa: BLE001 - comparing exceptions across engines
-                    outcomes.append(('raise', type(e).__name__, canon(str(e)), e))
+                    outcomes.append(
+                        ('raise', type(e).__name__, STAND_IN_ARGUMENT.sub(r'\1<stand-in>', canon(str(e))), e)
+                    )
             want, got = outcomes[0][:3], outcomes[1][:3]
             name = outcomes[0][3].args[0] if want[:2] == ('raise', 'NameError') and outcomes[0][3].args else None
             if want == got and isinstance(name, str) and name not in variables:
