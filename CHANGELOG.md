@@ -21,7 +21,6 @@ Behaviour that changed in Chameleon, and so here. The first three are on Chamele
 - **A slot fill of a Chameleon template older than that fix, rendered from a chameleon-rs template** that Chameleon itself called as a macro, is no longer moved into place. Only a site that renders both engines' templates in one page, on Chameleon 4.6.1 or older, could see it.
 - **A `<meta>` charset ends at whitespace** when a template's encoding is sniffed ([malthe/chameleon#457](https://github.com/malthe/chameleon/pull/457)).
 
-
 ### Fixed
 
 Two fixes to `<?python ?>` blocks from the review of our pull request to Chameleon ([malthe/chameleon#465](https://github.com/malthe/chameleon/pull/465)), made the same way there:
