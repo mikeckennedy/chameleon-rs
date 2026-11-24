@@ -664,10 +664,6 @@ pub(crate) struct RenderCtx<'py> {
     /// (`PyRuntime::activate`). (Kept for the whole render, a macro with a code block called
     /// in a long `tal:repeat` made each lookup a search of one namespace per call so far.)
     pub(crate) namespaces: RefCell<Vec<(u64, Bound<'py, PyDict>)>>,
-    /// For a render called through `include` by another engine: the stream it writes to
-    /// (a Chameleon older than its #467 has slot fills that append to it directly, through
-    /// their closure, instead of to the stream they are called with).
-    pub(crate) stream: OnceCell<Bound<'py, PyAny>>,
     /// A scope object of this render was handed to user code (`econtext` as a value, a code
     /// block, a custom expression type, a dynamic fallback, a call from outside): from then
     /// on no function shares its caller's scope (`chameleon_core::Macros::may_share_scope`).
@@ -801,7 +797,6 @@ impl<'py> RenderCtx<'py> {
             rcontext: OnceCell::new(),
             nested: Cell::new((0, 0)),
             namespaces: RefCell::new(Vec::new()),
-            stream: OnceCell::new(),
             scope_exposed: Cell::new(false),
             simple_wrapper: Cell::new((0, false)),
             awaits: false,
@@ -830,7 +825,6 @@ impl<'py> RenderCtx<'py> {
             rcontext: self.rcontext.into_inner().map(Bound::unbind),
             nested: self.nested.get(),
             namespaces: self.namespaces.into_inner().into_iter().map(|(k, ns)| (k, ns.unbind())).collect(),
-            stream: self.stream.into_inner().map(Bound::unbind),
             scope_exposed: self.scope_exposed.get(),
             simple_wrapper: self.simple_wrapper.get(),
             awaits: self.awaits,
@@ -863,7 +857,6 @@ impl<'py> RenderCtx<'py> {
             rcontext: saved.rcontext.map(|r| r.into_bound(py)).map_or_else(OnceCell::new, OnceCell::from),
             nested: Cell::new(saved.nested),
             namespaces: RefCell::new(saved.namespaces.into_iter().map(|(k, ns)| (k, ns.into_bound(py))).collect()),
-            stream: saved.stream.map(|s| s.into_bound(py)).map_or_else(OnceCell::new, OnceCell::from),
             scope_exposed: Cell::new(saved.scope_exposed),
             simple_wrapper: Cell::new(saved.simple_wrapper),
             awaits: saved.awaits,
@@ -890,7 +883,6 @@ pub(crate) struct SavedRender {
     rcontext: Option<Py<PyDict>>,
     nested: (u32, u32),
     namespaces: Vec<(u64, Py<PyDict>)>,
-    stream: Option<Py<PyAny>>,
     scope_exposed: bool,
     simple_wrapper: (usize, bool),
     awaits: bool,
@@ -922,9 +914,6 @@ impl SavedRender {
         }
         for (_, ns) in &self.namespaces {
             visit.call(ns)?;
-        }
-        if let Some(s) = &self.stream {
-            visit.call(s)?;
         }
         for d in &self.deferred {
             d.traverse(visit)?;

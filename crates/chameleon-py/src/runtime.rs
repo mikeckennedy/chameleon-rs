@@ -190,31 +190,18 @@ impl<'a, 'py, const ASYNC: bool> PyRuntime<'a, 'py, ASYNC> {
         }
     }
 
-    /// Calls a foreign callable with a fresh stream (`f(stream, *args)`) and writes what it
-    /// appended (`''.join(stream)`). A Chameleon slot fill writes to the stream it is called
-    /// with, where its slot is (since its #467). An older Chameleon's appended to its own
-    /// template's stream through a closure instead: when this render was called by such an
-    /// engine, what was appended to the stream it writes to is moved here, in order.
+    /// Calls a foreign callable (a macro or a slot fill of another engine's template) with a
+    /// fresh stream (`f(stream, *args)`) and writes what it appended (`''.join(stream)`).
+    /// (A slot fill of a Chameleon older than its #467 appends to its own template's stream
+    /// instead, through a closure: that output is not moved here.)
     fn call_with_stream(&self, f: &Bound<'py, PyAny>, args: Vec<Bound<'py, PyAny>>, out: &mut Output) -> PyResult<()> {
         let py = self.py;
         let stream = PyList::empty(py);
         let mut call_args = vec![stream.clone().into_any()];
         call_args.extend(args);
-        let outer = self.render.stream.get();
-        let before = outer.map(PyAnyMethods::len).transpose()?;
         f.call1(PyTuple::new(py, call_args)?)?;
-        let mut join = |items: &Bound<'py, PyAny>| -> PyResult<()> {
-            let joined = intern!(py, "").call_method1(intern!(py, "join"), (items,))?;
-            convert::write_str(joined.cast::<PyString>()?, Escape::Structure, out)
-        };
-        if let (Some(outer), Some(before)) = (outer, before)
-            && outer.len()? > before
-        {
-            let appended = outer.get_item(pyo3::types::PySlice::new(py, isize::try_from(before)?, isize::MAX, 1))?;
-            outer.del_item(pyo3::types::PySlice::new(py, isize::try_from(before)?, isize::MAX, 1))?;
-            join(&appended)?;
-        }
-        join(stream.as_any())
+        let joined = intern!(py, "").call_method1(intern!(py, "join"), (stream,))?;
+        convert::write_str(joined.cast::<PyString>()?, Escape::Structure, out)
     }
 }
 

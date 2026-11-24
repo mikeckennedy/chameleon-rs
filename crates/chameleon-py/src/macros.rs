@@ -116,7 +116,6 @@ impl MacroInclude {
             get.entry,
             m.clone().into_any(),
             builtins,
-            stream,
             econtext,
             rcontext,
             (i18n, None),
@@ -217,7 +216,7 @@ impl SlotFill {
         };
         let slots = self.slots.iter().map(|s| s.as_ref().map(|v| v.clone_ref(py))).collect();
         let i18n = (self.i18n(py), Some(self.helpers(py)));
-        let text = render_function(&program, self.entry, code, builtins, stream, econtext, rcontext, i18n, slots)?;
+        let text = render_function(&program, self.entry, code, builtins, econtext, rcontext, i18n, slots)?;
         stream.call_method1(pyo3::intern!(py, "append"), (text,))?;
         Ok(())
     }
@@ -246,7 +245,6 @@ fn render_function<'py>(
     entry: u32,
     code: Bound<'py, PyAny>,
     builtins: Bound<'py, PyDict>,
-    stream: &Bound<'py, PyAny>,
     econtext: &Bound<'py, PyAny>,
     rcontext: &Bound<'py, PyAny>,
     (i18n, helpers): (I18n<Py<PyAny>>, Option<I18n<Py<PyAny>>>),
@@ -270,7 +268,6 @@ fn render_function<'py>(
     // Called from outside: the scope came from user code.
     render.scope_exposed.set(true);
     let _ = render.rcontext.set(rcontext.cast::<PyDict>()?.clone());
-    let _ = render.stream.set(stream.clone());
     let compiled = Arc::clone(&program.get().core);
     let mut st = VmState::at(compiled, entry, code.unbind(), scope.clone().into_any().unbind(), i18n, slots);
     if let Some(helpers) = helpers {

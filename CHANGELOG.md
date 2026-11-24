@@ -18,6 +18,7 @@ Behaviour that changed in Chameleon, and so here. The first three are on Chamele
 - **A default reads the name it is written with** ([malthe/chameleon#468](https://github.com/malthe/chameleon/issues/468)): `${(lambda a=a: a)()}` and `def f(a=a)` in a `<?python ?>` block raised `NameError`, as in Chameleon, and a lambda's default could not read a parameter of the lambda around it.
 - **An unknown expression type is an `ExpressionError`**, not a bare `LookupError` ([malthe/chameleon#458](https://github.com/malthe/chameleon/issues/458)): `tal:content="nocall: x"`, or `${markdown: x}` without Markdown configured. It has the expression and its position, and like any expression error it is raised at render time unless the template is strict.
 - **`tal:case` on the same element as `tal:switch` is a `LanguageError`** ([malthe/chameleon#461](https://github.com/malthe/chameleon/pull/461)); it was an `AssertionError`.
+- **A slot fill of a Chameleon template older than that fix, rendered from a chameleon-rs template** that Chameleon itself called as a macro, is no longer moved into place. Only a site that renders both engines' templates in one page, on Chameleon 4.6.1 or older, could see it.
 - **A `<meta>` charset ends at whitespace** when a template's encoding is sniffed ([malthe/chameleon#457](https://github.com/malthe/chameleon/pull/457)).
 
 
