@@ -172,17 +172,15 @@ class Rewriter(ast.NodeTransformer):
         # The names each function, lambda and class body being visited declares `global`,
         # innermost last.
         self.declared: list[set[str]] = []
-        # Inside a function: the template's plain names where the outermost function around
-        # the code is defined. The scope there also holds the parameters and local functions
-        # of the functions around the code, which a name declared `global` is not.
+        # Inside a function or a class: the template's plain names where the outermost one
+        # around the code is defined. The scope there also holds the parameters, type
+        # parameters and local functions of the functions and classes around the code, which
+        # a name declared `global` is not (nor a name a class body reads before it binds it).
         self.template_names: Optional[set[str]] = None
         # Marks of rebound builtins (see `stored`) that outlive the function they were made in.
         self.kept: set[str] = set()
         # Whether a type parameter's bound is being visited (see `annotation_scope`).
         self.lazy = False
-        # For each class body being visited, the type parameters of its class that became
-        # plain names for it: not what a name the body itself binds is outside it.
-        self.class_types: list[set[str]] = []
         # How many functions deep the code is, and the classes being defined outside every
         # function: their names, which the functions in them see (see `visit_ClassDef`).
         self.functions = 0
@@ -274,9 +272,16 @@ class Rewriter(ast.NodeTransformer):
         # Its decorators, bases and keywords are evaluated before its name is bound: in
         # `class Base(Base)` the base is the scope's `Base`.
         node.decorator_list = [self.visit(decorator) for decorator in node.decorator_list]
-        # Its type parameters are names for the rest of it: `class Box[T](list[T])`.
-        with self.plain(_type_names(node)) as types:
-            self.class_definition(node, types)
+        outermost = self.template_names is None
+        if outermost:
+            self.template_names = set(self.scopes[-1])
+        try:
+            # Its type parameters are names for the rest of it: `class Box[T](list[T])`.
+            with self.plain(_type_names(node)) as types:
+                self.class_definition(node, types)
+        finally:
+            if outermost:
+                self.template_names = None
         # Again: a type parameter of its own name (`class Box[Box]`) ended with the class.
         self.bind(node.name)
         return self.stored(node, [node.name])
@@ -284,11 +289,12 @@ class Rewriter(ast.NodeTransformer):
     def visit_TypeAlias(self, node: ast.TypeAlias) -> ast.AST | list[ast.stmt]:
         # `type Alias[T] = list[T]` binds its name as a `def` does (Chameleon stores it in the
         # scope, which no `type` statement can: a `SyntaxError`). Its value is evaluated
-        # later, as a bound is.
+        # later, as a bound is: once the name is bound, so `type Tree = list[Tree]` reads the
+        # alias itself.
+        self.bind(node.name.id)
         with self.plain(_type_names(node)), self.annotation_scope():
             node.type_params = [self.visit(param) for param in node.type_params]
             node.value = self.visit(node.value)
-        self.bind(node.name.id)
         return self.stored(node, [node.name.id])
 
     def class_definition(self, node: ast.ClassDef, types: list[str]) -> None:
@@ -300,7 +306,9 @@ class Rewriter(ast.NodeTransformer):
         # function's local, unbound in the body, as in Python.
         scope = self.scopes[-1]
         binds = not self.in_class_body() and not self.is_global(node.name)
-        deferred = binds and self.functions == 0 and node.name not in scope | self.defining
+        # (A type parameter of its own name, `class Box[Box]`, is not the name bound already.)
+        known = (scope - set(types)) | self.defining
+        deferred = binds and self.functions == 0 and node.name not in known
         if deferred:
             self.defining.add(node.name)
         else:
@@ -309,13 +317,11 @@ class Rewriter(ast.NodeTransformer):
             self.type_parameters(node)
             names, global_names = _bindings(node.body, class_body=True)
             self.class_names.append(names - global_names)
-            self.class_types.append(set(types))
             self.declared.append(global_names)
             try:
                 node.body = self.statements(node.body)
             finally:
                 self.class_names.pop()
-                self.class_types.pop()
                 self.declared.pop()
         finally:
             if deferred:
@@ -356,8 +362,12 @@ class Rewriter(ast.NodeTransformer):
         return self.in_class() and bool(self.declared) and name in self.declared[-1]
 
     def plain_global(self, name: str) -> bool:
-        """Whether ``name``, declared `global` here, is a plain name of the template."""
-        return name in (self.scopes[0] if self.template_names is None else self.template_names)
+        """Whether ``name``, read as a global here (declared `global`, or a class body's own
+        name not bound yet), is a plain name of the template. So is a class being defined
+        outside every function, for code that runs once it is bound: a function in it, a
+        bound or a `type` statement's value."""
+        names = self.scopes[0] if self.template_names is None else self.template_names
+        return name in names or ((self.functions > 0 or self.lazy) and name in self.defining)
 
     def stored(self, node: ast.stmt, names: Iterable[str]) -> ast.AST | list[ast.stmt]:
         """``node``, a `def`, a `class` or an import, followed by a store in the scope of each
@@ -628,10 +638,12 @@ class Rewriter(ast.NodeTransformer):
 
     def outside(self, name: str) -> ast.AST:
         """A read of ``name``, which the class body being visited binds, as it is outside the
-        class. Not its class's type parameter of that name, which Python skips for such a
-        name (`class Box[a]: x = a; a = 1` reads the template's `a`)."""
+        class: the template's, as Python looks in the class, the globals and the builtins.
+        Never a type parameter, a parameter or a local of what is around the class
+        (`class Box[a]: x = a; a = 1` and `def f(a): class C: x = a; a = 1` read the
+        template's `a`)."""
         node = ast.Name(id=name, ctx=ast.Load())
-        return self.transform(node) if name in self.class_types[-1] else self.lookup(node)
+        return node if self.plain_global(name) else self.transform(node)
 
     def lookup(self, node: ast.Name) -> ast.AST:
         plain = self.plain_global(node.id) if self.is_global(node.id) else node.id in self.scopes[-1]

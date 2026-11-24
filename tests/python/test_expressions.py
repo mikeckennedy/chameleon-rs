@@ -1250,6 +1250,76 @@ CLASS_BODIES = [
     'class C:\n    def m(self):\n        type Alias = list[Bound]\n        return Alias.__value__\nres = C().m()',
     'class C:\n    global Alias\n    type Alias = int\nres = Alias.__value__',
     'type Alias = int\nclass C:\n    v = Alias\nres = C.v.__name__',
+    # A `type` statement's value and bounds read the alias itself: its name is bound first.
+    'type Tree = list[Tree]\nres = Tree.__value__ == list[Tree]',
+    'type Tree[T] = T | list[Tree[T]]\nres = repr(Tree.__value__)',
+    'type A[T: A] = list[T]\nres = A.__type_params__[0].__bound__ is A',
+    'type A[T = A] = list[T]\nres = A.__type_params__[0].__default__ is A',
+    'type Point = Point\nres = Point.__value__ is Point',
+    'def f():\n    type Tree = list[Tree]\n    return Tree.__value__ == list[Tree]\nres = f()',
+    'class C:\n    def m(self):\n        type Tree = list[Tree]\n        return Tree.__value__ == list[Tree]\nres = C().m()',
+    (
+        'class C:\n    def m(self):\n        global Tree\n        type Tree = list[Tree]\n'
+        'C().m()\nres = Tree.__value__ == list[Tree]'
+    ),
+    'type T[T] = list[T]\nres = (T.__name__, repr(T.__value__))',
+    # A name the class body binds is, before that, the template's: never a type parameter, a
+    # parameter or a local of what is around the class.
+    'class Outer[a]:\n    class Inner:\n        x = a\n        a = 1\nres = (Outer.Inner.x, Outer.Inner.a)',
+    'class Outer[a]:\n    class Inner[a]:\n        x = a\n        a = 1\nres = (Outer.Inner.x, Outer.Inner.a)',
+    (
+        'class Outer[a]:\n    def m(self):\n        class Inner:\n            x = a\n            a = 1\n'
+        '        return (Inner.x, Inner.a)\nres = Outer().m()'
+    ),
+    'def f[a]():\n    class Inner:\n        x = a\n        a = 1\n    return (Inner.x, Inner.a)\nres = f()',
+    (
+        'class Outer:\n    def m(self, a):\n        class Inner:\n            x = a\n            a = 1\n'
+        '        return (Inner.x, Inner.a)\nres = Outer().m(42)'
+    ),
+    'def f(a):\n    class C:\n        x = a\n        a = 1\n    return (C.x, C.a)\nres = f(42)',
+    (
+        'def f():\n    def a():\n        pass\n    class C:\n        x = a\n        a = 1\n'
+        '    return (C.x, C.a)\nres = f()'
+    ),
+    (
+        'class O:\n    def m(self):\n        try:\n            1 / 0\n        except Fault as a:\n'
+        '            class C:\n                x = a\n                a = 1\n            return (C.x, C.a)\n'
+        'res = O().m()'
+    ),
+    (
+        'class O:\n    def m(self, Kind):\n        class C:\n            match 5:\n                case Kind():\n'
+        '                    r = 1\n                case _:\n                    r = 2\n            Kind = 1\n'
+        '        return C.r\nres = O().m(int)'
+    ),
+    'def a():\n    return 3\nclass Box[a]:\n    x = a\n    a = 1\nres = (Box.x(), Box.a)',
+    # `global` of a name that is a type parameter of the class around it.
+    (
+        'class Box[a]:\n    def m(self):\n        global a\n        old = a\n        a = 200\n        return old\n'
+        'res = (Box().m(), a)'
+    ),
+    'class Box[a]:\n    global a\n    x = a\n    a = 200\nres = (Box.x, a)',
+    'class Box[a]:\n    global a\n    del a\nres = a',
+    'class Box[a]:\n    def m(self):\n        global a\n        del a\nBox().m()\nres = a',
+    'class Box[a]:\n    def m(self):\n        global a\n        def a():\n            return 7\nBox().m()\nres = a()',
+    'class Box[a]:\n    def m(self):\n        global a\n        type a = int\nBox().m()\nres = a.__value__',
+    'class Box[Box]:\n    def m(self):\n        global Box\n        return Box.__name__\nres = Box().m()',
+    (
+        'class C:\n    try:\n        1 / 0\n    except Fault as a:\n        pass\n'
+        '    def m(self):\n        global a\n        return a\nres = C().m()'
+    ),
+    # `global` of the class being defined, in one of its methods: the class, bound by then.
+    'class Base:\n    def m(self):\n        global Base\n        return Base.__name__\nres = Base().m()',
+    'class Point:\n    def m(self):\n        global Point\n        return Point.__name__\nres = Point().m()',
+    'class Base:\n    def m(self):\n        global Base\n        Base = 99\nBase().m()\nres = Base',
+    (
+        'class Base:\n    class Inner:\n        def m(self):\n            global Base\n            Base = 99\n'
+        'Base.Inner().m()\nres = Base'
+    ),
+    'class Base:\n    class Inner:\n        global Base\n        type X = Base\nres = Base.Inner.X.__value__ is Base',
+    (
+        'class Base:\n    def m(self):\n        class Inner:\n            x = Base\n            Base = 1\n'
+        '        return Inner.x\nres = Base().m().__name__'
+    ),
 ]
 
 
