@@ -45,7 +45,7 @@ From then on `import chameleon` gives chameleon-rs, and so do `chameleon_partial
 `chameleon_flask`, `fastapi_chameleon` and `chameleon_robyn`. Your templates and the code
 around them stay as they are.
 
-- **Same output.** Chameleon's own test suite, vendored unmodified, passes: 227 of the 227
+- **Same output.** Chameleon's own test suite, vendored unmodified, passes: 238 of the 238
   tests that pass on Chameleon. All 122 of its fixture renders are byte-identical, and every
   page of two production Flask/Quart sites renders byte-identical HTML.
   [Known differences](https://mkennedy.codes/docs/chameleon-rs/user-guide/compatibility.html).

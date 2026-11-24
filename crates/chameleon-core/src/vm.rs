@@ -18,7 +18,8 @@
 //!
 //! A program holds several functions, as Chameleon's generated module does: the main render
 //! function, one per `metal:define-macro`, and one per `metal:fill-slot` body (a closure of
-//! the function the slot was filled in). Each runs in its own [`Frame`].
+//! the function the slot was filled in, which writes to the stream it is called with, where
+//! its slot is). Each runs in its own [`Frame`].
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -435,12 +436,6 @@ pub enum Op {
     TrValue {
         info: u32,
     },
-    /// In a slot body: a text node or attribute value of several parts starts (until
-    /// [`Op::PartsEnd`]). Chameleon writes such a value whole, once every part is evaluated;
-    /// the VM writes each part as it goes, so where a handler keeps the body's output
-    /// ([`VmState::fill_catch`]) the parts written before the one that failed are taken back.
-    PartsBegin,
-    PartsEnd,
     /// Capture what the instructions until [`Op::CaptureEnd`] write.
     CaptureBegin,
     /// Push the captured text as a value; for a boolean attribute (`boolean`), a non-empty
@@ -575,8 +570,6 @@ impl Program {
             | Op::TranslateEnd { .. }
             | Op::NameBegin { .. }
             | Op::NameEnd { .. }
-            | Op::PartsBegin
-            | Op::PartsEnd
             | Op::CaptureBegin
             | Op::CaptureEnd { .. }
             | Op::AttrTranslate { .. }
@@ -798,8 +791,6 @@ impl Program {
                     None => "name_end ?".to_owned(),
                 },
                 Op::TrValue { info } => format!("tr_value {:?}", self.tables.tr_values.get(*info as usize)),
-                Op::PartsBegin => "parts_begin".to_owned(),
-                Op::PartsEnd => "parts_end".to_owned(),
                 Op::CaptureBegin => "capture_begin".to_owned(),
                 Op::CaptureEnd { boolean } => format!("capture_end boolean={:?}", boolean.map(|b| self.text_str(b))),
                 Op::AttrTranslate { info, .. } => match self.tables.attr_translates.get(*info as usize) {
@@ -886,8 +877,6 @@ pub struct Fill<V> {
     pub entry: u32,
     pub i18n: I18n<V>,
     pub slots: Vec<Option<V>>,
-    /// The output stream the defining function was writing to (see [`Frame::stream`]).
-    pub stream: Option<u64>,
     /// For a fill defined in a slot body: the i18n settings that body's conversion helpers use
     /// (see [`Extra::helpers`]). `None` for a fill defined in a render function (main or
     /// macro): its helpers use `i18n`.
@@ -1349,16 +1338,6 @@ struct Extra<V> {
     /// The fills the function resolved when it started (`__slot_*` locals), by slot index; a
     /// slot body sees those of the function it belongs to.
     slots: Vec<Option<V>>,
-    /// For a slot body: the output stream its text goes to, its defining function's (a
-    /// translation stream's id, or `None` for the render's output), wherever it is called
-    /// from. (Other functions write to the stream open when they were called.)
-    stream: Option<u64>,
-    /// For a slot body: where its own output not yet moved to `stream` starts (it moves when
-    /// the body calls a macro or a slot, and when it returns).
-    start: Mark,
-    /// For a slot body: its output was moved for the call in progress, so its own output
-    /// starts again when that call returns.
-    flushed: bool,
     /// For a slot body: the i18n settings its conversion helpers use, when they may differ
     /// from its own. Chameleon's `__convert` and `__quote` are closures of the render function
     /// (main or macro) the body belongs to, so a value they translate gets that function's
@@ -1373,11 +1352,10 @@ struct Extra<V> {
 
 impl<V> Extra<V> {
     fn new(i18n: I18n<V>) -> Self {
-        Self { i18n, slots: Vec::new(), stream: None, start: Mark::default(), flushed: false, helpers: None }
+        Self { i18n, slots: Vec::new(), helpers: None }
     }
 
-    /// Drops the values it holds (it goes back to the spare boxes). `stream` and `start` are
-    /// left as they are: whoever takes the box sets them.
+    /// Drops the values it holds (it goes back to the spare boxes).
     fn clear(&mut self) {
         self.i18n = I18n { domain: None, context: None, target_language: None };
         self.slots.clear();
@@ -1435,31 +1413,22 @@ enum Unwind<V> {
     },
     /// An i18n setting's previous value.
     I18n(Backup<V>),
-    /// An `i18n:translate` stream: where it starts, its id, which translation of which
-    /// program, and the value of each of its names so far.
+    /// An `i18n:translate` stream: where it starts, which translation of which program, and
+    /// the value of each of its names so far.
     Translate {
         mark: Mark,
-        id: u64,
         /// Boxed: the unwind stack's entries stay small (they are moved on every push).
         translation: Box<OpenTranslation>,
     },
-    /// An `i18n:name` stream: where it starts, its id, which name of which program, and the
-    /// slot body output that belongs before it ([`OpenTranslation::before`]).
+    /// An `i18n:name` stream: where it starts, and which name of which program.
     Name {
         mark: Mark,
-        id: u64,
         program: Arc<Program>,
         info: u32,
-        /// Boxed, allocated only when used: the unwind stack's entries stay small.
-        before: Option<Box<Before>>,
     },
     /// Output captured as a value (a translated attribute's interpolation).
     Capture(Mark),
 }
-
-/// Slot body output kept aside before an `i18n:name` stream ([`OpenTranslation::before`]).
-#[derive(Debug, Default)]
-struct Before(Vec<u8>);
 
 /// An open `i18n:translate`: which translation of which program, and its names' values.
 #[derive(Debug)]
@@ -1467,11 +1436,6 @@ struct OpenTranslation {
     program: Arc<Program>,
     info: u32,
     names: Vec<NameValue>,
-    /// Slot body output that belongs before the stream (in the stream it was opened in, at
-    /// `mark`), written there when the stream closes: kept aside rather than inserted at
-    /// `mark` each time, which would move the stream's text on every flush (quadratic in a
-    /// loop of macro calls; see [`VmState::move_to_stream`]).
-    before: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -1491,7 +1455,7 @@ pub struct VmState<V> {
     /// The active frame's last two evaluated expressions (see [`ErrorSite::unpack`]).
     recent: u64,
     suspended: bool,
-    /// The last frame serial and stream id handed out.
+    /// The last frame serial handed out.
     serials: u64,
     /// The runtime's nesting budget, once asked for.
     budget: Option<usize>,
@@ -1502,11 +1466,6 @@ pub struct VmState<V> {
     helpers_any: bool,
     /// No i18n settings (what a frame without `extra` has).
     none: I18n<V>,
-    /// The values of several parts being written, innermost last: the frame (its serial)
-    /// writing each, and where it starts in the output (see [`Op::PartsBegin`]). A stack, not
-    /// one slot: a part can call a native partial whose own slot bodies write values of
-    /// several parts while the outer one is still open.
-    parts: Vec<(u64, Mark)>,
     /// Boxes of popped frames' `extra`, for reuse (an allocation and a free per macro call
     /// cost more than the rest of the call on macOS's allocator).
     spare: Vec<Box<Extra<V>>>,
@@ -1558,7 +1517,6 @@ impl<V> VmState<V> {
             helpers_on: false,
             helpers_any: false,
             none: I18n { domain: None, context: None, target_language: None },
-            parts: Vec::new(),
             spare: Vec::new(),
             out,
         }
@@ -1711,14 +1669,7 @@ impl<V> VmState<V> {
     }
 
     /// A box for a frame's `extra`, reused when one is spare.
-    fn extra(
-        &mut self,
-        i18n: I18n<V>,
-        slots: Vec<Option<V>>,
-        stream: Option<u64>,
-        start: Mark,
-        helpers: Option<Box<I18n<V>>>,
-    ) -> Box<Extra<V>> {
+    fn extra(&mut self, i18n: I18n<V>, slots: Vec<Option<V>>, helpers: Option<Box<I18n<V>>>) -> Box<Extra<V>> {
         if helpers.is_some() {
             self.helpers_any = true;
         }
@@ -1731,13 +1682,10 @@ impl<V> VmState<V> {
                 } else {
                     extra.slots = slots;
                 }
-                extra.stream = stream;
-                extra.start = start;
-                extra.flushed = false;
                 extra.helpers = helpers;
                 extra
             }
-            None => Box::new(Extra { i18n, slots, stream, start, flushed: false, helpers }),
+            None => Box::new(Extra { i18n, slots, helpers }),
         }
     }
 
@@ -1767,211 +1715,6 @@ impl<V> VmState<V> {
         self.serials += 1;
         self.serials
     }
-
-    /// The stream the active function writes to (Chameleon's `__append` where a slot is
-    /// filled): the innermost translation stream it opened, else a slot body's own stream,
-    /// else the stream open when the function was called.
-    fn current_stream(&self) -> Option<u64> {
-        let innermost = |entries: &[Unwind<V>]| {
-            entries.iter().rev().find_map(|e| match e {
-                Unwind::Translate { id, .. } | Unwind::Name { id, .. } => Some(*id),
-                _ => None,
-            })
-        };
-        let frame = self.frames.last()?;
-        let (below, own) = self.unwind.split_at(frame.unwind_base.min(self.unwind.len()));
-        let stream = frame.extra.as_ref().and_then(|e| e.stream);
-        innermost(own).or(if frame.kind == Kind::Fill { stream } else { innermost(below) })
-    }
-
-    /// Where a slot body's output bound for `stream` goes: before the first translation stream
-    /// opened since (its index in the unwind stack and its mark); `None` if there is none (it
-    /// is already in place).
-    fn move_target(&self, stream: Option<u64>) -> Option<(usize, Mark)> {
-        let base = match stream {
-            None => 0,
-            Some(id) => {
-                let at = self.unwind.iter().rposition(
-                    |e| matches!(e, Unwind::Translate { id: i, .. } | Unwind::Name { id: i, .. } if *i == id),
-                )?;
-                at + 1
-            }
-        };
-        self.unwind.get(base..)?.iter().enumerate().find_map(|(i, e)| match e {
-            Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } => Some((base + i, *mark)),
-            _ => None,
-        })
-    }
-
-    /// Calls `f` on every mark into the output the render holds.
-    fn for_each_mark(&mut self, mut f: impl FnMut(&mut Mark)) {
-        for entry in &mut self.unwind {
-            match entry {
-                Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } | Unwind::Capture(mark) => f(mark),
-                Unwind::Attr { start, value } => {
-                    f(start);
-                    f(value);
-                }
-                _ => {}
-            }
-        }
-        for frame in &mut self.frames {
-            f(&mut frame.fallback);
-            if let Some(extra) = &mut frame.extra {
-                f(&mut extra.start);
-            }
-        }
-        // No current path moves output while a value of several parts is open; kept in step anyway.
-        for (_, mark) in &mut self.parts {
-            f(mark);
-        }
-    }
-
-    /// The unwind entries from `at` up are about to be dropped without closing (an error):
-    /// the slot body output kept aside before their streams goes into the output at their
-    /// marks, where the handler's truncation then sees it as Chameleon's stream holds it.
-    #[cold]
-    fn place_before_from(&mut self, at: usize) {
-        for i in (at..self.unwind.len()).rev() {
-            let (mark, bytes) = match self.unwind.get_mut(i) {
-                Some(Unwind::Translate { mark, translation, .. }) => (*mark, std::mem::take(&mut translation.before)),
-                Some(Unwind::Name { mark, before, .. }) => (*mark, before.take().map(|b| b.0).unwrap_or_default()),
-                _ => continue,
-            };
-            if bytes.is_empty() {
-                continue;
-            }
-            self.out.insert_at(mark, &bytes);
-            let n = bytes.len();
-            self.for_each_mark(|m| {
-                if *m >= mark {
-                    *m = m.shifted(n);
-                }
-            });
-        }
-    }
-
-    /// A handler in a slot body caught an error (its own entries above it already dropped).
-    /// When the body's output belongs to another stream than the define-slot site's,
-    /// Chameleon's `del __stream[__fallback:]` cuts only the latter: what streams opened in the
-    /// handler's body held is dropped (`abandoned`), the body's own output is kept (moved to its
-    /// stream), and then the define-slot site's stream is cut at the fallback. Returns whether
-    /// it did that; otherwise the caller cuts as for any function.
-    /// `parts`: the value of several parts the body was writing when the error was raised (in
-    /// this frame), whose parts written so far Chameleon would not have written.
-    fn fill_catch(&mut self, abandoned: Option<Mark>, parts: Option<(u64, Mark)>) -> bool {
-        let Some(frame) = self.frames.last() else { return false };
-        if frame.kind != Kind::Fill {
-            return false;
-        }
-        let parts = parts.filter(|&(serial, _)| serial == frame.serial).map(|(_, mark)| mark);
-        let Some(stream) = frame.extra.as_ref().map(|e| e.stream) else { return false };
-        let own = self.unwind.get(frame.unwind_base..).unwrap_or_default();
-        if own.iter().any(|e| matches!(e, Unwind::Translate { .. } | Unwind::Name { .. } | Unwind::Capture(_))) {
-            return false;
-        }
-        if self.move_target(stream).is_none() {
-            return false;
-        }
-        if let Some(mark) = abandoned {
-            self.out.truncate(mark);
-        }
-        if let Some(mark) = parts {
-            self.out.truncate(mark);
-        }
-        self.flush_fill();
-        let Some(frame) = self.frames.last_mut() else { return false };
-        let cut = frame.fallback;
-        self.out.truncate(cut);
-        if let Some(extra) = frame.extra.as_mut() {
-            extra.flushed = false;
-            extra.start = extra.start.min(cut);
-        }
-        true
-    }
-
-    /// A slot body is about to call a macro. Chameleon passes the macro the define-slot site's
-    /// `__stream` (the innermost stream open there), while the body itself writes with its
-    /// defining function's `__append`: the body's output so far moves to its stream now, and
-    /// the macro's output stays where it is written. When the body has a stream of its own
-    /// open (a translation or capture inside it), the macro writes to that one, which stays
-    /// the body's: only what the body wrote before it opened that stream moves (Chameleon
-    /// appended it to the defining function's stream at once, so whatever else writes there
-    /// during the call, such as another fill of the same function, comes after it).
-    fn flush_fill(&mut self) {
-        let Some(frame) = self.frames.last() else { return };
-        if frame.kind != Kind::Fill {
-            return;
-        }
-        let own = self.unwind.get(frame.unwind_base..).unwrap_or_default();
-        let open = own.iter().find_map(|e| match e {
-            Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } | Unwind::Capture(mark) => Some(*mark),
-            _ => None,
-        });
-        let Some((stream, start)) = frame.extra.as_ref().map(|e| (e.stream, e.start)) else { return };
-        if let Some(open) = open {
-            // The body's own output now starts at that stream (`move_to_stream` moves `start`).
-            self.move_to_stream(stream, start, open);
-            return;
-        }
-        let end = self.out.mark();
-        self.move_to_stream(stream, start, end);
-        let at = self.out.mark();
-        if let Some(extra) = self.frames.last_mut().and_then(|f| f.extra.as_mut()) {
-            extra.start = at;
-            extra.flushed = true;
-        }
-    }
-
-    /// The call a slot body made after [`VmState::flush_fill`] returned: the body's own output
-    /// starts again here (what the call wrote is not the body's). Nothing if no flush happened
-    /// (the call writes into a stream of the body's own, or the active frame is no slot body).
-    fn restart_fill(&mut self) {
-        let at = self.out.mark();
-        if let Some(frame) = self.frames.last_mut()
-            && frame.kind == Kind::Fill
-            && let Some(extra) = &mut frame.extra
-            && std::mem::take(&mut extra.flushed)
-        {
-            extra.start = at;
-        }
-    }
-
-    /// A slot body's output (from `start` to `end`: the end of the output, or the start of a
-    /// stream the body has open) moves to its stream: Chameleon's fill function writes with
-    /// its defining function's `__append`, so if translation streams were opened since (around
-    /// the `metal:define-slot`), it belongs before the first of them. Marks in the moved output
-    /// end up at `end`: they belong to the define-slot site's stream (`tal:on-error` in the
-    /// body truncates `__stream`, not what the body appended).
-    ///
-    /// The output is taken out and kept aside in that stream's entry (`before`), written at
-    /// its mark when the stream closes ([`VmState::place_before_from`] on an error): moving it
-    /// into place now would move everything written since, on every flush.
-    fn move_to_stream(&mut self, stream: Option<u64>, start: Mark, end: Mark) {
-        let Some((target, first)) = self.move_target(stream) else { return };
-        // `first` after `start`: the first such stream is the body's own, so its output is in
-        // place (only reachable with `end` at that stream, from `flush_fill`).
-        if end <= start || first > start {
-            return;
-        }
-        let bytes = self.out.cut(start, end);
-        match self.unwind.get_mut(target) {
-            Some(Unwind::Translate { translation, .. }) => translation.before.extend_from_slice(&bytes),
-            Some(Unwind::Name { before, .. }) => before.get_or_insert_default().0.extend_from_slice(&bytes),
-            _ => {}
-        }
-        let n = end.position() - start.position();
-        // A partial move leaves what follows `end` in place (a stale mark past the output's
-        // end goes to the new end in a full move).
-        let partial = end < self.out.mark().shifted(n);
-        self.for_each_mark(|m| {
-            if partial && *m >= end {
-                *m = m.unshifted(n);
-            } else if *m >= start {
-                *m = start;
-            }
-        });
-    }
 }
 
 enum Action<V> {
@@ -1984,9 +1727,9 @@ enum Action<V> {
     Suspend(V, u32),
 }
 
-/// What a slot body's frame gets from its fill: its own i18n settings, its stream and its
-/// helpers' settings ([`Fill::helpers`]).
-type FillFrame<V> = (I18n<V>, Option<u64>, Option<Box<I18n<V>>>);
+/// What a slot body's frame gets from its fill: its own i18n settings and its helpers'
+/// settings ([`Fill::helpers`]).
+type FillFrame<V> = (I18n<V>, Option<Box<I18n<V>>>);
 
 /// A frame to push: the call, where the caller continues, and the frame's details.
 struct Pushed<V> {
@@ -1999,7 +1742,7 @@ struct Pushed<V> {
     on_return: OnReturn,
     kind: Kind,
     slots: Vec<Option<V>>,
-    /// For a slot body: its own i18n settings, stream, and helpers' settings.
+    /// For a slot body: its own i18n settings and helpers' settings.
     fill: Option<FillFrame<V>>,
     /// The caller's `__token` is reset before the call (an internal macro call).
     reset_token: bool,
@@ -2111,10 +1854,7 @@ pub fn run<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R) -> Result<Done<Val<
                 let Some(done) = st.frames.last() else { return Err(VmError::Internal("pop without a frame")) };
                 let on_return = done.on_return;
                 let partial = done.kind == Kind::Partial;
-                let fill =
-                    if done.kind == Kind::Fill { done.extra.as_ref().map(|e| (e.stream, e.start)) } else { None };
                 st.pop_frame();
-                st.restart_fill();
                 if partial {
                     rt.partial_returned();
                 }
@@ -2130,10 +1870,6 @@ pub fn run<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R) -> Result<Done<Val<
                             caller.pending_update = true;
                         }
                     }
-                }
-                if let Some((stream, start)) = fill {
-                    let end = st.out.mark();
-                    st.move_to_stream(stream, start, end);
                 }
             }
             Action::Suspend(value, at) => {
@@ -2293,8 +2029,8 @@ fn push_frame<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, pushed: Pushed<V
         return Ok(());
     }
     let Some(caller) = st.frames.last() else { return Err(VmError::Internal("call without a caller")) };
-    let (i18n, stream, helpers) = if let Some((i18n, stream, helpers)) = fill {
-        (i18n, stream, helpers)
+    let (i18n, helpers) = if let Some(fill) = fill {
+        fill
     } else {
         let i18n = caller.i18n(&st.none);
         let i18n = I18n {
@@ -2302,11 +2038,10 @@ fn push_frame<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, pushed: Pushed<V
             context: i18n.context.clone(),
             target_language: i18n.target_language.as_ref().map(|t| rt.clone_value(t)),
         };
-        (i18n, None, None)
+        (i18n, None)
     };
     let extra = if kind == Kind::Fill || !is_plain(&i18n) || !slots.is_empty() {
-        let start = st.out.mark();
-        Some(st.extra(i18n, slots, stream, start, helpers))
+        Some(st.extra(i18n, slots, helpers))
     } else {
         None
     };
@@ -2380,19 +2115,12 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
             // Settings changed inside keep their values (no `finally`): the runtime must see
             // the frame's settings as they are now.
             let changed = st.unwind[at..].iter().any(|e| matches!(e, Unwind::I18n(_)));
-            st.place_before_from(at);
             unfinished_names(&mut st.unwind, at, &st.out);
             let abandoned = st.unwind[at..].iter().find_map(|e| match e {
                 Unwind::Translate { mark, .. } | Unwind::Name { mark, .. } => Some(*mark),
                 _ => None,
             });
             st.unwind.truncate(at);
-            // Whatever values of several parts the handler's frame, and the frames the error
-            // left, were writing end here; the handler's own one (if any) is taken back below.
-            // Serials grow with depth, so those are the entries from the frame's serial up.
-            let serial = st.frames.last().map_or(0, |f| f.serial);
-            let keep = st.parts.iter().position(|&(s, _)| s >= serial).unwrap_or(st.parts.len());
-            let parts = st.parts.drain(keep..).find(|&(s, _)| s == serial);
             if let Some(frame) = st.frames.last_mut() {
                 frame.pc = handler;
             }
@@ -2400,12 +2128,6 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
                 i18n_changed(st, rt).map_err(VmError::Runtime)?;
             }
             match rt.catch(&error, name, ErrorSite::unpack(st.recent)) {
-                Ok(()) if st.fill_catch(abandoned, parts) => {
-                    if let Some(frame) = st.frames.last_mut() {
-                        frame.recent = st.recent;
-                    }
-                    return Ok(());
-                }
                 Ok(()) => {
                     let Some(frame) = st.frames.last_mut() else { return Err(VmError::Internal("no frame")) };
                     // `del __stream[__fallback:]` on the stream of the handler's site: the
@@ -2414,12 +2136,6 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
                     // that stream).
                     let cut = abandoned.map_or(frame.fallback, |m| m.min(frame.fallback));
                     st.out.truncate(cut);
-                    // A slot body's own output may start past the cut (a call's output was cut).
-                    if let Some(extra) = frame.extra.as_mut()
-                        && extra.start > cut
-                    {
-                        extra.start = cut;
-                    }
                     frame.recent = st.recent;
                     return Ok(());
                 }
@@ -2436,16 +2152,10 @@ fn unwind_error<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, mut error: Err
             rt.record_error(&error, ErrorSite::unpack(st.recent));
         }
         from_fill = kind == Kind::Fill;
-        // The frame's streams are abandoned (a frame that returns has closed its own).
-        if let Some(frame) = st.frames.last() {
-            st.place_before_from(frame.unwind_base);
-        }
         st.pop_frame();
         if kind == Kind::Partial {
             error = rt.partial_failed(error);
         }
-        // A call from a slot body failed: as when it returns (see `flush_fill`).
-        st.restart_fill();
         let Some(caller) = st.frames.last_mut() else { return Err(VmError::Runtime(error)) };
         caller.pending_update = false;
         caller.shadowed = None;
@@ -2841,8 +2551,6 @@ fn execute<R: Runtime>(
             | Op::NameBegin { .. }
             | Op::NameEnd { .. }
             | Op::TrValue { .. }
-            | Op::PartsBegin
-            | Op::PartsEnd
             | Op::CaptureBegin
             | Op::CaptureEnd { .. }
             | Op::AttrTranslate { .. }
@@ -2972,16 +2680,10 @@ fn execute_rare<R: Runtime>(
             }
         }
         Op::DefineSlot { slot, end } => {
-            let filled = st.frames.last().is_some_and(|f| matches!(f.slots().get(slot as usize), Some(Some(_))));
-            if filled {
-                // A slot called from a slot body: like a macro call (see `flush_fill`).
-                st.flush_fill();
-            }
             let Some(frame) = st.frames.last() else { return Err(VmError::Internal("no frame")) };
             if let Some(Some(fill)) = frame.slots().get(slot as usize) {
                 let fill = rt.slot_call(fill, &mut st.out).map_err(rt_err)?;
                 let Some(fill) = fill else {
-                    st.restart_fill();
                     return Ok(Flow::Jump(end as usize));
                 };
                 let scope = if fill.program.shares_scope(fill.entry)
@@ -3001,14 +2703,13 @@ fn execute_rare<R: Runtime>(
                     on_return: OnReturn::Nothing,
                     kind: Kind::Fill,
                     slots: fill.slots,
-                    fill: Some((fill.i18n, fill.stream, fill.helpers)),
+                    fill: Some((fill.i18n, fill.helpers)),
                     reset_token: false,
                 })));
             }
         }
         Op::FillSlot { info } => {
             let f = program.tables.fills.get(info as usize).ok_or(VmError::Internal("bad fill"))?;
-            let stream = st.current_stream();
             let Some(frame) = st.frames.last() else { return Err(VmError::Internal("no frame")) };
             let i18n = frame.i18n(&st.none);
             let fill = Fill {
@@ -3021,7 +2722,6 @@ fn execute_rare<R: Runtime>(
                     target_language: i18n.target_language.as_ref().map(|t| rt.clone_value(t)),
                 },
                 slots: frame.slots().iter().map(|s| s.as_ref().map(|v| rt.clone_value(v))).collect(),
-                stream,
                 // A fill defined in a slot body belongs to the same render function as the body
                 // (also one a foreign macro called: `VmState::with_helpers`).
                 helpers: if frame.kind == Kind::Fill || helpers_of(frame).is_some() {
@@ -3034,7 +2734,6 @@ fn execute_rare<R: Runtime>(
         }
         Op::UseMacro { expr } => {
             let value = eval_or_leave_rare!(st, rt, pc, expr, false, no_call);
-            st.flush_fill();
             let shadowed = rt.before_macro().map_err(rt_err)?;
             match rt.macro_call(value, &mut st.out).map_err(rt_err)? {
                 MacroStep::Frame { call, entry, cost } => {
@@ -3045,7 +2744,6 @@ fn execute_rare<R: Runtime>(
                     return Ok(Flow::Leave(Action::Push(pushed)));
                 }
                 MacroStep::Done => {
-                    st.restart_fill();
                     rt.after_macro(shadowed).map_err(rt_err)?;
                 }
             }
@@ -3065,7 +2763,6 @@ fn execute_rare<R: Runtime>(
             }
             let mut pushed = Pushed::call(call, entry, 1, pc as u32 + 1, OnReturn::Update);
             pushed.reset_token = true;
-            st.flush_fill();
             return Ok(Flow::Leave(Action::Push(pushed)));
         }
         Op::I18nSet { key, value } => {
@@ -3108,26 +2805,21 @@ fn execute_rare<R: Runtime>(
         }
         Op::TranslateBegin { info } => {
             let t = program.tables.translates.get(info as usize).ok_or(VmError::Internal("bad translation"))?;
-            let id = st.next_serial();
             st.unwind.push(Unwind::Translate {
                 mark: st.out.mark(),
-                id,
                 translation: Box::new(OpenTranslation {
                     program: Arc::clone(program),
                     info,
                     names: vec![NameValue::Text(Wtf8Buf::default()); t.names.len()],
-                    before: Vec::new(),
                 }),
             });
         }
         Op::TranslateEnd { info } => {
             let t = program.tables.translates.get(info as usize).ok_or(VmError::Internal("bad translation"))?;
-            let Some(Unwind::Translate { mark, mut translation, .. }) = st.unwind.pop() else {
+            let Some(Unwind::Translate { mark, translation }) = st.unwind.pop() else {
                 return Err(VmError::Internal("translate_end without its translation"));
             };
             let content = st.take_text(mark)?;
-            // Slot body output that belongs before the translation's result.
-            st.out.push(&std::mem::take(&mut translation.before));
             let default = content.normalize_space();
             let msgid = match t.msgid {
                 Some(m) => Msgid::Source(program.text_str(m)),
@@ -3141,18 +2833,14 @@ fn execute_rare<R: Runtime>(
             rt.emit(value, Escape::Structure, Stage::Append, &mut st.out).map_err(rt_err)?;
         }
         Op::NameBegin { info } => {
-            let id = st.next_serial();
-            st.unwind.push(Unwind::Name { mark: st.out.mark(), id, program: Arc::clone(program), info, before: None });
+            st.unwind.push(Unwind::Name { mark: st.out.mark(), program: Arc::clone(program), info });
         }
         Op::NameEnd { info } => {
             let n = program.tables.names.get(info as usize).ok_or(VmError::Internal("bad name"))?;
-            let Some(Unwind::Name { mark, before, .. }) = st.unwind.pop() else {
+            let Some(Unwind::Name { mark, .. }) = st.unwind.pop() else {
                 return Err(VmError::Internal("name_end without its name"));
             };
             let content = st.take_text(mark)?;
-            if let Some(before) = before {
-                st.out.push(&before.0);
-            }
             set_name(&mut st.unwind, program, n, NameValue::Text(content));
             st.out.push(b"${");
             st.out.push(text(program, n.name)?);
@@ -3207,13 +2895,6 @@ fn execute_rare<R: Runtime>(
                 }
             };
             st.unwind.push(Unwind::Value(value));
-        }
-        Op::PartsBegin => {
-            let serial = st.frames.last().map_or(0, |f| f.serial);
-            st.parts.push((serial, st.out.mark()));
-        }
-        Op::PartsEnd => {
-            st.parts.pop();
         }
         Op::CaptureBegin => st.unwind.push(Unwind::Capture(st.out.mark())),
         Op::CaptureEnd { boolean } => {

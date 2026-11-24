@@ -14,6 +14,7 @@ import chameleon_rs._settings
 import pytest
 from chameleon_rs import PageTemplate, PageTemplateLoader
 from chameleon_rs._native import markdown_cache_info
+from chameleon_rs.exc import ExpressionError
 from chameleon_rs.utils import Markup
 
 
@@ -33,7 +34,7 @@ def md(source: str, profiles: Any = True, **model: Any) -> str:
 
 
 def test_not_configured_is_an_unknown_type() -> None:
-    with pytest.raises(LookupError, match="Unknown expression type: 'markdown'"):
+    with pytest.raises(ExpressionError, match="Unknown expression type: 'markdown'"):
         PageTemplate('${markdown: x}')(x='a')
 
 
@@ -342,7 +343,7 @@ def test_markdown_needs_no_template_folder() -> None:
 def test_markdown_false_removes_the_profiles() -> None:
     chameleon_rs.configure(markdown=True)
     chameleon_rs.configure(markdown=False)
-    with pytest.raises(LookupError):
+    with pytest.raises(ExpressionError):
         PageTemplate('${markdown: x}')(x='a')
 
 

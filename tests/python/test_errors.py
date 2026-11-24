@@ -264,9 +264,10 @@ def test_recursion_errors_are_not_formatted(tmp_path: Path, configured: Path) ->
     with pytest.raises(RecursionError) as info:
         chameleon_rs.PageTemplateFile(str(tmp_path / 'me.pt'))()
     assert '- Expression:' not in str(info.value)
-    # An on-error handler can catch it.
+    # An on-error handler doesn't catch it (Chameleon's #462).
     (tmp_path / 'page.pt').write_text('<p tal:on-error="string:deep">${render_partial("me.pt")}</p>')
-    assert chameleon_rs.PageTemplateFile(str(tmp_path / 'page.pt'))() == '<p>deep</p>'
+    with pytest.raises(RecursionError):
+        chameleon_rs.PageTemplateFile(str(tmp_path / 'page.pt'))()
 
 
 GLOBAL_REPEAT = [

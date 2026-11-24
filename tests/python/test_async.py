@@ -35,7 +35,7 @@ import pytest
 import test_fixtures as fixtures_mod
 import test_render_fuzz as fuzz
 from chameleon_rs import PageTemplate, PageTemplateFile, PageTextTemplate, concurrent
-from hypothesis import HealthCheck, assume, given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 EXAMPLES = fuzz.EXAMPLES
@@ -143,7 +143,6 @@ def test_generated_templates_render_async_like_chameleon(body: str) -> None:
 def test_generated_macro_and_i18n_templates_render_async_like_chameleon(
     body: str, implicit: bool, language: Optional[str], mode: str
 ) -> None:
-    assume(not fuzz.nested_fill_under_a_handler(body))
     options: dict[str, Any] = {
         'implicit_i18n_translate': implicit,
         'implicit_i18n_attributes': {'title', 'a'} if implicit else (),
@@ -161,10 +160,9 @@ def test_generated_macro_and_i18n_templates_render_async_like_chameleon(
     )
 
 
-def test_macro_recursion_caught_by_on_error_stops_where_render_would() -> None:
-    # Each level renders until the recursion limit, where `tal:on-error` catches the error: how
-    # many levels depends on the stack the render starts on. An async render stops where
-    # `render` called in place of `await render_async(...)` would (it once kept a fixed reserve).
+def test_macro_recursion_is_not_caught_by_on_error() -> None:
+    # `tal:on-error` doesn't handle `RecursionError` (Chameleon's #462: it did, and how many
+    # levels rendered first depended on the stack the render started on). Sync or async.
     body = (
         '<div metal:use-macro="macros[\'m\']"><b metal:fill-slot="s"><tal:b metal:define-macro="m">'
         '<div metal:use-macro="macros[\'m\']" tal:on-error="string:E"></div>${x}</tal:b></b></div>'
@@ -173,9 +171,11 @@ def test_macro_recursion_caught_by_on_error_stops_where_render_would() -> None:
     async def asynchronous() -> Any:
         return await chameleon_rs.PageTemplate(body).render_async(x=1)
 
-    want = run(chameleon_render(lambda: chameleon.PageTemplate(body), x=1))
-    assert want.startswith('E1') and want.count('1') > 100
-    assert run(asynchronous()) == want
+    assert isinstance(run(chameleon_render(lambda: chameleon.PageTemplate(body), x=1)), RecursionError)
+    with pytest.raises(RecursionError):
+        chameleon_rs.PageTemplate(body)(x=1)
+    with pytest.raises(RecursionError):
+        run(asynchronous())
 
 
 _partial_count = iter(range(10**9))
@@ -725,8 +725,8 @@ def test_a_partial_nested_too_deep_closes_its_coroutine_arguments(tmp_path: Path
     # (which the partial would have awaited) is closed, not left to warn when collected.
     (tmp_path / 'loop.pt').write_text('${v}${render_partial("loop.pt", v=aw(1), aw=aw)}')
     page = PageTemplate('<p tal:on-error="error.type.__name__">${render_partial("loop.pt", v=aw(1), aw=aw)}</p>')
-    with _no_unawaited_coroutines():
-        assert run(page.render_async(aw=aw)) == '<p>RecursionError</p>'
+    with _no_unawaited_coroutines(), pytest.raises(RecursionError):
+        run(page.render_async(aw=aw))
 
 
 @pytest.mark.parametrize('fan_out', [False, True])

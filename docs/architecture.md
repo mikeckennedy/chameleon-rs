@@ -1352,7 +1352,9 @@ Release blockers. Each behaviour checked against Chameleon's generated code firs
   expression, as Chameleon does, but Chameleon writes in larger pieces: a text node and its
   expressions, an interpolated attribute, a comment are each one `__append`, so the failing
   piece's text before the expression was never written (`<q>` against our `<q>Q`; ` title="a`
-  likewise). Slot bodies are now lowered with `Op::PartsBegin`/`Op::PartsEnd` around each text
+  likewise). (Superseded 2026-11-24: since Chameleon's #466 a fill writes to the stream of its slot, so
+  a handler cuts its output like any other; `PartsBegin`/`PartsEnd`, `fill_catch` and the
+  moving of slot-body output between streams are removed.) Slot bodies were lowered with `Op::PartsBegin`/`Op::PartsEnd` around each text
   node or plain attribute value of several parts: `PartsBegin` records the output mark (with
   the frame's serial), and `fill_catch` cuts back to it before keeping the body's output, so
   the failing piece is dropped as in Chameleon. Only slot bodies get the two instructions (the

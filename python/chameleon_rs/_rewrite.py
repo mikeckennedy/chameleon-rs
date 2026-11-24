@@ -236,16 +236,12 @@ class Rewriter(ast.NodeTransformer):
             # are visited first.
             with self.plain(types):
                 self.type_parameters(node)
-            if python:
-                self.defaults(node.args)
-            else:
-                self.generic_visit(node.args)
+            self.defaults(node.args)
             bound = late and self.bind(node.name)
             if bound:
                 before.add(node.name)
             with self.plain(types):
-                if python:
-                    self.parameters(node.args)
+                self.parameters(node.args)
                 if node.returns is not None:
                     node.returns = self.visit(node.returns)
                 self.class_names.append(None)
@@ -540,10 +536,9 @@ class Rewriter(ast.NodeTransformer):
         return self.generic_visit(node)
 
     def defaults(self, args: ast.arguments) -> None:
-        """Visits the defaults of ``args``: for a function inside a class, before its
-        parameters are names and outside a lambda's scope, so `def f(self, a=a)` reads the
-        class's or the template's `a`, as in Python. Elsewhere the order is Chameleon's
-        (parameters first, so that default is the parameter itself: a `NameError`)."""
+        """Visits the defaults of ``args``: before its parameters are names and outside a
+        lambda's scope, so `def f(a=a)` reads the template's `a` (or the class's), as in
+        Python and, since its #469, in Chameleon."""
         args.defaults = [self.visit(default) for default in args.defaults]
         args.kw_defaults = [default and self.visit(default) for default in args.kw_defaults]
 
@@ -553,17 +548,12 @@ class Rewriter(ast.NodeTransformer):
                 self.visit(arg)
 
     def visit_Lambda(self, node: ast.Lambda) -> ast.AST:
-        python = self.in_class()
-        if python:
-            self.defaults(node.args)
+        self.defaults(node.args)
         # Its body is a scope of its own, which doesn't see a class's names.
         self.scopes.append(set())
         self.declared.append(set())
         try:
-            if python:
-                self.parameters(node.args)
-            else:
-                self.generic_visit(node.args)
+            self.parameters(node.args)
             self.class_names.append(None)
             try:
                 node.body = self.visit(node.body)

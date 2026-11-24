@@ -146,7 +146,6 @@ pub(crate) struct SlotFill {
     context: Option<Arc<str>>,
     target_language: Option<Py<PyAny>>,
     slots: Vec<Option<Py<PyAny>>>,
-    stream: Option<u64>,
     /// The i18n settings of the render function around a fill defined in a slot body
     /// (`Fill::helpers`).
     helpers: Option<Box<I18n<Py<PyAny>>>>,
@@ -162,7 +161,6 @@ impl SlotFill {
             context: fill.i18n.context,
             target_language: fill.i18n.target_language,
             slots: fill.slots,
-            stream: fill.stream,
             helpers: fill.helpers,
         }
     }
@@ -175,7 +173,6 @@ impl SlotFill {
             entry: self.entry,
             i18n: self.i18n(py),
             slots: self.slots.iter().map(|s| s.as_ref().map(|v| v.clone_ref(py))).collect(),
-            stream: self.stream,
             helpers: self.helpers.as_ref().map(|h| Box::new(copy_i18n(py, h))),
         }
     }

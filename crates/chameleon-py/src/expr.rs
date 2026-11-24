@@ -665,7 +665,8 @@ pub(crate) struct RenderCtx<'py> {
     /// in a long `tal:repeat` made each lookup a search of one namespace per call so far.)
     pub(crate) namespaces: RefCell<Vec<(u64, Bound<'py, PyDict>)>>,
     /// For a render called through `include` by another engine: the stream it writes to
-    /// (that engine's slot fills append to it directly, through their closure).
+    /// (a Chameleon older than its #467 has slot fills that append to it directly, through
+    /// their closure, instead of to the stream they are called with).
     pub(crate) stream: OnceCell<Bound<'py, PyAny>>,
     /// A scope object of this render was handed to user code (`econtext` as a value, a code
     /// block, a custom expression type, a dynamic fallback, a call from outside): from then

@@ -407,6 +407,7 @@ impl Builder<'_> {
 
         let switch = get(TAL_NS, "switch").map(|clause| self.value(clause));
         self.switches.push(switch.clone());
+        let has_own_switch = switch.is_some();
 
         let translate_empty = if get(I18N_NS, "translate").is_some_and(|t| t.is_empty()) {
             Translation::Translated
@@ -550,6 +551,15 @@ impl Builder<'_> {
                         clause,
                     ));
                 };
+                // The element's own switch is not cached where its case is compiled: a
+                // language error since Chameleon's #461 (its compiler's assertion before).
+                if has_own_switch {
+                    return Err(CompileError::new(
+                        ErrorKind::Language,
+                        "The case statement cannot be used on the same element as the switch statement.",
+                        clause,
+                    ));
+                }
                 Some((switch, self.value(clause)))
             }
             None => None,

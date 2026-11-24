@@ -60,20 +60,18 @@ _xml_prefixes = tuple(
 
 _xml_decl = encode_string('<?xml')
 
-# Chameleon's, without its leading `\s*`: `search` retried it from each character of a run of
-# whitespace, consuming the rest of the run every time (64K spaces in a template took 2 s to
-# compile). Whether it matches, and what its groups capture, is the same. Not used to search:
-# see `_search_meta`.
+# Chameleon's (since its #457 without the whitespace around it, and with no whitespace in
+# the charset, both of which made it backtrack). Not used to search: see `_search_meta`.
 RE_META = re.compile(
-    r'<meta\s+http-equiv=["\']?Content-Type["\']?'
-    r'\s+content=["\']?([^;]+);\s*charset=([^"\']+)["\']?\s*/?\s*>\s*',
+    r'<meta\s+http-equiv=["\']?Content-Type["\']?\s+'
+    r'content=["\']?([^;]+);\s*charset=([^"\'\s]+)\s*(?:["\']\s*)?(?:/\s*)?>',
     re.IGNORECASE,
 )
 # `RE_META` in parts. Up to `charset=` it matches one way only, wherever it starts.
 _META_HEAD = re.compile(r'<meta\s+http-equiv=["\']?Content-Type["\']?\s+content=(["\']?)', re.IGNORECASE)
 _META_CHARSET_KEY = re.compile(r'\s*charset=', re.IGNORECASE)
-_META_CHARSET = re.compile(r'[^"\']+')
-_META_END = re.compile(r'["\']?\s*/?\s*>')
+_META_CHARSET = re.compile(r'[^"\'\s]+')
+_META_END = re.compile(r'\s*(?:["\']\s*)?(?:/\s*)?>')
 
 RE_ENCODING = re.compile(rb'encoding\s*=\s*(?:"|\')(?P<encoding>[\w\-]+)(?:"|\')', re.IGNORECASE)
 
@@ -114,11 +112,9 @@ def detect_encoding(body: str | bytes, default_encoding: str) -> tuple[Optional[
 
 
 def _search_meta(body: str) -> Optional[tuple[str, str]]:
-    r"""``RE_META.search(body).groups()``, in linear time. The regex backtracks its charset
-    (``[^"']+``) one character at a time, retrying the ``\s*/?\s*>`` after it from each: cubic
-    in a run of whitespace with no ``>`` to end it (2,000 spaces took 4.6 s). The charset it
-    settles on is the longest that end follows: the whole run (up to a quote or the end) if the
-    end matches after it, else the run up to its last ``>``.
+    r"""``RE_META.search(body).groups()``, in linear time. The charset the regex settles on
+    is the longest that its end follows: the whole run (up to a quote, whitespace or the end)
+    if the end matches after it, else the run up to its last ``>``.
 
     Its content (``[^;]+``) runs to the first ``;`` after the head, so every head before one
     ``;`` shares what follows it: that is worked out once per ``;``, not once per head (a page
@@ -146,7 +142,7 @@ def _search_meta(body: str) -> Optional[tuple[str, str]]:
 
 
 def _charset_after(body: str, semi: int) -> Optional[str]:
-    r"""What ``;\s*charset=([^"']+)["']?\s*/?\s*>`` captures at ``semi``, or ``None``."""
+    r"""What ``;\s*charset=([^"'\s]+)\s*(?:["']\s*)?(?:/\s*)?>`` captures at ``semi``, or ``None``."""
     key = _META_CHARSET_KEY.match(body, semi + 1)
     if key is None:
         return None

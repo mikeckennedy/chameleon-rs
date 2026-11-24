@@ -6,13 +6,17 @@ chameleon-rs's goal is to produce exactly what Chameleon produces, for every tem
 to raise the same errors. This page says how that's measured, and lists the few places where
 chameleon-rs knowingly differs.
 
+"Chameleon" here is its `master` branch as of 2026-11-24: 4.6.1 plus three fixes merged since,
+which its next release will have. Where that differs from the released 4.6.1, chameleon-rs
+follows `master`: see [Ahead of Chameleon 4.6.1](#ahead-of-chameleon-4.6.1).
+
 ## How it's measured
 
 Each level is a check that runs on every change:
 
 | Check | Result |
 |---|---|
-| **Chameleon's own test suite.** All 233 tests, vendored unmodified, run against chameleon-rs. | Every test that passes on Chameleon passes on chameleon-rs: 227 of 227. The other 6 depend on the test environment and are skipped on both engines. |
+| **Chameleon's own test suite.** All 244 tests, vendored unmodified, run against chameleon-rs. | Every test that passes on Chameleon passes on chameleon-rs: 238 of 238. The other 6 depend on the test environment and are skipped on both engines. |
 | **Fixture renders.** Every input template in Chameleon's test suite, rendered by both engines. | All 122 byte-identical. |
 | **Differential fuzzing.** Generated templates, models and expressions, rendered by both engines and compared. | No differences in 20,000 examples per generator. |
 | **Integration suites.** The test suites of fastapi-chameleon, chameleon-flask, chameleon-robyn, chameleon_partials, litestar-chameleon, pyramid_chameleon, z3c.pt (Zope and Plone's page templates) and Zope 6.3 (`Products.PageTemplates`, `Products.Five`), unmodified, on chameleon-rs. | All pass. |
@@ -66,27 +70,17 @@ builtin of every template, so it is not in either.
 
 ### Corner cases in slot bodies
 
-Five cases, all involving the slot fills of a macro call together with `tal:on-error` or
+Two cases, both involving the slot fills of a macro call together with `tal:on-error` or
 i18n settings, render differently. No real template we've seen does this; each is pinned by a
 test that fails if the behaviour changes.
 
-- **A failing expression under a handler in a slot body** whose slot sits inside
-  `i18n:translate` or `i18n:name`. Chameleon writes a text node
-  and its expressions as one piece, so when an expression fails, the text before it in the
-  same node is dropped with it. chameleon-rs writes that text first, so it stays
-  (`<q>Q` where Chameleon gives `<q>`).
-- **A handler on an `i18n:name` element** whose content calls a macro that fails partway: the
-  same difference, for the text of the failing node inside the macro.
-- **A handler around a nested macro call in a slot body** whose slot sits inside
-  `i18n:translate` or `i18n:name`, when the nested call's own fill fails. Chameleon keeps the
-  start tag of the failed fill and never closes it (`T <u>E U`). chameleon-rs takes the failed
-  fill's output back (`T E U`).
+- **A handler on an `i18n:name` element** whose content calls a macro that fails partway.
+  Chameleon writes a text node and its expressions as one piece, so when an expression fails,
+  the text before it in the same node is dropped with it. chameleon-rs writes that text first,
+  so it stays.
 - **A fill no macro took**, used by a later macro call while the calling template has
   different `i18n:domain`, `i18n:context` or `i18n:target` settings: values converted by that
   fill use the settings where it was defined. Chameleon uses the settings at the later call.
-- **A fill no macro took, defined inside `i18n:name`**, used by a later macro call. Chameleon
-  renders that slot empty, without even its default content (`M2[]`). chameleon-rs renders the
-  fill (`M2[<i>FILL</i>]`), as both engines do when the fill is defined anywhere else.
 
 ### Behaviour of the helper libraries
 
@@ -127,6 +121,17 @@ are Chameleon issues that chameleon-rs adopted.
 | A `<?python ?>` block that binds a name with `except ... as`, `class`, `async def` or a `match` capture | Reading the name raises `NameError` (or reads render data of the same name). | The name is the one the block bound. |
 | An assignment in a `class` body in a `<?python ?>` block: `class C: v = 3` | Stored in the template's scope like any assignment: `${v}` is `3` and `C.v` raises `AttributeError`, so a dataclass has no fields. | The class's attribute, as in Python: `C.v` is `3`. A template that read `${v}` afterwards must read `${C.v}`. |
 | A `type` statement in a `<?python ?>` block: `type Pair[T] = tuple[T, T]` | `SyntaxError`. | The alias is a name of the template, as a `def` is. |
+
+### Ahead of Chameleon 4.6.1
+
+These are fixed on Chameleon's `master` and not yet in a release. chameleon-rs behaves as
+`master` does, so a site moving from Chameleon 4.6.1 sees them change:
+
+| Template | Chameleon 4.6.1 | Chameleon `master` and chameleon-rs |
+|---|---|---|
+| A macro that calls itself without end inside `tal:on-error` ([#462](https://github.com/malthe/chameleon/issues/462)) | Renders until the stack runs out, then the handler's fallback: output that depends on how deep the caller is. | `RecursionError`. `tal:on-error` handles no `RecursionError`, from a partial either. |
+| A slot fill whose `metal:define-slot` is inside `i18n:translate` or `i18n:name` ([#466](https://github.com/malthe/chameleon/issues/466)) | The fill comes out before the translated text. | The fill comes out where the slot is. |
+| A default that reads a name: `lambda a=a: a`, `def f(a=a)` in a `<?python ?>` block ([#468](https://github.com/malthe/chameleon/issues/468)) | `NameError`. | The default is the template's `a`. |
 
 ## Found a difference?
 

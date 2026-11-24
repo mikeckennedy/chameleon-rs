@@ -191,9 +191,10 @@ impl<'a, 'py, const ASYNC: bool> PyRuntime<'a, 'py, ASYNC> {
     }
 
     /// Calls a foreign callable with a fresh stream (`f(stream, *args)`) and writes what it
-    /// appended (`''.join(stream)`). Chameleon's slot fills append to their own template's
-    /// stream through a closure instead: when this render was called by another engine, what
-    /// was appended to the stream it writes to is moved here, in order.
+    /// appended (`''.join(stream)`). A Chameleon slot fill writes to the stream it is called
+    /// with, where its slot is (since its #467). An older Chameleon's appended to its own
+    /// template's stream through a closure instead: when this render was called by such an
+    /// engine, what was appended to the stream it writes to is moved here, in order.
     fn call_with_stream(&self, f: &Bound<'py, PyAny>, args: Vec<Bound<'py, PyAny>>, out: &mut Output) -> PyResult<()> {
         let py = self.py;
         let stream = PyList::empty(py);
@@ -537,8 +538,11 @@ impl<const ASYNC: bool> Loops for PyRuntime<'_, '_, ASYNC> {
 }
 
 impl<const ASYNC: bool> Errors for PyRuntime<'_, '_, ASYNC> {
+    /// `except RecursionError: raise` before `except Exception` (Chameleon's #462): running
+    /// out of stack is not an error of the element, and where it happens depends on how deep
+    /// the caller is.
     fn is_catchable(&mut self, error: &PyErr) -> bool {
-        error.is_instance_of::<PyException>(self.py)
+        error.is_instance_of::<PyException>(self.py) && !error.is_instance_of::<PyRecursionError>(self.py)
     }
 
     /// `econtext[name] = ErrorInfo(__exc, __tokens[__token][1:3])`, then `if handler is not

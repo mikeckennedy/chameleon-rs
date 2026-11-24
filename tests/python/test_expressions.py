@@ -651,7 +651,7 @@ def test_load_expression(tmp_path: Path) -> None:
 
 
 def test_load_is_unknown_in_string_templates() -> None:
-    with pytest.raises(LookupError, match="Unknown expression type: 'load'"):
+    with pytest.raises(chameleon_rs.exc.ExpressionError, match="Unknown expression type: 'load'"):
         chameleon_rs.PageTemplate('<p tal:content="load: x.pt">d</p>')
 
 

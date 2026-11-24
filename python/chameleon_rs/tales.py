@@ -417,6 +417,7 @@ class ExpressionParser:
         self.default = default
 
     def __call__(self, expression: str) -> Any:
+        source = expression
         m = match_prefix(expression)
         if m is not None:
             prefix = m.group(1)
@@ -427,7 +428,8 @@ class ExpressionParser:
         try:
             factory = self.factories[prefix]
         except KeyError as exc:
-            raise LookupError(f'Unknown expression type: {exc!s}.') from None
+            # An error of the expression since Chameleon's #460 (it was a `LookupError`).
+            raise ExpressionError(f'Unknown expression type: {exc!s}.', source) from None
 
         return factory(expression)
 

@@ -7,6 +7,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+chameleon-rs now follows Chameleon's `master` branch (`71e32cc`: 4.6.1 plus three fixes merged since), where it followed 4.6.0. Chameleon's suite at that commit, 238 tests, passes unmodified.
+
+### Changed
+
+Behaviour that changed in Chameleon, and so here. The first three are on Chameleon's `master` and not in a release yet (the Compatibility page lists them under "Ahead of Chameleon 4.6.1"); the rest are in 4.6.1.
+
+- **`tal:on-error` no longer handles `RecursionError`** ([malthe/chameleon#462](https://github.com/malthe/chameleon/issues/462)). A macro or a partial that includes itself without end raises it, where the handler's fallback was rendered after as many levels as the stack allowed.
+- **A slot fill is written where its slot is** ([malthe/chameleon#466](https://github.com/malthe/chameleon/issues/466)). With the `metal:define-slot` inside `i18n:translate` or `i18n:name`, the fill came out before the translated text, as in Chameleon. Three of the five slot corner cases on the Compatibility page are gone with it.
+- **A default reads the name it is written with** ([malthe/chameleon#468](https://github.com/malthe/chameleon/issues/468)): `${(lambda a=a: a)()}` and `def f(a=a)` in a `<?python ?>` block raised `NameError`, as in Chameleon, and a lambda's default could not read a parameter of the lambda around it.
+- **An unknown expression type is an `ExpressionError`**, not a bare `LookupError` ([malthe/chameleon#458](https://github.com/malthe/chameleon/issues/458)): `tal:content="nocall: x"`, or `${markdown: x}` without Markdown configured. It has the expression and its position, and like any expression error it is raised at render time unless the template is strict.
+- **`tal:case` on the same element as `tal:switch` is a `LanguageError`** ([malthe/chameleon#461](https://github.com/malthe/chameleon/pull/461)); it was an `AssertionError`.
+- **A `<meta>` charset ends at whitespace** when a template's encoding is sniffed ([malthe/chameleon#457](https://github.com/malthe/chameleon/pull/457)).
+
+
 ### Fixed
 
 Two fixes to `<?python ?>` blocks from the review of our pull request to Chameleon ([malthe/chameleon#465](https://github.com/malthe/chameleon/pull/465)), made the same way there:

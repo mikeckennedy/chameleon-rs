@@ -305,7 +305,7 @@ COMPILE_ERRORS: list[tuple[str, str, str]] = [
     ('double-hyphen', '<!-- a -- b -->', 'ParseError'),
     ('nameless-end-tag', '<p>a</</p>', 'AttributeError'),
     ('bad-repeat', '<p tal:repeat="( a, b) x">d</p>', 'LanguageError'),
-    ('unknown-type', '<p>${foo: 1}</p>', 'LookupError'),
+    ('unknown-type', '<p>${foo: 1}</p>', 'ExpressionError'),
 ]
 
 
@@ -319,10 +319,6 @@ def test_same_compile_error(source: str, name: str) -> None:
         with pytest.raises(type(want.value)) as got:
             chameleon_rs.PageTemplate(source)()
         assert str(got.value) == str(want.value)
-        return
-    if name == 'LookupError':
-        with pytest.raises(LookupError):
-            chameleon_rs.PageTemplate(source)()
         return
     with pytest.raises(getattr(chameleon_rs.exc, name)):
         chameleon_rs.PageTemplate(source)()

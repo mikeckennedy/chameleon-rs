@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -446,9 +445,9 @@ def test_macros_across_engines(page_engine: Any, macro_engine: Any) -> None:
     assert page_engine.PageTemplate('<p metal:use-macro="t"/>')(t=macro_engine.PageTemplate('<i>${1 + 1}</i>')) == want
 
 
-def test_recursion_depth_matches_chameleon() -> None:
-    """Chameleon's macros nest as Python calls: an on-error at every level catches at the depth
-    the interpreter's recursion limit allows (three shapes: macros, templates used as macros,
+def test_recursion_is_not_caught_by_on_error() -> None:
+    """Chameleon's macros nest as Python calls, and an on-error doesn't handle the
+    `RecursionError` that ends them (its #462; three shapes: macros, templates used as macros,
     macros filling slots)."""
     recursive = hidden(
         """<div metal:define-macro="r"><p tal:on-error="string:E${n}" tal:define="n n+1">"""
@@ -465,17 +464,9 @@ def test_recursion_depth_matches_chameleon() -> None:
         (with_slots + """<x tal:define="n 0" metal:use-macro="macros['r']"/>""", {}),
     ]
     for source, kw in cases:
-        depths = [re.findall(r'E\d+', engine.PageTemplate(source)(**kw)) for engine in (chameleon, chameleon_rs)]
-        assert depths[0] == depths[1]
-        assert depths[1]
-    limit = sys.getrecursionlimit()
-    try:
-        sys.setrecursionlimit(limit + 500)
-        source, kw = cases[0]
-        depths = [re.findall(r'E\d+', engine.PageTemplate(source)(**kw)) for engine in (chameleon, chameleon_rs)]
-        assert depths[0] == depths[1]
-    finally:
-        sys.setrecursionlimit(limit)
+        for engine in (chameleon, chameleon_rs):
+            with pytest.raises(RecursionError):
+                engine.PageTemplate(source)(**kw)
 
 
 def test_infinite_macro_recursion_is_a_recursion_error() -> None:
@@ -670,12 +661,10 @@ def test_slot_body_macro_streams_like_chameleon(use: str) -> None:
     ],
 )
 def test_handler_in_a_slot_body_drops_the_failing_text_node(body: str) -> None:
-    """Chameleon appends static text and the expressions in it (a text node, an interpolated
-    attribute value) as one string, so when an expression fails the text before it was never
-    appended. Only visible in a slot body whose output belongs to another stream than the
-    define-slot site's, where the handler does not cut the body's own output (architecture.md,
-    Phase 8 amendments): chameleon-rs wrote that text first, until values of several parts in
-    slot bodies were marked (`Op::PartsBegin`) and taken back there."""
+    """A handler in a slot body whose slot sits inside a translation takes back all the body
+    wrote before the error. (Until Chameleon's #466 a fill wrote to another stream than its
+    slot's, which the handler didn't cut, and whether a failing text node's text stayed
+    depended on Chameleon appending it and its expressions as one string.)"""
     same(
         SLOT_STREAM_MACROS
         + f"""<x metal:use-macro="macros['m']"><y metal:fill-slot="s">T <q tal:on-error="string:E">{body}</q>"""
@@ -686,35 +675,30 @@ def test_handler_in_a_slot_body_drops_the_failing_text_node(body: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ('macro', 'call', 'chameleons', 'ours'),
+    ('macro', 'call', 'expected'),
     [
         (
             'm',
             """<z metal:use-macro="macros['m']" tal:on-error="string:E"><u metal:fill-slot="s">${1/0}</u></z>""",
-            '<div><b><y>T <u>E U</y><FG|None></b></div>',
-            '<div><b><y>T E U</y><FG|None></b></div>',
+            '<div><b><F<y>T E U</y>G|None></b></div>',
         ),
         (
             'm',
             """<q tal:on-error="string:E">Q<z metal:use-macro="macros['m']"><u metal:fill-slot="s">${1/0}</u></z></q>""",
-            '<div><b><y>T <q>Q<u><q>E</q> U</y><FG|None></b></div>',
-            '<div><b><y>T <q>Q<q>E</q> U</y><FG|None></b></div>',
+            '<div><b><F<y>T <q>E</q> U</y>G|None></b></div>',
         ),
         (
             'n',
             """<z metal:use-macro="macros['n']" tal:on-error="string:E"><u metal:fill-slot="s">${1/0}</u></z>""",
-            """<div><b><y>T <u>E U</y><F${x}G|{'x': '<i></i>'}></b></div>""",
-            """<div><b><y>T E U</y><F${x}G|{'x': '<i></i>'}></b></div>""",
+            """<div><b><F${x}G|{'x': '<i><y>T E U</y></i>'}></b></div>""",
         ),
     ],
 )
-def test_handler_around_a_nested_call_in_a_slot_body(macro: str, call: str, chameleons: str, ours: str) -> None:
-    """A known difference (#1): a handler in a slot body whose slot sits inside a translation,
-    around a call of the same macro whose own fill fails. Chameleon's one fallback mark per
-    function was taken in the outer call's stream and cuts the inner call's, so the inner
-    fill's start tag stays and is never closed (`<u>E`). chameleon-rs keeps Chameleon's single
-    mark within a frame (`<q>Q` stays, as `test_slot_body_macro_streams_like_chameleon` pins),
-    but the inner fill is another frame and its output is taken back."""
+def test_handler_around_a_nested_call_in_a_slot_body(macro: str, call: str, expected: str) -> None:
+    """A handler in a slot body whose slot sits inside a translation, around a call of the
+    same macro whose own fill fails. A fill is written where its slot is (Chameleon's #466),
+    so the handler takes back all of the failed call. Before that, Chameleon wrote a fill to
+    the stream of the place it was defined in, and left the inner fill's start tag (`<u>E`)."""
     source = (
         SLOT_STREAM_MACROS
         + f"""<x metal:use-macro="macros['{macro}']"><y metal:fill-slot="s">T {call}"""
@@ -724,8 +708,8 @@ def test_handler_around_a_nested_call_in_a_slot_body(macro: str, call: str, cham
     def translate(msgid: Any, **kw: Any) -> str:
         return f'<{msgid}|{kw.get("mapping")}>'
 
-    assert chameleon.PageTemplate(source)(translate=translate) == chameleons
-    assert chameleon_rs.PageTemplate(source)(translate=translate) == ours
+    assert chameleon.PageTemplate(source)(translate=translate) == expected
+    assert chameleon_rs.PageTemplate(source)(translate=translate) == expected
 
 
 def test_extended_slot_inside_a_name_with_a_recursive_translated_fill() -> None:

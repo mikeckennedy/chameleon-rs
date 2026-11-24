@@ -140,6 +140,28 @@ class TestZopePageTemplates:
                 strict=True
             )
 
+    def test_case_on_same_element_as_switch_raises_language_error(self):
+        from chameleon.exc import LanguageError
+
+        with pytest.raises(LanguageError) as excinfo:
+            self.from_string(
+                '''<span tal:switch="1" tal:case="1">text</span>''',
+                strict=True
+            )
+
+        assert "same element" in str(excinfo.value)
+
+    def test_unknown_expression_type_raises_expression_error(self):
+        from chameleon.exc import ExpressionError
+
+        with pytest.raises(ExpressionError) as excinfo:
+            self.from_string(
+                '''<div tal:content="nocall: some_var">text</div>''',
+                strict=True
+            )
+
+        assert "Unknown expression type: 'nocall'." in str(excinfo.value)
+
     def test_syntax_error_in_non_strict_mode(self):
         from chameleon.exc import ExpressionError
 
@@ -501,6 +523,17 @@ class TestZopePageTemplates:
         else:
             pytest.fail("unexpected error")
 
+    def test_on_error_does_not_handle_recursion_error(self):
+        template = self.from_string(
+            '<metal:m define-macro="m">'
+            '<div tal:on-error="string:error">'
+            '<div metal:use-macro="macros[\'m\']" />'
+            '</div>'
+            '</metal:m>'
+        )
+        with pytest.raises(RecursionError):
+            template()
+
     def test_double_underscore_variable(self):
         from chameleon.exc import TranslationError
         with pytest.raises(TranslationError):
@@ -641,11 +674,63 @@ class TestZopePageTemplates:
         rendered = template(sin=sin, a=pi)
         assert 'sin(3.141592653589793) is 1.22e-16' == rendered
 
+    def test_default_argument_named_like_its_parameter(self):
+        template = self.from_string('${(lambda a=a: a)()}')
+        assert template(a=1) == '1'
+
+        template = self.from_string('${(lambda *, a=a: a)()}')
+        assert template(a=1) == '1'
+
+        template = self.from_string(
+            '<?python\n'
+            'def f(a=a, *, b=b):\n'
+            '    return a + b\n'
+            '?>${f()}'
+        )
+        assert template(a=1, b=2) == '3'
+
+    def test_default_argument_reads_enclosing_parameter(self):
+        template = self.from_string(
+            '${(lambda a: (lambda b=a: b)())(1)}'
+        )
+        assert template() == '1'
+
     def test_windows_line_endings(self):
         template = self.from_string('<span id="span_id"\r\n'
                                     '      class="foo"\r\n'
                                     '      tal:content="string:bar"/>')
         assert template() == '<span id="span_id"\n      class="foo">bar</span>'
+
+    def test_fill_slot_renders_where_the_slot_is(self):
+        # The slot is inside a translation name in the macro: the fill
+        # belongs there, not where the macro is used.
+        template = self.from_string(
+            '<metal:m define-macro="m">'
+            '<span i18n:translate="">A '
+            '<i i18n:name="name"><metal:s define-slot="s">default</metal:s>'
+            '</i> B</span>'
+            '</metal:m>'
+            '<div metal:use-macro="macros[\'m\']">'
+            '<b metal:fill-slot="s">fill</b>'
+            '</div>'
+        )
+        assert template().endswith('<span>A <i><b>fill</b></i> B</span>')
+
+    def test_fill_slot_defined_in_translation_name(self):
+        # A fill defined inside a translation name writes to the
+        # stream of the slot it ends up in, also once the translation
+        # it was defined in is done.
+        template = self.from_string(
+            '<metal:m define-macro="m1">M1</metal:m>'
+            '<metal:m define-macro="m2">'
+            '[<metal:s define-slot="s">default</metal:s>]'
+            '</metal:m>'
+            '<p i18n:translate="">text <b i18n:name="name">'
+            '<u metal:use-macro="macros[\'m1\']">'
+            '<i metal:fill-slot="s">fill</i></u></b></p>'
+            '<u metal:use-macro="macros[\'m2\']" />'
+        )
+        assert template().endswith('<p>text <b>M1</b></p>[<i>fill</i>]')
 
     def test_digest(self):
         # Make sure ``digest`` doesn't error out when ``filename`` is something

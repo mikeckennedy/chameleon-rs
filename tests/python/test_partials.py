@@ -597,8 +597,10 @@ def test_infinite_recursion_is_a_recursion_error(folder: Path) -> None:
     with pytest.raises(RecursionError) as info:
         page()
     assert '- Expression:' not in str(info.value)
+    # Nor does an on-error handler catch it (Chameleon's #462).
     write(folder, {'catch.pt': '<p tal:on-error="string:deep">${render_partial("loop.pt")}</p>'})
-    assert chameleon_rs.PageTemplateFile(str(folder / 'catch.pt'))() == '<p>deep</p>'
+    with pytest.raises(RecursionError):
+        chameleon_rs.PageTemplateFile(str(folder / 'catch.pt'))()
 
 
 def test_partials_are_native_frames(folder: Path, monkeypatch: pytest.MonkeyPatch) -> None:

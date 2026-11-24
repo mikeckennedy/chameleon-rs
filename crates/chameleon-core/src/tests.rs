@@ -493,7 +493,6 @@ impl Macros for World {
                 target_language: f.i18n.target_language.clone(),
             },
             slots: f.slots.clone(),
-            stream: f.stream,
             helpers: None,
         }))
     }
@@ -895,10 +894,11 @@ fn switch_and_case() {
     assert_eq!(render(src, &[("x", V::Int(2))]), "<div><b>two</b></div>");
     assert_eq!(render(src, &[("x", V::Int(9))]), "<div><b>d</b></div>");
     assert_eq!(render(src, &[("x", V::Int(1))]), "<div><b>one</b></div>");
-    // An own-element switch is not cached before the case: Chameleon's assertion fails.
+    // An own-element switch is not cached before the case: a language error.
+    let err = |src: &str| compile(src, &mut Toy::default(), &options()).unwrap_err().to_string();
     assert_eq!(
-        compile("<p tal:switch=\"1\" tal:case=\"1\"/>", &mut Toy::default(), &options()).unwrap_err().kind(),
-        Some(crate::ErrorKind::Assertion)
+        err("<p tal:switch=\"1\" tal:case=\"1\"/>"),
+        "The case statement cannot be used on the same element as the switch statement."
     );
 }
 
@@ -1252,10 +1252,11 @@ fn translations_collect_their_streams_and_names() {
 
 #[test]
 fn a_slot_writes_to_the_stream_its_caller_had_open() {
-    // Chameleon's fill function appends through its defining function's `__append`: a slot
-    // inside a translation in the macro writes before the translation's result.
+    // Chameleon's fill function writes to the stream it is called with (`__append =
+    // __stream.append`, its #467): a slot inside a translation in the macro writes into the
+    // translation's stream, where the slot is.
     let src = "<tal:d condition=\"false\"><div metal:define-macro=\"m\"><p i18n:translate=\"\">a \
                <b metal:define-slot=\"s\">d</b> c</p></div></tal:d>\
                <div metal:use-macro=\"macro:0:m\"><i metal:fill-slot=\"s\">F</i></div>";
-    assert_eq!(render(src, &[]), "<div><p><i>F</i>tr(a c||a c|None/None/None)</p></div>");
+    assert_eq!(render(src, &[]), "<div><p>tr(a <i>F</i> c||a <i>F</i> c|None/None/None)</p></div>");
 }

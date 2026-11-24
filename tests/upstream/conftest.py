@@ -1,6 +1,6 @@
 """
 Runs Chameleon's own test suite (vendored, unmodified, from malthe/chameleon at commit
-90b900244abd9ce39c9a9ca70b38ed559ae2b969) against a selectable engine.
+71e32cc4d7598aa0fe7525062be835a2152659f7) against a selectable engine.
 
     CHAMELEON_ENGINE=python  -> the reference Chameleon (the baseline)
     CHAMELEON_ENGINE=rust    -> chameleon_rs, aliased in as the `chameleon` package

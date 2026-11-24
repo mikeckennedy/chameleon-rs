@@ -6,7 +6,7 @@ package `chameleon-rs` (import `chameleon_rs`). Goal: drop-in compatible with Ch
 
 - Decisions: `docs/architecture.md`. Build plan and completed phases: `docs/plan.md`. Current feature plans (`plans/01-upstream-bugs.md`, `plans/02-zope-integration.md`): `plans/`. Historical feature notes: `docs/vision.md`.
 - Reference implementation: `temp/chameleon` (gitignored clone of malthe/chameleon at
-  `90b9002`, installed editable in `venv`). When behavior is unclear, read it and run it.
+  `71e32cc`, installed editable in `venv`). When behavior is unclear, read it and run it.
 - Chameleon's test suite is vendored unmodified in `tests/upstream/chameleon_tests`. Never
   edit those files; adapt the harness (`tests/upstream/conftest.py`) instead.
 

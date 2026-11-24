@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use pyo3::exceptions::{PyLookupError, PySyntaxError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PySyntaxError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PySet, PyString, PyTuple};
@@ -291,10 +291,12 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
             Some(TypeSpec::Markdown(profile)) => Spec::Markdown(profile.clone_ref(self.py)),
             Some(TypeSpec::Proxy { name, ignore_prefix }) => Spec::Proxy(name.clone(), *ignore_prefix),
             Some(TypeSpec::Custom(factory)) => Spec::Custom(factory.clone()),
-            // `LookupError("Unknown expression type: %s." % str(KeyError(prefix)))`.
+            // `ExpressionError("Unknown expression type: %s." % str(KeyError(prefix)), source)`
+            // (a `LookupError` before Chameleon's #460): an error of the expression, with
+            // its position, deferred to render time unless the template is strict.
             None => {
                 let message = format!("Unknown expression type: '{prefix}'.");
-                return Err(ExprCompileError::Other(PyLookupError::new_err(message)));
+                return Err(ExprCompileError::Invalid { message, token: Some(source.clone()) });
             }
         };
         let inner = ExprContext { emitted: false, ..cx };

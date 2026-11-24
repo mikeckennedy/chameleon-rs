@@ -7,7 +7,7 @@ PYTEST := $(PY) -m pytest -q
 # Reference implementations, cloned into temp/ (gitignored) at pinned commits so every
 # comparison is against a known version. Bump deliberately and re-run the baselines.
 CHAMELEON_REPO := https://github.com/malthe/chameleon
-CHAMELEON_COMMIT := 90b900244abd9ce39c9a9ca70b38ed559ae2b969
+CHAMELEON_COMMIT := 71e32cc4d7598aa0fe7525062be835a2152659f7
 PARTIALS_REPO := https://github.com/mikeckennedy/chameleon_partials
 PARTIALS_COMMIT := a3a95fd2c1c13f75882bed0f918bcd8555877f2c
 
