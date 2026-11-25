@@ -55,6 +55,10 @@ Async rendering:
 - **`nonlocal` works.** It was a `SyntaxError`, in Chameleon too, because the enclosing function's assignment was a store in the scope.
 - **`except E as name` for a name declared `global`** in a class body or a method unbinds the template's name when the handler ends; render data of that name outlived it.
 - **A `match` capture is bound when its guard is false**, as in Python.
+- **A `type` statement can name itself**: `type Tree = list[Tree]` raised `NameError`, and `type Alias = Alias` read render data of that name.
+- **A name a class body binds is, until then, the template's** wherever the class is: inside a generic class or a function, an enclosing type parameter, parameter or local of that name was read instead (`def f(a): class C: x = a; a = 1`), a `NameError` with `a` in the render data.
+- **`global a` inside `class Box[a]`**, in the body or a method, is the template's `a`; reads, writes, `del` and a `def`, `class` or `type` of it used the type parameter.
+- **`global Base` in a method of `class Base`** is the class: the read raised `NameError`, and an assignment was stored where the rest of the template didn't look.
 
 ## [0.2.59] - 2026-11-22
 
