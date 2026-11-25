@@ -726,13 +726,19 @@ class PageTemplate(BaseTemplate):
             raise _surrogate_error(body, exc.start) from None
 
     @property
-    def include(self) -> MacroInclude:
+    def include(self) -> MacroInclude | Callable[..., Any]:
         """The whole template as a macro (``metal:use-macro="template"``).
 
         Chameleon's ``include(stream, econtext, rcontext, ...)``, which renders the main
         function into ``stream``.
         """
         self.cook_check()
+        # A render function set on the instance is what Chameleon's `include` calls: with
+        # pyramid_chameleon's `macro=` (set in `cook`) the template used as a macro is that
+        # one macro, not the whole template.
+        render = self.__dict__.get('_render')
+        if render is not None:
+            return render
         program, builtins = self._compiled
         return Macro(program, None, builtins).include
 

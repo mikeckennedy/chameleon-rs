@@ -70,7 +70,7 @@ pub(crate) fn interpolate<C: SubExprs>(
     surrogate_base: Option<u32>,
     compiler: &mut C,
 ) -> CompileResult<Vec<StrPart>> {
-    let bounded = crate::compiler::plain_text(&expression.text);
+    let bounded = crate::compiler::plain_text(&expression.text, surrogate_base);
     let mut parts = Vec::new();
     // Static text, its lone surrogates (mapped to the private-use block) mapped back.
     let text_part = |parts: &mut Vec<StrPart>, s: &str| -> CompileResult<()> {

@@ -321,7 +321,9 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
     }
 
     fn partial_returned(&mut self) {
-        self.render.partials.left();
+        if let Some(unit) = self.render.partials.left() {
+            unit.close_unused();
+        }
     }
 
     #[inline]
@@ -405,13 +407,16 @@ impl<const ASYNC: bool> Names for PyRuntime<'_, '_, ASYNC> {
     /// definition `rcontext[name] = value` for each name (the whole value, as Chameleon does).
     fn define(&mut self, names: &[NameId], value: Py<PyAny>, visibility: Visibility) -> PyResult<()> {
         let py = self.py;
-        if visibility == Visibility::Global {
-            let rcontext = self.cx().rcontext();
-            for name in names {
-                rcontext.set_item(self.name(*name)?.bind(py), value.bind(py))?;
-            }
+        if visibility != Visibility::Global {
+            return self.assign(names, value, Visibility::Local);
         }
-        self.assign(names, value, Visibility::Local)
+        // The local assignment first: a value that doesn't unpack defines no global.
+        self.assign(names, value.clone_ref(py), Visibility::Local)?;
+        let rcontext = self.cx().rcontext();
+        for name in names {
+            rcontext.set_item(self.name(*name)?.bind(py), value.bind(py))?;
+        }
+        Ok(())
     }
 
     /// `if backup is marker: del econtext[KEY] else: econtext[KEY] = backup`.
@@ -744,6 +749,8 @@ fn unpack<'py>(item: &Bound<'py, PyAny>, n: usize) -> PyResult<Vec<Bound<'py, Py
         }
     })?;
     for value in iterator {
+        // An error of the iterator's own comes before the count: `next()` raised it.
+        let value = value?;
         if values.len() == n {
             let message = if sized {
                 format!("too many values to unpack (expected {n}, got {})", item.len()?)
@@ -752,7 +759,7 @@ fn unpack<'py>(item: &Bound<'py, PyAny>, n: usize) -> PyResult<Vec<Bound<'py, Py
             };
             return Err(PyValueError::new_err(message));
         }
-        values.push(value?);
+        values.push(value);
     }
     if values.len() < n {
         return Err(PyValueError::new_err(format!("not enough values to unpack (expected {n}, got {})", values.len())));

@@ -152,10 +152,11 @@ print(f'{time.perf_counter() - start:.1f}s, not 0.6s')
 ```
 
 A call runs concurrently only where its output can simply be written later: a whole `${...}`
-in text, or one inside an attribute value. Anywhere its value decides what the template does
-(a condition, a `tal:define`, `tal:content` / `tal:replace`, which may choose the default
-content) or where the output might be taken back (inside `tal:on-error` or a translation), it is
-awaited in place, like any awaitable.
+in text, or one that is part of an attribute value (`title="Photo: ${label(1)}"`). Anywhere its
+value decides what the template does (a condition, a `tal:define`, `tal:content` /
+`tal:replace`, which may choose the default content, or an attribute value that is the call
+alone, `title="${label(1)}"`, which `None` drops) or where the output might be taken back
+(inside `tal:on-error` or a translation), it is awaited in place, like any awaitable.
 
 If a concurrent call raises, the render waits for nothing else: the error is raised as soon as
 the render has reached its end and that call has failed, even if calls before it in the page are

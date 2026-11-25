@@ -1411,3 +1411,73 @@ def test_a_concurrent_call_under_structure_or_markdown_stays_concurrent(prefix: 
     finally:
         chameleon_rs._settings.clear()
     assert most == 3
+
+
+# -- Awaitable arguments of a partial ------------------------------------------------------
+
+
+@pytest.mark.parametrize('fan_out', [False, True])
+def test_overlapping_reads_of_a_partials_argument_get_the_same_value(tmp_path: Path, fan_out: bool) -> None:
+    # The second reader arrived while the first was awaiting the coroutine, and got `None`.
+    async def read(value: Any) -> Any:
+        return await value
+
+    async def both(value: Any) -> str:
+        first, second, third = await asyncio.gather(read(value), read(value), read(value))
+        return f'{first}|{second}|{third}|{await value}'
+
+    async def failing(value: Any) -> str:
+        results = await asyncio.gather(read(value), read(value), return_exceptions=True)
+        return '|'.join(type(r).__name__ for r in results)
+
+    (tmp_path / 'pair.pt').write_text('${use(v)}')
+    chameleon_rs.configure(template_folder=str(tmp_path))
+    try:
+        page = PageTemplate('${render_partial("pair.pt", v=value, use=use)}', concurrent=fan_out)
+        assert run(page.render_async(value=aw('V'), use=both)) == 'V|V|V|V'
+        assert run(page.render_async(value=aw_raise(LookupError('no')), use=failing)) == 'LookupError|LookupError'
+    finally:
+        chameleon_rs._settings.clear()
+
+
+@pytest.mark.parametrize('fan_out', [False, True])
+def test_one_coroutine_under_two_keywords_of_a_partial_is_awaited_once(tmp_path: Path, fan_out: bool) -> None:
+    (tmp_path / 'p.pt').write_text('${a}|${b}|${a}')
+    chameleon_rs.configure(template_folder=str(tmp_path))
+    try:
+        page = PageTemplate('${render_partial("p.pt", a=v, b=v)}', concurrent=fan_out)
+        assert run(page.render_async(v=aw('V'))) == 'V|V|V'
+    finally:
+        chameleon_rs._settings.clear()
+
+
+@pytest.mark.parametrize('fan_out', [False, True])
+def test_a_partial_that_never_uses_a_coroutine_argument_closes_it(tmp_path: Path, fan_out: bool) -> None:
+    # A render that went well warned that the coroutine was never awaited.
+    started = []
+
+    async def fetch() -> str:
+        started.append(1)
+        return 'V'
+
+    @concurrent
+    async def marked() -> str:
+        started.append(1)
+        return 'V'
+
+    (tmp_path / 'card.pt').write_text('<b tal:condition="False">${v}</b>')
+    (tmp_path / 'p.pt').write_text('${a}')
+    chameleon_rs.configure(template_folder=str(tmp_path))
+    try:
+        with _no_unawaited_coroutines():
+            page = PageTemplate('${render_partial("card.pt", v=fetch())}', concurrent=fan_out)
+            assert run(page.render_async(fetch=fetch)) == ''
+            # A later keyword that fails: the ones before it are dropped as well.
+            page = PageTemplate(
+                '<b tal:on-error="string:fallback">${render_partial("p.pt", a=marked(), b=missing)}</b>',
+                concurrent=fan_out,
+            )
+            assert run(page.render_async(marked=marked)) == '<b>fallback</b>'
+        assert not started
+    finally:
+        chameleon_rs._settings.clear()

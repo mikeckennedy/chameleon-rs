@@ -110,9 +110,21 @@ pub(crate) struct Unit<'py> {
     /// the same name is the same object).
     added: Added<'py>,
     pub(crate) rcontext: OnceCell<Bound<'py, PyDict>>,
+    /// Whether an argument is a coroutine the partial awaits where it first uses it: one it
+    /// never used is closed when it returns (see [`Unit::close_unused`]).
+    wrapped: bool,
 }
 
 impl<'py> Unit<'py> {
+    /// The partial returned: a coroutine argument it never used (`v=fetch()` for a block its
+    /// condition skipped) is closed, as nothing will await it now. Python otherwise warns
+    /// that it was never awaited, on a render that went well.
+    pub(crate) fn close_unused(&self) {
+        if self.wrapped {
+            crate::awaitable::close_unstarted(self.scope.py(), &self.scope);
+        }
+    }
+
     /// What the model gets as `render_partial` when it lacks one (see [`Unit::added`]).
     fn added(&self) -> Option<&Bound<'py, PyAny>> {
         match &self.added {
@@ -327,7 +339,14 @@ pub(crate) fn partial_step(
     let fan_out = cx.render.concurrent && cx.render.partials.top() == 0;
     let mut awaits = false;
     for (key, value) in kwargs {
-        let value = eval(value, cx)?;
+        let value = match eval(value, cx) {
+            Ok(value) => value,
+            Err(e) => {
+                // The arguments before it are dropped unawaited, as for a partial not found.
+                crate::awaitable::close_unstarted(py, &scope);
+                return Err(e);
+            }
+        };
         if fan_out && !awaits {
             awaits = crate::awaitable::is_awaitable(&value)?;
         }
@@ -346,24 +365,7 @@ pub(crate) fn partial_step(
     let Some(target) = target else {
         return Ok(Step::Ready(func.call((path,), Some(locals))?.unbind()));
     };
-    if cx.render.awaits {
-        // A coroutine argument is awaited where the partial first uses it, and that result is
-        // its value from then on (`chameleon_rs._async._Once`).
-        for (key, _) in kwargs {
-            let key = key.bind(py);
-            let Some(value) = locals.get_item(key)? else { continue };
-            // A `@concurrent` call's coroutine too: a partial awaits it in place.
-            let value =
-                if crate::deferred::is_concurrent_call(&value)? && value.getattr(intern!(py, "convert"))?.is_none() {
-                    value.getattr(intern!(py, "awaitable"))?
-                } else {
-                    value
-                };
-            if crate::awaitable::is_coroutine(&value)? {
-                locals.set_item(key, crate::awaitable::once(py)?.call1((value,))?)?;
-            }
-        }
-    }
+    let wrapped = cx.render.awaits && await_once(py, kwargs, locals)?;
     // chameleon_partials: `template_data['render_partial'] = render_partial` unless given (the
     // built-in passes the partial template's own, which resolves relative to it).
     let initial = kwargs.len();
@@ -400,11 +402,42 @@ pub(crate) fn partial_step(
         scope: scope.clone().into_any().unbind(),
     };
     *cx.render.partials.pending.borrow_mut() =
-        Some(Unit { serial: 0, target, scope, initial, added, rcontext: OnceCell::new() });
+        Some(Unit { serial: 0, target, scope, initial, added, rcontext: OnceCell::new(), wrapped });
     if awaits {
         cx.render.defer_next.set(true);
     }
     Ok(Step::Call(call))
+}
+
+/// Wraps each coroutine among a partial's arguments so that it is awaited where the partial
+/// first uses it, and that result is its value from then on (`chameleon_rs._async._Once`).
+/// One coroutine passed under two keywords (`a=v, b=v`) is one value: a wrapper each awaited
+/// it twice. Returns whether there was one.
+fn await_once<'py>(py: Python<'py>, kwargs: &[(Py<PyString>, Expr)], locals: &Bound<'py, PyDict>) -> PyResult<bool> {
+    let mut wrapped: Vec<(Bound<'py, PyAny>, Bound<'py, PyAny>)> = Vec::new();
+    for (key, _) in kwargs {
+        let key = key.bind(py);
+        let Some(value) = locals.get_item(key)? else { continue };
+        // A `@concurrent` call's coroutine too: a partial awaits it in place.
+        let value = if crate::deferred::is_concurrent_call(&value)? && value.getattr(intern!(py, "convert"))?.is_none()
+        {
+            value.getattr(intern!(py, "awaitable"))?
+        } else {
+            value
+        };
+        if !crate::awaitable::is_coroutine(&value)? {
+            continue;
+        }
+        let once = if let Some((_, once)) = wrapped.iter().find(|(coroutine, _)| coroutine.is(&value)) {
+            once.clone()
+        } else {
+            let once = crate::awaitable::once(py)?.call1((&value,))?;
+            wrapped.push((value, once.clone()));
+            once
+        };
+        locals.set_item(key, once)?;
+    }
+    Ok(!wrapped.is_empty())
 }
 
 /// The error a failed partial raises to its caller: `BaseTemplate.render`'s handler, with the
@@ -463,6 +496,7 @@ struct SavedUnit {
     initial: usize,
     added: SavedAdded,
     rcontext: Option<Py<PyDict>>,
+    wrapped: bool,
 }
 
 struct SavedSite {
@@ -516,6 +550,7 @@ impl<'py> Partials<'py> {
                 Added::Func(f) => SavedAdded::Func(f.unbind()),
             },
             rcontext: u.rcontext.into_inner().map(Bound::unbind),
+            wrapped: u.wrapped,
         };
         let units = self.units.into_inner().into_iter().map(&mut unit).collect();
         let pending = self.pending.into_inner().map(&mut unit);
@@ -565,6 +600,7 @@ impl<'py> Partials<'py> {
                 SavedAdded::Func(f) => Added::Func(f.into_bound(py)),
             },
             rcontext: u.rcontext.map(|r| r.into_bound(py)).map_or_else(OnceCell::new, OnceCell::from),
+            wrapped: u.wrapped,
         };
         let units = saved.units.into_iter().map(&mut unit).collect();
         let pending = saved.pending.map(&mut unit);

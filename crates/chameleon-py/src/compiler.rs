@@ -369,7 +369,8 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
             match c {
                 b'|' => return None,
                 b'\'' | b'"' => {
-                    if i > 0 && bytes[i - 1].is_ascii_alphanumeric() {
+                    // (After a non-ASCII character, which may be alphanumeric: not judged.)
+                    if i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || !bytes[i - 1].is_ascii()) {
                         return None;
                     }
                     let triple = bytes.get(i + 1) == Some(&c) && bytes.get(i + 2) == Some(&c);
@@ -810,7 +811,7 @@ impl ExprCompiler for PyExprCompiler<'_, '_> {
     }
 
     fn bounds_candidates(&self, text: &str) -> bool {
-        plain_text(text)
+        plain_text(text, self.surrogate_base)
     }
 
     fn candidate_bound(&self, candidate: &str, _: ExprContext<'_>) -> Option<usize> {
@@ -917,11 +918,15 @@ fn continuation_to_spaces(s: &str) -> String {
 }
 
 /// Whether `text` (an interpolated text, whole) is one [`PyExprCompiler::python_bound`] can
-/// bound the candidates of: ASCII (so no lone surrogate, mapped to the private-use block),
-/// with no backslash or `#` (which [`obviously_invalid`] leaves to the parser) and no `&`
-/// (a character reference: a candidate is decoded before it is compiled).
-pub(crate) fn plain_text(text: &str) -> bool {
-    text.bytes().all(|b| b.is_ascii() && !matches!(b, b'\\' | b'#' | b'&'))
+/// bound the candidates of: with no lone surrogate (mapped to the private-use block, given
+/// `surrogate_base`), no backslash or `#` (which [`obviously_invalid`] leaves to the parser)
+/// and no `&` (a character reference: a candidate is decoded before it is compiled). Other
+/// non-ASCII text is fine (the scan is of ASCII bytes, which UTF-8 never has inside a
+/// character): one `·` between 800 `${x}` took the bound away, and compiling them 0.8 s.
+pub(crate) fn plain_text(text: &str, surrogate_base: Option<u32>) -> bool {
+    !text.bytes().any(|b| matches!(b, b'\\' | b'#' | b'&'))
+        && (text.is_ascii()
+            || surrogate_base.is_none_or(|base| chameleon_core::surrogates::to_wtf8(text, base).is_none()))
 }
 
 /// A cheap structural check for Interpolator candidates: unbalanced brackets or an

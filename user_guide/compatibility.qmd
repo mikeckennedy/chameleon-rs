@@ -121,6 +121,9 @@ are Chameleon issues that chameleon-rs adopted.
 | A `<?python ?>` block that binds a name with `except ... as`, `class`, `async def` or a `match` capture | Reading the name raises `NameError` (or reads render data of the same name). | The name is the one the block bound. |
 | An assignment in a `class` body in a `<?python ?>` block: `class C: v = 3` | Stored in the template's scope like any assignment: `${v}` is `3` and `C.v` raises `AttributeError`, so a dataclass has no fields. | The class's attribute, as in Python: `C.v` is `3`. A template that read `${v}` afterwards must read `${C.v}`. |
 | A `type` statement in a `<?python ?>` block: `type Pair[T] = tuple[T, T]` | `SyntaxError`. | The alias is a name of the template, as a `def` is. |
+| `nonlocal` in a `<?python ?>` block: a counter that a nested function increments | `SyntaxError: no binding for nonlocal`, because the enclosing function's assignment is stored in the template's scope. | The name is a local of the function that binds it, as in Python. |
+| A translation or an `__html__` method that returns something other than a string, inside `tal:on-error` | The `TypeError` is raised when the output is joined, after the handler has been left, so the render fails. | The error is raised at the element, and the handler's fallback is rendered. |
+| A `tal:attributes` dictionary whose value translates to `None` | `TypeError: can only concatenate str (not "NoneType") to str`. | The attribute is written with an empty value. |
 
 ### Ahead of Chameleon 4.6.1
 

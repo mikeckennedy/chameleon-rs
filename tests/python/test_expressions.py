@@ -1320,6 +1320,53 @@ CLASS_BODIES = [
         'class Base:\n    def m(self):\n        class Inner:\n            x = Base\n            Base = 1\n'
         '        return Inner.x\nres = Base().m().__name__'
     ),
+    # A comprehension's targets in a class body are its own names, not stores in the scope.
+    'class C:\n    values = [a for a in items]\nres = (a, C.values)',
+    'class C:\n    values = {a: x for a, x in enumerate(items)}\nres = (a, x, C.values)',
+    'class C:\n    values = [a + i for a in items for i in items if a]\nres = (a, C.values)',
+    'class C:\n    a = 5\n    values = list(a for a in items)\nres = (C.a, C.values, a)',
+    # A class attribute or a parameter named `econtext` doesn't hide the scope from lookups.
+    'class C:\n    econtext = "test"\n    value = a\nres = (C.value, C.econtext)',
+    'class C:\n    def m(self, econtext):\n        return (a, econtext)\nres = C().m(1)',
+    # A name in the class's namespace that no statement of the body binds.
+    'class C:\n    locals()["label"] = "Ready"\n    value = label\nres = C.value',
+    'class C:\n    locals()["a"] = "Ready"\n    value = a\nres = (C.value, a)',
+    (
+        'class C:\n    locals()["Kind"] = int\n    match 5:\n        case Kind():\n            r = 1\n'
+        '        case _:\n            r = 2\nres = C.r'
+    ),
+    # `nonlocal` names a local of the function that binds it.
+    (
+        'class C:\n    def method(self):\n        n = 0\n        def inc():\n            nonlocal n\n'
+        '            n += 1\n        inc()\n        return n\nres = C().method()'
+    ),
+    (
+        'class C:\n    def method(self, n):\n        def inc():\n            nonlocal n\n            n += a\n'
+        '        inc()\n        return n\nres = (C().method(1), a)'
+    ),
+    (
+        'def counter():\n    n = 0\n    def inc():\n        nonlocal n\n        n += 1\n        return n\n'
+        '    return inc\ninc = counter()\nres = (inc(), inc())'
+    ),
+    (
+        'def f():\n    x = 1\n    class C:\n        nonlocal x\n        x = 2\n        y = x\n'
+        '    return (x, C.y)\nres = f()'
+    ),
+    # An exception target declared `global` is the template's name, unbound after the handler.
+    'class C:\n    global a\n    try:\n        1 / 0\n    except Fault as a:\n        pass\nres = a',
+    'class C:\n    global a\n    try:\n        1 / 0\n    except Fault as a:\n        k = type(a).__name__\nres = C.k',
+    (
+        'class C:\n    def m(self):\n        global a\n        try:\n            1 / 0\n'
+        '        except Fault as a:\n            return type(a).__name__\nres = (C().m(), "a" in globals())'
+    ),
+    'class C:\n    global a\n    try:\n        pass\n    except Fault as a:\n        pass\nres = a',
+    # A pattern that matches binds its captures even when its guard is false.
+    (
+        'class C:\n    def method(self):\n        match 42:\n            case int() as a if False:\n'
+        '                pass\n        return a\nres = C().method()'
+    ),
+    'match 42:\n    case int() as a if a > 100:\n        pass\n    case _:\n        pass\nres = a',
+    'match [1, 2]:\n    case [a, x] if a > x:\n        r = 1\n    case [a, x] if a < x:\n        r = 2\nres = (a, x, r)',
 ]
 
 
@@ -1486,3 +1533,105 @@ def test_template_builtins_inside_a_lambda(source: str) -> None:
     # inside a class (where Python mangles them): but `__rs_tpl` is a parameter of a compiled
     # expression, so a template builtin read in a lambda raised `KeyError: '__rs_tpl'`.
     assert chameleon_rs.PageTemplate(source)() == chameleon.PageTemplate(source)()
+
+
+@pytest.mark.parametrize(
+    ('source', 'data'),
+    [
+        # The last operand of `and` / `or` is the result, never tested for truth.
+        ('${fallback or report}', {'fallback': None}),
+        ('${True and report}', {}),
+        ('${fallback or 0 or report}', {'fallback': ''}),
+        ('${report or fallback}', {'fallback': 1}),
+        # Zero-argument `locals()` and `vars()` read the render function's frame.
+        ('${locals().get("econtext") is econtext}', {}),
+        ('${vars().get("econtext") is econtext}', {}),
+        # A dict display evaluates its keys and values before it is built.
+        ("${{'a': 1, []: 2, 'c': later}}", {}),
+        ('${{[]: 2}}', {}),
+        ('${{' + ', '.join(f'{i}: {i}' for i in range(15)) + ', []: later}}', {}),
+        ('${{' + ', '.join(f'{i}: {i}' for i in range(16)) + ', []: later}}', {}),
+        ('${{[]: 1, ' + ', '.join(f'{i}: {i}' for i in range(17)) + ', 99: later}}', {}),
+        ('${{' + ', '.join(f'{i}: {i}' for i in range(17)) + ', []: 1, 99: later}}', {}),
+        ('${sorted({' + ', '.join(f'{i}: {i}' for i in range(40)) + '})[-1]}', {}),
+    ],
+)
+def test_native_expressions_evaluate_as_python_does(source: str, data: dict[str, Any]) -> None:
+    class Report:
+        def __bool__(self) -> bool:
+            raise ValueError('truth value is ambiguous')
+
+        def __str__(self) -> str:
+            return 'report'
+
+    def outcome(engine: Any) -> str:
+        try:
+            return engine.PageTemplate(source)(report=Report(), **data)  # type: ignore[no-any-return]
+        except Exception as e:  # noqa: BLE001 - comparing exceptions across engines
+            return f'{type(e).__name__}: {str(e).splitlines()[0]}'
+
+    assert outcome(chameleon_rs) == outcome(chameleon)
+
+
+@pytest.mark.parametrize('source', ['${dict(x=1, x=2)}', '<i tal:content="f(a=1, b=2, a=3)"/>'])
+def test_a_repeated_keyword_argument_is_a_syntax_error(source: str) -> None:
+    # The compiler's error, not the parser's: `ast.parse` accepts the call, and the native
+    # evaluator took the last value.
+    for engine in (chameleon, chameleon_rs):
+        with pytest.raises(SyntaxError, match='keyword argument repeated'):
+            engine.PageTemplate(source)
+
+
+def test_non_ascii_text_keeps_the_candidate_bound() -> None:
+    # One non-ASCII character in a text took the bound away for all of it: every `${` then
+    # tried each candidate up to the text's end (800 fields: 0.8 s to compile, against 2 ms).
+    import time
+
+    def compile_time(separator: str) -> float:
+        body = separator.join(['${x}'] * 800)
+        best = float('inf')
+        for _ in range(3):
+            start = time.perf_counter()
+            template = chameleon_rs.PageTemplate(body)
+            best = min(best, time.perf_counter() - start)
+        assert template(x='X') == separator.join(['X'] * 800)
+        return best
+
+    assert compile_time(' \u00b7 ') < 20 * compile_time(' - ')
+
+
+@pytest.mark.parametrize(
+    'source',
+    [
+        "<p>é ${'}'} ü ${a}</p>",
+        "<p>${a} · ${é'x'} · ${a}</p>",
+        '<p title="é ${a} } ü ${b}">${a}é}</p>',
+        '<p>${a + é} ${a}</p>',
+        "<p>${'é' + a} · ${ {'ü': a}['ü'] } }</p>",
+    ],
+)
+def test_interpolations_in_non_ascii_text_end_where_chameleons_do(source: str) -> None:
+    def outcome(engine: Any) -> str:
+        try:
+            return engine.PageTemplate(source)(a='A', b='B')  # type: ignore[no-any-return]
+        except Exception as e:  # noqa: BLE001 - comparing exceptions across engines
+            return f'{type(e).__name__}: {str(e).splitlines()[0]}'
+
+    assert outcome(chameleon_rs) == outcome(chameleon)
+
+
+def test_a_parameter_named_econtext_does_not_hide_the_scope() -> None:
+    source = '<?python\ndef f(econtext):\n    return (a, econtext)\nv = f(1)\n?>${v}'
+    assert chameleon_rs.PageTemplate(source)(a=100) == chameleon.PageTemplate(source)(a=100)
+
+
+def test_nonlocal_in_a_code_block() -> None:
+    # `SyntaxError: no binding for nonlocal 'n' found` in Chameleon, which stores `n = 0` in
+    # the scope: here the name is the enclosing function's local, and the scope's `n` is left.
+    source = (
+        '<?python\ndef counter():\n    n = 0\n    def inc():\n        nonlocal n\n        n += 1\n'
+        '        return n\n    return inc\ninc = counter()\n?>${inc()} ${inc()} ${n}'
+    )
+    assert chameleon_rs.PageTemplate(source)(n='data') == '1 2 data'
+    with pytest.raises(SyntaxError):
+        chameleon.PageTemplate(source)

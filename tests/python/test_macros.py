@@ -832,3 +832,16 @@ def test_slot_body_output_moved_before_a_translation_scales_linearly() -> None:
             t(N=16000)
             best[name] = min(best[name], time.perf_counter() - start)
     assert best['translated'] < 4 * best['plain'], best
+
+
+def test_a_template_with_its_own_render_function_is_that_function_as_a_macro() -> None:
+    # Chameleon's `include` calls `self._render`, so a template whose render function was
+    # replaced (pyramid_chameleon's `macro=` does, in `cook`) is that one macro when another
+    # template uses it. Ours rendered the whole template.
+    def render(engine: Any) -> tuple[str, str]:
+        other = engine.PageTemplate('header<b metal:define-macro="card">card ${x}</b>')
+        other._render = other.macros['card'].include
+        page = engine.PageTemplate('<main metal:use-macro="other"/>')
+        return other(x=1), page(other=other, x=2)
+
+    assert render(chameleon_rs) == render(chameleon) == ('<b>card 1</b>', '<b>card 2</b>')

@@ -28,6 +28,34 @@ Two fixes to `<?python ?>` blocks from the review of our pull request to Chamele
 - **A name a code block binds with `def`, `class` or an import ends with its macro.** It stayed a plain name in every macro compiled after it, and in the main body: `${thing}` there raised `UnboundLocalError` (`NameError` in Chameleon) where the render data has a `thing`. Each macro is a function of its own, so the name is the template's there. Expressions in those macros also take the fast path again.
 - **`except E as name`, for a name a `def`, a class or an import had bound**, left it unbound once the handler ran, so reading it afterwards raised `UnboundLocalError` (in Chameleon too). It is the template's name then, as after any handler, and still the earlier binding if the handler didn't run.
 
+Fixes from a second reviewer's pass over rendering, async and `<?python ?>` blocks.
+
+Rendering:
+
+- **The last operand of `and` / `or` is no longer tested for truth.** `${fallback or report}` raised when `report`'s `__bool__` does (a lazy model object, an array); Python returns it as it is.
+- **A template whose render function was replaced is that function when used as a macro.** pyramid_chameleon's `macro=` sets one, and `metal:use-macro` of such a template rendered the whole template instead of the one macro.
+- **Non-ASCII text no longer slows compilation.** One character such as `·` between interpolations made every `${` try each candidate up to the end of the text: 800 fields took 0.8 s to compile, against 2 ms.
+- **A global `tal:define` that fails to unpack defines nothing.** With `tal:on-error` around `tal:define="global (x, y) row"`, the whole row became the global `x` and `y` and showed up after the next macro call.
+- **A repeated keyword argument is a `SyntaxError`**, as in Python: `${dict(x=1, x=2)}` rendered with the last value.
+- **Unpacking raises the iterator's own error.** A row that raised after its second column, unpacked into two names, was reported as `ValueError: too many values to unpack`.
+- **`locals()` and `vars()` without arguments** see the expression's frame, `econtext` included, as in Chameleon.
+- **A dict display evaluates its keys and values in Python's order**, so `{[]: 1, 'c': missing}` raises the `NameError` first.
+
+Async rendering:
+
+- **Overlapping reads of a partial's awaitable argument** (`asyncio.gather` of two reads) all get its value; the second reader got `None`.
+- **One coroutine passed under two keywords of a partial** (`a=v, b=v`) is awaited once; it raised `RuntimeError: cannot reuse already awaited coroutine`.
+- **A coroutine argument a partial never uses is closed** when the partial returns, or when a later keyword fails. A render that went well warned that the coroutine was never awaited.
+
+`<?python ?>` blocks:
+
+- **A comprehension in a class body** no longer stores its targets in the template scope: `values = [a for a in items]` left the render data's `a` as the last item.
+- **A class attribute or a parameter named `econtext`** no longer breaks name lookups after it (`AttributeError: 'str' object has no attribute 'get_name'`).
+- **A class body reads its own namespace first for every name**, so one put there by `locals()['label'] = ...` or a metaclass's `__prepare__` is found.
+- **`nonlocal` works.** It was a `SyntaxError`, in Chameleon too, because the enclosing function's assignment was a store in the scope.
+- **`except E as name` for a name declared `global`** in a class body or a method unbinds the template's name when the handler ends; render data of that name outlived it.
+- **A `match` capture is bound when its guard is false**, as in Python.
+
 ## [0.2.59] - 2026-11-22
 
 Fixes from seven more rounds of review of `<?python ?>` blocks: class bodies, `global`, type parameters and `type` statements now scope names as Python does.

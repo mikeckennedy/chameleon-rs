@@ -246,8 +246,11 @@ class Rewriter(ast.NodeTransformer):
                 self.declared.append(_bindings(node.body)[1])
                 self.functions += 1
                 try:
-                    # The function runs once a class being defined around it is bound.
-                    with self.plain(self.defining):
+                    # The function runs once a class being defined around it is bound. A
+                    # name it or a function inside it declares `nonlocal` is a local of the
+                    # function that binds it, not a store in the scope, which `nonlocal`
+                    # can't name (`SyntaxError: no binding for nonlocal`, in Chameleon too).
+                    with self.plain(self.defining), self.plain(_nonlocals(node)):
                         node.body = self.statements(node.body)
                 finally:
                     self.functions -= 1
@@ -316,7 +319,7 @@ class Rewriter(ast.NodeTransformer):
         try:
             self.type_parameters(node)
             names, global_names = _bindings(node.body, class_body=True)
-            self.class_names.append(names - global_names)
+            self.class_names.append(names - global_names - _declared_nonlocal(node.body))
             self.declared.append(global_names)
             try:
                 node.body = self.statements(node.body)
@@ -355,6 +358,15 @@ class Rewriter(ast.NodeTransformer):
         self.scopes[-1].add(name)
         return True
 
+    def econtext(self) -> ast.expr:
+        """The scope, for a lookup or a store. Where a code block has an `econtext` of its
+        own (a parameter, a class attribute), the render's is read from its namespace:
+        Chameleon's generated code looks names up through a function bound beforehand, which
+        such a name doesn't hide (`class C: econtext = 1; v = a` called `get_name` on `1`)."""
+        if self.code_block and (self.class_name('econtext') or 'econtext' in self.scopes[-1]):
+            return ast.Subscript(value=_globals(), slice=ast.Constant('econtext'), ctx=ast.Load())
+        return _econtext()
+
     def is_global(self, name: str) -> bool:
         """Whether the code is inside a class, in a function or class body that declares
         ``name`` `global`: the template's name, as in Python. (Outside a class a function's
@@ -383,7 +395,7 @@ class Rewriter(ast.NodeTransformer):
                 self.kept.add(rebound(name))
             elif self.is_global(name) and not self.plain_global(name):
                 self.writes.add(name)
-                target = ast.Subscript(value=_econtext(), slice=ast.Constant(name), ctx=ast.Store())
+                target = ast.Subscript(value=self.econtext(), slice=ast.Constant(name), ctx=ast.Store())
                 stores.append(ast.Assign(targets=[target], value=ast.Name(id=name, ctx=ast.Load())))
         return [node, *stores] if stores else node
 
@@ -410,6 +422,24 @@ class Rewriter(ast.NodeTransformer):
         # before the name is bound: in `except E as E` it is the scope's `E`.
         if node.type is not None:
             node.type = self.visit(node.type)
+        name = node.name
+        if name is not None and self.is_global(name) and not self.plain_global(name) and name not in BUILTINS:
+            # Declared `global` in a class body or a method: the template's name, so the
+            # scope's for the handler and unbound in it when the handler ends, as Python
+            # unbinds the global (the render data's value outlived the handler).
+            self.writes.add(name)
+
+            def entry(ctx: ast.expr_context) -> ast.Subscript:
+                return ast.Subscript(value=self.econtext(), slice=ast.Constant(name), ctx=ctx)
+
+            bind: ast.stmt = ast.Assign(targets=[entry(ast.Store())], value=ast.Name(id=name, ctx=ast.Load()))
+            clear: list[ast.stmt] = [
+                ast.Assign(targets=[entry(ast.Store())], value=ast.Constant(None)),
+                ast.Delete(targets=[entry(ast.Del())]),
+            ]
+            body = self.statements(node.body)
+            node.body = [bind, ast.Try(body=body, handlers=[], orelse=[], finalbody=clear)]
+            return node
         with self.plain(filter(None, [node.name])) as added:
             if node.name is not None and not added and not self.in_class() and node.name not in self.unbound:
                 self.unbound.append(node.name)
@@ -460,10 +490,20 @@ class Rewriter(ast.NodeTransformer):
             with self.plain(names):
                 node.guard = self.visit(node.guard)
         stores: list[ast.stmt] = []
+        early: list[ast.expr] = []
         for name in names:
             target = self.visit_Name(ast.Name(id=name, ctx=ast.Store()))
             if isinstance(target, ast.Subscript):
-                stores.append(ast.Assign(targets=[target], value=ast.Name(id=name, ctx=ast.Load())))
+                value = ast.Name(id=name, ctx=ast.Load())
+                stores.append(ast.Assign(targets=[target], value=value))
+                store = ast.Attribute(value=target.value, attr='__setitem__', ctx=ast.Load())
+                early.append(ast.Call(func=store, args=[ast.Constant(name), value], keywords=[]))
+        if node.guard is not None and early:
+            # A pattern that matches binds its captures whatever its guard then says, so with
+            # a guard they are stored before it is tested: `(store, ..., guard)[-1]`.
+            stores = []
+            checked = ast.Tuple(elts=[*early, node.guard], ctx=ast.Load())
+            node.guard = ast.Subscript(value=checked, slice=ast.Constant(-1), ctx=ast.Load())
         node.body = stores + self.statements(node.body)
         return node
 
@@ -481,7 +521,7 @@ class Rewriter(ast.NodeTransformer):
             self.scope_names = before
         if not used:
             return node
-        names = ast.Call(func=_global('__rs_names_of', self.in_class()), args=[_econtext()], keywords=[])
+        names = ast.Call(func=_global('__rs_names_of', self.in_class()), args=[self.econtext()], keywords=[])
         target: ast.expr = ast.Name(id=SCOPE_NAMES, ctx=ast.Store())
         if self.code_block:
             # A global of the render's namespace, wherever the `match` is: an assignment
@@ -509,10 +549,10 @@ class Rewriter(ast.NodeTransformer):
             return cast('ast.expr', self.visit(node))
         # A name the class body binds is read as any other read of it is (see `visit_Name`):
         # the class's if bound by then, and otherwise what it is outside the class.
-        bound = self.class_name(node.id)
-        visited = self.outside(node.id) if bound else self.visit(node)
+        visited = self.outside(node.id) if self.class_name(node.id) else self.lookup(node)
         if isinstance(visited, ast.Name):
             return visited
+        bound = self.class_read(node) and not self.is_global(node.id)
         self.scope_names = True
         names: ast.expr = ast.Name(id=SCOPE_NAMES, ctx=ast.Load())
         if bound:
@@ -581,17 +621,24 @@ class Rewriter(ast.NodeTransformer):
             return self.generic_visit(node)
         first = node.generators[0]
         first.iter = self.visit(first.iter)
+        # Its targets are its own names, as in Python (elsewhere they are stores in the
+        # scope, as in Chameleon): `[a for a in items]` in a class body left the scope's `a`
+        # the last item.
+        targets = [n.id for g in node.generators for n in ast.walk(g.target) if isinstance(n, ast.Name)]
         self.class_names.append(None)
+        self.declared.append(set())
         try:
-            first.target = self.visit(first.target)
-            first.ifs = [self.visit(test) for test in first.ifs]
-            node.generators[1:] = [self.visit(generator) for generator in node.generators[1:]]
-            if isinstance(node, ast.DictComp):
-                node.key = self.visit(node.key)
-                node.value = self.visit(node.value)
-            else:
-                node.elt = self.visit(node.elt)
+            with self.plain(targets):
+                first.target = self.visit(first.target)
+                first.ifs = [self.visit(test) for test in first.ifs]
+                node.generators[1:] = [self.visit(generator) for generator in node.generators[1:]]
+                if isinstance(node, ast.DictComp):
+                    node.key = self.visit(node.key)
+                    node.value = self.visit(node.value)
+                else:
+                    node.elt = self.visit(node.elt)
         finally:
+            self.declared.pop()
             self.class_names.pop()
         return node
 
@@ -621,7 +668,12 @@ class Rewriter(ast.NodeTransformer):
             if declared and isinstance(node.ctx, ast.Del) and not isinstance(visited, ast.Name):
                 # `del` of a name a class body or a method declares `global`: the template's,
                 # where its assignment to it went (outside a class Chameleon can't compile one).
-                return ast.Subscript(value=_econtext(), slice=ast.Constant(node.id), ctx=ast.Del())
+                return ast.Subscript(value=self.econtext(), slice=ast.Constant(node.id), ctx=ast.Del())
+            if self.class_read(node) and not declared and not isinstance(visited, ast.Name):
+                # A name the body doesn't bind may be in the class's namespace all the same
+                # (`locals()['label'] = ...`, a metaclass's `__prepare__`): Python looks there
+                # first for every name a class body reads.
+                return self.class_first(node, visited)
             return visited
         if not isinstance(node.ctx, ast.Load) or self.lazy:
             return node
@@ -632,6 +684,18 @@ class Rewriter(ast.NodeTransformer):
         if isinstance(outside, ast.Name):
             # A plain name there too: Python looks in the class, the globals, the builtins.
             return node
+        return self.class_first(node, outside)
+
+    def class_read(self, node: ast.Name) -> bool:
+        """Whether ``node`` is a read in a class body of a name Python looks up in the class's
+        namespace first. Not one starting with `__`, which is mangled there and never the
+        scope's."""
+        return (
+            self.in_class_body() and isinstance(node.ctx, ast.Load) and not self.lazy and not node.id.startswith('__')
+        )
+
+    def class_first(self, node: ast.Name, outside: ast.AST) -> ast.AST:
+        """``node`` if the class body has it by then, and otherwise ``outside``."""
         bound = ast.Call(func=ast.Name(id='__rs_locals__', ctx=ast.Load()), args=[], keywords=[])
         test = ast.Compare(left=ast.Constant(node.id), ops=[ast.In()], comparators=[bound])
         return ast.IfExp(test=test, body=node, orelse=cast('ast.expr', outside))
@@ -680,7 +744,7 @@ class Rewriter(ast.NodeTransformer):
             return node
         if isinstance(node.ctx, ast.Store):
             self.writes.add(name)
-            return ast.Subscript(value=_econtext(), slice=ast.Constant(name), ctx=ast.Store())
+            return ast.Subscript(value=self.econtext(), slice=ast.Constant(name), ctx=ast.Store())
         if name in self.aliases:
             alias = self.aliases[name]
             if alias == TARGET_LANGUAGE:
@@ -689,18 +753,18 @@ class Rewriter(ast.NodeTransformer):
                 return self.transform(ast.Name(id='target_language', ctx=ast.Load()))
             return ast.Name(id=alias, ctx=ast.Load())
         self.reads.add(name)
-        get = ast.Attribute(value=_econtext(), attr='get', ctx=ast.Load())
+        get = ast.Attribute(value=self.econtext(), attr='get', ctx=ast.Load())
         if name in self.template_builtins:
             return ast.Call(func=get, args=[ast.Constant(name), _tpl(name, self.in_class())], keywords=[])
         if name in BUILTINS and rebound(name) in self.scopes[0]:
             # A builtin a code block assigned: still `get(name, name)`, its fallback that
             # render-local value (the expression runs in the code blocks' namespace).
             self.uses_locals = True
-            get = ast.Attribute(value=_econtext(), attr='get', ctx=ast.Load())
+            get = ast.Attribute(value=self.econtext(), attr='get', ctx=ast.Load())
             return ast.Call(func=get, args=[ast.Constant(name), node], keywords=[])
         if name in BUILTINS:
             return ast.Call(func=get, args=[ast.Constant(name), ast.Name(id=name, ctx=ast.Load())], keywords=[])
-        get_name = ast.Attribute(value=_econtext(), attr='get_name', ctx=ast.Load())
+        get_name = ast.Attribute(value=self.econtext(), attr='get_name', ctx=ast.Load())
         return ast.Call(func=get_name, args=[ast.Constant(name)], keywords=[])
 
 
@@ -956,6 +1020,34 @@ def _bindings(body: list[ast.stmt], class_body: bool = False) -> tuple[set[str],
         elif class_body:
             stack.extend(_header(node))
     return names, global_names
+
+
+NESTED = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+
+
+def _declared_nonlocal(body: list[ast.stmt]) -> set[str]:
+    """The names the statements declare ``nonlocal`` at their own level."""
+    names: set[str] = set()
+    stack: list[ast.AST] = list(body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.Nonlocal):
+            names.update(node.names)
+        elif not isinstance(node, NESTED):
+            stack.extend(ast.iter_child_nodes(node))
+    return names
+
+
+def _nonlocals(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+    """The names that are plain locals of the function ``node`` for a ``nonlocal``: the ones
+    it declares so itself, and the ones it binds that a function or class inside it does."""
+    inner = {name for n in ast.walk(node) if isinstance(n, ast.Nonlocal) for name in n.names}
+    if not inner:
+        return inner
+    args = node.args
+    params = (*args.posonlyargs, *args.args, args.vararg, *args.kwonlyargs, args.kwarg)
+    bound = _bindings(node.body)[0] | {arg.arg for arg in params if arg is not None}
+    return _declared_nonlocal(node.body) | (inner & bound)
 
 
 def _header(node: ast.AST) -> list[ast.expr]:

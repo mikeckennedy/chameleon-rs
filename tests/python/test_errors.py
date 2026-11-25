@@ -629,3 +629,36 @@ def test_error_in_a_slot_body_from_a_file(tmp_path: Path) -> None:
     entries = [(expression, line) for expression, _, line, _ in ENTRY.findall(message)]
     assert entries == [('len(items)', '3'), ('load: layout.pt', '1')]
     assert '<p tal:content="len(items)"/>' in message
+
+
+def test_a_global_definition_that_fails_to_unpack_defines_nothing() -> None:
+    # The local assignment comes first: `rcontext` got the whole row under each name before
+    # it, which the next macro copied into the scope.
+    source = (
+        '<i tal:on-error="string:bad row" tal:define="global (x,y) row"/>'
+        """<b metal:use-macro="layout"/>${x | 'missing'}"""
+    )
+
+    def render(engine: Any, row: Any) -> str:
+        return engine.PageTemplate(source)(row=row, layout=engine.PageTemplate(''))  # type: ignore[no-any-return]
+
+    assert render(chameleon_rs, [1]) == render(chameleon, [1]) == '<i>bad row</i>missing'
+    assert render(chameleon_rs, [1, 2]) == '<i/>1'
+
+
+@pytest.mark.parametrize('source', ['<i tal:repeat="(x,y) rows">${x}</i>', '<i tal:define="(x,y) rows[0]">${x}</i>'])
+@pytest.mark.parametrize('count', [1, 2, 3])
+def test_unpacking_raises_the_iterators_own_error(source: str, count: int) -> None:
+    # `next()` raised it: reported before a count that would have been one too many.
+    def rows() -> Any:
+        def row() -> Any:
+            yield from range(count)
+            raise RuntimeError('rows unavailable')
+
+        return [row()]
+
+    def result(engine: Any) -> tuple[Any, ...]:
+        return outcome(engine, source, rows=rows())
+
+    assert result(chameleon_rs)[:2] == result(chameleon)[:2]
+    assert result(chameleon_rs)[1] == ('RuntimeError' if count <= 2 else 'ValueError')

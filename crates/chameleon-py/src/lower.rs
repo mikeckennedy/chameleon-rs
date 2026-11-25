@@ -17,6 +17,10 @@ use chameleon_core::{DefaultAlias, ExprContext};
 use crate::compiler::PyExprCompiler;
 use crate::expr::{BinaryOp, CmpOp, Expr, UnaryOp, lookup_attr};
 
+/// Builtins that read the frame they are called from (with no argument, or always): not
+/// called natively, where there is no Python frame of the expression's.
+const FRAME_BUILTINS: [&str; 6] = ["locals", "vars", "dir", "globals", "eval", "exec"];
+
 impl<'py> PyExprCompiler<'_, 'py> {
     /// `NameTransform` for a name read in a Python expression (or `ProxyExpr`'s function):
     /// `None` when only the fallback can resolve it.
@@ -151,7 +155,15 @@ impl<'py> PyExprCompiler<'_, 'py> {
                 Expr::Attr(sub!(value), attr)
             }
             "Call" => {
-                let func = sub!(field!("func"));
+                let callee = field!("func");
+                if self::kind(&callee)? == "Name"
+                    && FRAME_BUILTINS.contains(&callee.getattr(intern!(py, "id"))?.extract::<String>()?.as_str())
+                {
+                    // They read the frame that calls them: the fallback's function, whose
+                    // locals hold `econtext` as Chameleon's render function's do.
+                    return Ok(None);
+                }
+                let func = sub!(callee);
                 let mut args = Vec::new();
                 for arg in field!("args").cast::<PyList>()?.iter() {
                     if self::kind(&arg)? == "Starred" {
@@ -165,7 +177,12 @@ impl<'py> PyExprCompiler<'_, 'py> {
                     if arg.is_none() {
                         return Ok(None);
                     }
-                    kwargs.push((intern_str(&arg)?, *sub!(kw.getattr(intern!(py, "value"))?)));
+                    let arg = intern_str(&arg)?;
+                    if kwargs.iter().any(|(seen, _): &(Py<PyString>, Expr)| seen.bind(py).is(arg.bind(py))) {
+                        // `f(x=1, x=2)`: a `SyntaxError` of the compiler's, not the parser's.
+                        return Ok(None);
+                    }
+                    kwargs.push((arg, *sub!(kw.getattr(intern!(py, "value"))?)));
                 }
                 Expr::Call { func, args, kwargs }
             }

@@ -622,7 +622,8 @@ impl Drop for Running {
     /// A render dropped before it ended leaves no task running (not attempted while the
     /// interpreter shuts down).
     fn drop(&mut self) {
-        let close_args = self.owns_args && !self.returned;
+        // Also when it returned: an argument the partial never used was never awaited.
+        let close_args = self.owns_args;
         if self.has_deferred() || close_args {
             Python::try_attach(|py| {
                 self.cancel_deferred(py);

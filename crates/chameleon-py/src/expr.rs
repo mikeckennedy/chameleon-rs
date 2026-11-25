@@ -19,6 +19,12 @@ use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyFrozenSet, PyInt, PyList, PySet, PySlice, PyString, PyTuple};
 use pyo3::{PyTraverseError, PyVisit};
 
+/// CPython's compiler (3.12 to 3.15, from its `STACK_USE_GUIDELINE` of 30): a dict display of
+/// up to `DICT_SMALL` pairs has them all on the stack before `BUILD_MAP`; a larger one is
+/// built `DICT_CHUNK` pairs at a time, each added as it is evaluated.
+const DICT_SMALL: usize = 15;
+const DICT_CHUNK: usize = 17;
+
 use chameleon_core::{Escape, FreeVars, Step};
 
 use crate::custom::Custom;
@@ -1188,27 +1194,27 @@ fn eval_more<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
                 BinaryOp::BitAnd => a.bitand(b),
             }
         }
+        // The last operand is the result as it is, never tested: `fallback or report` with a
+        // `report` whose `__bool__` raises (or is slow) is `report`.
         Expr::And(values) => {
-            let mut last = None;
-            for v in values {
+            let (last, rest) = values.split_last().ok_or_else(|| PyValueError::new_err("empty BoolOp"))?;
+            for v in rest {
                 let value = eval(v, cx)?;
                 if !value.is_truthy()? {
                     return Ok(value);
                 }
-                last = Some(value);
             }
-            last.ok_or_else(|| PyValueError::new_err("empty BoolOp"))
+            eval(last, cx)
         }
         Expr::Or(values) => {
-            let mut last = None;
-            for v in values {
+            let (last, rest) = values.split_last().ok_or_else(|| PyValueError::new_err("empty BoolOp"))?;
+            for v in rest {
                 let value = eval(v, cx)?;
                 if value.is_truthy()? {
                     return Ok(value);
                 }
-                last = Some(value);
             }
-            last.ok_or_else(|| PyValueError::new_err("empty BoolOp"))
+            eval(last, cx)
         }
         Expr::Compare(left, ops) => {
             let mut left = eval(left, cx)?;
@@ -1233,10 +1239,27 @@ fn eval_more<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
         }
         Expr::Tuple(items) => Ok(PyTuple::new(py, eval_all(items, cx)?)?.into_any()),
         Expr::Dict(items) => {
+            // CPython evaluates the keys and values of a small display before it builds the
+            // dict from them: in `{[]: 1, 'c': missing}` the `NameError` comes before the
+            // unhashable key's `TypeError`. A larger one adds each pair as it is evaluated,
+            // `DICT_CHUNK` at a time, and what is left over is a display of its own.
             let d = PyDict::new(py);
-            for (k, v) in items {
-                let k = eval(k, cx)?;
-                d.set_item(k, eval(v, cx)?)?;
+            let mut pairs = Vec::new();
+            for chunk in items.chunks(DICT_CHUNK) {
+                if chunk.len() > DICT_SMALL {
+                    for (k, v) in chunk {
+                        let k = eval(k, cx)?;
+                        d.set_item(k, eval(v, cx)?)?;
+                    }
+                    continue;
+                }
+                for (k, v) in chunk {
+                    let k = eval(k, cx)?;
+                    pairs.push((k, eval(v, cx)?));
+                }
+                for (k, v) in pairs.drain(..) {
+                    d.set_item(k, v)?;
+                }
             }
             Ok(d.into_any())
         }

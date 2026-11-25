@@ -112,23 +112,36 @@ class _Once:
     later use too, as a ``tal:define`` of it would be. A coroutine itself can be awaited only
     once, so ``<i>${v}${v}</i>`` in the partial would fail on the second ``${v}``."""
 
-    __slots__ = ('awaitable', 'error', 'result')
+    __slots__ = ('awaitable', 'error', 'result', 'waiters')
 
     def __init__(self, awaitable: Any) -> None:
         # Kept until awaited (`None` after), so an unstarted one can still be closed.
         self.awaitable: Any = awaitable
         self.result: Any = None
         self.error: Optional[BaseException] = None
+        # While the first use is awaiting it: the futures of the uses that overlap it
+        # (`asyncio.gather` of two reads), which got `None` before the result was there.
+        self.waiters: Optional[list[asyncio.Future[None]]] = None
 
     def __await__(self) -> Generator[Any, Any, Any]:
         awaitable = self.awaitable
         if awaitable is not None:
             self.awaitable = None
+            self.waiters = []
             try:
                 inner = awaitable.__await__() if hasattr(type(awaitable), '__await__') else awaitable
                 self.result = yield from inner
             except BaseException as e:  # noqa: BLE001 - kept for every later use, then raised
                 self.error = e
+            finally:
+                waiters, self.waiters = self.waiters, None
+                for waiter in waiters:
+                    if not waiter.done():
+                        waiter.set_result(None)
+        elif self.waiters is not None:
+            waiter = asyncio.get_running_loop().create_future()
+            self.waiters.append(waiter)
+            yield from waiter
         if self.error is not None:
             raise self.error
         return self.result
