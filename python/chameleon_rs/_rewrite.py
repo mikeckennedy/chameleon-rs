@@ -43,6 +43,9 @@ def _name_error(name: str) -> Any:
 
 # Module globals of Chameleon's generated code that a `__` name in an expression can reach,
 # and the helper that keeps our own names (`__rs_*`, `__lookup_attr`) out of reach.
+# The render's scope in the namespace code blocks run in, beside `econtext`: for a block that
+# binds `econtext` itself (see `Rewriter.econtext`).
+ECONTEXT = '__rs_econtext__'
 # The plain name a `match` statement's patterns read the scope's names through (see
 # `Rewriter.visit_Match`). Ours (`_ours`), and not mangled in a class: it ends in `__`.
 SCOPE_NAMES = '__rs_names__'
@@ -195,6 +198,13 @@ class Rewriter(ast.NodeTransformer):
         # How many comprehensions written in a class body the code is inside (see
         # `comprehension`).
         self.comprehensions = 0
+        # Whether the code block binds `econtext` somewhere (see `econtext`).
+        self.own_econtext = False
+        # Inside a generator expression written in a class body: the classes being defined,
+        # which it reads once they are bound if it runs later (see `lookup`).
+        self.late: frozenset[str] = frozenset()
+        # The parameters and `nonlocal` locals of each function being visited.
+        self.function_locals: list[set[str]] = []
         # The names of the handlers of the `try` being visited that were plain names already
         # (see `visit_Try`).
         self.unbound: list[str] = []
@@ -258,9 +268,12 @@ class Rewriter(ast.NodeTransformer):
                     # name it or a function inside it declares `nonlocal` is a local of the
                     # function that binds it, not a store in the scope, which `nonlocal`
                     # can't name (`SyntaxError: no binding for nonlocal`, in Chameleon too).
-                    with self.plain(self.defining), self.plain(_nonlocals(node)):
+                    nonlocals = _nonlocals(node)
+                    self.function_locals.append(nonlocals | _parameters(node.args))
+                    with self.plain(self.defining), self.plain(nonlocals):
                         node.body = self.statements(node.body)
                 finally:
+                    self.function_locals.pop()
                     self.functions -= 1
                     self.declared.pop()
                     self.class_names.pop()
@@ -372,9 +385,11 @@ class Rewriter(ast.NodeTransformer):
         Chameleon's generated code looks names up through a function bound beforehand, which
         such a name doesn't hide (`class C: econtext = 1; v = a` called `get_name` on `1`).
         Anywhere in a class body, whose namespace may hold one the code never names
-        (`locals()['econtext'] = 1`)."""
-        if self.code_block and (self.in_class_body() or 'econtext' in self.scopes[-1]):
-            return ast.Subscript(value=_globals(), slice=ast.Constant('econtext'), ctx=ast.Load())
+        (`locals()['econtext'] = 1`), and anywhere in a block that binds the name at all
+        (`econtext = 1`, `for econtext in ...`, a lambda inside `def m(self, econtext)`). Under
+        a name of ours, which an assignment at the block's top level doesn't replace."""
+        if self.code_block and (self.own_econtext or self.in_class_body() or 'econtext' in self.scopes[-1]):
+            return ast.Subscript(value=_globals(), slice=ast.Constant(ECONTEXT), ctx=ast.Load())
         return _econtext()
 
     def is_global(self, name: str) -> bool:
@@ -451,7 +466,11 @@ class Rewriter(ast.NodeTransformer):
             node.body = [bind, ast.Try(body=body, handlers=[], orelse=[], finalbody=clear)]
             return node
         with self.plain(filter(None, [node.name])) as added:
-            if node.name is not None and not added and not self.in_class() and node.name not in self.unbound:
+            # Not a parameter or a `nonlocal` local of a function around the handler: Python's
+            # own local, unbound after the handler, in Chameleon too.
+            local = any(node.name in names for names in self.function_locals)
+            rebinds = node.name is not None and not added and not local and not self.in_class()
+            if node.name is not None and rebinds and node.name not in self.unbound:
                 self.unbound.append(node.name)
             node.body = self.statements(node.body)
         return node
@@ -653,6 +672,10 @@ class Rewriter(ast.NodeTransformer):
         self.class_names.append(None)
         self.declared.append(set())
         self.comprehensions += 1
+        late = self.late
+        if isinstance(node, ast.GeneratorExp) and self.functions == 0:
+            # It may run after the class statement, when the class is bound.
+            self.late = late | self.defining
         try:
             with self.plain(targets):
                 first.target = self.visit(first.target)
@@ -664,6 +687,7 @@ class Rewriter(ast.NodeTransformer):
                 else:
                     node.elt = self.visit(node.elt)
         finally:
+            self.late = late
             self.comprehensions -= 1
             self.declared.pop()
             self.class_names.pop()
@@ -742,6 +766,12 @@ class Rewriter(ast.NodeTransformer):
             if len(self.scopes) == 1:
                 self.uses_locals = True
             return node
+        if node.id in self.late and isinstance(node.ctx, ast.Load):
+            # The class, a name of the namespace once its statement has run; until then what
+            # the name is outside it.
+            bound = ast.Compare(left=ast.Constant(node.id), ops=[ast.In()], comparators=[_globals()])
+            value = ast.Subscript(value=_globals(), slice=ast.Constant(node.id), ctx=ast.Load())
+            return ast.IfExp(test=bound, body=value, orelse=cast('ast.expr', self.transform(node)))
         return self.transform(node)
 
     def transform(self, node: ast.Name) -> ast.AST:
@@ -768,6 +798,10 @@ class Rewriter(ast.NodeTransformer):
             # which a `def`, a parameter or an import makes (those stay plain names).
             if isinstance(node.ctx, ast.Store):
                 self.scopes[-1].add(rebound(name))
+                if self.is_global(name):
+                    # The namespace's, for the rest of the template (see `stored`).
+                    self.scopes[0].add(rebound(name))
+                    self.kept.add(rebound(name))
             return node
         if isinstance(node.ctx, ast.Store):
             self.writes.add(name)
@@ -1013,6 +1047,7 @@ def compile_code(
     # code block doesn't go through. (It also turned `obj.name = 1` into an assignment to a
     # call, a `SyntaxError`.)
     rewriter = Rewriter({}, template_builtins, local_names=local_names, code_block=True, attributes=False)
+    rewriter.own_econtext = _binds(tree, 'econtext')
     body = rewriter.statements(tree.body)
     bound_names.update(_bindings(body)[0])
     module = ast.fix_missing_locations(ast.Module(body=body, type_ignores=[]))
@@ -1027,7 +1062,7 @@ def _bindings(body: list[ast.stmt], class_body: bool = False) -> tuple[set[str],
     lambda or comprehension), and the names they declare ``global``.
 
     For a ``class_body``, all that makes a name the class's: also a ``match`` capture, a
-    ``del``, and a walrus in what a nested function, lambda or class evaluates in the body
+    ``del``, an ``except ... as`` name, and a walrus in what a nested function, lambda or class evaluates in the body
     (decorators, defaults, bases). A name the body declares ``global`` is not the class's."""
     names: set[str] = set()
     global_names: set[str] = set()
@@ -1046,6 +1081,8 @@ def _bindings(body: list[ast.stmt], class_body: bool = False) -> tuple[set[str],
             names.update(_captures(node.pattern))
         elif class_body and isinstance(node, ast.Name) and isinstance(node.ctx, ast.Del):
             names.add(node.id)
+        elif class_body and isinstance(node, ast.ExceptHandler) and node.name is not None:
+            names.add(node.name)
         elif isinstance(node, ast.Global):
             global_names.update(node.names)
         if not isinstance(node, nested):
@@ -1071,17 +1108,41 @@ def _declared_nonlocal(body: list[ast.stmt]) -> set[str]:
     return names
 
 
+def _parameters(args: ast.arguments) -> set[str]:
+    params = (*args.posonlyargs, *args.args, args.vararg, *args.kwonlyargs, args.kwarg)
+    return {arg.arg for arg in params if arg is not None}
+
+
+def _binds(tree: ast.AST, name: str) -> bool:
+    """Whether code anywhere in ``tree`` binds ``name``, in whatever scope and way."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            bound = None if isinstance(node.ctx, ast.Load) else node.id
+        elif isinstance(node, ast.arg):
+            bound = node.arg
+        elif isinstance(node, ast.alias):
+            bound = node.asname or node.name.split('.')[0]
+        elif isinstance(node, ast.MatchMapping):
+            bound = node.rest
+        elif isinstance(node, (ast.Global, ast.Nonlocal)):
+            bound = name if name in node.names else None
+        else:
+            # A function, a class, a handler, a capture, a type parameter.
+            bound = getattr(node, 'name', None)
+        if bound == name:
+            return True
+    return False
+
+
 def _nonlocals(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
     """The names that are plain locals of the function ``node`` for a ``nonlocal``: the ones
     it declares so itself, and the ones it binds that a function or class inside it does."""
     inner = {name for n in ast.walk(node) if isinstance(n, ast.Nonlocal) for name in n.names}
     if not inner:
         return inner
-    args = node.args
-    params = (*args.posonlyargs, *args.args, args.vararg, *args.kwonlyargs, args.kwarg)
-    bound = _bindings(node.body)[0] | {arg.arg for arg in params if arg is not None}
-    # Also what a statement-level scan for stores misses: a `match` capture, and a walrus in
-    # a comprehension, which binds its target in the function around it.
+    bound = _bindings(node.body)[0] | _parameters(node.args)
+    # Also what a statement-level scan for stores misses: a `match` capture, a `del`, and a
+    # walrus in a comprehension, which binds its target in the function around it.
     stack: list[ast.AST] = list(node.body)
     while stack:
         child = stack.pop()
@@ -1089,6 +1150,8 @@ def _nonlocals(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
             bound.update(_captures(child.pattern))
         elif isinstance(child, ast.NamedExpr):
             bound.add(child.target.id)
+        elif isinstance(child, ast.Name) and isinstance(child.ctx, ast.Del):
+            bound.add(child.id)
         if not isinstance(child, NESTED):
             stack.extend(ast.iter_child_nodes(child))
     return _declared_nonlocal(node.body) | (inner & bound)

@@ -252,6 +252,12 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
             while namespaces.last().is_some_and(|(serial, _)| *serial > frame.serial) {
                 namespaces.pop();
             }
+            // A slot body's is the one of the function that defined its fill.
+            if let Some(names) = frame.names
+                && namespaces.last().is_none_or(|(serial, _)| *serial != frame.serial)
+            {
+                namespaces.push((frame.serial, names.bind(py).cast::<PyDict>()?.clone()));
+            }
         }
         let i18n = frame.i18n;
         let plain = i18n.domain.is_none()
@@ -871,6 +877,10 @@ impl<const ASYNC: bool> Macros for PyRuntime<'_, '_, ASYNC> {
     fn fill_slot(&mut self, name: &str, fill: Fill<Py<PyAny>>, extend: bool) -> PyResult<()> {
         let py = self.py;
         let key = self.slot_key(name)?;
+        // The body shares this function's code-block namespace, if it has made one.
+        let serial = self.frame.serial;
+        let names = self.render.namespaces.borrow().iter().rev().find(|(k, _)| *k == serial).map(|(_, ns)| ns.clone());
+        let fill = Fill { names: names.map(|ns| ns.into_any().unbind()), ..fill };
         let fill = Py::new(py, SlotFill::new(fill))?;
         if extend && let Some(stack) = Scope::lookup(&self.scope, key.as_any())? {
             // `_slots = getname(KEY)` succeeded: `_slots.appendleft(fill)`.

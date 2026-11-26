@@ -45,17 +45,24 @@ Rendering:
 
 Async rendering:
 
-- **Overlapping reads of a partial's awaitable argument** (`asyncio.gather` of two reads) all get its value; the second reader got `None`.
+- **Overlapping reads of a partial's awaitable argument** (`asyncio.gather` of two reads) all get its value; the second reader got `None`. If the first reader is cancelled, the others get `RuntimeError: cannot reuse already awaited coroutine`, not a cancellation of their own.
 - **One coroutine passed under two keywords of a partial** (`a=v, b=v`) is awaited once; it raised `RuntimeError: cannot reuse already awaited coroutine`.
 - **A coroutine argument a partial never uses is closed** once nothing holds it any more, as is one made for a call whose later keyword fails. A render that went well warned that the coroutine was never awaited. A coroutine something else still holds is left alone: one a helper kept to await later, or one from the render data, which a partial that is not found used to close.
 
 `<?python ?>` blocks:
 
+- **A slot fill sees what a code block defined.** With helpers or imports in a `<?python ?>` block at the top of a page and the content in a layout's `metal:fill-slot`, `${fmt(x)}` in the fill raised `UnboundLocalError`. The fill now shares the namespace of the function that defines it, as Chameleon's closure does.
+- **So do the arguments of a native `render_partial` call**: `${render_partial('card.pt', v=fmt(x))}` raised `NameError: fmt`.
+- **A parameter named like a template builtin** (`def f(template)`, `nothing`, `macros`) no longer breaks later reads of that builtin.
 - **A comprehension in a class body** no longer stores its targets in the template scope: `values = [a for a in items]` left the render data's `a` as the last item. Nor does a comprehension inside it.
-- **A class attribute or a parameter named `econtext`** no longer breaks name lookups after it (`AttributeError: 'str' object has no attribute 'get_name'`), however the class came to have it.
+- **A class attribute or a parameter named `econtext`** no longer breaks name lookups after it (`AttributeError: 'str' object has no attribute 'get_name'`), however the class came to have it. Nor does any other binding of the name in a block: `econtext = ...`, a loop target.
 - **A class body reads its own namespace first for every name**, so one put there by `locals()['label'] = ...` or a metaclass's `__prepare__` is found.
-- **`nonlocal` works.** It was a `SyntaxError`, in Chameleon too, because the enclosing function's assignment was a store in the scope. That includes a name the function binds with a `match` capture or a walrus in a comprehension.
+- **`nonlocal` works.** It was a `SyntaxError`, in Chameleon too, because the enclosing function's assignment was a store in the scope. That includes a name the function binds with a `match` capture, a `del` or a walrus in a comprehension.
 - **`except E as name` for a name declared `global`** in a class body or a method unbinds the template's name when the handler ends; render data of that name outlived it.
+- **A generator expression in a class body that runs after the class statement** reads the class by its name; it raised `NameError` or read render data of that name.
+- **`except E as name` in a class body** makes `name` the class's own, so a read of it before the handler no longer picks up an enclosing parameter or type parameter.
+- **`except E as a` on a function's own parameter** leaves it unbound after the handler, as in Python and Chameleon; the render data's `a` was read.
+- **`global len` followed by an assignment to `len` in a method** rebinds the builtin for the rest of the template, as a `def` of it did.
 - **A `match` capture is bound when its guard is false**, as in Python, and keeps a value the guard itself assigns to it.
 - **A `type` statement can name itself**: `type Tree = list[Tree]` raised `NameError`, and `type Alias = Alias` read render data of that name.
 - **A name a class body binds is, until then, the template's** wherever the class is: inside a generic class or a function, an enclosing type parameter, parameter or local of that name was read instead (`def f(a): class C: x = a; a = 1`), a `NameError` with `a` in the render data.

@@ -10,7 +10,7 @@ import itertools
 import os
 import warnings
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import chameleon
 import chameleon.astutil
@@ -1397,6 +1397,33 @@ CLASS_BODIES = [
     # An `econtext` put in the class's namespace doesn't hide the scope.
     'class C:\n    locals()["econtext"] = 42\n    w = a\n    a = 5\n    y = a\nres = (C.w, C.y)',
     'class C:\n    locals()["econtext"] = 42\n    global g\n    g = 3\n    w = [a for _ in (1,)]\nres = (g, C.w)',
+    # Nor does one the block binds anywhere: a local, a loop target, a parameter around a lambda.
+    'class C:\n    def m(self, econtext):\n        return (lambda: a)()\nres = C().m(1)',
+    'class C:\n    def m(self):\n        econtext = "test"\n        return (a, econtext)\nres = C().m()',
+    'def m():\n    r = 0\n    for econtext in items:\n        r = a + econtext\n    return r\nres = m()',
+    'def f():\n    econtext = "test"\n    class C:\n        w = a\n    return C.w\nres = f()',
+    'econtext = "test"\nres = a',
+    # A name a function only deletes is its local for a `nonlocal`.
+    (
+        'class C:\n    def m(self):\n        if False:\n            del a\n        def init():\n'
+        '            nonlocal a\n            a = 42\n        init()\n        return a\nres = C().m()'
+    ),
+    # A generator expression that runs after the class statement reads the class.
+    'class Base:\n    gen = (Base for _ in [1])\nres = list(Base.gen)[0] is Base',
+    'class Point:\n    gen = (Point for _ in [1])\nres = list(Point.gen)[0] is Point',
+    'class Point:\n    now = tuple(Point for _ in [1])\nres = Point.now[0] is Point',
+    # An `except ... as` name is the class body's own.
+    'class Box[a]:\n    b = a\n    try:\n        pass\n    except Fault as a:\n        pass\nres = Box.b',
+    (
+        'def f(a):\n    class C:\n        try:\n            1 / 0\n        except Fault as a:\n            pass\n'
+        '        b = a\n    return C.b\nres = f(1)'
+    ),
+    # A handler unbinds a parameter or a `nonlocal` local of the function it is in.
+    'def f(a):\n    try:\n        1 / 0\n    except Fault as a:\n        pass\n    return a\nres = f(42)',
+    (
+        'def f():\n    a = 1\n    def g():\n        nonlocal a\n        try:\n            1 / 0\n'
+        '        except Fault as a:\n            pass\n        return a\n    return g()\nres = f()'
+    ),
 ]
 
 
@@ -1725,3 +1752,99 @@ def test_frame_builtins_see_what_a_code_block_defined(expression: str, wrap: str
             return f'NameError: {str(e).splitlines()[0]}'
 
     assert outcome(chameleon_rs) == outcome(chameleon)
+
+
+CODE_BLOCK = '<?python\nimport os\ndef fmt(x):\n    return f"[{x}]"\n?>'
+LAYOUT = (
+    '<div metal:define-macro="wrap"><span metal:define-slot="body"/>|<span metal:define-slot="foot">f</span></div>'
+    '<div metal:define-macro="outer"><div metal:use-macro="macros.wrap">'
+    '<b metal:fill-slot="body"><i metal:define-slot="inner"/></b></div></div>'
+)
+
+
+@pytest.mark.parametrize(
+    'body',
+    [
+        (
+            '<div metal:use-macro="layout.macros.wrap"><b metal:fill-slot="body">${fmt(42)}</b>'
+            '<u metal:fill-slot="foot">${os.sep}</u></div>'
+        ),
+        # A fill passed on through a second macro, in a loop, and a fill inside a fill.
+        '<div metal:use-macro="layout.macros.outer"><b metal:fill-slot="inner">${fmt(7)}</b></div>',
+        (
+            '<i tal:repeat="i (1, 2)"><div metal:use-macro="layout.macros.wrap">'
+            '<b metal:fill-slot="body">${fmt(i)}</b></div></i>'
+        ),
+        (
+            '<div metal:use-macro="layout.macros.wrap"><b metal:fill-slot="body"><div metal:use-macro="layout.macros.wrap">'
+            '<b metal:fill-slot="body">${fmt(1)}</b></div>${fmt(2)}</b></div>${fmt(3)}'
+        ),
+        # A code block in the fill itself, and one in a macro of the template.
+        (
+            '<div metal:use-macro="layout.macros.wrap"><b metal:fill-slot="body">'
+            '<?python\ndef g(): return fmt(5)\n?>${g()}</b></div>${fmt(0)}'
+        ),
+        (
+            '<div metal:define-macro="m"><?python\ndef h(): return 9\n?><div metal:use-macro="layout.macros.wrap">'
+            '<b metal:fill-slot="body">${h()}</b></div></div><x metal:use-macro="template.macros.m"/>${fmt(1)}'
+        ),
+    ],
+)
+@pytest.mark.parametrize('layout_engine', [chameleon, chameleon_rs])
+def test_a_slot_fill_sees_what_a_code_block_defined(body: str, layout_engine: Any) -> None:
+    # Chameleon's fill is a closure of the function that defines it, so it reads the `def`s
+    # and imports of a code block there. Ours ran with a namespace of its own: the usual
+    # page (helpers at the top, content in a layout's slot) raised `UnboundLocalError`.
+    def render(engine: Any) -> str:
+        layout = layout_engine.PageTemplate(LAYOUT)
+        return engine.PageTemplate(CODE_BLOCK + body)(layout=layout)  # type: ignore[no-any-return]
+
+    assert render(chameleon_rs) == render(chameleon)
+
+
+@pytest.mark.parametrize(
+    ('source', 'expected'),
+    [
+        ('${render_partial("item.pt", v=fmt(21))}', '<li>[21]</li>'),
+        ('${render_partial("it" + os.path.basename("em.pt"), v=os.sep)}', f'<li>{os.sep}</li>'),
+        ('<i tal:repeat="i (1, 2)">${render_partial("item.pt", v=fmt(i) + fmt(a))}</i>', None),
+    ],
+)
+def test_a_partials_arguments_see_what_a_code_block_defined(
+    source: str, expected: Optional[str], tmp_path: Path
+) -> None:
+    # The native partial call lowered its arguments before the check for a code block's
+    # names: `fmt` was looked up in the scope, a `NameError`.
+    (tmp_path / 'item.pt').write_text('<li>${v}</li>')
+    chameleon_rs.configure(template_folder=str(tmp_path))
+    try:
+        out = chameleon_rs.PageTemplate(CODE_BLOCK + source)(a=3)
+    finally:
+        chameleon_rs._settings.clear()
+    assert out == (expected or '<i><li>[1][3]</li></i>\n<i><li>[2][3]</li></i>')
+
+
+@pytest.mark.parametrize(
+    'source',
+    [
+        '<?python\ndef f(template):\n    return template\n?>${template is not None}|${f(3)}',
+        '<?python\ndef f(nothing):\n    return 1\n?><b tal:content="nothing">x</b>',
+        '<?python\ndef f(macros):\n    return 1\n?>${macros is not None}',
+        (
+            '<?python\ndef f(template):\n    return 1\n?><i metal:define-macro="m">${template is not None}</i>'
+            '<x metal:use-macro="template.macros.m"/>'
+        ),
+    ],
+)
+def test_a_parameter_named_like_a_template_builtin_leaves_the_builtin(source: str) -> None:
+    # A parameter stays a plain name for the rest of the template, and a plain `template`
+    # is a global of Chameleon's generated module. Ours had no such global: `NameError`.
+    assert chameleon_rs.PageTemplate(source)() == chameleon.PageTemplate(source)()
+
+
+def test_a_builtin_assigned_as_a_global_in_a_method_is_rebound() -> None:
+    # As `global len` with `def len` in a method already was.
+    source = (
+        '<?python\nclass C:\n    def m(self):\n        global len\n        len = lambda xs: 999\nC().m()\n?>${len([1])}'
+    )
+    assert chameleon_rs.PageTemplate(source)() == '999'

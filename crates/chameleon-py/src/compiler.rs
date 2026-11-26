@@ -172,7 +172,7 @@ pub(crate) struct PyExprCompiler<'a, 'py> {
     pub(crate) free: Vec<FreeVars>,
     /// Names `<?python ?>` blocks defined so far (`def` names, their parameters, imports):
     /// plain names in every later expression, which then runs in the render's namespace.
-    local_names: Option<Bound<'py, PySet>>,
+    pub(crate) local_names: Option<Bound<'py, PySet>>,
     /// The ones the render function itself binds.
     bound_names: Option<Bound<'py, PySet>>,
     /// The scope names expressions mention (see `Program::full_scope`).
@@ -526,7 +526,7 @@ impl<'a, 'py> PyExprCompiler<'a, 'py> {
     }
 
     /// The exact fallback: Chameleon's rewriting applied to the tree, compiled to a function.
-    fn fallback(&mut self, tree: &Bound<'py, PyAny>, cx: ExprContext<'_>) -> PyResult<Expr> {
+    pub(crate) fn fallback(&mut self, tree: &Bound<'py, PyAny>, cx: ExprContext<'_>) -> PyResult<Expr> {
         let yields = self.py.import(intern!(self.py, "chameleon_rs._rewrite"))?.getattr(intern!(self.py, "yields"))?;
         if yields.call1((tree,))?.is_truthy()? {
             self.generator = true;

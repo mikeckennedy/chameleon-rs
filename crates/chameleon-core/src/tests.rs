@@ -494,6 +494,7 @@ impl Macros for World {
             },
             slots: f.slots.clone(),
             helpers: None,
+            names: None,
         }))
     }
 }

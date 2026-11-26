@@ -84,8 +84,8 @@ impl<'py> PyExprCompiler<'_, 'py> {
         if args.len() != 1 || kind(&args.get_item(0)?)? == "Starred" {
             return Ok(None);
         }
-        let Some(call) = self.lower(node, cx)? else { return Ok(None) };
-        let Some(path) = self.lower(&args.get_item(0)?, cx)? else { return Ok(None) };
+        let Some(call) = self.part(node, cx)? else { return Ok(None) };
+        let Some(path) = self.part(&args.get_item(0)?, cx)? else { return Ok(None) };
         let mut kwargs = Vec::with_capacity(keywords.len());
         for kw in keywords.iter() {
             let arg = kw.getattr(intern!(py, "arg"))?;
@@ -94,10 +94,25 @@ impl<'py> PyExprCompiler<'_, 'py> {
             if arg.is_none() || matches!(arg.extract::<String>()?.as_str(), "translate" | "encoding") {
                 return Ok(None);
             }
-            let Some(value) = self.lower(&kw.getattr(intern!(py, "value"))?, cx)? else { return Ok(None) };
+            let Some(value) = self.part(&kw.getattr(intern!(py, "value"))?, cx)? else { return Ok(None) };
             kwargs.push((intern_str(&arg)?, value));
         }
         Ok(Some(Expr::Partial { path: Box::new(path), kwargs, call: Box::new(call) }))
+    }
+
+    /// A part of a `render_partial` call (its path, an argument, the call itself). Once a
+    /// code block has defined names, each part goes through the fallback, whose rewriter
+    /// knows them: lowered, `v=helper(21)` looked `helper` up in the scope, a `NameError`.
+    fn part(&mut self, node: &Bound<'py, PyAny>, cx: ExprContext<'_>) -> PyResult<Option<Expr>> {
+        if self.local_names.as_ref().is_none_or(PySetMethods::is_empty) {
+            return self.lower(node, cx);
+        }
+        let py = self.py;
+        // A copy: the rewriter changes the tree it is given, and the parts share nodes (the
+        // call holds its arguments).
+        let node = py.import(intern!(py, "copy"))?.getattr(intern!(py, "deepcopy"))?.call1((node,))?;
+        let tree = py.import(intern!(py, "ast"))?.getattr(intern!(py, "Expression"))?.call1((node,))?;
+        self.fallback(&tree, cx).map(Some)
     }
 
     /// Lowers an `ast` node to the fast-path tree; `None` if any part is not on the whitelist.

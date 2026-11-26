@@ -1364,10 +1364,19 @@ fn eval_ns<'py>(code: &NsCode, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> 
         let lookup = wrap_pyfunction!(py_lookup_attr, py)?;
         let ns = utils_attr(py, &NAMESPACE, "chameleon_rs._rewrite", "namespace")?.call1((lookup, defaults))?;
         let ns = ns.cast_into::<PyDict>()?;
+        // The template builtins are globals of Chameleon's generated module: a name a code
+        // block made a plain one (`def f(template)`) reads them there afterwards.
+        for (name, value) in cx.builtins().iter() {
+            if !ns.contains(&name)? {
+                ns.set_item(name, value)?;
+            }
+        }
         cx.render.namespaces.borrow_mut().push((key, ns.clone()));
         ns
     };
     ns.set_item(intern!(py, "econtext"), cx.scope)?;
+    // Again under a name of ours, for a block that binds `econtext` (`_rewrite.ECONTEXT`).
+    ns.set_item(intern!(py, "__rs_econtext__"), cx.scope)?;
     ns.set_item(intern!(py, "rcontext"), cx.rcontext())?;
     ns.set_item(intern!(py, "__rs_default"), cx.marker())?;
     ns.set_item(intern!(py, "__rs_tpl"), cx.builtins())?;

@@ -1441,6 +1441,42 @@ def test_overlapping_reads_of_a_partials_argument_get_the_same_value(tmp_path: P
 
 
 @pytest.mark.parametrize('fan_out', [False, True])
+def test_a_cancelled_reader_of_a_partials_argument_does_not_cancel_the_others(tmp_path: Path, fan_out: bool) -> None:
+    # The first reader's `CancelledError` (or the `GeneratorExit` of closing it) was kept as
+    # the argument's error and raised in every other reader: cancellations nobody asked for,
+    # which end the render past `tal:on-error`.
+    async def read(value: Any) -> Any:
+        return await value
+
+    async def cancel_first(value: Any) -> str:
+        first = asyncio.create_task(read(value))
+        second = asyncio.create_task(read(value))
+        await asyncio.sleep(0)
+        first.cancel()
+        results = await asyncio.gather(first, second, return_exceptions=True)
+        return '|'.join(type(r).__name__ for r in results)
+
+    async def close_first(value: Any) -> str:
+        reader = value.__await__()
+        next(reader)
+        reader.close()
+        return str(await value)
+
+    async def slow() -> str:
+        await asyncio.sleep(0.01)
+        return 'V'
+
+    (tmp_path / 'p.pt').write_text('<b tal:on-error="string:handled">${use(v)}</b>')
+    chameleon_rs.configure(template_folder=str(tmp_path))
+    try:
+        page = PageTemplate('${render_partial("p.pt", v=slow(), use=use)}', concurrent=fan_out)
+        assert run(page.render_async(slow=slow, use=cancel_first)) == '<b>CancelledError|RuntimeError</b>'
+        assert run(page.render_async(slow=slow, use=close_first)) == '<b>handled</b>'
+    finally:
+        chameleon_rs._settings.clear()
+
+
+@pytest.mark.parametrize('fan_out', [False, True])
 def test_one_coroutine_under_two_keywords_of_a_partial_is_awaited_once(tmp_path: Path, fan_out: bool) -> None:
     (tmp_path / 'p.pt').write_text('${a}|${b}|${a}')
     chameleon_rs.configure(template_folder=str(tmp_path))

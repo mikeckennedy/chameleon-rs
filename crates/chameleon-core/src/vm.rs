@@ -881,6 +881,11 @@ pub struct Fill<V> {
     /// (see [`Extra::helpers`]). `None` for a fill defined in a render function (main or
     /// macro): its helpers use `i18n`.
     pub helpers: Option<Box<I18n<V>>>,
+    /// What the function that defines it keeps for its code blocks (their namespace), which
+    /// the body shares: Chameleon's fill is a closure of that function, so it reads the
+    /// `def`s and imports of a `<?python ?>` block there. Set by the runtime when the fill is
+    /// registered ([`Macros::fill_slot`]); `None` when that function has none yet.
+    pub names: Option<V>,
 }
 
 /// A render function's i18n settings: Chameleon's `__i18n_domain`, `__i18n_context` and
@@ -901,6 +906,8 @@ pub struct Active<'a, V> {
     /// Unique within a render: what per-frame runtime state (a code block's namespace) is
     /// keyed by.
     pub serial: u64,
+    /// For a slot body: its fill's [`Fill::names`].
+    pub names: Option<&'a V>,
     pub i18n: &'a I18n<V>,
 }
 
@@ -1348,11 +1355,13 @@ struct Extra<V> {
     /// runs the body), so this is `None` until the body changes its own
     /// ([`VmState::keep_helpers`]), or set from the fill for a fill defined in a slot body.
     helpers: Option<Box<I18n<V>>>,
+    /// For a slot body: its fill's [`Fill::names`].
+    names: Option<V>,
 }
 
 impl<V> Extra<V> {
     fn new(i18n: I18n<V>) -> Self {
-        Self { i18n, slots: Vec::new(), helpers: None }
+        Self { i18n, slots: Vec::new(), helpers: None, names: None }
     }
 
     /// Drops the values it holds (it goes back to the spare boxes).
@@ -1360,6 +1369,7 @@ impl<V> Extra<V> {
         self.i18n = I18n { domain: None, context: None, target_language: None };
         self.slots.clear();
         self.helpers = None;
+        self.names = None;
     }
 }
 
@@ -1685,7 +1695,7 @@ impl<V> VmState<V> {
                 extra.helpers = helpers;
                 extra
             }
-            None => Box::new(Extra { i18n, slots, helpers }),
+            None => Box::new(Extra { i18n, slots, helpers, names: None }),
         }
     }
 
@@ -1727,9 +1737,9 @@ enum Action<V> {
     Suspend(V, u32),
 }
 
-/// What a slot body's frame gets from its fill: its own i18n settings and its helpers'
-/// settings ([`Fill::helpers`]).
-type FillFrame<V> = (I18n<V>, Option<Box<I18n<V>>>);
+/// What a slot body's frame gets from its fill: its own i18n settings, its helpers' settings
+/// ([`Fill::helpers`]) and the code-block namespace it shares ([`Fill::names`]).
+type FillFrame<V> = (I18n<V>, Option<Box<I18n<V>>>, Option<V>);
 
 /// A frame to push: the call, where the caller continues, and the frame's details.
 struct Pushed<V> {
@@ -1774,7 +1784,8 @@ fn helpers_of<V>(frame: &Frame<V>) -> Option<&I18n<V>> {
 fn activate<R: Runtime>(rt: &mut R, st: &mut VmState<Val<R>>) -> Result<(), VmError<Err<R>>> {
     let Some(frame) = st.frames.last() else { return Ok(()) };
     let i18n = frame.i18n(&st.none);
-    rt.activate(Active { code: &frame.code, scope: &frame.scope, serial: frame.serial, i18n })
+    let names = frame.extra.as_ref().and_then(|e| e.names.as_ref());
+    rt.activate(Active { code: &frame.code, scope: &frame.scope, serial: frame.serial, names, i18n })
         .map_err(VmError::Runtime)?;
     if st.helpers_any {
         activate_helpers(rt, st).map_err(VmError::Runtime)?;
@@ -2029,7 +2040,7 @@ fn push_frame<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, pushed: Pushed<V
         return Ok(());
     }
     let Some(caller) = st.frames.last() else { return Err(VmError::Internal("call without a caller")) };
-    let (i18n, helpers) = if let Some(fill) = fill {
+    let (i18n, helpers, names) = if let Some(fill) = fill {
         fill
     } else {
         let i18n = caller.i18n(&st.none);
@@ -2038,10 +2049,12 @@ fn push_frame<R: Runtime>(st: &mut VmState<Val<R>>, rt: &mut R, pushed: Pushed<V
             context: i18n.context.clone(),
             target_language: i18n.target_language.as_ref().map(|t| rt.clone_value(t)),
         };
-        (i18n, None)
+        (i18n, None, None)
     };
     let extra = if kind == Kind::Fill || !is_plain(&i18n) || !slots.is_empty() {
-        Some(st.extra(i18n, slots, helpers))
+        let mut extra = st.extra(i18n, slots, helpers);
+        extra.names = names;
+        Some(extra)
     } else {
         None
     };
@@ -2703,7 +2716,7 @@ fn execute_rare<R: Runtime>(
                     on_return: OnReturn::Nothing,
                     kind: Kind::Fill,
                     slots: fill.slots,
-                    fill: Some((fill.i18n, fill.helpers)),
+                    fill: Some((fill.i18n, fill.helpers, fill.names)),
                     reset_token: false,
                 })));
             }
@@ -2729,6 +2742,7 @@ fn execute_rare<R: Runtime>(
                 } else {
                     None
                 },
+                names: None,
             };
             rt.fill_slot(&f.name, fill, f.extend).map_err(rt_err)?;
         }

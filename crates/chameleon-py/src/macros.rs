@@ -120,6 +120,7 @@ impl MacroInclude {
             rcontext,
             (i18n, None),
             Vec::new(),
+            None,
         )?;
         stream.call_method1(pyo3::intern!(py, "append"), (text,))?;
         Ok(())
@@ -148,6 +149,8 @@ pub(crate) struct SlotFill {
     /// The i18n settings of the render function around a fill defined in a slot body
     /// (`Fill::helpers`).
     helpers: Option<Box<I18n<Py<PyAny>>>>,
+    /// The code-block namespace of the function that defines it (`Fill::names`).
+    names: Option<Py<PyAny>>,
 }
 
 impl SlotFill {
@@ -161,6 +164,7 @@ impl SlotFill {
             target_language: fill.i18n.target_language,
             slots: fill.slots,
             helpers: fill.helpers,
+            names: fill.names,
         }
     }
 
@@ -173,6 +177,7 @@ impl SlotFill {
             i18n: self.i18n(py),
             slots: self.slots.iter().map(|s| s.as_ref().map(|v| v.clone_ref(py))).collect(),
             helpers: self.helpers.as_ref().map(|h| Box::new(copy_i18n(py, h))),
+            names: self.names.as_ref().map(|n| n.clone_ref(py)),
         }
     }
 
@@ -216,13 +221,17 @@ impl SlotFill {
         };
         let slots = self.slots.iter().map(|s| s.as_ref().map(|v| v.clone_ref(py))).collect();
         let i18n = (self.i18n(py), Some(self.helpers(py)));
-        let text = render_function(&program, self.entry, code, builtins, econtext, rcontext, i18n, slots)?;
+        let names = self.names.as_ref().map(|n| n.bind(py).clone());
+        let text = render_function(&program, self.entry, code, builtins, econtext, rcontext, i18n, slots, names)?;
         stream.call_method1(pyo3::intern!(py, "append"), (text,))?;
         Ok(())
     }
 
     fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
         visit.call(&self.code)?;
+        if let Some(names) = &self.names {
+            visit.call(names)?;
+        }
         if let Some(t) = &self.target_language {
             visit.call(t)?;
         }
@@ -249,6 +258,7 @@ fn render_function<'py>(
     rcontext: &Bound<'py, PyAny>,
     (i18n, helpers): (I18n<Py<PyAny>>, Option<I18n<Py<PyAny>>>),
     slots: Vec<Option<Py<PyAny>>>,
+    names: Option<Bound<'py, PyAny>>,
 ) -> PyResult<Bound<'py, PyString>> {
     let py = program.py();
     crate::errors::render_room()?;
@@ -268,6 +278,11 @@ fn render_function<'py>(
     // Called from outside: the scope came from user code.
     render.scope_exposed.set(true);
     let _ = render.rcontext.set(rcontext.cast::<PyDict>()?.clone());
+    if let Some(names) = names {
+        // A slot body shares its defining function's code-block namespace (the first frame's
+        // serial is 1).
+        render.namespaces.borrow_mut().push((1, names.cast_into::<PyDict>()?));
+    }
     let compiled = Arc::clone(&program.get().core);
     let mut st = VmState::at(compiled, entry, code.unbind(), scope.clone().into_any().unbind(), i18n, slots);
     if let Some(helpers) = helpers {

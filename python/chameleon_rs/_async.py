@@ -132,8 +132,15 @@ class _Once:
             try:
                 inner = awaitable.__await__() if hasattr(type(awaitable), '__await__') else awaitable
                 self.result = yield from inner
-            except BaseException as e:  # noqa: BLE001 - kept for every later use, then raised
+            except Exception as e:  # noqa: BLE001 - kept for every later use, then raised
                 self.error = e
+            except BaseException:
+                # This reader was cancelled or closed, which ended the coroutine with it. That
+                # is this reader's alone to see: the others get what awaiting the finished
+                # coroutine gives, an error `tal:on-error` can handle and no cancellation of
+                # their own.
+                self.error = RuntimeError('cannot reuse already awaited coroutine')
+                raise
             finally:
                 waiters, self.waiters = self.waiters, None
                 for waiter in waiters:
