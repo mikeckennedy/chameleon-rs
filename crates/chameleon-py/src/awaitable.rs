@@ -622,8 +622,7 @@ impl Drop for Running {
     /// A render dropped before it ended leaves no task running (not attempted while the
     /// interpreter shuts down).
     fn drop(&mut self) {
-        // Also when it returned: an argument the partial never used was never awaited.
-        let close_args = self.owns_args;
+        let close_args = self.owns_args && !self.returned;
         if self.has_deferred() || close_args {
             Python::try_attach(|py| {
                 self.cancel_deferred(py);
@@ -665,32 +664,42 @@ pub(crate) fn is_coroutine(value: &Bound<'_, PyAny>) -> PyResult<bool> {
 
 /// Closes each coroutine in `scope`'s own dict that never started (`inspect.getcoroutinestate`
 /// is `CORO_CREATED`), as dropping one the render would have awaited (see `Running::owns_args`).
+/// Only one that nothing else holds: a coroutine from the model may be awaited by the template
+/// that passed it, or by the next partial.
 pub(crate) fn close_unstarted(py: Python<'_>, scope: &Bound<'_, Scope>) {
+    // The references `sys.getrefcount` counts for a value the scope alone holds: its dict, the
+    // list of values, the item, the call's argument.
+    const HELD: isize = 4;
     let Ok(state) = CORO_STATE.get_or_try_init(py, || {
         Ok::<_, PyErr>(py.import(intern!(py, "inspect"))?.getattr(intern!(py, "getcoroutinestate"))?.unbind())
     }) else {
         return;
     };
-    // A list of the values (iterating the dict itself panics in PyO3 if it changes size).
+    let Ok(getrefcount) = py.import(intern!(py, "sys")).and_then(|sys| sys.getattr(intern!(py, "getrefcount"))) else {
+        return;
+    };
+    // Not sure means held: an argument left unclosed only warns.
+    let refs =
+        |value: &Bound<'_, PyAny>| getrefcount.call1((value,)).and_then(|n| n.extract::<isize>()).unwrap_or(isize::MAX);
     let once = once(py).ok();
+    // A list of the values (iterating the dict itself panics in PyO3 if it changes size).
     for value in scope.as_super().values().iter() {
-        // A partial's argument, wrapped to be awaited once (see `once`): its coroutine, unless
-        // already awaited.
-        let value = match &once {
-            Some(once) if value.is_exact_instance(once) => match value.getattr(intern!(py, "awaitable")) {
-                Ok(inner) if !inner.is_none() => inner,
-                _ => continue,
-            },
-            // A `@concurrent` call not wrapped yet (the partial was not found): its coroutine.
-            _ if crate::deferred::is_concurrent_call(&value).unwrap_or(false) => {
-                match value.getattr(intern!(py, "awaitable")) {
-                    Ok(inner) => inner,
-                    Err(_) => continue,
-                }
+        // A partial's argument wrapped to be awaited once closes its own coroutine, when the
+        // last holder of the wrapper is gone (`_Once.__del__`).
+        if once.as_ref().is_some_and(|once| value.is_exact_instance(once)) || refs(&value) > HELD {
+            continue;
+        }
+        // A `@concurrent` call not wrapped yet (the partial was not found): its coroutine,
+        // held by the call, this lookup and the count's argument.
+        let (value, held) = if crate::deferred::is_concurrent_call(&value).unwrap_or(false) {
+            match value.getattr(intern!(py, "awaitable")) {
+                Ok(inner) => (inner, 3),
+                Err(_) => continue,
             }
-            _ => value,
+        } else {
+            (value, HELD)
         };
-        if !value.hasattr(intern!(py, "cr_frame")).unwrap_or(false) {
+        if refs(&value) > held || !value.hasattr(intern!(py, "cr_frame")).unwrap_or(false) {
             continue;
         }
         let created = state.bind(py).call1((&value,)).and_then(|s| s.eq(intern!(py, "CORO_CREATED"))).unwrap_or(false);

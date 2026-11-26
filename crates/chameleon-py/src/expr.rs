@@ -1216,22 +1216,9 @@ fn eval_more<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
             }
             eval(last, cx)
         }
-        Expr::Compare(left, ops) => {
-            let mut left = eval(left, cx)?;
-            let mut result = None;
-            for (i, (op, right)) in ops.iter().enumerate() {
-                let right = eval(right, cx)?;
-                let r = compare(py, &left, *op, &right)?;
-                if i + 1 < ops.len() && !r.is_truthy()? {
-                    return Ok(r);
-                }
-                result = Some(r);
-                left = right;
-            }
-            result.ok_or_else(|| PyValueError::new_err("empty Compare"))
-        }
+        Expr::Compare(left, ops) => Ok(compare_chain(left, ops, cx)?.0),
         Expr::IfExp(test, body, orelse) => {
-            if eval(test, cx)?.is_truthy()? {
+            if truth(test, cx)? {
                 eval(body, cx)
             } else {
                 eval(orelse, cx)
@@ -1243,22 +1230,28 @@ fn eval_more<'py>(e: &Expr, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAny>> {
             // dict from them: in `{[]: 1, 'c': missing}` the `NameError` comes before the
             // unhashable key's `TypeError`. A larger one adds each pair as it is evaluated,
             // `DICT_CHUNK` at a time, and what is left over is a display of its own.
+            // Each chunk after the first is a dict of its own, merged once it is complete:
+            // a key that collides with an earlier chunk's is compared only then.
             let d = PyDict::new(py);
             let mut pairs = Vec::new();
-            for chunk in items.chunks(DICT_CHUNK) {
+            for (i, chunk) in items.chunks(DICT_CHUNK).enumerate() {
+                let part = if i == 0 { d.clone() } else { PyDict::new(py) };
                 if chunk.len() > DICT_SMALL {
                     for (k, v) in chunk {
                         let k = eval(k, cx)?;
-                        d.set_item(k, eval(v, cx)?)?;
+                        part.set_item(k, eval(v, cx)?)?;
                     }
-                    continue;
+                } else {
+                    for (k, v) in chunk {
+                        let k = eval(k, cx)?;
+                        pairs.push((k, eval(v, cx)?));
+                    }
+                    for (k, v) in pairs.drain(..) {
+                        part.set_item(k, v)?;
+                    }
                 }
-                for (k, v) in chunk {
-                    let k = eval(k, cx)?;
-                    pairs.push((k, eval(v, cx)?));
-                }
-                for (k, v) in pairs.drain(..) {
-                    d.set_item(k, v)?;
+                if i > 0 {
+                    d.update(part.as_mapping())?;
                 }
             }
             Ok(d.into_any())
@@ -1426,6 +1419,55 @@ fn eval_interp<'py>(s: &StrInterp, cx: &Cx<'_, 'py>) -> PyResult<Bound<'py, PyAn
         }
     }
     intern!(py, "").call_method1(intern!(py, "join"), (pieces,))
+}
+
+/// `a < b < c`: the result of the last comparison made, and whether an earlier one was false
+/// (tested already, which ended the chain).
+fn compare_chain<'py>(left: &Expr, ops: &[(CmpOp, Expr)], cx: &Cx<'_, 'py>) -> PyResult<(Bound<'py, PyAny>, bool)> {
+    let py = cx.scope.py();
+    let mut left = eval(left, cx)?;
+    let mut result = None;
+    for (i, (op, right)) in ops.iter().enumerate() {
+        let right = eval(right, cx)?;
+        let r = compare(py, &left, *op, &right)?;
+        if i + 1 < ops.len() && !r.is_truthy()? {
+            return Ok((r, true));
+        }
+        result = Some(r);
+        left = right;
+    }
+    result.map(|r| (r, false)).ok_or_else(|| PyValueError::new_err("empty Compare"))
+}
+
+/// The truth of `e` as a condition (the test of `a if e else b`), as CPython compiles one: it
+/// jumps on each operand of `and` / `or` / `not`, so every operand is tested once. As a value,
+/// `f and 1` is `f` when `f` is false, and testing that value asked `f.__bool__` again.
+fn truth(e: &Expr, cx: &Cx<'_, '_>) -> PyResult<bool> {
+    match e {
+        Expr::Not(v) => Ok(!truth(v, cx)?),
+        Expr::And(values) => {
+            for v in values {
+                if !truth(v, cx)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
+        Expr::Or(values) => {
+            for v in values {
+                if truth(v, cx)? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+        Expr::IfExp(test, body, orelse) => truth(if truth(test, cx)? { body } else { orelse }, cx),
+        Expr::Compare(left, ops) => {
+            let (result, decided) = compare_chain(left, ops, cx)?;
+            Ok(!decided && result.is_truthy()?)
+        }
+        _ => eval(e, cx)?.is_truthy(),
+    }
 }
 
 pub(crate) fn eval_all<'py>(items: &[Expr], cx: &Cx<'_, 'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {

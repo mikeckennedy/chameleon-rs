@@ -965,13 +965,20 @@ def test_a_partials_awaitable_argument_can_be_used_twice(configured: Path, concu
 
 
 def test_a_partial_not_found_leaves_no_argument_unawaited(configured: Path) -> None:
-    page = PageTemplate('<p>${render_partial("missing.pt", v=v)}</p>')
+    page = PageTemplate('<p>${render_partial("missing.pt", v=fetch(1))}</p>')
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter('always')
         with pytest.raises(ValueError, match='not found'):
-            run(page.render_async(v=_value(1)))
+            run(page.render_async(fetch=_value))
         gc.collect()
     assert not [w for w in caught if 'never awaited' in str(w.message)]
+
+
+def test_a_partial_not_found_leaves_the_models_coroutine_alone(configured: Path) -> None:
+    # Only an argument made for the call is closed. One from the model is the caller's: the
+    # template may still await it once `tal:on-error` has handled the missing partial.
+    page = PageTemplate('<p tal:on-error="string:none">${render_partial("missing.pt", v=v)}</p>${v}')
+    assert run(page.render_async(v=_value(1))) == '<p>none</p>1'
 
 
 def test_an_exception_thrown_into_the_placeholder_wait_is_raised() -> None:

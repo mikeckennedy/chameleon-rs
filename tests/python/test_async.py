@@ -1452,6 +1452,44 @@ def test_one_coroutine_under_two_keywords_of_a_partial_is_awaited_once(tmp_path:
 
 
 @pytest.mark.parametrize('fan_out', [False, True])
+def test_a_partial_leaves_a_coroutine_argument_someone_else_holds(tmp_path: Path, fan_out: bool) -> None:
+    # Closing an unused argument when the partial returned also closed one a helper had kept
+    # to await later, and one from the model that the next partial was given.
+    async def fetch() -> str:
+        return 'V'
+
+    async def later(page: PageTemplate, **data: Any) -> tuple[str, str]:
+        saved: list[Any] = []
+        out = await page.render_async(save=saved.append, **data)
+        return out, await saved[0]
+
+    (tmp_path / 'save.pt').write_text('${save(v)}')
+    (tmp_path / 'slot.pt').write_text(
+        '<i metal:define-macro="m"><b metal:define-slot="s"/></i><i metal:use-macro="macros.m">'
+        '<b metal:fill-slot="s">${save(v)}</b></i>'
+    )
+    (tmp_path / 'empty.pt').write_text('')
+    (tmp_path / 'show.pt').write_text('${v}')
+    (tmp_path / 'set.pt').write_text('<?python v = 42 ?>${v}')
+    chameleon_rs.configure(template_folder=str(tmp_path))
+    try:
+        with _no_unawaited_coroutines():
+            page = PageTemplate('${render_partial("save.pt", v=fetch(), save=save)}', concurrent=fan_out)
+            assert run(later(page, fetch=fetch)) == ('', 'V')
+            page = PageTemplate('${render_partial("slot.pt", v=fetch(), save=save)}', concurrent=fan_out)
+            assert run(later(page, fetch=fetch))[1] == 'V'
+            page = PageTemplate(
+                '${render_partial("empty.pt", v=shared)}${render_partial("show.pt", v=shared)}', concurrent=fan_out
+            )
+            assert run(page.render_async(shared=fetch())) == 'V'
+            # An argument the partial overwrote was never used either.
+            page = PageTemplate('${render_partial("set.pt", v=fetch())}', concurrent=fan_out)
+            assert run(page.render_async(fetch=fetch)) == '42'
+    finally:
+        chameleon_rs._settings.clear()
+
+
+@pytest.mark.parametrize('fan_out', [False, True])
 def test_a_partial_that_never_uses_a_coroutine_argument_closes_it(tmp_path: Path, fan_out: bool) -> None:
     # A render that went well warned that the coroutine was never awaited.
     started = []

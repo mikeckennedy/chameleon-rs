@@ -321,9 +321,7 @@ impl<const ASYNC: bool> Eval for PyRuntime<'_, '_, ASYNC> {
     }
 
     fn partial_returned(&mut self) {
-        if let Some(unit) = self.render.partials.left() {
-            unit.close_unused();
-        }
+        self.render.partials.left();
     }
 
     #[inline]

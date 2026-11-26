@@ -110,21 +110,9 @@ pub(crate) struct Unit<'py> {
     /// the same name is the same object).
     added: Added<'py>,
     pub(crate) rcontext: OnceCell<Bound<'py, PyDict>>,
-    /// Whether an argument is a coroutine the partial awaits where it first uses it: one it
-    /// never used is closed when it returns (see [`Unit::close_unused`]).
-    wrapped: bool,
 }
 
 impl<'py> Unit<'py> {
-    /// The partial returned: a coroutine argument it never used (`v=fetch()` for a block its
-    /// condition skipped) is closed, as nothing will await it now. Python otherwise warns
-    /// that it was never awaited, on a render that went well.
-    pub(crate) fn close_unused(&self) {
-        if self.wrapped {
-            crate::awaitable::close_unstarted(self.scope.py(), &self.scope);
-        }
-    }
-
     /// What the model gets as `render_partial` when it lacks one (see [`Unit::added`]).
     fn added(&self) -> Option<&Bound<'py, PyAny>> {
         match &self.added {
@@ -365,7 +353,9 @@ pub(crate) fn partial_step(
     let Some(target) = target else {
         return Ok(Step::Ready(func.call((path,), Some(locals))?.unbind()));
     };
-    let wrapped = cx.render.awaits && await_once(py, kwargs, locals)?;
+    if cx.render.awaits {
+        await_once(py, kwargs, locals)?;
+    }
     // chameleon_partials: `template_data['render_partial'] = render_partial` unless given (the
     // built-in passes the partial template's own, which resolves relative to it).
     let initial = kwargs.len();
@@ -402,7 +392,7 @@ pub(crate) fn partial_step(
         scope: scope.clone().into_any().unbind(),
     };
     *cx.render.partials.pending.borrow_mut() =
-        Some(Unit { serial: 0, target, scope, initial, added, rcontext: OnceCell::new(), wrapped });
+        Some(Unit { serial: 0, target, scope, initial, added, rcontext: OnceCell::new() });
     if awaits {
         cx.render.defer_next.set(true);
     }
@@ -412,8 +402,9 @@ pub(crate) fn partial_step(
 /// Wraps each coroutine among a partial's arguments so that it is awaited where the partial
 /// first uses it, and that result is its value from then on (`chameleon_rs._async._Once`).
 /// One coroutine passed under two keywords (`a=v, b=v`) is one value: a wrapper each awaited
-/// it twice. Returns whether there was one.
-fn await_once<'py>(py: Python<'py>, kwargs: &[(Py<PyString>, Expr)], locals: &Bound<'py, PyDict>) -> PyResult<bool> {
+/// it twice. One the partial never uses is closed when its wrapper is collected (`_Once.__del__`),
+/// not when the partial returns: a helper may have kept the wrapper to await later.
+fn await_once<'py>(py: Python<'py>, kwargs: &[(Py<PyString>, Expr)], locals: &Bound<'py, PyDict>) -> PyResult<()> {
     let mut wrapped: Vec<(Bound<'py, PyAny>, Bound<'py, PyAny>)> = Vec::new();
     for (key, _) in kwargs {
         let key = key.bind(py);
@@ -437,7 +428,7 @@ fn await_once<'py>(py: Python<'py>, kwargs: &[(Py<PyString>, Expr)], locals: &Bo
         };
         locals.set_item(key, once)?;
     }
-    Ok(!wrapped.is_empty())
+    Ok(())
 }
 
 /// The error a failed partial raises to its caller: `BaseTemplate.render`'s handler, with the
@@ -496,7 +487,6 @@ struct SavedUnit {
     initial: usize,
     added: SavedAdded,
     rcontext: Option<Py<PyDict>>,
-    wrapped: bool,
 }
 
 struct SavedSite {
@@ -550,7 +540,6 @@ impl<'py> Partials<'py> {
                 Added::Func(f) => SavedAdded::Func(f.unbind()),
             },
             rcontext: u.rcontext.into_inner().map(Bound::unbind),
-            wrapped: u.wrapped,
         };
         let units = self.units.into_inner().into_iter().map(&mut unit).collect();
         let pending = self.pending.into_inner().map(&mut unit);
@@ -600,7 +589,6 @@ impl<'py> Partials<'py> {
                 SavedAdded::Func(f) => Added::Func(f.into_bound(py)),
             },
             rcontext: u.rcontext.map(|r| r.into_bound(py)).map_or_else(OnceCell::new, OnceCell::from),
-            wrapped: u.wrapped,
         };
         let units = saved.units.into_iter().map(&mut unit).collect();
         let pending = saved.pending.map(&mut unit);

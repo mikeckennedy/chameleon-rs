@@ -38,23 +38,25 @@ Rendering:
 - **A global `tal:define` that fails to unpack defines nothing.** With `tal:on-error` around `tal:define="global (x, y) row"`, the whole row became the global `x` and `y` and showed up after the next macro call.
 - **A repeated keyword argument is a `SyntaxError`**, as in Python: `${dict(x=1, x=2)}` rendered with the last value.
 - **Unpacking raises the iterator's own error.** A row that raised after its second column, unpacked into two names, was reported as `ValueError: too many values to unpack`.
-- **`locals()` and `vars()` without arguments** see the expression's frame, `econtext` included, as in Chameleon.
+- **`locals()` and `vars()` without arguments** see the expression's frame, `econtext` included, as in Chameleon. After a `<?python ?>` block they, `dir()`, `eval` and `exec` also see what the block defined: `${eval('helper()')}` raised `NameError`.
+- **A condition tests each operand once.** `${a if flag and b else c}` asked `flag` for its truth twice when it was false, which is slow for a lazy object and wrong for one whose answer changes.
 - **A dict display evaluates its keys and values in Python's order**, so `{[]: 1, 'c': missing}` raises the `NameError` first.
+- **A template's `_render` set to `None`** raises `TypeError` when the template is used as a macro, as in Chameleon; the whole template was rendered.
 
 Async rendering:
 
 - **Overlapping reads of a partial's awaitable argument** (`asyncio.gather` of two reads) all get its value; the second reader got `None`.
 - **One coroutine passed under two keywords of a partial** (`a=v, b=v`) is awaited once; it raised `RuntimeError: cannot reuse already awaited coroutine`.
-- **A coroutine argument a partial never uses is closed** when the partial returns, or when a later keyword fails. A render that went well warned that the coroutine was never awaited.
+- **A coroutine argument a partial never uses is closed** once nothing holds it any more, as is one made for a call whose later keyword fails. A render that went well warned that the coroutine was never awaited. A coroutine something else still holds is left alone: one a helper kept to await later, or one from the render data, which a partial that is not found used to close.
 
 `<?python ?>` blocks:
 
-- **A comprehension in a class body** no longer stores its targets in the template scope: `values = [a for a in items]` left the render data's `a` as the last item.
-- **A class attribute or a parameter named `econtext`** no longer breaks name lookups after it (`AttributeError: 'str' object has no attribute 'get_name'`).
+- **A comprehension in a class body** no longer stores its targets in the template scope: `values = [a for a in items]` left the render data's `a` as the last item. Nor does a comprehension inside it.
+- **A class attribute or a parameter named `econtext`** no longer breaks name lookups after it (`AttributeError: 'str' object has no attribute 'get_name'`), however the class came to have it.
 - **A class body reads its own namespace first for every name**, so one put there by `locals()['label'] = ...` or a metaclass's `__prepare__` is found.
-- **`nonlocal` works.** It was a `SyntaxError`, in Chameleon too, because the enclosing function's assignment was a store in the scope.
+- **`nonlocal` works.** It was a `SyntaxError`, in Chameleon too, because the enclosing function's assignment was a store in the scope. That includes a name the function binds with a `match` capture or a walrus in a comprehension.
 - **`except E as name` for a name declared `global`** in a class body or a method unbinds the template's name when the handler ends; render data of that name outlived it.
-- **A `match` capture is bound when its guard is false**, as in Python.
+- **A `match` capture is bound when its guard is false**, as in Python, and keeps a value the guard itself assigns to it.
 - **A `type` statement can name itself**: `type Tree = list[Tree]` raised `NameError`, and `type Alias = Alias` read render data of that name.
 - **A name a class body binds is, until then, the template's** wherever the class is: inside a generic class or a function, an enclosing type parameter, parameter or local of that name was read instead (`def f(a): class C: x = a; a = 1`), a `NameError` with `a` in the render data.
 - **`global a` inside `class Box[a]`**, in the body or a method, is the template's `a`; reads, writes, `del` and a `def`, `class` or `type` of it used the type parameter.

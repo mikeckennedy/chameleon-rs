@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import sys
 from collections.abc import Awaitable, Callable, Generator
 from typing import Any, Optional
 
@@ -145,6 +146,19 @@ class _Once:
         if self.error is not None:
             raise self.error
         return self.result
+
+    def __del__(self) -> None:
+        # Never used (`v=fetch()` for a block the partial's condition skipped): closed, as
+        # nothing will await it now, and Python otherwise warns that it was never awaited on
+        # a render that went well. Only here, when the last holder of the wrapper is gone (a
+        # helper may have kept it to await after the partial returned), and only a coroutine
+        # nobody else holds (one from the model may be another partial's argument too): the
+        # two references counted are this attribute and the call's argument.
+        try:
+            if self.awaitable is not None and sys.getrefcount(self.awaitable) <= 2:
+                self.awaitable.close()
+        except Exception:  # noqa: BLE001, S110 - a finalizer, possibly at interpreter exit
+            pass
 
 
 async def _await[T](awaitable: Awaitable[T]) -> T:

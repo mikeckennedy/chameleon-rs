@@ -845,3 +845,36 @@ def test_a_template_with_its_own_render_function_is_that_function_as_a_macro() -
         return other(x=1), page(other=other, x=2)
 
     assert render(chameleon_rs) == render(chameleon) == ('<b>card 1</b>', '<b>card 2</b>')
+
+
+def test_a_wrapper_around_the_render_function_renders() -> None:
+    # `include` is the instance's `_render` once one is set, so the class's `_render` going
+    # through `include` made a wrapper around it call itself: a `RecursionError`.
+    def render(engine: Any) -> tuple[str, str, str]:
+        other = engine.PageTemplate('<b metal:define-macro="card">card ${x}</b>')
+        other.cook_check()
+        original = other._render
+
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            return original(*args, **kwargs)
+
+        other._render = wrapped
+        page = engine.PageTemplate('<main metal:use-macro="other"/>')
+        return other(x=1), page(other=other, x=2), other.render(x=3)
+
+    assert render(chameleon_rs) == render(chameleon) == ('<b>card 1</b>', '<b>card 2</b>', '<b>card 3</b>')
+    other = chameleon_rs.PageTemplate('${x}')
+    original = other._render
+    setattr(other, '_render', lambda *args, **kwargs: original(*args, **kwargs))  # noqa: B010 - a method
+    assert asyncio.run(other.render_async(x=1)) == '1'
+
+
+def test_a_render_function_of_none_is_called_as_a_macro() -> None:
+    # Chameleon calls whatever `_render` is. Ours took `None` for "not set" and rendered the
+    # whole template.
+    for engine in (chameleon, chameleon_rs):
+        other = engine.PageTemplate('X<b metal:define-macro="card">card</b>')
+        other.cook_check()
+        setattr(other, '_render', None)  # noqa: B010 - a method, to the type checker
+        with pytest.raises(TypeError, match="'NoneType' object is not callable"):
+            engine.PageTemplate('<p metal:use-macro="other"/>')(other=other)

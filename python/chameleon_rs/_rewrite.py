@@ -28,6 +28,10 @@ DEFAULTS = {'translate': '__translate', 'decode': '__decode', 'on_error_handler'
 
 BUILTINS = frozenset(builtins.__dict__)
 
+# The builtins that see the locals of the frame calling them: in Chameleon's render function,
+# what the code blocks defined. (`globals` sees the generated module's, which has none of it.)
+FRAME_BUILTINS = frozenset({'locals', 'vars', 'dir', 'eval', 'exec'})
+
 # The parameters of a compiled expression: the scope, the render context, the default marker
 # (the `default` alias) and the template builtins' values.
 PARAMS = ('econtext', 'rcontext', '__rs_default', '__rs_tpl')
@@ -48,20 +52,21 @@ CLASS_NAMES = '__rs_class__'
 
 
 class _ScopeNames:
-    """``names.Point`` is the scope's ``Point``, looked up when the pattern is tried."""
+    """``names.Point`` is the scope's ``Point``, looked up when the pattern is tried. Every
+    attribute is a lookup (`__getattribute__`): the object has none of its own that a scope
+    name could be mistaken for (``case names.x``, with ``names`` in the render data)."""
 
     __slots__ = ('econtext',)
 
     def __init__(self, econtext: Any) -> None:
         self.econtext = econtext
 
-    def __getattr__(self, name: str) -> Any:
-        return self.econtext.get_name(name)
-
-    @property
-    def __rs_class__(self) -> _ClassNames:
-        # The caller is the class body trying the pattern, its locals the class's namespace.
-        return _ClassNames(self.econtext, sys._getframe(1).f_locals)
+    def __getattribute__(self, name: str) -> Any:
+        econtext = object.__getattribute__(self, 'econtext')
+        if name == CLASS_NAMES:
+            # The caller is the class body trying the pattern, its locals the class's namespace.
+            return _ClassNames(econtext, sys._getframe(1).f_locals)
+        return econtext.get_name(name)
 
 
 class _ClassNames:
@@ -74,11 +79,11 @@ class _ClassNames:
         self.econtext = econtext
         self.names = names
 
-    def __getattr__(self, name: str) -> Any:
+    def __getattribute__(self, name: str) -> Any:
         try:
-            return self.names[name]
+            return object.__getattribute__(self, 'names')[name]
         except KeyError:
-            return self.econtext.get_name(name)
+            return object.__getattribute__(self, 'econtext').get_name(name)
 
 
 MODULE_GLOBALS = {
@@ -187,6 +192,9 @@ class Rewriter(ast.NodeTransformer):
         self.defining: set[str] = set()
         # Whether a pattern of the `match` being visited reads a name from the scope.
         self.scope_names = False
+        # How many comprehensions written in a class body the code is inside (see
+        # `comprehension`).
+        self.comprehensions = 0
         # The names of the handlers of the `try` being visited that were plain names already
         # (see `visit_Try`).
         self.unbound: list[str] = []
@@ -362,8 +370,10 @@ class Rewriter(ast.NodeTransformer):
         """The scope, for a lookup or a store. Where a code block has an `econtext` of its
         own (a parameter, a class attribute), the render's is read from its namespace:
         Chameleon's generated code looks names up through a function bound beforehand, which
-        such a name doesn't hide (`class C: econtext = 1; v = a` called `get_name` on `1`)."""
-        if self.code_block and (self.class_name('econtext') or 'econtext' in self.scopes[-1]):
+        such a name doesn't hide (`class C: econtext = 1; v = a` called `get_name` on `1`).
+        Anywhere in a class body, whose namespace may hold one the code never names
+        (`locals()['econtext'] = 1`)."""
+        if self.code_block and (self.in_class_body() or 'econtext' in self.scopes[-1]):
             return ast.Subscript(value=_globals(), slice=ast.Constant('econtext'), ctx=ast.Load())
         return _econtext()
 
@@ -490,20 +500,29 @@ class Rewriter(ast.NodeTransformer):
             with self.plain(names):
                 node.guard = self.visit(node.guard)
         stores: list[ast.stmt] = []
-        early: list[ast.expr] = []
+        scoped: list[str] = []
         for name in names:
             target = self.visit_Name(ast.Name(id=name, ctx=ast.Store()))
             if isinstance(target, ast.Subscript):
-                value = ast.Name(id=name, ctx=ast.Load())
-                stores.append(ast.Assign(targets=[target], value=value))
-                store = ast.Attribute(value=target.value, attr='__setitem__', ctx=ast.Load())
-                early.append(ast.Call(func=store, args=[ast.Constant(name), value], keywords=[]))
-        if node.guard is not None and early:
+                scoped.append(name)
+                stores.append(ast.Assign(targets=[target], value=ast.Name(id=name, ctx=ast.Load())))
+
+        def store(name: str) -> ast.expr:
+            setitem = ast.Attribute(value=self.econtext(), attr='__setitem__', ctx=ast.Load())
+            return ast.Call(func=setitem, args=[ast.Constant(name), ast.Name(id=name, ctx=ast.Load())], keywords=[])
+
+        if node.guard is not None and scoped:
             # A pattern that matches binds its captures whatever its guard then says, so with
-            # a guard they are stored before it is tested: `(store, ..., guard)[-1]`.
+            # a guard they are stored before it is tested, and the ones the guard itself
+            # rebinds (`case a if (a := 2)`) again after: `(store, ..., guard, store, ...)`,
+            # of which the guard is the value.
             stores = []
-            checked = ast.Tuple(elts=[*early, node.guard], ctx=ast.Load())
-            node.guard = ast.Subscript(value=checked, slice=ast.Constant(-1), ctx=ast.Load())
+            walruses = (n.target for n in ast.walk(node.guard) if isinstance(n, ast.NamedExpr))
+            rebound_names = {target.id for target in walruses if isinstance(target, ast.Name)}
+            early = [store(name) for name in scoped]
+            late = [store(name) for name in scoped if name in rebound_names]
+            checked = ast.Tuple(elts=[*early, node.guard, *late], ctx=ast.Load())
+            node.guard = ast.Subscript(value=checked, slice=ast.Constant(len(early)), ctx=ast.Load())
         node.body = stores + self.statements(node.body)
         return node
 
@@ -617,16 +636,23 @@ class Rewriter(ast.NodeTransformer):
     def comprehension(self, node: ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp) -> ast.AST:
         # In a class body a comprehension is a scope of its own that doesn't see the class's
         # names, as a method doesn't: only its first iterable is evaluated in the class body.
-        if not self.in_class_body():
+        # So is a comprehension inside that one (`[[a for a in row] for row in rows]`).
+        if not self.in_class_body() and not self.comprehensions:
             return self.generic_visit(node)
         first = node.generators[0]
         first.iter = self.visit(first.iter)
         # Its targets are its own names, as in Python (elsewhere they are stores in the
         # scope, as in Chameleon): `[a for a in items]` in a class body left the scope's `a`
-        # the last item.
-        targets = [n.id for g in node.generators for n in ast.walk(g.target) if isinstance(n, ast.Name)]
+        # the last item. Only the names it binds: in `for obj.x in items`, `obj` is read.
+        targets = [
+            n.id
+            for g in node.generators
+            for n in ast.walk(g.target)
+            if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)
+        ]
         self.class_names.append(None)
         self.declared.append(set())
+        self.comprehensions += 1
         try:
             with self.plain(targets):
                 first.target = self.visit(first.target)
@@ -638,6 +664,7 @@ class Rewriter(ast.NodeTransformer):
                 else:
                     node.elt = self.visit(node.elt)
         finally:
+            self.comprehensions -= 1
             self.declared.pop()
             self.class_names.pop()
         return node
@@ -763,6 +790,12 @@ class Rewriter(ast.NodeTransformer):
             get = ast.Attribute(value=self.econtext(), attr='get', ctx=ast.Load())
             return ast.Call(func=get, args=[ast.Constant(name), node], keywords=[])
         if name in BUILTINS:
+            if name in FRAME_BUILTINS and self.scopes[0] and len(self.scopes) == 1:
+                # `eval('f()')`, `'f' in locals()` after a code block that defined `f`: a
+                # local of Chameleon's render function, which these see. Here a name of the
+                # render's namespace, so the expression runs in it. (Not in a lambda, whose
+                # frame has no such local.)
+                self.uses_locals = True
             return ast.Call(func=get, args=[ast.Constant(name), ast.Name(id=name, ctx=ast.Load())], keywords=[])
         get_name = ast.Attribute(value=self.econtext(), attr='get_name', ctx=ast.Load())
         return ast.Call(func=get_name, args=[ast.Constant(name)], keywords=[])
@@ -1047,6 +1080,17 @@ def _nonlocals(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
     args = node.args
     params = (*args.posonlyargs, *args.args, args.vararg, *args.kwonlyargs, args.kwarg)
     bound = _bindings(node.body)[0] | {arg.arg for arg in params if arg is not None}
+    # Also what a statement-level scan for stores misses: a `match` capture, and a walrus in
+    # a comprehension, which binds its target in the function around it.
+    stack: list[ast.AST] = list(node.body)
+    while stack:
+        child = stack.pop()
+        if isinstance(child, ast.match_case):
+            bound.update(_captures(child.pattern))
+        elif isinstance(child, ast.NamedExpr):
+            bound.add(child.target.id)
+        if not isinstance(child, NESTED):
+            stack.extend(ast.iter_child_nodes(child))
     return _declared_nonlocal(node.body) | (inner & bound)
 
 

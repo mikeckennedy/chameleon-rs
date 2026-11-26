@@ -736,16 +736,19 @@ class PageTemplate(BaseTemplate):
         # A render function set on the instance is what Chameleon's `include` calls: with
         # pyramid_chameleon's `macro=` (set in `cook`) the template used as a macro is that
         # one macro, not the whole template.
-        render = self.__dict__.get('_render')
-        if render is not None:
-            return render
+        # Whatever it was set to: `None` is called and raises, as in Chameleon.
+        if '_render' in self.__dict__:
+            return self.__dict__['_render']
         program, builtins = self._compiled
         return Macro(program, None, builtins).include
 
     def _render(self, *args: Any, **kwargs: Any) -> None:
         # Chameleon's compiled render function: `(stream, econtext, rcontext, domain=None,
-        # context=None, target_language=None)`.
-        self.include(*args, **kwargs)
+        # context=None, target_language=None)`. Not through `include`, which is the instance's
+        # own `_render` once one is set: a wrapper around this method would call itself.
+        self.cook_check()
+        program, builtins = self._compiled
+        Macro(program, None, builtins).include(*args, **kwargs)
 
     def _render_defaults(self, encoding: Optional[str], translate: Optional[Callable[..., Any]]) -> dict[str, Any]:
         if translate is None:

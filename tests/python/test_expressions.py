@@ -981,6 +981,7 @@ CLASS_DATA: dict[str, Any] = {
     'p': _Point(5),
     'p2': _Point(6),
     'Point': _Point,
+    'names': _Point(42),
     'Kind': _Kind,
     'Bound': int,
     'Fault': ZeroDivisionError,
@@ -1367,6 +1368,35 @@ CLASS_BODIES = [
     ),
     'match 42:\n    case int() as a if a > 100:\n        pass\n    case _:\n        pass\nres = a',
     'match [1, 2]:\n    case [a, x] if a > x:\n        r = 1\n    case [a, x] if a < x:\n        r = 2\nres = (a, x, r)',
+    # A capture the guard itself rebinds keeps the guard's value, matched or not.
+    'class C:\n    def m(self):\n        match 1:\n            case a if (a := 2): pass\n        return a\nres = C().m()',
+    'match 1:\n    case a if (a := 2) and False: pass\n    case _: pass\nres = a',
+    'match (1, 2):\n    case (a, x) if (x := a + 10): pass\nres = (a, x)',
+    'match 1:\n    case a if (lambda: 5)(): pass\nres = a',
+    # A capture, or a walrus in a comprehension, is a local of its function for a `nonlocal`.
+    (
+        'class C:\n    def m(self):\n        match (1, [2]):\n            case (n, [*rest]): pass\n'
+        '        def bump():\n            nonlocal n, rest\n            n += 1\n            rest = rest + [n]\n'
+        '        bump()\n        return n, rest\nres = C().m()'
+    ),
+    (
+        'class C:\n    def m(self):\n        [(n := i) for i in [5]]\n        def get():\n'
+        '            nonlocal n\n            return n\n        return get()\nres = C().m()'
+    ),
+    # A value or class pattern whose first name is one the lookup object might have had.
+    'class C:\n    match 42:\n        case names.x: v = 1\nres = C.v',
+    'match 42:\n    case names.x: v = 1\nres = v',
+    # A comprehension's attribute or subscript target reads its object from the scope.
+    'class C:\n    w = [p.x for p.x in [5, 5]]\nres = (C.w, p.x)',
+    'class C:\n    w = [v[0] for v[0] in [3, 3]]\nres = (C.w, v)',
+    # A comprehension inside a class body's comprehension has its own targets too.
+    'class C:\n    w = [[a for a in row] for row in [(1, 2)]]\nres = (C.w, a)',
+    'class C:\n    w = {k: [a for a in r] for k, r in {1: (1, 2)}.items()}\nres = (C.w, a)',
+    'class C:\n    w = list(list(a for a in r) for r in [(1, 2)])\nres = (C.w, a)',
+    'class C:\n    x = 5\n    w = [[x for _ in r] for r in [(1,)]]\nres = C.w',
+    # An `econtext` put in the class's namespace doesn't hide the scope.
+    'class C:\n    locals()["econtext"] = 42\n    w = a\n    a = 5\n    y = a\nres = (C.w, C.y)',
+    'class C:\n    locals()["econtext"] = 42\n    global g\n    g = 3\n    w = [a for _ in (1,)]\nres = (g, C.w)',
 ]
 
 
@@ -1554,9 +1584,48 @@ def test_template_builtins_inside_a_lambda(source: str) -> None:
         ('${{[]: 1, ' + ', '.join(f'{i}: {i}' for i in range(17)) + ', 99: later}}', {}),
         ('${{' + ', '.join(f'{i}: {i}' for i in range(17)) + ', []: 1, 99: later}}', {}),
         ('${sorted({' + ', '.join(f'{i}: {i}' for i in range(40)) + '})[-1]}', {}),
+        # A chunk of a large display is built before it is merged: a key equal to one of an
+        # earlier chunk is compared only then.
+        *(
+            ('${{clash: 0, ' + ', '.join(f'{i}: 0' for i in range(16)) + f', clash2: 0, {middle}later: 0}}}}', {})
+            for middle in ('', ''.join(f'{i}: 0, ' for i in range(20, 36)))
+        ),
+        # A condition tests each operand of `and` / `or` / `not` once.
+        ('${1 if flag and 1 else 2}:${flag.calls}', {}),
+        ('${1 if not (flag and 1) else 2}:${flag.calls}', {}),
+        ('${1 if (flag and 1) or 0 else 2}:${flag.calls}', {}),
+        ('${1 if (flag if 1 else 0) else 2}:${flag.calls}', {}),
+        ('${1 if flagged > 1 > 0 else 2}:${flag.calls}', {}),
+        ('${1 if (flagged > 1 > 0) and 1 else 2}:${flag.calls}', {}),
+        # As a value the operand is tested again by whatever tests the result.
+        ('${not (flag and 1)}:${flag.calls}', {}),
+        ('<i tal:condition="flag and 1">yes</i>:${flag.calls}', {}),
     ],
 )
 def test_native_expressions_evaluate_as_python_does(source: str, data: dict[str, Any]) -> None:
+    class Flag:
+        # False the first time it is asked, true after.
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def __bool__(self) -> bool:
+            self.calls += 1
+            return self.calls > 1
+
+    class Flagged:
+        def __init__(self, flag: Flag) -> None:
+            self.flag = flag
+
+        def __gt__(self, other: object) -> Flag:
+            return self.flag
+
+    class Clash:
+        def __hash__(self) -> int:
+            return 500
+
+        def __eq__(self, other: object) -> bool:
+            raise ValueError('key comparison')
+
     class Report:
         def __bool__(self) -> bool:
             raise ValueError('truth value is ambiguous')
@@ -1566,7 +1635,9 @@ def test_native_expressions_evaluate_as_python_does(source: str, data: dict[str,
 
     def outcome(engine: Any) -> str:
         try:
-            return engine.PageTemplate(source)(report=Report(), **data)  # type: ignore[no-any-return]
+            flag = Flag()
+            names = {'flag': flag, 'flagged': Flagged(flag), 'clash': Clash(), 'clash2': Clash()}
+            return engine.PageTemplate(source)(report=Report(), **names, **data)  # type: ignore[no-any-return]
         except Exception as e:  # noqa: BLE001 - comparing exceptions across engines
             return f'{type(e).__name__}: {str(e).splitlines()[0]}'
 
@@ -1635,3 +1706,22 @@ def test_nonlocal_in_a_code_block() -> None:
     assert chameleon_rs.PageTemplate(source)(n='data') == '1 2 data'
     with pytest.raises(SyntaxError):
         chameleon.PageTemplate(source)
+
+
+@pytest.mark.parametrize(
+    'expression',
+    ['eval("helper()")', '"helper" in locals()', '"helper" in dir()', '"helper" in vars()', '"helper" in globals()'],
+)
+@pytest.mark.parametrize('wrap', ['${%s}', '${(lambda: %s)()}'])
+def test_frame_builtins_see_what_a_code_block_defined(expression: str, wrap: str) -> None:
+    # A code block's `def` is a local of Chameleon's render function, which `eval`, `locals`,
+    # `dir` and `vars` called there see. Ours ran in a function of their own, without it.
+    source = '<?python\ndef helper(): return 7\n?>' + wrap % expression
+
+    def outcome(engine: Any) -> str:
+        try:
+            return engine.PageTemplate(source)()  # type: ignore[no-any-return]
+        except NameError as e:
+            return f'NameError: {str(e).splitlines()[0]}'
+
+    assert outcome(chameleon_rs) == outcome(chameleon)
